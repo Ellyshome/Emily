@@ -86,7 +86,7 @@ services:
     image: postgres:16-alpine
     container_name: emily-postgres
     ports:
-      - "127.0.0.1:15432:5432"
+      - "127.0.0.1:25432:5432"
     environment:
       - POSTGRES_USER=emily
       - POSTGRES_PASSWORD=emily_secret_2026

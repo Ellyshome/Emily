@@ -1,0 +1,30 @@
+# 环境变量 / 密钥
+.env
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.egg-info/
+dist/
+.venv/
+
+# IDE
+.vscode/
+.idea/
+
+# 运行时数据
+pgdata/
+*.log
+logs/
+notebooks/
+attachments/
+user_memory/
+journal/
+
+# Docker
+*.pid
+
+# OS
+Thumbs.db
+.DS_Store
