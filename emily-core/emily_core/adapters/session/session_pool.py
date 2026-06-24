@@ -59,6 +59,33 @@ class SessionPoolManager:
         self._factory = factory or SessionFactory(bus, core=core)
         self._sessions: dict[str, _Entry] = {}
         self._start_time = time.time()
+        self._sweeper_task: asyncio.Task | None = None
+
+    # ── Phase C: 后台 TTL 清理 ──
+
+    async def _start_sweeper(self) -> None:
+        """启动后台定期 TTL 清理任务。"""
+        if self._sweeper_task is not None:
+            return
+        interval = getattr(self._config, "sweep_interval_seconds", 300) or 300
+        self._sweeper_task = asyncio.create_task(self._sweep_loop(interval))
+        logger.info("SessionPool sweeper started (interval=%ds)", interval)
+
+    async def _sweep_loop(self, interval: int) -> None:
+        """后台定期扫描过期 Session。"""
+        while True:
+            await asyncio.sleep(interval)
+            try:
+                removed = self.sweep_expired()
+                if removed:
+                    logger.debug("SessionPool sweeper removed %d expired sessions", removed)
+            except Exception as e:
+                logger.warning("SessionPool sweeper error: %s", e)
+
+    async def _ensure_sweeper(self) -> None:
+        """确保 sweeper 已启动（首次路由时触发）。"""
+        if self._sweeper_task is None:
+            await self._start_sweeper()
 
     # ── 路由入口 ──
 
@@ -77,6 +104,9 @@ class SessionPoolManager:
         """
         conv_id = message.conversation_id
         entry = self._sessions.get(conv_id)
+
+        # Phase C: 确保后台 TTL 清理已启动
+        await self._ensure_sweeper()
 
         if entry is None:
             # 未命中 → 创建（并发控制：超出上限先清理过期）

@@ -5,10 +5,9 @@
   ├── 创建 Session 状态机
   └── 绑定公共 Pipeline BUS
 
-最小化灌注原则（蓝图 §4.3.1）：只加载最近对话 + 用户摘要 + SOP/工具目录一级摘要，
-其余懒加载。本期为骨架：组装 SessionContext 的最小字段，真实的摘要生成器
-（UserMemoryService 历史摘要、SOPIntentRegistry.summary()、SchemaSummaryBuilder）
-接线属 Phase B/C —— 这些服务已随包迁移备用。
+Phase B 升级（蓝图 §12.2）：
+  · 传递 LLM 客户端 + SOPIntentRegistry 给 SessionAgent（意图识别）
+  · 填充上下文摘要字段（SOP 目录、工具目录）
 """
 
 from __future__ import annotations
@@ -40,7 +39,7 @@ class SessionFactory:
         self._core = core
 
     def create(self, message: "StandardMessage", user_id: str = "") -> SessionAgent:
-        """创建一个新的 SessionAgent（含最小化知识灌注）。
+        """创建一个新的 SessionAgent（含最小化知识灌注 + Phase B 意图识别依赖）。
 
         Args:
             message: 触发创建的入站消息。
@@ -51,29 +50,65 @@ class SessionFactory:
         """
         conv_id = message.conversation_id
         context = self._build_context(message, user_id)
-        agent = SessionAgent(conversation_id=conv_id, context=context, bus=self._bus)
+
+        # Phase B: 从 EmilyCore 获取意图识别依赖
+        llm = None
+        sop_registry = None
+        if self._core is not None:
+            llm = getattr(self._core, "_llm_client", None)
+            sop_registry = getattr(self._core, "_sop_intent_registry", None)
+
+        agent = SessionAgent(
+            conversation_id=conv_id,
+            context=context,
+            bus=self._bus,
+            # Phase B: 意图识别依赖
+            llm_client=llm,
+            sop_intent_registry=sop_registry,
+        )
         logger.info(
-            "SessionFactory created session: conv=%s user=%s",
+            "SessionFactory created session: conv=%s user=%s llm=%s sop_registry=%s",
             conv_id, user_id or "?",
+            "yes" if llm else "no",
+            "yes" if sop_registry else "no",
         )
         return agent
 
     def _build_context(self, message: "StandardMessage", user_id: str) -> SessionContext:
-        """组装最小化灌注上下文（蓝图 §4.3.1）。
-
-        本期仅填充可立即获得的字段；摘要类字段留待 Phase B/C 灌注。
-        """
-        return SessionContext(
+        """组装最小化灌注上下文（蓝图 §4.3.1 + Phase B 摘要字段填充）。"""
+        ctx = SessionContext(
             conversation_id=message.conversation_id,
             user_id=user_id,
             user_name=message.sender_name or "",
             current_datetime=datetime.now(timezone.utc).isoformat(),
-            # 以下为占位，Phase B/C 由真实服务填充：
-            recent_turns=[],
-            user_preferences="",
-            history_summary="",
-            sop_catalog_summary="",
-            tool_catalog_summary="",
-            schema_summary="",
-            perm_list=[],
         )
+
+        core = self._core
+        if core is None:
+            return ctx
+
+        # Phase B: 填充 SOP 目录摘要
+        sop_registry = getattr(core, "_sop_intent_registry", None)
+        if sop_registry is not None:
+            try:
+                sops = sop_registry.list_loaded_sops()
+                if sops:
+                    ctx.sop_catalog_summary = (
+                        f"可用业务流程 ({len(sops)}): {', '.join(sops[:15])}"
+                    )
+            except Exception:
+                pass
+
+        # Phase B: 填充工具目录摘要
+        tool_registry = getattr(core, "_tool_registry", None)
+        if tool_registry is not None:
+            try:
+                tools = tool_registry.tool_names
+                if tools:
+                    ctx.tool_catalog_summary = (
+                        f"可用工具 ({len(tools)}): {', '.join(tools[:20])}"
+                    )
+            except Exception:
+                pass
+
+        return ctx

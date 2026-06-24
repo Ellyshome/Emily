@@ -32,10 +32,13 @@ class WorkItem:
     # ── 任务输入（创建时写入）──
     user_input: str = ""                 # 任务对应的用户输入片段
     sop_id: str = ""                     # 匹配到的 SOP（如 SOP-002-REC）
+    intent_type: str = ""                # Phase B: "sop"|"compound"|"fallback"|"fast_reply"
     user_id: str = ""
     is_admin: bool = False
     priority: int = 1                    # 1=普通 0=最高
     required_permissions: list[str] = field(default_factory=list)
+    required_tools: set[str] = field(default_factory=set)     # Phase B: KnowledgeInjector
+    required_tables: set[str] = field(default_factory=set)    # Phase B: KnowledgeInjector
 
     # ── Node 1（意图+拆分）产出 ──
     route_decision: Any = None           # RouteDecision | None

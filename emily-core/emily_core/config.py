@@ -207,6 +207,29 @@ class Config:
     workitem_max_per_session: int = 5
     """每 Session 最大 WorkItem 数。"""
 
+    # ── Phase B: Pipeline 节点大脑模式开关 ──
+    planner_mode: str = "mock"
+    """规划大脑模式: mock | real（需 EMILY_LLM_API_KEY）"""
+
+    # ── Phase C: Pipeline 节点大脑模式开关 ──
+    executor_mode: str = "mock"
+    """执行大脑模式: mock | real（需 EMILY_LLM_API_KEY + BusinessFlowToolRegistry）"""
+
+    guardian_mode: str = "mock"
+    """守护大脑模式: mock | review | agent
+       - mock:   永远 PASS（MockGuardian）
+       - review: GuardianReview 单轮 LLM 调用（5s 超时，异常默认 PASS）
+       - agent:  GuardianAgent 多轮 ReAct 深度审计"""
+
+    auth_mode: str = "mock"
+    """鉴权引擎模式: mock | real（需 SOPIntentRegistry）"""
+
+    risk_mode: str = "mock"
+    """风险评估模式: mock | real"""
+
+    deep_audit_enabled: bool = False
+    """深度审计 Hook 开关（before:wi_node4，独立于 guardian_mode）"""
+
     # ── M12b: Checkpoint 持久化 ──
     checkpoint_enabled: bool = True
     """检查点持久化开关"""

@@ -335,7 +335,7 @@ class DeepAuditHook(Hook):
                 f"对以下用户请求的上下文执行深度审计：{user_message[:500]}"
             )
             if result.success and result.report:
-                context.baggage.set("deep_audit_report", result.report)
+                context.baggage["deep_audit_report"] = result.report
                 logger.info(
                     "DeepAuditHook[%s] completed: %d steps, %d chars report",
                     self.name, len(result.steps), len(result.report),

@@ -56,6 +56,16 @@ def _config_from_env(config_data: dict | None) -> dict:
         "EMILY_STORAGE_ROOT": "storage_root",
         "EMILY_HOOK_CONFIG_PATH": "hook_config_path",
         "EMILY_SOP_REPOSITORY_DIR": "sop_repository_dir",
+        # Phase C: Pipeline node brain mode switches
+        "EMILY_EXECUTOR_MODE": "executor_mode",
+        "EMILY_PLANNER_MODE": "planner_mode",
+        "EMILY_GUARDIAN_MODE": "guardian_mode",
+        "EMILY_AUTH_MODE": "auth_mode",
+        "EMILY_RISK_MODE": "risk_mode",
+        "EMILY_MAXKB_URL": "maxkb_url",
+        "EMILY_MAXKB_ADMIN_PASSWORD": "maxkb_admin_password",
+        "EMILY_MAXKB_KNOWLEDGE_ID": "maxkb_knowledge_id",
+        "EMILY_KB_ENABLED": "kb_enabled",
     }
     for env_key, cfg_key in env_map.items():
         val = os.environ.get(env_key)
@@ -85,10 +95,25 @@ def init(config_data: dict | None = None, rag_provider=None) -> "EmilyCore":
     init_db(db_url)
     _logger.info("Database ready: %s", get_db_path())
 
+    # Phase C: 初始化 RAG Provider（如果 kb_enabled + maxkb 配置了）
+    if rag_provider is None and config.kb_enabled:
+        try:
+            from .providers.rag.maxkb_provider import MaxKBRagProvider
+            if config.maxkb_admin_password and config.maxkb_knowledge_id:
+                rag_provider = MaxKBRagProvider(
+                    base_url=config.maxkb_url,
+                    admin_password=config.maxkb_admin_password,
+                    knowledge_id=config.maxkb_knowledge_id,
+                )
+                _logger.info("MaxKB RAG provider created: kb=%s", config.maxkb_knowledge_id[:8])
+        except Exception as e:
+            _logger.warning("MaxKB RAG provider init failed: %s", e)
+
     _logger.info(
-        "Emily Core initialized, mode=%s, bot_name=%s, llm=%s",
+        "Emily Core initialized, mode=%s, bot_name=%s, llm=%s, kb=%s",
         config.takeover_mode,
         config.bot_name,
         "configured" if config.llm_api_key else "disabled (Mock brain)",
+        "enabled" if rag_provider else "disabled",
     )
     return EmilyCore(config, rag_provider=rag_provider)

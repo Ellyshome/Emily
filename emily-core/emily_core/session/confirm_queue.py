@@ -63,11 +63,21 @@ class ConfirmQueue:
         return self._heap[0] if self._heap else None
 
     def remove(self, workitem_id: str) -> bool:
-        """移除指定 WorkItem 的待确认项（用户已响应）。"""
+        """移除指定 WorkItem 的待确认项（用户已响应）。
+
+        特殊值 "__all__" 清空整个队列。
+        """
+        if workitem_id == "__all__":
+            self._heap.clear()
+            return True
         before = len(self._heap)
         self._heap = [e for e in self._heap if e.workitem_id != workitem_id]
         heapq.heapify(self._heap)
         return len(self._heap) < before
+
+    def clear(self) -> None:
+        """清空所有待确认项。"""
+        self._heap.clear()
 
     @property
     def is_empty(self) -> bool:

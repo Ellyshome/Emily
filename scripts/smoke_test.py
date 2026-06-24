@@ -61,12 +61,18 @@ async def run(with_db: bool) -> int:
     assert r1 is not None and "[Mock" in r1.content, f"task reply failed: {r1}"
     print(f"[2] 任务→WorkItem→4节点BUS OK: {r1.content[:60]}")
 
+    # ── 用例 2b：Phase C executor_mode=mock 验证 ──
+    agent = core._session_pool.lookup("smoke-conv")
+    done = agent.scheduler._done
+    assert done and done[-1].state.value == "DONE", f"WorkItem not DONE: {done}"
+    print(f"[2b] Phase C mock executor OK: executor_mode={core.config.executor_mode}")
+
     # ── 校验：SessionPool 复用同一 Session ──
     assert core._session_pool.size == 1, f"expected 1 session, got {core._session_pool.size}"
     agent = core._session_pool.lookup("smoke-conv")
     done = agent.scheduler._done
-    assert done and done[0].state.value == "DONE", f"WorkItem not DONE: {done}"
-    print(f"[3] SessionPool 复用 OK: size={core._session_pool.size}, WI={done[0].id} state={done[0].state.value}")
+    assert done and done[-1].state.value == "DONE", f"WorkItem not DONE: {done}"
+    print(f"[3] SessionPool 复用 OK: size={core._session_pool.size}, WI={done[-1].id} state={done[-1].state.value}")
 
     # ── 用例 3：终止 Session ──
     ok = await core.terminate_session("smoke-conv")
@@ -75,6 +81,7 @@ async def run(with_db: bool) -> int:
 
     print("\n✅ 全部冒烟用例通过（Session 主线编排端到端跑通）")
     print(f"   health: {core.health()}")
+    print(f"   Phase C: executor_mode={core.config.executor_mode} guardian_mode={core.config.guardian_mode}")
     return 0
 
 

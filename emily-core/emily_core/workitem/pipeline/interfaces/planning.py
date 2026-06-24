@@ -16,12 +16,14 @@ class PlanStep:
         step_id: 步骤唯一标识（如 "step-01"）
         description: 步骤描述（给人看）
         tool_name: 预计使用的工具名（可为 None）
+        tool_params: handler 调用的参数（Phase C）
         expected_output: 预期产出（给守护 Agent 对照）
         depends_on: 依赖的前置步骤 ID 列表
     """
     step_id: str
     description: str
     tool_name: str | None = None
+    tool_params: dict = field(default_factory=dict)
     expected_output: str = ""
     depends_on: list[str] = field(default_factory=list)
 

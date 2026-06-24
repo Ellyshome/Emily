@@ -31,7 +31,7 @@
       { "type": "audit", "name": "audit.execution_error", "event_type": "execution_failed", "enabled": true }
     ],
     "before:wi_node4": [
-      { "type": "deep_audit", "name": "guardian.deep_audit", "enabled": false },
+      { "type": "deep_audit", "name": "guardian.deep_audit", "enabled": true },
       { "type": "verify", "name": "guardian.reply_review", "verify_type": "reply", "enabled": true }
     ],
     "after:wi_node4": [

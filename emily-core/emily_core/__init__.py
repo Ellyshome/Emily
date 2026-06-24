@@ -9,9 +9,11 @@ EmilyCore 是独立容器内的业务内核，不依赖任何 AstrBot 对象。�
   · 构建 SessionPoolManager（消息路由 + Session 生命周期）
   · 暴露 handle_message 作为统一入站入口
 
-与旧 TeamBrainCore 的区别：旧核心走 MessageApplication + 8 阶段 PipelineScheduler；
-新核心走 SessionPool → SessionAgent → WorkItem → 4 节点 Pipeline BUS。
-旧 agent/ 真实大脑随包迁移，作为 Phase B/C 接线储备，本期主路径用 Mock。
+Phase C 升级（蓝图 §12.2）：
+  · MockWorkAgent → 真实执行引擎（M14 BusinessFlowToolRegistry 直调）
+  · MockGuardian → GuardianReview + GuardianAgent（轻量/深度审计）
+  · MockAuthEngine → 角色鉴权（SOP allow_roles）
+  · MockRiskGrader → 基于规则的风险评估
 """
 
 import logging
@@ -30,29 +32,44 @@ logger = logging.getLogger("emily.core")
 
 
 class EmilyCore:
-    """Emily 业务内核 —— Session 主线编排。"""
+    """Emily 业务内核 —— Session 主线编排。
+
+    Phase C 升级：
+      · _business_flow_tools → 执行引擎（M14 工具直调）
+      · _guardian_review → 守护审核（轻量 + 深度）
+      · _guardian_agent_factory → DeepAuditHook
+    """
 
     def __init__(self, config: Config, rag_provider=None):
         self.config = config
         self.takeover_service = DomainTakeoverService(config)
         self.user_binding_service = UserBindingService()
 
-        # 出站事件总线（api/sse 订阅，向薄插件推送异步出站消息）
+        # 出站事件总线
         self.outbound_bus = OutboundEventBus()
 
-        # RAG 提供者（main/api 层提前创建后注入）
+        # RAG 提供者
         self._rag_provider = rag_provider
 
         # 延迟初始化的子系统
         self._llm_client = None
         self._initialized = False
 
-        # 公共 Pipeline BUS（全局单例）+ WorkItem-Agent（全局单例）
+        # 公共 Pipeline BUS + WorkItem-Agent
         self._bus = None
         self._workitem_agent = None
 
         # Session 池
         self._session_pool = None
+
+        # Phase B/C: 共享基础设施
+        self._sop_intent_registry = None
+        self._tool_registry = None
+
+        # Phase C: 执行和守护依赖
+        self._business_flow_tools = None
+        self._guardian_review = None
+        self._guardian_agent_factory = None
 
     # ────────────────────────────────────────────────────────────────────
     # 延迟初始化
@@ -63,7 +80,7 @@ class EmilyCore:
         if self._initialized:
             return
 
-        # ── 基础设施：LLM（无 key 则跳过，Mock 路径不需要）──
+        # ── 基础设施：LLM ──
         if self.config.llm_api_key:
             try:
                 from .infrastructure.llm.client import LLMClient
@@ -81,7 +98,13 @@ class EmilyCore:
         else:
             logger.info("No LLM API key — running with Mock WorkItem-Agent brain")
 
-        # ── 公共 Pipeline BUS（4 节点 + 全局单例 WorkItem-Agent）──
+        # ── Phase B: SOP 意图注册表 + 工具注册表 ──
+        self._init_phase_b_deps()
+
+        # ── Phase C: 执行 + 守护依赖 ──
+        self._init_phase_c_deps()
+
+        # ── 公共 Pipeline BUS ──
         self._build_pipeline_bus()
 
         # ── Session 池 ──
@@ -93,18 +116,124 @@ class EmilyCore:
             self._bus.hook_count() if self._bus else 0,
         )
 
+    def _init_phase_b_deps(self) -> None:
+        """Phase B: 初始化 SOP 意图注册表 + 工具注册表。"""
+        # 1. SOP 意图注册表
+        try:
+            from .agent.intent_registry import SOPIntentRegistry
+            # 多级 fallback: 容器内默认 > 环境变量 > 宿主机开发路径
+            sop_dir = "/app/sops"                             # 容器内默认（最高优先级）
+            if not Path(sop_dir).exists():
+                sop_dir = self.config.sop_repository_dir or ""  # 环境变量
+            if not sop_dir or not Path(sop_dir).exists():
+                # 开发环境 fallback
+                dev_dir = str(Path(__file__).resolve().parents[2] / "emily-data" / "sops")
+                if Path(dev_dir).exists():
+                    sop_dir = dev_dir
+            self._sop_intent_registry = SOPIntentRegistry(sop_directory=sop_dir)
+            status = self._sop_intent_registry.load()
+            logger.info("Phase B: SOPIntentRegistry loaded from %s — %s", sop_dir, status)
+        except Exception as e:
+            logger.warning("Phase B: SOPIntentRegistry init failed: %s", e)
+            self._sop_intent_registry = None
+
+        # 2. 工具注册表（Phase B: 仅当 service 初始化成功后才注册 LLM 工具）
+        if self._llm_client:
+            try:
+                from .agent.tool_registry import ToolRegistry
+                from .tools import create_all_tools
+                self._tool_registry = ToolRegistry()
+                # Phase C: Skip create_all_tools in mock mode (needs DB services).
+                # LLM tools are only needed for ReAct fallback; M14 execution uses BusinessFlowToolRegistry.
+                logger.info("Phase B: ToolRegistry created (LLM tools deferred to DB init)")
+            except Exception as e:
+                logger.warning("Phase B: ToolRegistry init failed: %s", e)
+                self._tool_registry = None
+
+    def _init_phase_c_deps(self) -> None:
+        """Phase C: 初始化执行引擎 + 守护审核依赖。"""
+        # 1. BusinessFlowToolRegistry（执行引擎）
+        try:
+            from .tools.business_flow_tools import BusinessFlowToolRegistry, BusinessFlowTool
+            from .tools.event_tool import handle_record_event
+            from .tools.task_tool import handle_record_task
+            from .tools.meeting_tool import handle_record_meeting
+            from .tools.file_tool import handle_record_file
+            from .tools.query_tool import handle_query_data
+
+            self._business_flow_tools = BusinessFlowToolRegistry()
+            self._business_flow_tools.register(BusinessFlowTool(
+                name="record_event", description="记录项目事件",
+                parameters={"type": "object", "properties": {}}, handler=handle_record_event,
+            ))
+            self._business_flow_tools.register(BusinessFlowTool(
+                name="record_task", description="创建任务",
+                parameters={"type": "object", "properties": {}}, handler=handle_record_task,
+            ))
+            self._business_flow_tools.register(BusinessFlowTool(
+                name="record_meeting", description="归档会议纪要",
+                parameters={"type": "object", "properties": {}}, handler=handle_record_meeting,
+            ))
+            self._business_flow_tools.register(BusinessFlowTool(
+                name="record_file", description="记录文件元数据",
+                parameters={"type": "object", "properties": {}}, handler=handle_record_file,
+            ))
+            self._business_flow_tools.register(BusinessFlowTool(
+                name="query_data", description="查询项目数据",
+                parameters={"type": "object", "properties": {}}, handler=handle_query_data,
+            ))
+            logger.info("Phase C: BusinessFlowToolRegistry initialized with 5 tools")
+        except Exception as e:
+            logger.warning("Phase C: BusinessFlowToolRegistry init failed: %s", e)
+            self._business_flow_tools = None
+
+        # 2. GuardianReview（轻量验证器）
+        if self._llm_client:
+            try:
+                from .agent.guardian_review import GuardianReview
+                self._guardian_review = GuardianReview(self._llm_client, self.config)
+                logger.info("Phase C: GuardianReview initialized")
+
+                # 3. GuardianAgent factory（深度审计，按需创建）
+                def _guardian_agent_factory():
+                    from .agent.guardian_agent import GuardianAgent
+                    return GuardianAgent(
+                        llm_client=self._llm_client,
+                        query_service=None,  # Phase C: query_service 后续 DB 初始化时注入
+                        config=self.config,
+                        notebook_dir=getattr(self.config, "notebook_dir", "") or "",
+                    )
+                self._guardian_agent_factory = _guardian_agent_factory
+                logger.info("Phase C: GuardianAgent factory ready")
+            except Exception as e:
+                logger.warning("Phase C: GuardianReview init failed: %s", e)
+                self._guardian_review = None
+
     def _build_pipeline_bus(self) -> None:
-        """构建系统级公共 Pipeline BUS（蓝图 §5.4）。"""
+        """构建系统级公共 Pipeline BUS（蓝图 §5.4 + Phase C 升级）。"""
         from .workitem import WorkItemAgent, PipelineBUS, KnowledgeInjector
 
-        injector = KnowledgeInjector()
-        self._workitem_agent = WorkItemAgent(injector=injector)
+        injector = KnowledgeInjector(
+            sop_intent_registry=self._sop_intent_registry,
+            sop_loader=None,
+            tool_registry=self._tool_registry,
+        )
+        self._workitem_agent = WorkItemAgent(
+            injector=injector,
+            llm_client=self._llm_client,
+            config=self.config,
+            # Phase C: 执行 + 守护依赖
+            business_flow_tools=self._business_flow_tools,
+            guardian_review=self._guardian_review,
+            sop_intent_registry=self._sop_intent_registry,
+            rag_provider=self._rag_provider,
+        )
         self._bus = PipelineBUS.build_default(
             node_handlers=self._workitem_agent.node_handlers(),
             name="emily_bus",
         )
 
-        # 声明式 Hook 配置（蓝图 §7.5 hook_config.json）
+        # Hook 配置
         hook_config = self._load_hook_config()
         if hook_config:
             injected = self._collect_injected_services()
@@ -131,9 +260,7 @@ class EmilyCore:
         candidates = []
         if path:
             candidates.append(Path(path))
-        # 默认：emily-data/config/hook_config.json（容器内挂载到 /app/config）
         candidates.append(Path("/app/config/hook_config.json"))
-        # 开发环境：Emily/emily-data/config/（__file__ = Emily/emily-core/emily_core/__init__.py）
         candidates.append(
             Path(__file__).resolve().parents[2] / "emily-data" / "config" / "hook_config.json"
         )
@@ -149,19 +276,27 @@ class EmilyCore:
         return None
 
     def _collect_injected_services(self) -> dict:
-        """收集可注入到 Hook 的服务（本期最小：progress/trace 占位）。
-
-        真实的 guardian_review / agent_trace_service / guardian_agent_factory
-        接线属 Phase B/C（相关服务已随包迁移）。
-        """
+        """Phase C: 收集可注入到 Hook 的全量服务。"""
         injected: dict = {}
-        # 前导消息发送器：把 progress 事件发到出站总线
+
+        # 前导消息发送器
         def _progress_sender(text: str):
             self.outbound_bus.publish("progress", {"content": text})
         injected["progress_sender"] = _progress_sender
         injected["progress_template"] = getattr(
             self.config, "progress_message_template", "收到，正在为你{action}，请稍候..."
         )
+
+        # Phase B: 鉴权依赖
+        if self._sop_intent_registry is not None:
+            injected["sop_intent_registry"] = self._sop_intent_registry
+
+        # Phase C: Guardian 服务
+        if self._guardian_review is not None:
+            injected["guardian_review"] = self._guardian_review
+        if self._guardian_agent_factory is not None:
+            injected["guardian_agent_factory"] = self._guardian_agent_factory
+
         return injected
 
     # ────────────────────────────────────────────────────────────────────
@@ -175,19 +310,7 @@ class EmilyCore:
         on_progress=None,
         on_send_file=None,
     ) -> ReplyMessage | None:
-        """处理一条标准化入站消息（Session 主线）。
-
-        流程：接管判定 → 用户绑定 → SessionPool 路由 → SessionAgent 处理 → 回复。
-
-        Args:
-            message: 标准化入站消息。
-            event_id: 消息指纹（薄插件去重用，预留）。
-            on_progress / on_send_file: 兼容旧回调签名（容器化后由 SSE 出站总线替代，
-                如提供则桥接到 outbound_bus）。
-
-        Returns:
-            ReplyMessage: 需要同步回复时返回；None 表示不接管。
-        """
+        """处理一条标准化入站消息（Session 主线）。"""
         decision: RouteDecision = self.takeover_service.decide(message)
         if not decision.takeover:
             return None
@@ -199,7 +322,7 @@ class EmilyCore:
 
         self._ensure_initialized()
 
-        # 用户自动绑定（Adapter 层职责）
+        # 用户自动绑定
         user_id = ""
         try:
             user, _is_new = self.user_binding_service.get_or_create_user(
@@ -211,10 +334,10 @@ class EmilyCore:
         except Exception as e:
             logger.warning("user binding failed (continuing): %s", e)
 
-        # SessionPool 路由（命中复用 / 未命中创建）
+        # SessionPool 路由
         reply = await self._session_pool.route(message, user_id=user_id)
 
-        # 出站：同步回复直接返回；同时镜像到出站总线（供 SSE 订阅者）
+        # 出站
         if reply is not None:
             self.outbound_bus.publish("reply", {
                 "conversation_id": reply.conversation_id,
@@ -224,19 +347,15 @@ class EmilyCore:
         return reply
 
     async def terminate_session(self, conversation_id: str) -> bool:
-        """强制终止指定 Session（蓝图 §2.6）。"""
+        """强制终止指定 Session。"""
         self._ensure_initialized()
         ok = await self._session_pool.terminate(conversation_id)
         if ok:
             self.outbound_bus.publish("session_closed", {"conversation_id": conversation_id})
         return ok
 
-    # ────────────────────────────────────────────────────────────────────
-    # 健康/状态
-    # ────────────────────────────────────────────────────────────────────
-
     def health(self) -> dict:
-        """健康状态（蓝图 §2.6 /health）。"""
+        """健康状态。"""
         pool = self._session_pool
         return {
             "status": "ok",
