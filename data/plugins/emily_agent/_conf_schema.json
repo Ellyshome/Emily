@@ -1,0 +1,20 @@
+{
+  "emycore_url": {
+    "description": "Emily Core 容器 API 地址",
+    "type": "string",
+    "hint": "独立业务核心容器的 HTTP 地址（Docker 内网用服务名）",
+    "default": "http://emily-core:18080"
+  },
+  "emycore_sse_url": {
+    "description": "Emily Core SSE 出站推送地址",
+    "type": "string",
+    "hint": "为空时自动取 {emycore_url}/api/v1/events/outbound",
+    "default": ""
+  },
+  "emycore_api_token": {
+    "description": "Emily Core API 鉴权令牌",
+    "type": "string",
+    "hint": "与 Core 容器 EMILY_API_TOKEN 一致；为空时不做鉴权（仅内网部署）",
+    "default": ""
+  }
+}

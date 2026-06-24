@@ -1,0 +1,28 @@
+{
+  "_comment": "Emily Core 运行时配置（非密钥项）。密钥/连接串通过容器环境变量注入（EMILY_LLM_API_KEY / EMILY_DATABASE_URL / EMILY_MAXKB_* 等）。",
+  "bot_name": "Emily",
+  "takeover_mode": "collaborate",
+  "log_level": "INFO",
+
+  "pipeline_mode": "session",
+
+  "session_ttl_seconds": 600,
+  "session_max_concurrent": 100,
+  "workitem_max_per_session": 5,
+
+  "llm_model": "deepseek-chat",
+  "llm_temperature": 0.1,
+  "agent_max_iterations": 10,
+  "agent_context_max_turns": 10,
+  "agent_context_ttl_seconds": 600,
+
+  "kb_enabled": false,
+  "maxkb_search_mode": "embedding",
+  "kb_top_k": 5,
+
+  "enable_progress_message": true,
+  "progress_message_template": "收到，正在为你{action}，请稍候...",
+
+  "checkpoint_enabled": true,
+  "checkpoint_ttl_seconds": 300
+}

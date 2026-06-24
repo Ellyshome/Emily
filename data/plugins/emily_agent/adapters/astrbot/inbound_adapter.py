@@ -1,0 +1,160 @@
+""""AstrBot Inbound Adapter —— 将 AstrBot 事件转换为 StandardMessage。"""
+
+import logging
+from typing import TYPE_CHECKING
+
+from ..standard.message import StandardMessage
+
+if TYPE_CHECKING:
+    from astrbot.core.platform.astr_message_event import AstrMessageEvent
+
+logger = logging.getLogger("emily.adapter.inbound")
+
+
+class AstrBotInboundAdapter:
+    """AstrBot 入站消息适配器。
+
+    负责将 AstrBot 的 AstrMessageEvent 转换为 Emily 的 StandardMessage。
+    """
+
+    @staticmethod
+    def to_standard_message(event: "AstrMessageEvent") -> StandardMessage:
+        """转换 AstrBot 消息事件为标准消息。
+
+        Args:
+            event: AstrBot 消息事件对象。
+
+        Returns:
+            StandardMessage: 平台无关的统一消息对象。
+        """
+        # 消息类型：与 MessageType 枚举直接比较，避免大小写问题
+        from astrbot.core.platform.message_type import MessageType
+
+        msg_type = event.get_message_type()
+        if msg_type == MessageType.GROUP_MESSAGE:
+            conversation_type = "group"
+        elif msg_type == MessageType.PRIVATE_MESSAGE:
+            conversation_type = "private"
+        else:
+            conversation_type = "unknown"
+            logger.warning("Unknown message type: %s, treating as unknown", msg_type)
+
+        # 发送者
+        sender_id = event.get_sender_id()
+        sender_name = event.get_sender_name()
+
+        # 群信息
+        group_id = None
+        if conversation_type == "group":
+            gid = event.get_group_id()
+            if gid:
+                group_id = gid
+
+        # 消息文本
+        content = event.message_str or ""
+
+        # ── M11: 多模态内容提取 ──
+        msg_type = 1       # 1=文本(默认)
+        attachments: list[dict] = []
+        receiver_id = ""
+
+        self_id = event.get_self_id()
+        # 群聊时设 receiver_id
+        if conversation_type == "group":
+            receiver_id = self_id or ""
+
+        messages = event.get_messages()
+        for comp in messages:
+            # At 组件
+            if hasattr(comp, "qq"):
+                uid = str(comp.qq)
+                mentioned_ids.append(uid)
+                if uid == self_id:
+                    is_at_bot = True
+            # AtAll 组件
+            if hasattr(comp, "type") and getattr(comp, "type", None) == "at_all":
+                mentioned_ids.append("all")
+
+            # ── M11: 多媒体组件类型检测 ──
+            comp_type = getattr(comp, "type", None)
+            comp_data = getattr(comp, "data", None) or {}
+
+            if comp_type == "image" or (comp_data and comp_data.get("url")):
+                if msg_type == 1:  # 首次非文本→设为图片
+                    msg_type = 2
+                url = comp_data.get("url") or getattr(comp, "url", "")
+                attachments.append({
+                    "type": 2,  # image
+                    "url": url,
+                    "file_name": comp_data.get("file", "") or comp_data.get("summary", ""),
+                    "file_size": comp_data.get("file_size", 0),
+                    "summary": comp_data.get("summary", ""),
+                })
+            elif comp_type == "record" or (comp_data and "time" in comp_data):
+                if msg_type == 1:
+                    msg_type = 4  # voice
+                url = comp_data.get("url") or getattr(comp, "url", "")
+                attachments.append({
+                    "type": 4,
+                    "url": url,
+                    "file_name": comp_data.get("file", ""),
+                    "file_size": comp_data.get("file_size", 0),
+                })
+            elif comp_type == "video" or (comp_data and comp_data.get("thumb")):
+                msg_type = 5
+                url = comp_data.get("url") or getattr(comp, "url", "")
+                attachments.append({
+                    "type": 5,
+                    "url": url,
+                    "file_name": comp_data.get("file", ""),
+                    "file_size": comp_data.get("file_size", 0),
+                    "thumb": comp_data.get("thumb", ""),
+                })
+            elif comp_type == "file" or (comp_data and comp_data.get("name")):
+                if msg_type == 1:
+                    msg_type = 3
+                url = comp_data.get("url") or getattr(comp, "url", "")
+                attachments.append({
+                    "type": 3,
+                    "url": url,
+                    "file_name": comp_data.get("name", ""),
+                    "file_size": comp_data.get("size", 0),
+                })
+
+        # 消息 ID
+        message_id = ""
+        msg_obj = event.message_obj
+        if msg_obj:
+            msg_id_attr = getattr(msg_obj, "message_id", None)
+            if msg_id_attr:
+                message_id = str(msg_id_attr)
+
+        # 引用回复
+        reply_to = None
+        if msg_obj:
+            raw = getattr(msg_obj, "raw_message", None)
+            if isinstance(raw, dict):
+                reply_to = str(raw.get("reply_message_id", "")) or None
+
+        standard = StandardMessage(
+            message_id=message_id,
+            platform=event.get_platform_name() or "napcat",
+            conversation_type=conversation_type,
+            conversation_id=group_id or sender_id,
+            sender_id=sender_id,
+            sender_name=sender_name,
+            group_id=group_id,
+            content=content,
+            is_at_bot=is_at_bot,
+            mentioned_user_ids=mentioned_ids,
+            reply_to_message_id=reply_to,
+            msg_type=msg_type,
+            attachments=attachments,
+        )
+
+        logger.debug(
+            "inbound: type=%s, sender=%s, at_bot=%s, content_preview=%.50s",
+            conversation_type, sender_name, is_at_bot, content,
+        )
+
+        return standard

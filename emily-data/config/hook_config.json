@@ -1,0 +1,44 @@
+{
+  "_comment": "Emily Hook 声明式配置（蓝图 §7.5）。挂载点格式 {phase}:{node}，phase ∈ before/after/on_error。业务人员可编辑，重启生效。三态决策 ALLOW/WARN/BLOCK，deny always wins。",
+  "hooks": {
+    "before:wi_node1": [
+      { "type": "auth", "name": "auth.sop_access", "resource_type": "sop", "action": "execute", "enabled": true }
+    ],
+    "after:wi_node1": [
+      { "type": "audit", "name": "audit.intent_result", "event_type": "intent_completed", "enabled": true },
+      { "type": "progress", "name": "progress.processing", "enabled": true }
+    ],
+    "on_error:wi_node1": [
+      { "type": "audit", "name": "audit.intent_failed", "event_type": "intent_failed", "enabled": true }
+    ],
+    "before:wi_node2": [
+      { "type": "auth", "name": "auth.resource_check", "resource_type": "table", "action": "read", "enabled": true }
+    ],
+    "after:wi_node2": [
+      { "type": "audit", "name": "audit.plan_created", "event_type": "plan_completed", "enabled": true }
+    ],
+    "on_error:wi_node2": [
+      { "type": "audit", "name": "audit.plan_failed", "event_type": "plan_failed", "enabled": true }
+    ],
+    "before:wi_node3": [
+      { "type": "trace", "name": "trace.execution_start", "trace_level": "summary", "enabled": true }
+    ],
+    "after:wi_node3": [
+      { "type": "audit", "name": "audit.sop_completed", "event_type": "execution_completed", "enabled": true },
+      { "type": "trace", "name": "trace.execution_end", "trace_level": "summary", "enabled": true }
+    ],
+    "on_error:wi_node3": [
+      { "type": "audit", "name": "audit.execution_error", "event_type": "execution_failed", "enabled": true }
+    ],
+    "before:wi_node4": [
+      { "type": "deep_audit", "name": "guardian.deep_audit", "enabled": false },
+      { "type": "verify", "name": "guardian.reply_review", "verify_type": "reply", "enabled": true }
+    ],
+    "after:wi_node4": [
+      { "type": "audit", "name": "audit.result_final", "event_type": "result_completed", "enabled": true }
+    ],
+    "on_error:wi_node4": [
+      { "type": "audit", "name": "audit.summary_failed", "event_type": "summary_failed", "enabled": true }
+    ]
+  }
+}
