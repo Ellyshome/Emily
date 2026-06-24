@@ -433,7 +433,8 @@ class WorkItemAgent:
             for sr in wi.step_results:
                 for rag_result in getattr(sr, "rag_results", []):
                     for chunk in getattr(rag_result, "chunks", []):
-                        rag_texts.append(f"• {chunk.content}")
+                        doc_name = getattr(chunk, "doc_name", "") or "未知来源"
+                        rag_texts.append(f"根据《{doc_name}》：{chunk.content}")
             if rag_texts:
                 draft = mock_prefix + "根据知识库检索，找到以下相关信息：\n\n" + "\n".join(rag_texts[:5])
             else:
