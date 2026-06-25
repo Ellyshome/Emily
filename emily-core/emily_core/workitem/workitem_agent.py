@@ -286,7 +286,15 @@ class WorkItemAgent:
                 if tool_name and tool_name in self._business_flow_tools:
                     # M14: 框架直接调用 handler
                     tool = self._business_flow_tools.get(tool_name)
-                    handler_result = await tool.handler(tool_params)
+                    # 注入 user_id 和 message_id 到 handler 调用上下文
+                    import inspect
+                    sig = inspect.signature(tool.handler)
+                    handler_kwargs = {"params": tool_params}
+                    if "user_id" in sig.parameters:
+                        handler_kwargs["user_id"] = context.user_id if hasattr(context, 'user_id') else ""
+                    if "message_id" in sig.parameters:
+                        handler_kwargs["message_id"] = context.db_message_id if hasattr(context, 'db_message_id') else ""
+                    handler_result = await tool.handler(**handler_kwargs)
                     handler_dict = handler_result if isinstance(handler_result, dict) else {}
                     ...
                 elif tool_name == "knowledge_search" and self._rag_provider:

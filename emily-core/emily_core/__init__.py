@@ -113,6 +113,10 @@ class EmilyCore:
         # ── 计划任务系统 ──
         self._init_plan_task_module()
 
+        # 将 plan_task 工具注册到 BusinessFlowToolRegistry
+        if self._plan_task_app is not None and self._business_flow_tools is not None:
+            self._register_plan_task_tools()
+
         # ── 公共 Pipeline BUS ──
         self._build_pipeline_bus()
 
@@ -264,6 +268,58 @@ class EmilyCore:
     # ────────────────────────────────────────────────────────────────────
     # 计划任务系统（Scheduled Task Module）
     # ────────────────────────────────────────────────────────────────────
+
+    def _register_plan_task_tools(self) -> None:
+        """将 plan_task 工具注册到 BusinessFlowToolRegistry。"""
+        try:
+            from .tools.plan_task_tool import (
+                handle_record_plan_task,
+                handle_submit_plan_task,
+                handle_review_plan_task,
+                handle_query_plan_tasks,
+                _RECORD_PLAN_TASK_SCHEMA,
+                _SUBMIT_PLAN_TASK_SCHEMA,
+                _REVIEW_PLAN_TASK_SCHEMA,
+                _QUERY_PLAN_TASKS_SCHEMA,
+            )
+            from .tools.business_flow_tools import BusinessFlowTool
+
+            app = self._plan_task_app
+            cfg = self.config
+
+            def _make_handler(fn, **extra):
+                async def _handler(params, user_id="", message_id="", **kw):
+                    return await fn(params, **extra, user_id=user_id, message_id=message_id)
+                return _handler
+
+            self._business_flow_tools.register(BusinessFlowTool(
+                name="record_plan_task",
+                description="创建计划任务（一次性或循环）。用于下达工作任务、布置周期性任务（日报/周报/月报等）。",
+                parameters=_RECORD_PLAN_TASK_SCHEMA,
+                handler=_make_handler(handle_record_plan_task,
+                    plan_task_app=app, guardian_review=None, pending_issues=None, config=cfg),
+            ))
+            self._business_flow_tools.register(BusinessFlowTool(
+                name="submit_plan_task",
+                description="提交计划任务成果。执行者在完成任务后提交成果。",
+                parameters=_SUBMIT_PLAN_TASK_SCHEMA,
+                handler=_make_handler(handle_submit_plan_task, plan_task_app=app),
+            ))
+            self._business_flow_tools.register(BusinessFlowTool(
+                name="review_plan_task",
+                description="审核计划任务成果（确认完成或退回修改）。",
+                parameters=_REVIEW_PLAN_TASK_SCHEMA,
+                handler=_make_handler(handle_review_plan_task, plan_task_app=app),
+            ))
+            self._business_flow_tools.register(BusinessFlowTool(
+                name="query_plan_tasks",
+                description="查询计划任务列表（按执行人或发起人、按状态过滤）。",
+                parameters=_QUERY_PLAN_TASKS_SCHEMA,
+                handler=_make_handler(handle_query_plan_tasks, plan_task_app=app),
+            ))
+            logger.info("PlanTask tools registered to BusinessFlowToolRegistry: 4 tools")
+        except Exception as e:
+            logger.warning("PlanTask tool registration failed: %s", e)
 
     def _init_plan_task_module(self) -> None:
         """初始化计划任务系统：Service + Scheduler + Application + WorkflowIntegrator。"""

@@ -338,11 +338,7 @@ class _SOPBlockWalker:
                 for name in tool_names:
                     # 与旧正则一致的过滤规则
                     if (
-                        name.startswith("record_")
-                        or name.startswith("query_")
-                        or name.startswith("invoke_")
-                        or name.startswith("manage_")
-                        or name.startswith("write_")
+                        name.startswith(("record_", "submit_", "review_", "query_", "invoke_", "manage_", "write_"))
                     ):
                         if name not in self.allowed_tools:
                             self.allowed_tools.append(name)

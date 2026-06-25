@@ -46,7 +46,7 @@ def _extract_allowed_tools_from_sop(sop_text: str) -> list[str]:
         # 从 Markdown 表格中提取工具名（反引号包裹的）
         tool_names = re.findall(r"`(\w+)`", section_text)
         for name in tool_names:
-            if name.startswith("record_") or name.startswith("query_") or name.startswith("invoke_") or name.startswith("manage_") or name.startswith("write_"):
+            if name.startswith(("record_", "submit_", "review_", "query_", "invoke_", "manage_", "write_")):
                 if name not in tools:
                     tools.append(name)
 

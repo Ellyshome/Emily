@@ -257,8 +257,8 @@ class PlanTaskInstanceRepo:
         幂等检查：若 template_id + period_key 已有活跃实例则返回已有实例。
         传入 session 时复用该 session（由调用方管理提交）；否则自建 session。
         """
-        template_id = kwargs.get("template_id", "")
-        period_key = kwargs.get("period_key", "")
+        template_id = kwargs.get("template_id", "") or None
+        period_key = kwargs.get("period_key", "") or None
 
         def _impl(sess):
             # 幂等检查
@@ -279,6 +279,11 @@ class PlanTaskInstanceRepo:
                         template_id, period_key, existing.instance_no,
                     )
                     return existing
+
+            # 将空字符串外键转换为 None，避免 FK 约束错误
+            for fk_field in ("template_id", "period_key"):
+                if kwargs.get(fk_field) == "":
+                    kwargs[fk_field] = None
 
             instance = PlanTaskInstance(**kwargs)
             sess.add(instance)

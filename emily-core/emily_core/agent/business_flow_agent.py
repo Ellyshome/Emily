@@ -157,6 +157,8 @@ class BusinessFlowAgent:
         tool_registry: ToolRegistry,
         max_iterations: int = DEFAULT_MAX_ITERATIONS,
         business_flow_tools=None,     # M14: BusinessFlowToolRegistry
+        user_id: str = "",            # 当前用户 ID
+        message_id: str = "",         # 当前消息 ID
     ):
         self.llm = llm_client
         self.sop_full_text = sop_full_text
@@ -164,6 +166,8 @@ class BusinessFlowAgent:
         self.tool_registry = tool_registry
         self._max_iterations = max_iterations
         self._business_flow_tools = business_flow_tools  # M14
+        self.user_id = user_id
+        self.message_id = message_id
 
     async def execute(self, task: FlowTask) -> FlowResult:
         """按 SOP 执行一个子任务。
@@ -406,7 +410,15 @@ class BusinessFlowAgent:
             )
 
         try:
-            result = await tool.handler(params)
+            # 注入 user_id 和 message_id 到 handler 调用上下文
+            import inspect
+            sig = inspect.signature(tool.handler)
+            handler_kwargs = {"params": params}
+            if "user_id" in sig.parameters:
+                handler_kwargs["user_id"] = self.user_id
+            if "message_id" in sig.parameters:
+                handler_kwargs["message_id"] = self.message_id
+            result = await tool.handler(**handler_kwargs)
         except Exception as e:
             logger.error("Business flow tool '%s' failed: %s", tool_name, e)
             return FlowResult(

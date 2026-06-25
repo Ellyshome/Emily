@@ -831,6 +831,8 @@ class MasterAgent:
             allowed_tool_names=allowed_tool_names,
             tool_registry=self.tool_registry,
             business_flow_tools=self.business_flow_tools,  # M14
+            user_id=self.user_id,
+            message_id=self.message_id,
         )
 
         # 执行

@@ -898,7 +898,7 @@ class PlanTaskInstance(Base):
 
     # ── 异常标记 ──
     is_unscheduled = Column(Boolean, default=False)       # 是否计划外事件
-    anomaly_reason = Column(String, default="")           # 异常原因
+    anomaly_reason = Column(String(500), default="")           # 异常原因
 
     # ── LLM 推算失败标记 ──
     llm_calculation_failed = Column(Boolean, default=False)  # LLM 推算截止时间是否失败

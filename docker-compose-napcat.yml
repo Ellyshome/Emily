@@ -45,7 +45,7 @@ services:
       - EMILY_API_TOKEN=${EMILY_API_TOKEN:-}
     volumes:
       # ── 人类编辑（只读）──
-      - ./emily-data/sops:/app/sops:ro
+      - ./emily-data/sops:/app/sops
       - ./emily-data/prompts:/app/prompts:ro
       - ./emily-data/config:/app/config:ro
       - ./emily-data/baseknowledge:/app/baseknowledge:ro

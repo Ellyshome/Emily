@@ -1,12 +1,12 @@
 {
   "_meta": {
     "version": "1",
-    "built_at": "2026-06-24T07:07:12.266030+00:00",
+    "built_at": "2026-06-25T08:29:52.635119+00:00",
     "source_dir": "sops",
-    "source_files_count": 9,
-    "source_files_mtime_latest": "2026-06-23T08:19:15.101051+00:00",
+    "source_files_count": 11,
+    "source_files_mtime_latest": "2026-06-25T04:49:02.420853+00:00",
     "parse_result": {
-      "ok": 9,
+      "ok": 11,
       "partial": 0,
       "failed": 0
     }
@@ -23,7 +23,9 @@
         "SOP-001-REC",
         "SOP-002-REC",
         "SOP-003-REC",
-        "SOP-007-REC"
+        "SOP-007-REC",
+        "SOP-009-REC",
+        "SOP-010-REC"
       ]
     },
     "FILE": {
@@ -363,6 +365,93 @@
         "帮我录一条事件",
         "普通询问",
         "事件记录"
+      ],
+      "parse_status": "ok"
+    },
+    "SOP-009-REC": {
+      "sop_id": "SOP-009-REC",
+      "display_name": "SOP-009-REC — 计划任务录入",
+      "sop_type": "REC",
+      "version": "v1.0",
+      "file_name": "SOP-009-REC-plan_task.md",
+      "allow_roles": [
+        "all"
+      ],
+      "trigger_keywords": [
+        "下达任务",
+        "布置工作",
+        "创建任务",
+        "周期性任务",
+        "定期上报",
+        "指派任务",
+        "分派工作",
+        "提交任务成果",
+        "提交报告",
+        "完成任务",
+        "上传成果",
+        "查看我的任务",
+        "待办任务",
+        "查询任务状态"
+      ],
+      "deny_conditions": [
+        "查询已录入事件（应触发 SOP-005-QRY）",
+        "录入会议纪要（应触发 SOP-001-REC）",
+        "临时事件上报（应触发 SOP-002-REC）"
+      ],
+      "positive_examples": [
+        "请给张三布置一个任务：本周五前完成S4地块铺装材料进场验收",
+        "创建周报任务，每周五17:00前提交，由李四负责",
+        "我提交S4地块铺装任务的成果，已完成验收",
+        "查看我待提交的任务",
+        "设定一个循环任务：每月20日前提交工程月报"
+      ],
+      "negative_examples": [
+        "查一下上周的事件记录",
+        "记录一下今天的会议纪要",
+        "SOP-005-QRY",
+        "SOP-001-REC"
+      ],
+      "parse_status": "ok"
+    },
+    "SOP-010-REC": {
+      "sop_id": "SOP-010-REC",
+      "display_name": "SOP-010-REC — 计划任务审核",
+      "sop_type": "REC",
+      "version": "v1.0",
+      "file_name": "SOP-010-REC-plan_task_review.md",
+      "allow_roles": [
+        "supervisor",
+        "admin"
+      ],
+      "trigger_keywords": [
+        "审核任务",
+        "确认完成",
+        "确认通过",
+        "退回修改",
+        "驳回重做",
+        "不符合要求",
+        "验收成果",
+        "检查任务",
+        "审批任务",
+        "复核任务"
+      ],
+      "deny_conditions": [
+        "创建新任务（应触发 SOP-009-REC）",
+        "查询任务状态（应触发 SOP-009-REC 内的 query_plan_tasks）",
+        "异常任务复核（P2 阶段功能，当前通过手动执行）"
+      ],
+      "positive_examples": [
+        "确认张三的铺装材料验收任务已经完成",
+        "退回李四的周报任务，内容不够详细",
+        "审核通过 PTI-20260625-0001 这个任务",
+        "验收通过，这个任务没问题"
+      ],
+      "negative_examples": [
+        "给王五布置一个新任务",
+        "查看我提交的任务状态",
+        "记录今天验收发现的问题",
+        "SOP-009-REC",
+        "SOP-002-REC"
       ],
       "parse_status": "ok"
     },

@@ -208,11 +208,11 @@ class Config:
     """每 Session 最大 WorkItem 数。"""
 
     # ── Phase B: Pipeline 节点大脑模式开关 ──
-    planner_mode: str = "mock"
+    planner_mode: str = "real"
     """规划大脑模式: mock | real（需 EMILY_LLM_API_KEY）"""
 
     # ── Phase C: Pipeline 节点大脑模式开关 ──
-    executor_mode: str = "mock"
+    executor_mode: str = "real"
     """执行大脑模式: mock | real（需 EMILY_LLM_API_KEY + BusinessFlowToolRegistry）"""
 
     guardian_mode: str = "mock"
