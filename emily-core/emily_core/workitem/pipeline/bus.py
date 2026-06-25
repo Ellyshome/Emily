@@ -121,6 +121,9 @@ class PipelineBUS:
             elif hook_type == "deep_audit":
                 if "guardian_agent_factory" in injected_services:
                     kwargs["guardian_agent_factory"] = injected_services["guardian_agent_factory"]
+            elif hook_type == "plan_task_match":
+                if "plan_task_service" in injected_services:
+                    kwargs["plan_task_service"] = injected_services["plan_task_service"]
             kwargs["name"] = hook_name
             kwargs["priority"] = spec.get("priority", 10)
             kwargs["enabled"] = spec.get("enabled", True)

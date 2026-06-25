@@ -1,4 +1,4 @@
-# CLAUDE.md — EmyBot 项目 AI 辅助开发指令
+# CLAUDE.md 项目 AI 辅助开发指令
 
 > Claude Code 启动时自动加载本文档。进入会话后无需等待用户指示，直接按下方流程加载上下文。
 

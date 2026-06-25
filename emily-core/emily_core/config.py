@@ -243,6 +243,22 @@ class Config:
     checkpoint_max_per_user: int = 5
     """每用户最大活跃检查点数"""
 
+    # ---- 计划任务系统 (Scheduled Task Module) ----
+    scheduler_enabled: bool = True
+    """调度引擎总开关"""
+
+    scheduler_tick_seconds: int = 60
+    """调度循环间隔（秒），默认 60 秒"""
+
+    scheduler_reminder_before_minutes: int = 60
+    """临近超时提醒提前量（分钟），默认 60 分钟"""
+
+    scheduler_overdue_check_interval: int = 300
+    """超时检测间隔（秒），默认 300 秒"""
+
+    scheduler_escalate_after_overdue_days: int = 7
+    """超期 N 天后自动升级给上级（P2），默认 7 天"""
+
     extra: dict = field(default_factory=dict)
     """预留扩展字段"""
 

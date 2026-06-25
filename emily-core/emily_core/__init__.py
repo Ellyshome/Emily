@@ -71,6 +71,12 @@ class EmilyCore:
         self._guardian_review = None
         self._guardian_agent_factory = None
 
+        # 计划任务系统（Scheduled Task Module）
+        self._plan_task_service = None
+        self._plan_task_scheduler = None
+        self._plan_task_app = None
+        self._workflow_integrator = None
+
     # ────────────────────────────────────────────────────────────────────
     # 延迟初始化
     # ────────────────────────────────────────────────────────────────────
@@ -103,6 +109,9 @@ class EmilyCore:
 
         # ── Phase C: 执行 + 守护依赖 ──
         self._init_phase_c_deps()
+
+        # ── 计划任务系统 ──
+        self._init_plan_task_module()
 
         # ── 公共 Pipeline BUS ──
         self._build_pipeline_bus()
@@ -252,6 +261,68 @@ class EmilyCore:
             core=self,
         )
 
+    # ────────────────────────────────────────────────────────────────────
+    # 计划任务系统（Scheduled Task Module）
+    # ────────────────────────────────────────────────────────────────────
+
+    def _init_plan_task_module(self) -> None:
+        """初始化计划任务系统：Service + Scheduler + Application + WorkflowIntegrator。"""
+        try:
+            from .repositories.plan_task_repo import (
+                PlanTaskTemplateRepo,
+                PlanTaskInstanceRepo,
+                PlanTaskLogRepo,
+                PlanTaskDeliverableRepo,
+            )
+            from .repositories.user_repo import UserRepository
+            from .services.plan_task_service import PlanTaskService
+            from .services.plan_task_scheduler import PlanTaskScheduler
+            from .services.workflow_integrator import WorkflowIntegrator
+            from .application.plan_task_app import PlanTaskApplication
+
+            # 创建 Service
+            self._plan_task_service = PlanTaskService(
+                template_repo=PlanTaskTemplateRepo(),
+                instance_repo=PlanTaskInstanceRepo(),
+                log_repo=PlanTaskLogRepo(),
+                deliverable_repo=PlanTaskDeliverableRepo(),
+                user_repo=UserRepository(),
+            )
+
+            # 创建 WorkflowIntegrator（workflow_client 待工作流系统就绪后注入）
+            self._workflow_integrator = WorkflowIntegrator(
+                workflow_client=None,
+                plan_task_service=self._plan_task_service,
+            )
+
+            # 创建 Application（注入 workflow_integrator，确认后触发工作流）
+            self._plan_task_app = PlanTaskApplication(
+                self._plan_task_service, workflow_integrator=self._workflow_integrator
+            )
+
+            # 创建并启动调度引擎（注入 workflow_integrator，tick 内重试启动工作流）
+            self._plan_task_scheduler = PlanTaskScheduler(
+                service=self._plan_task_service,
+                config=self.config,
+                outbound_bus=self.outbound_bus,
+                llm_client=self._llm_client,
+                workflow_integrator=self._workflow_integrator,
+            )
+
+            # 启动后台调度循环
+            import asyncio
+            asyncio.ensure_future(self._plan_task_scheduler.start())
+
+            logger.info(
+                "PlanTask module initialized: service + scheduler + app + workflow_integrator ready"
+            )
+        except Exception as e:
+            logger.warning("PlanTask module init failed: %s", e)
+            self._plan_task_service = None
+            self._plan_task_scheduler = None
+            self._plan_task_app = None
+            self._workflow_integrator = None
+
     def _load_hook_config(self) -> dict | None:
         """加载 Hook 声明式配置（hook_config.json）。"""
         import json
@@ -296,6 +367,10 @@ class EmilyCore:
             injected["guardian_review"] = self._guardian_review
         if self._guardian_agent_factory is not None:
             injected["guardian_agent_factory"] = self._guardian_agent_factory
+
+        # 计划任务系统：注入到 PlanTaskMatchHook（§2.5 计划外事件匹配）
+        if self._plan_task_service is not None:
+            injected["plan_task_service"] = self._plan_task_service
 
         return injected
 

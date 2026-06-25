@@ -122,6 +122,18 @@ def get_session() -> Session:
         session.close()
 
 
+def get_session_raw() -> Session:
+    """获取裸 Session（需调用方手动 close）。
+
+    供需要跨多个操作持有同一数据库连接的场景使用，
+    例如 PostgreSQL Advisory Lock：持锁期间必须保持同一 session/连接，
+    否则锁会随 session 关闭而释放（见 PlanTaskScheduler._tick）。
+    """
+    if _SessionLocal is None:
+        init_db()
+    return _SessionLocal()
+
+
 def get_db_path() -> str:
     """获取当前数据库连接信息（用于调试/日志）。"""
     if _engine is not None:

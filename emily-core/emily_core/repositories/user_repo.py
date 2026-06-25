@@ -91,6 +91,33 @@ class UserRepository:
             return session.query(User).filter(User.id == user_id).first()
 
     @staticmethod
+    def get_by_id(user_id: str) -> User | None:
+        """按 ID 查找用户（get 的语义化别名，供 Service 层统一调用）。"""
+        return UserRepository.get(user_id)
+
+    @staticmethod
+    def find_by_name(name: str) -> User | None:
+        """按姓名/用户名查找用户（执行人姓名 → user_id 解析，best-effort）。
+
+        匹配优先级：real_name 精确 → username 精确。返回首个匹配，未找到返回 None。
+        """
+        if not name:
+            return None
+        with get_session() as session:
+            user = (
+                session.query(User)
+                .filter(User.real_name == name, User.is_deleted == False)
+                .first()
+            )
+            if user:
+                return user
+            return (
+                session.query(User)
+                .filter(User.username == name, User.is_deleted == False)
+                .first()
+            )
+
+    @staticmethod
     def update_user(user_id: str, **kwargs) -> User | None:
         """更新用户信息（后续补全资料用）。
 

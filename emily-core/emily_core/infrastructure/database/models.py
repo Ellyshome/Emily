@@ -14,7 +14,7 @@ users 表已合并原 employee 的人事档案字段（gender/id_card/qq/wechat/
 from datetime import datetime, timezone, timedelta
 import uuid
 
-from sqlalchemy import Column, String, Integer, ForeignKey, UniqueConstraint, Boolean, Text
+from sqlalchemy import Column, String, Integer, ForeignKey, UniqueConstraint, Boolean, Text, Index, text
 from sqlalchemy.orm import DeclarativeBase, relationship
 
 
@@ -79,6 +79,8 @@ class User(Base):
     is_deleted = Column(Boolean, default=False)                  # 逻辑删除标记
     perm_list = Column(String, default="[]")                 # 权限集（JSON数组）
     grouping = Column(Integer, default=0)                    # 分组 0=临时组 1=访客组 2=工程组 3=供货商 4=管理组
+    permission_level = Column(Integer, default=0)            # 权限层级（v1.5）：0=访客 1=参建 2=主管 3=一般管理员 4=系统管理员
+    supervisor_id = Column(String, nullable=True)            # 直接上级 ID（执行人升级/异常复核，v1.5）
     company = Column(String, default="[]")                   # 隶属公司（JSON数组）
     position = Column(String, default="[]")                  # 本项目中负责岗位角色（JSON数组）
     # ── 时间戳 ──
@@ -650,3 +652,313 @@ class SOPCheckpoint(Base):
     # 审计
     created_by = Column(String, nullable=True)       # user_id
     metadata_json = Column(Text, default="{}")
+
+
+# ══════════════════════════════════════════════════════════════════════════════
+# 权限架构 v1.2: SOP 鉴权两层结构
+#   第一层：PermissionGroup - 权限组（企业+部门 两层归属）
+#   第二层：SOPBusinessFlow - SOP 业务流特征信息（关联权限组）
+# ══════════════════════════════════════════════════════════════════════════════
+
+
+class PermissionGroup(Base):
+    """权限组表（第一层：组织架构维度）。
+
+    权限架构 v1.2: SOP 鉴权第一层 - 组织架构维度的权限分组。
+    设计为两层归属分类：
+      - 第一层：企业（建设单位、设计单位、总包、分包、监理、供应商）
+      - 第二层：部门（设计部、工程部、成本部、采购部等，建设单位需细分）
+
+    企业分组设计原则：
+      - 一般企业只做简单的管理组与业务组划分
+      - 建设单位需细分部门以便权限细分
+    """
+    __tablename__ = "permission_groups"
+
+    id = Column(String, primary_key=True, default=_new_uuid)
+
+    # ── 基本信息 ──
+    name = Column(String(100), nullable=False)       # 权限组名称，如"建设单位-设计部"
+    code = Column(String(50), unique=True, nullable=False)  # 权限组编码，如"OWNER-DESIGN"
+    description = Column(String(500), default="")    # 一句话功能描述
+
+    # ── 两层归属分类 ──
+    company_type = Column(String(50), nullable=False)  # 企业类型：建设单位/设计单位/总包/分包/监理/供应商
+    department = Column(String(100), default="")       # 部门归属（建设单位需细分）
+
+    # ── 组织层级 ──
+    org_level = Column(Integer, default=1)           # 组织层级 1=企业 2=部门 3=小组
+    parent_group_id = Column(String, nullable=True)   # 父权限组ID（支持层级嵌套）
+
+    # ── 权限配置 ──
+    allowed_sop_types = Column(String, default="[]")  # 允许的 SOP 类型（JSON数组）
+    min_grouping_level = Column(Integer, default=0)  # 最低权限层级要求（累进继承）
+
+    # ── 状态与审计 ──
+    status = Column(String(50), default="active")
+    is_system = Column(Boolean, default=False)           # 是否系统内置权限组
+    creator_id = Column(String, nullable=True)
+    created_at = Column(String, default=_utc_now)
+    updated_at = Column(String, default=_utc_now, onupdate=_utc_now)
+    is_deleted = Column(Boolean, default=False)
+
+
+class SOPBusinessFlow(Base):
+    """SOP 业务流特征信息表（第二层：业务流维度）。
+
+    权限架构 v1.2: SOP 鉴权第二层 - 业务流特征信息。
+    每个 SOP 对应一条记录，定义其业务属性与权限要求。
+
+    鉴权逻辑：
+      1. 用户所属权限组（PermissionGroup）决定可见的 SOP 范围
+      2. SOP 关联的权限组定义谁可以访问
+      3. 部门权限过滤：只有归属部门匹配的用户才能看到对应的 SOP
+    """
+    __tablename__ = "sop_business_flows"
+
+    id = Column(String, primary_key=True, default=_new_uuid)
+
+    # ── SOP 基本信息 ──
+    sop_id = Column(String(50), unique=True, nullable=False)    # SOP 编号，如"SOP-001-REC"
+    sop_file_name = Column(String(200), nullable=False)          # SOP 文件名
+    display_name = Column(String(200), nullable=False)           # 业务名称，如"会议纪要录入"
+    description = Column(String(500), default="")                # 一句话功能描述
+
+    # ── 业务分类 ──
+    sop_type = Column(String(50), nullable=False)      # SOP 类型：REC/FILE/QRY/FLOW/SYS
+    category = Column(String(100), default="")         # 业务分类，如"工程记录"/"项目管理"
+
+    # ── 权限组归属（多对多通过中间表，此处为默认权限组）──
+    default_permission_group_id = Column(String, ForeignKey("permission_groups.id"), nullable=True)
+
+    # ── 权限要求 ──
+    min_grouping = Column(Integer, default=0)          # 最低权限层级（累进继承）
+    require_company_match = Column(Boolean, default=True)   # 是否需要企业类型匹配
+    require_department_match = Column(Boolean, default=False)  # 是否需要部门匹配
+
+    # ── 可见性控制 ──
+    is_public = Column(Boolean, default=False)            # 是否公开（所有用户可见）
+    allowed_company_types = Column(String, default="[]")  # 允许的企业类型（JSON数组）
+    allowed_departments = Column(String, default="[]")    # 允许的部门（JSON数组）
+
+    # ── 版本与状态 ──
+    version = Column(String(50), default="v1.0")
+    is_active = Column(Boolean, default=True)
+    is_deprecated = Column(Boolean, default=False)
+    deprecate_reason = Column(String(500), default="")
+
+    # ── 审计 ──
+    creator_id = Column(String, nullable=True)
+    created_at = Column(String, default=_utc_now)
+    updated_at = Column(String, default=_utc_now, onupdate=_utc_now)
+    is_deleted = Column(Boolean, default=False)
+
+    # ── 关联 ──
+    permission_group = relationship("PermissionGroup", foreign_keys=[default_permission_group_id])
+
+
+class SOPPermissionBinding(Base):
+    """SOP 权限组绑定表（多对多关联）。
+
+    一个 SOP 可以绑定到多个权限组，一个权限组可以包含多个 SOP。
+    """
+    __tablename__ = "sop_permission_bindings"
+
+    id = Column(String, primary_key=True, default=_new_uuid)
+    sop_business_flow_id = Column(String, ForeignKey("sop_business_flows.id"), nullable=False)
+    permission_group_id = Column(String, ForeignKey("permission_groups.id"), nullable=False)
+
+    # 绑定类型
+    binding_type = Column(String(50), default="allow")  # allow/deny
+
+    # 审计
+    creator_id = Column(String, nullable=True)
+    created_at = Column(String, default=_utc_now)
+    is_deleted = Column(Boolean, default=False)
+
+    __table_args__ = (
+        UniqueConstraint("sop_business_flow_id", "permission_group_id", name="uq_sop_permission_binding"),
+    )
+
+
+# ══════════════════════════════════════════════════════════════════════════════
+# 计划任务系统 (Scheduled Task Module)
+#   四张新表：plan_task_templates / plan_task_instances / plan_task_logs / plan_task_deliverables
+#   v2.1: 含异常复核状态、执行人升级、LLM 推算失败标记
+# ══════════════════════════════════════════════════════════════════════════════
+
+
+class PlanTaskTemplate(Base):
+    """计划任务模板表 —— 定义循环或一次性任务的模板。
+
+    模板由发起人创建，激活后由调度机根据 deadline_rule 自动生成实例。
+    """
+    __tablename__ = "plan_task_templates"
+
+    __table_args__ = (
+        # 支持调度机 get_active_cycle_templates 查询（status + task_type 过滤）
+        Index("idx_ptt_status_type", "status", "task_type"),
+    )
+
+    id = Column(String, primary_key=True, default=_new_uuid)
+    template_no = Column(String(50), unique=True, nullable=False)   # 模板编号 TPL-YYYYMMDD-NNNN
+    name = Column(String(200), nullable=False)                      # 模板名称
+    description = Column(String, default="")                        # 模板描述
+
+    # ── 任务定义 ──
+    initiator_id = Column(String, ForeignKey("users.id"), nullable=False)  # 发起人
+    executor_id = Column(String, ForeignKey("users.id"), nullable=True)    # 执行人（可为空=待指派）
+    project_id = Column(String, ForeignKey("projects.id"), nullable=True)  # 关联项目
+
+    # ── 调度规则 ──
+    task_type = Column(String(20), nullable=False, default="ONCE")  # ONCE / WEEKLY / MONTHLY
+    deadline_rule = Column(String(500), default="")                 # 自然语言截止描述，如"每周五17:00"、"每月20日"
+
+    # ── 验收标准 ──
+    verification_standard = Column(String, default="{}")            # JSON 核验规则
+
+    # ── 工作流关联 ──
+    workflow_definition_key = Column(String(100), default="")       # 关联工作流定义键
+
+    # ── 状态与审计 ──
+    status = Column(String(20), default="DRAFT")                    # DRAFT / ACTIVE / INACTIVE
+    creator_id = Column(String, ForeignKey("users.id"), nullable=True)
+    created_at = Column(String, default=_utc_now)
+    updated_at = Column(String, default=_utc_now, onupdate=_utc_now)
+    is_deleted = Column(Boolean, default=False)
+
+    # ── LLM 推算失败标记（v1.5-fix: 模板级别）──
+    llm_calculation_failed = Column(Boolean, default=False)  # LLM 推算截止时间是否失败
+    llm_failure_notified = Column(Boolean, default=False)    # 是否已通知发起人人工处理
+
+
+class PlanTaskInstance(Base):
+    """计划任务实例表 —— 每个具体的任务实例。
+
+    五态状态机（+ 异常复核）：WAITING / SUBMITTED / RETURNED /
+    CONFIRMED / ARCHIVED / CANCELLED / ANOMALY_PENDING_REVIEW
+    """
+    __tablename__ = "plan_task_instances"
+
+    __table_args__ = (
+        # 幂等唯一约束：同一模板同一周期只能有一个非取消实例（计划 §3.6）
+        Index(
+            "uq_pti_period", "template_id", "period_key",
+            unique=True, postgresql_where=text("status != 'CANCELLED'"),
+        ),
+        # 调度机核心查询：按状态+截止时间
+        Index("idx_pti_status_deadline", "status", "deadline_at"),
+        # 按执行人/项目查询
+        Index("idx_pti_executor_status", "executor_id", "status"),
+        Index("idx_pti_project", "project_id", "status"),
+        # 计划外事件查询
+        Index("idx_pti_unscheduled", "is_unscheduled", "created_at"),
+        # LLM 失败待处理查询
+        Index("idx_pti_llm_failed", "llm_calculation_failed", "llm_failure_notified"),
+    )
+
+    id = Column(String, primary_key=True, default=_new_uuid)
+    instance_no = Column(String(50), unique=True, nullable=False)   # 实例编号 PTI-YYYYMMDD-NNNN
+    template_id = Column(String, ForeignKey("plan_task_templates.id"), nullable=True)
+
+    # ── 幂等键 ──
+    period_key = Column(String(100), default="")                    # "2024-W25", "2024-M06", "2024-07-15"
+
+    # ── 任务核心字段 ──
+    title = Column(String(500), nullable=False)
+    description = Column(String, default="")
+    initiator_id = Column(String, ForeignKey("users.id"), nullable=False)   # 发起人
+    executor_id = Column(String, ForeignKey("users.id"), nullable=True)     # 执行人
+    project_id = Column(String, ForeignKey("projects.id"), nullable=True)
+    phase_code = Column(String(100), nullable=True)                         # 关联项目阶段编码
+
+    # ── 时间字段 ──
+    deadline_at = Column(String, nullable=True)           # 截止时间（ISO8601）
+    reminded_at = Column(String, nullable=True)           # 最后提醒时间
+    escalated_at = Column(String, nullable=True)          # 升级给上级的时间（P2）
+
+    # ── 执行人升级（P2）──
+    original_executor_id = Column(String, ForeignKey("users.id"), nullable=True)  # 原执行人
+    escalation_reason = Column(String, default="")       # 升级原因（离职/失能等）
+
+    # ── 验收标准 ──
+    verification_standard = Column(String, default="{}")  # JSON 核验规则
+
+    # ── 状态机 ──
+    # WAITING / SUBMITTED / RETURNED / CONFIRMED / ARCHIVED / CANCELLED / ANOMALY_PENDING_REVIEW
+    status = Column(String(20), default="WAITING")
+
+    # ── 时间戳 ──
+    submitted_at = Column(String, nullable=True)          # 提交时间
+    confirmed_at = Column(String, nullable=True)          # 确认时间
+    archived_at = Column(String, nullable=True)           # 归档时间
+
+    # ── 工作流关联 ──
+    workflow_instance_id = Column(String, nullable=True)  # 关联工作流实例ID
+
+    # ── 异常标记 ──
+    is_unscheduled = Column(Boolean, default=False)       # 是否计划外事件
+    anomaly_reason = Column(String, default="")           # 异常原因
+
+    # ── LLM 推算失败标记 ──
+    llm_calculation_failed = Column(Boolean, default=False)  # LLM 推算截止时间是否失败
+    llm_failure_notified = Column(Boolean, default=False)    # 是否已通知发起人人工处理
+
+    # ── 审计 ──
+    created_at = Column(String, default=_utc_now)
+    updated_at = Column(String, default=_utc_now, onupdate=_utc_now)
+    is_deleted = Column(Boolean, default=False)
+
+    # ── 关联 ──
+    template = relationship("PlanTaskTemplate", foreign_keys=[template_id])
+
+
+class PlanTaskLog(Base):
+    """计划任务状态变更日志表 —— 记录全生命周期每次状态变更的快照。"""
+    __tablename__ = "plan_task_logs"
+
+    __table_args__ = (
+        # 按实例查日志（instance_id 单列已有 index=True，此处补复合索引支持时间范围查）
+        Index("idx_ptl_instance", "instance_id", "created_at"),
+    )
+
+    id = Column(String, primary_key=True, default=_new_uuid)
+    instance_id = Column(String, ForeignKey("plan_task_instances.id"), nullable=False, index=True)
+
+    # ── 状态变更 ──
+    from_status = Column(String(20), nullable=True)       # 变更前状态
+    to_status = Column(String(20), nullable=False)        # 变更后状态
+    operator_id = Column(String, ForeignKey("users.id"), nullable=True)  # 操作人
+    reason = Column(String, default="")                   # 变更原因
+
+    # ── 快照 ──
+    snapshot = Column(Text, default="{}")                 # JSON 全量快照（实例关键字段）
+
+    # ── 审计 ──
+    created_at = Column(String, default=_utc_now)
+
+
+class PlanTaskDeliverable(Base):
+    """计划任务成果表 —— 执行者提交的任务成果。"""
+    __tablename__ = "plan_task_deliverables"
+
+    __table_args__ = (
+        # 按提交者查询成果
+        Index("idx_ptd_submitted", "submitted_by", "submitted_at"),
+    )
+
+    id = Column(String, primary_key=True, default=_new_uuid)
+    instance_id = Column(String, ForeignKey("plan_task_instances.id"), nullable=False, index=True)
+
+    # ── 成果内容 ──
+    type = Column(String(20), nullable=False, default="TEXT")  # FILE / TEXT / JSON
+    content = Column(Text, default="")                         # 文本内容
+    file_url = Column(String(1000), default="")                # 文件URL
+    file_name = Column(String(500), default="")                # 文件名
+
+    # ── 提交信息 ──
+    submitted_by = Column(String, ForeignKey("users.id"), nullable=False)
+    submitted_at = Column(String, default=_utc_now)
+
+    # ── 审计 ──
+    created_at = Column(String, default=_utc_now)

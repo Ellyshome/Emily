@@ -113,7 +113,11 @@ class SessionAgent:
         self.state = SessionState.CREATED
         self.focus = FocusLock()
         self.confirm_queue = ConfirmQueue()
-        self.scheduler = SessionScheduler(conversation_id, bus)
+
+        # 权限架构 v1.2：SessionContext 不直接灌注到 Session-Agent
+        # 而是通过 SessionScheduler 传递给 BusContext
+        # WorkItemAgent 通过 BusContext 只读方法获取权限信息
+        self.scheduler = SessionScheduler(conversation_id, bus, session_context=context)
 
         # Phase B: 意图识别
         self._llm = llm_client

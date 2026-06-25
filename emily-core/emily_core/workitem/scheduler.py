@@ -24,11 +24,18 @@ logger = logging.getLogger("emily.scheduler")
 
 
 class SessionScheduler:
-    """Session 级 WorkItem 调度器。"""
+    """Session 级 WorkItem 调度器。
 
-    def __init__(self, session_id: str, bus: PipelineBUS):
+    权限架构 v1.2：
+    - 保存对 SessionContext 的引用，在创建 BusContext 时注入
+    - WorkItemAgent 通过 BusContext 只读方法获取权限信息
+    - 不直接将权限数据传递给 WorkItemAgent，避免上下文污染
+    """
+
+    def __init__(self, session_id: str, bus: PipelineBUS, session_context=None):
         self.session_id = session_id
         self._bus = bus                       # 公共 Pipeline BUS（全局共享）
+        self._session_context = session_context  # SessionContext（只读访问）
         self._queue: list[WorkItem] = []      # 待执行队列（按 priority 排序）
         self._active: dict[str, WorkItem] = {}  # 执行中
         self._done: list[WorkItem] = []       # 已完成
@@ -73,8 +80,15 @@ class SessionScheduler:
             # CREATED → PLANNING（KnowledgeInjector 增量灌注在 BUS node1 内触发）
             wi.transition_to(WorkItemState.PLANNING)
 
-            context = BusContext(work_item=wi, message=message,
-                                 user_id=wi.user_id, is_admin=wi.is_admin)
+            # 权限架构 v1.2：将 SessionContext 注入 BusContext（只读）
+            # WorkItemAgent 通过 context.get_permissions() 等方法访问权限信息
+            context = BusContext(
+                work_item=wi,
+                message=message,
+                user_id=wi.user_id,
+                is_admin=wi.is_admin,
+                _session_context=self._session_context,  # 私有字段，仅初始化时设置
+            )
 
             # PLANNING → EXECUTING（节点内部经过 node1/node2 规划 + node3 执行）
             wi.transition_to(WorkItemState.EXECUTING)

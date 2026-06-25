@@ -33,6 +33,16 @@ from .meeting_tool import handle_record_meeting, _MEETING_TOOL_SCHEMA, _MEETING_
 from .file_tool import handle_record_file, _FILE_TOOL_SCHEMA, _FILE_TOOL_DESCRIPTION
 from .file_tool import create_send_file_tool, create_read_local_file_tool
 from .query_tool import handle_query_data, create_query_tool, _QUERY_TOOL_SCHEMA, _QUERY_TOOL_DESCRIPTION
+from .plan_task_tool import (
+    handle_record_plan_task,
+    handle_submit_plan_task,
+    handle_review_plan_task,
+    handle_query_plan_tasks,
+    _RECORD_PLAN_TASK_SCHEMA,
+    _SUBMIT_PLAN_TASK_SCHEMA,
+    _REVIEW_PLAN_TASK_SCHEMA,
+    _QUERY_PLAN_TASKS_SCHEMA,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -158,6 +168,7 @@ def create_business_flow_tools(
     guardian_review=None,        # M8a: 轻量核验器
     pending_issues=None,         # M8a: 待解决问题清单服务
     config=None,                 # M8a: 配置
+    plan_task_app=None,          # 计划任务系统 Application
 ) -> BusinessFlowToolRegistry:
     """创建业务流工具注册表（框架直接执行，不经过 LLM tool calling）。
 
@@ -175,9 +186,10 @@ def create_business_flow_tools(
         guardian_review: GuardianReview 实例（可选）
         pending_issues: PendingIssuesService 实例（可选）
         config: 全局配置（可选）
+        plan_task_app: PlanTaskApplication 实例（可选，计划任务系统）
 
     Returns:
-        BusinessFlowToolRegistry（含 5 个核心业务流工具）
+        BusinessFlowToolRegistry
     """
     registry = BusinessFlowToolRegistry()
 
@@ -240,6 +252,49 @@ def create_business_flow_tools(
             params, query_service=query_service,
         ),
     ))
+
+    # ── 计划任务系统工具 ──
+    if plan_task_app is not None:
+        # record_plan_task — 创建计划任务
+        registry.register(BusinessFlowTool(
+            name="record_plan_task",
+            description="创建计划任务（一次性或循环）。用于下达工作任务、布置周期性任务（日报/周报等）。",
+            parameters=_RECORD_PLAN_TASK_SCHEMA,
+            handler=lambda params: handle_record_plan_task(
+                params, plan_task_app=plan_task_app, user_id=user_id, message_id=message_id,
+                guardian_review=_review, pending_issues=pending_issues, config=config,
+            ),
+        ))
+
+        # submit_plan_task — 提交计划任务成果
+        registry.register(BusinessFlowTool(
+            name="submit_plan_task",
+            description="提交计划任务成果。执行者在完成任务后提交成果。",
+            parameters=_SUBMIT_PLAN_TASK_SCHEMA,
+            handler=lambda params: handle_submit_plan_task(
+                params, plan_task_app=plan_task_app, user_id=user_id, message_id=message_id,
+            ),
+        ))
+
+        # review_plan_task — 审核计划任务成果
+        registry.register(BusinessFlowTool(
+            name="review_plan_task",
+            description="审核计划任务成果（确认完成或退回修改）。",
+            parameters=_REVIEW_PLAN_TASK_SCHEMA,
+            handler=lambda params: handle_review_plan_task(
+                params, plan_task_app=plan_task_app, user_id=user_id, message_id=message_id,
+            ),
+        ))
+
+        # query_plan_tasks — 查询计划任务
+        registry.register(BusinessFlowTool(
+            name="query_plan_tasks",
+            description="查询计划任务列表（按执行人或发起人、按状态过滤）。",
+            parameters=_QUERY_PLAN_TASKS_SCHEMA,
+            handler=lambda params: handle_query_plan_tasks(
+                params, plan_task_app=plan_task_app, user_id=user_id,
+            ),
+        ))
 
     logger.info(
         "M14 BusinessFlowToolRegistry created: %d tools registered",
