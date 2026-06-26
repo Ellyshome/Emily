@@ -1,13 +1,13 @@
 {
   "_meta": {
     "version": "1",
-    "built_at": "2026-06-25T08:29:52.635119+00:00",
+    "built_at": "2026-06-26T09:37:36.528008+00:00",
     "source_dir": "sops",
     "source_files_count": 11,
-    "source_files_mtime_latest": "2026-06-25T04:49:02.420853+00:00",
+    "source_files_mtime_latest": "2026-06-26T06:05:27.753309+00:00",
     "parse_result": {
-      "ok": 11,
-      "partial": 0,
+      "ok": 10,
+      "partial": 1,
       "failed": 0
     }
   },
@@ -48,22 +48,13 @@
         "SOP-005-QRY"
       ]
     },
-    "FLOW": {
-      "description": "流程类 —— 跨维度深度调查与分析",
-      "fallback_tools": [
-        "guardian_agent"
-      ],
-      "fallback_guidance": "这是深度调查类请求。若以上 FLOW 流程均不匹配，使用系统内置的守护调查Agent执行跨维度分析。",
-      "sops": [
-        "SOP-006-FLOW"
-      ]
-    },
     "SYS": {
       "description": "系统类 —— 系统维护与管理功能",
       "fallback_tools": [],
       "fallback_guidance": "这是系统管理类请求。若以上 SYS 流程均不匹配，但仍需系统功能，使用对应原子工具自由推理。",
       "sops": [
         "SOP-008-SYS",
+        "SOP-011-SYS",
         "SOP-999-SYS"
       ]
     }
@@ -240,7 +231,7 @@
       ],
       "deny_conditions": [
         "询问的同时表达了录入意图 → 优先录入类 SOP",
-        "需要跨多维度深度分析的复杂查询 → 优先守护调查（系统自动处理）",
+        "需要跨多维度深度分析的复杂查询 → 使用 query_data 工具",
         "纯闲聊性质的随口一问（如\"你好吗\"）→ 普通对话"
       ],
       "positive_examples": [
@@ -252,43 +243,8 @@
       "negative_examples": [
         "本周项目整体怎么样，帮我全面分析一下",
         "帮我录一条事件",
-        "守护调查Agent（深度分析，系统自动处理）",
+        "综合分析请求，需组合多个查询工具",
         "事件记录"
-      ],
-      "parse_status": "ok"
-    },
-    "SOP-006-FLOW": {
-      "sop_id": "SOP-006-FLOW",
-      "display_name": "守护审计",
-      "sop_type": "FLOW",
-      "version": "v1.0",
-      "file_name": "SOP-006-FLOW-guardian_audit.md",
-      "allow_roles": [
-        "admin"
-      ],
-      "trigger_keywords": [
-        "明确提及全面检查",
-        "数据审计",
-        "综合分析",
-        "需要跨多个数据维度综合分析的请求（如\"本周项目整体怎么样\"）",
-        "需要主动探索数据关联（如\"找出与渗水相关的所有信息\"）",
-        "需要数据完整性巡检或信息审核（如\"检查项目数据有无异常\"）",
-        "多步骤推理需求（如\"对比本月和上月活跃度变化\"）"
-      ],
-      "deny_conditions": [
-        "简单单表查询（如\"今天几个事件\"、\"列出任务\"）→ 用 query_data",
-        "单一事件/任务/会议的录入 → 对应录入类 SOP",
-        "闲聊性质的笼统问题 → 普通对话"
-      ],
-      "positive_examples": [
-        "帮我全面审核一下科技城项目最近一周的数据。",
-        "检查一下有没有数据异常或矛盾的地方。",
-        "本周项目整体怎么样，做一次综合分析。"
-      ],
-      "negative_examples": [
-        "今天有几个事件？",
-        "查一下张三的任务",
-        "query_data 简单查询"
       ],
       "parse_status": "ok"
     },
@@ -347,7 +303,7 @@
         "管理员说\"查看待处理问题\"",
         "\"列出待解决问题\"",
         "\"有哪些待处理\"",
-        "管理员针对某个守护发现做出决策（\"那个问题我决定...\"",
+        "管理员针对某个系统发现做出决策（\"那个问题我决定...\"",
         "\"这个不用管了\"）",
         "管理员要求关闭/解决某个待处理条目"
       ],
@@ -454,6 +410,21 @@
         "SOP-002-REC"
       ],
       "parse_status": "ok"
+    },
+    "SOP-011-SYS": {
+      "sop_id": "SOP-011-SYS",
+      "display_name": "SOP-011-SYS — 全局状态机管理",
+      "sop_type": "SYS",
+      "version": "v1.0",
+      "file_name": "SOP-011-SYS-state_machine.md",
+      "allow_roles": [
+        "all"
+      ],
+      "trigger_keywords": [],
+      "deny_conditions": [],
+      "positive_examples": [],
+      "negative_examples": [],
+      "parse_status": "partial"
     },
     "SOP-999-SYS": {
       "sop_id": "SOP-999-SYS",

@@ -7,7 +7,6 @@ M14 架构重构：将 record_event / record_task / record_meeting / record_file
 设计原则：
   - BusinessFlowTool 与 ToolDefinition 等价，但不转换为 OpenAI function calling 格式
   - handler 签名统一：async fn(params: dict, user_id, message_id, ...) -> dict
-  - GuardianReview 仍在 handler 内部执行（数据写屏障）
   - SOP §3.2 工具名与此注册表一一对应
 """
 

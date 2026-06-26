@@ -111,4 +111,18 @@ class SessionFactory:
             except Exception:
                 pass
 
+        # v2.0 权限系统：灌注权限快照（需求-完整版 §6.3）
+        # PermissionService.build_permission_snapshot() 查 User+Company+权限矩阵，
+        # 组装 PermissionSnapshot 注入 ctx.permissions。fail-open：失败降级 L1 访客。
+        if user_id:
+            perm_service = getattr(core, "_permission_service", None)
+            if perm_service is not None:
+                try:
+                    ctx.permissions = perm_service.build_permission_snapshot(user_id)
+                except Exception as e:
+                    logger.warning(
+                        "load permission snapshot failed user=%s: %s", user_id, e
+                    )
+                    # 保持默认空快照（L1 访客），fail-open 不阻塞 Session 创建
+
         return ctx

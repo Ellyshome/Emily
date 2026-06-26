@@ -94,15 +94,18 @@ class AuthHook(Hook):
     """鉴权钩子 — before 阶段，可阻断。
 
     检查用户对特定资源的访问权限。
+
+    阶段二改造（需求 §4 + §14）：
+    - 接入 PermissionSnapshot 三维鉴权
+    - system.execute 检查 permission_level >= 5
+    - 有 SOP 绑定时检查 sop_allow 白名单
+    - 密级/企业类型/部门维度校验委托 AuthEngine
     """
     resource_type: str = ""   # "system" | "project" | "event" | "task" | "file"
     action: str = ""           # "read" | "create" | "update" | "delete" | "execute"
 
     async def execute(self, context: "PipelineContext") -> HookResult:
-        """执行鉴权检查。
-
-        当前阶段: 预留接口，鉴权模型在 P2 完善。默认放行所有。
-        """
+        """执行鉴权检查（阶段二：三维鉴权 + 快照白名单）。"""
         user_id = context.user_id
         if not user_id:
             # 无用户 ID 时仅允许只读操作
@@ -114,15 +117,41 @@ class AuthHook(Hook):
                 return HookResult.block(f"需要登录才能执行 {self.action} 操作")
             return HookResult.allow()
 
-        # 管理员检查: system.execute 只允许管理员
+        # 管理员检查: system.execute 只允许 L5+
         if self.resource_type == "system" and self.action == "execute":
-            # is_admin 是 PipelineContext 的 dataclass 字段，也支持 baggage 兜底
-            is_admin = getattr(context, "is_admin", False) or context.get("is_admin", False)
-            if not is_admin:
-                logger.info("AuthHook[%s] blocking: user %s is not admin", self.name, user_id)
-                return HookResult.block("仅管理员可执行系统级操作")
+            perms = context.get_permissions()
+            if perms is None:
+                # 无快照时回退到 is_admin 检查
+                is_admin_flag = getattr(context, "is_admin", False) or context.get("is_admin", False)
+                if not is_admin_flag:
+                    logger.info("AuthHook[%s] blocking: user %s is not admin", self.name, user_id)
+                    return HookResult.block("仅管理员可执行系统级操作")
+            else:
+                from ...permission.level import is_admin as _is_admin
+                if not _is_admin(perms.permission_level):
+                    logger.info(
+                        "AuthHook[%s] blocking: user %s level=%d < L5",
+                        self.name, user_id, perms.permission_level,
+                    )
+                    return HookResult.block("仅管理员（L5+）可执行系统级操作")
 
-        # 默认放行（完整鉴权模型在 P2 落地）
+        # SOP 权限检查：有 SOP 绑定时验证白名单
+        intent = context.intent
+        sop_id = getattr(intent, "sop_id", None) if intent else None
+        if sop_id:
+            perms = context.get_permissions()
+            if perms is not None:
+                # 快照白名单检查
+                if sop_id not in perms.sop_allow and "all" not in perms.sop_allow:
+                    logger.info(
+                        "AuthHook[%s] blocking: user %s no access to SOP %s",
+                        self.name, user_id, sop_id,
+                    )
+                    reason = f"无权访问 {sop_id}"
+                    if perms.supervisor_id:
+                        reason += f"，可联系主管 {perms.supervisor_id} 申请权限"
+                    return HookResult.block(reason)
+
         logger.debug("AuthHook[%s] allow: user=%s res=%s action=%s",
                      self.name, user_id, self.resource_type, self.action)
         return HookResult.allow()
@@ -164,48 +193,6 @@ class AuditHook(Hook):
         except Exception as e:
             logger.warning("AuditHook[%s] failed (non-blocking): %s", self.name, e)
         return HookResult.allow()  # 审计永远不阻断
-
-
-@dataclass
-class VerifyHook(Hook):
-    """核验钩子 — 对 Agent 回复进行内容核验（M8a 逻辑迁移）。
-
-    挂载点: before:verify
-    """
-    verify_type: str = ""  # "reply" | "record"
-    guardian_review: Any = None  # GuardianReview 实例，由 EmilyCore 注入
-
-    async def execute(self, context: "PipelineContext") -> HookResult:
-        """调用 GuardianReview 对 Agent 回复进行核验。"""
-        if self.guardian_review is None:
-            logger.debug("VerifyHook[%s] skipped: no guardian_review injected", self.name)
-            return HookResult.allow()
-
-        try:
-            reply_text = context.verified_reply or context.agent_reply
-            user_message = context.message.content if context.message else ""
-
-            if self.verify_type == "reply" and reply_text:
-                review_result = await self.guardian_review.review_reply(
-                    reply_text=reply_text,
-                    user_message=user_message,
-                )
-                if not review_result.passed and review_result.findings:
-                    new_reply = reply_text + "\n\n⚠ 守护提醒：" + review_result.findings
-                    context.verified_reply = new_reply
-                    context.verify_warnings.append(review_result.findings)
-                    logger.info(
-                        "VerifyHook[%s] flagged reply: %s (%dms)",
-                        self.name,
-                        review_result.findings[:80],
-                        review_result.elapsed_ms,
-                    )
-                    return HookResult.warn(review_result.findings[:200])
-
-            return HookResult.allow()
-        except Exception as e:
-            logger.warning("VerifyHook[%s] failed, sending anyway: %s", self.name, e)
-            return HookResult.allow()  # 核验失败不阻断回复
 
 
 @dataclass
@@ -302,50 +289,6 @@ class ProgressHook(Hook):
         except Exception as e:
             logger.warning("ProgressHook[%s] failed (non-blocking): %s", self.name, e)
         return HookResult.allow()
-
-
-# ════════════════════════════════════════════════════════════════════════════════
-# DeepAuditHook — 深度审计（M9 架构重构，替代原 invoke_guardian 工具）
-# ════════════════════════════════════════════════════════════════════════════════
-
-
-@dataclass
-class DeepAuditHook(Hook):
-    """深度审计 Hook — 调用 GuardianAgent 对全量上下文执行深度调查。
-
-    Mount point: before:verify（在轻量回复核验之前执行）
-    Decision: always ALLOW（审计为建议性，不阻断管道）
-
-    与 VerifyHook（guardian.reply_review）的区别：
-    - VerifyHook：单轮 LLM 调用，5 秒超时，只检查回复文本
-    - DeepAuditHook：多轮 ReAct 循环，可查询数据库，输出完整调查报告
-    """
-
-    guardian_agent_factory: Any = None  # Callable[[], GuardianAgent]
-
-    async def execute(self, context: "PipelineContext") -> HookResult:
-        """执行深度审计调查。"""
-        if self.guardian_agent_factory is None:
-            return HookResult.allow()
-
-        try:
-            agent = self.guardian_agent_factory()
-            user_message = context.message.content if context.message else ""
-            result = await agent.investigate(
-                f"对以下用户请求的上下文执行深度审计：{user_message[:500]}"
-            )
-            if result.success and result.report:
-                context.baggage["deep_audit_report"] = result.report
-                logger.info(
-                    "DeepAuditHook[%s] completed: %d steps, %d chars report",
-                    self.name, len(result.steps), len(result.report),
-                )
-            return HookResult.allow()  # 审计为建议性，不阻断管道
-        except Exception as e:
-            logger.warning(
-                "DeepAuditHook[%s] failed (non-blocking): %s", self.name, e,
-            )
-            return HookResult.allow()
 
 
 # ════════════════════════════════════════════════════════════════════════════════
@@ -450,8 +393,6 @@ class PlanTaskMatchHook(Hook):
 HOOK_TYPE_MAP: dict[str, type[Hook]] = {
     "auth": AuthHook,
     "audit": AuditHook,
-    "verify": VerifyHook,
-    "deep_audit": DeepAuditHook,
     "trace": TraceHook,
     "progress": ProgressHook,
     "plan_task_match": PlanTaskMatchHook,

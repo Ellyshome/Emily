@@ -1,6 +1,5 @@
 """事件录入业务逻辑 — M14 重构为业务流工具。
 
-M8a: 支持 GuardianReview 录入核验 + force 参数 + related_event_ids。
 M14: 核心逻辑提取为独立 handler 函数，供 BusinessFlowTool 使用。
      原 ToolDefinition 包装器保留供 unmatched 兜底（如需要）。
 """
@@ -104,7 +103,6 @@ async def handle_record_event(
     event_app: EventApplication,
     user_id: str = "",
     message_id: str = "",
-    guardian_review=None,
     pending_issues=None,
     config=None,
 ) -> dict:
@@ -118,7 +116,6 @@ async def handle_record_event(
         event_app: EventApplication 实例
         user_id: 当前用户 ID
         message_id: 当前消息 ID
-        guardian_review: GuardianReview 实例（可选）
         pending_issues: PendingIssuesService 实例（可选）
         config: 全局配置（可选）
 
@@ -129,41 +126,6 @@ async def handle_record_event(
     force = params.get("force", False)
     guardian_notes = params.get("guardian_notes", "")
     related_event_ids = params.get("related_event_ids", [])
-
-    # ── M8a: 录入前核验 ──
-    if guardian_review is not None and not force:
-        review_data = {
-            "title": data.get("title", ""),
-            "event_type": data.get("event_type", "general"),
-            "event_date": data.get("event_date", "（默认今天）"),
-            "description": data.get("description", ""),
-            "project_name": params.get("project_name", ""),
-        }
-        try:
-            review_result = await guardian_review.review_record(
-                tool_name="record_event",
-                data=review_data,
-            )
-            if not review_result.passed and review_result.findings:
-                return {
-                    "success": False,
-                    "needs_review": True,
-                    "review_findings": review_result.findings,
-                    "pending_data": {
-                        "tool_name": "record_event",
-                        "params": params,
-                    },
-                    "reply": (
-                        "⚠ 守护核验发现以下可疑项：\n"
-                        f"{review_result.findings}\n\n"
-                        "请选择：\n"
-                        "① 修改信息 → 重新审核\n"
-                        "② 坚持原样录入 → 标记异常备注，提交经理处理\n"
-                        "③ 取消录入"
-                    ),
-                }
-        except Exception as e:
-            logger.warning("M8a record review failed for event, proceeding: %s", e)
 
     # ── 正常录入流程 ──
     route_result = RouteResult(

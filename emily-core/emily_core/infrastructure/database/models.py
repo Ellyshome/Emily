@@ -14,7 +14,7 @@ users 表已合并原 employee 的人事档案字段（gender/id_card/qq/wechat/
 from datetime import datetime, timezone, timedelta
 import uuid
 
-from sqlalchemy import Column, String, Integer, ForeignKey, UniqueConstraint, Boolean, Text, Index, text
+from sqlalchemy import Column, String, Integer, BigInteger, ForeignKey, UniqueConstraint, Boolean, Text, Index, text
 from sqlalchemy.orm import DeclarativeBase, relationship
 
 
@@ -57,7 +57,7 @@ class User(Base):
     """人员信息表 —— 对应需求文档 im_message + employee。
 
     合并了系统用户（IM 绑定、登录认证）与人事档案（性别、身份证、岗位等）。
-    人员类型不限于雇员——访客、临时工、供货商等均可记录，通过 grouping 区分。
+    人员类型不限于雇员——访客、临时工、供货商等均可记录，通过 org_category 区分。
     CHECK 约束（应用层强制）：phone/email/qq/wechat 不能同时为空。
     """
     __tablename__ = "users"
@@ -78,10 +78,10 @@ class User(Base):
     creator_id = Column(String, nullable=True)               # 创建人ID
     is_deleted = Column(Boolean, default=False)                  # 逻辑删除标记
     perm_list = Column(String, default="[]")                 # 权限集（JSON数组）
-    grouping = Column(Integer, default=0)                    # 分组 0=临时组 1=访客组 2=工程组 3=供货商 4=管理组
-    permission_level = Column(Integer, default=0)            # 权限层级（v1.5）：0=访客 1=参建 2=主管 3=一般管理员 4=系统管理员
-    supervisor_id = Column(String, nullable=True)            # 直接上级 ID（执行人升级/异常复核，v1.5）
-    company = Column(String, default="[]")                   # 隶属公司（JSON数组）
+    org_category = Column(Integer, default=0)                # 组织类型标签（原 grouping，v2.0 改名只读不参与鉴权）：0=临时组 1=访客组 2=工程组 3=供货商 4=管理组
+    permission_level = Column(Integer, default=1)            # 权限层级（v2.0 6级树形）：1=访客 2=参建执行 3=参建管理 4=建设主管 5=管理员 6=系统管理员
+    supervisor_id = Column(String, nullable=True)            # 直接上级 ID（执行人升级/异常复核）
+    company = Column(String, ForeignKey("company_info.id"), nullable=True)  # 隶属公司 FK→company_info.id（v2.0 改单 FK）
     position = Column(String, default="[]")                  # 本项目中负责岗位角色（JSON数组）
     # ── 时间戳 ──
     created_at = Column(String, default=_utc_now)
@@ -307,7 +307,11 @@ class File(Base):
 
 
 class CompanyInfo(Base):
-    """公司基础信息表 —— 对应需求文档 company_info。"""
+    """公司基础信息表 —— 对应需求文档 company_info。
+
+    v2.0 权限系统扩展（需求 §4）：新增 type/status/scope/partners/parent_id/department/function_scope，
+    承载单位权限范围属性，支撑单位归属自动授权与越权检测。
+    """
     __tablename__ = "company_info"
     id = Column(String, primary_key=True, default=_new_uuid)
     company_name = Column(String(256), nullable=False)       # 公司全称
@@ -315,6 +319,14 @@ class CompanyInfo(Base):
     business_desc = Column(String, default="")               # 业务描述
     project_leader_id = Column(String, nullable=False)       # 项目负责人ID → employee.id
     creator_id = Column(String, nullable=False)              # 创建者ID → employee.id
+    # ── v2.0 权限系统扩展字段（需求 §4.1）──
+    type = Column(String(50), default="")                    # 企业类型：建设单位/设计单位/总包/分包/监理/供应商
+    status = Column(String(50), default="active")            # 履约状态：投标中/履约中/已退场
+    scope = Column(String, default="[]")                     # 承包范围 JSON ["景观","1标段"]
+    partners = Column(String, default="[]")                  # 对接公司ID JSON [company_id, ...]
+    parent_id = Column(String, ForeignKey("company_info.id"), nullable=True)  # 上级公司（分包→总包）
+    department = Column(String, default="[]")                # 部门 JSON ["设计部","工程部"]
+    function_scope = Column(Text, default="{}")              # 职能-全景节点映射 JSON（需求 §4.1.1）
     created_at = Column(String, default=_utc_now)
     updated_at = Column(String, default=_utc_now, onupdate=_utc_now)
     is_deleted = Column(Boolean, default=False)
@@ -542,7 +554,7 @@ class LLMInteractionLog(Base):
     # 调用维度
     call_sequence = Column(Integer, default=0)
     call_type = Column(String(30), default="chat_with_tools")
-        # chat / chat_json / chat_with_tools / guardian_review
+        # chat / chat_json / chat_with_tools
     model = Column(String(100), default="")
     # 输入维度
     prompt_summary = Column(String(500), default="")
@@ -692,7 +704,7 @@ class PermissionGroup(Base):
 
     # ── 权限配置 ──
     allowed_sop_types = Column(String, default="[]")  # 允许的 SOP 类型（JSON数组）
-    min_grouping_level = Column(Integer, default=0)  # 最低权限层级要求（累进继承）
+    min_permission_level = Column(Integer, default=1)  # 最低权限层级要求（6级树形继承，1-6）
 
     # ── 状态与审计 ──
     status = Column(String(50), default="active")
@@ -732,7 +744,7 @@ class SOPBusinessFlow(Base):
     default_permission_group_id = Column(String, ForeignKey("permission_groups.id"), nullable=True)
 
     # ── 权限要求 ──
-    min_grouping = Column(Integer, default=0)          # 最低权限层级（累进继承）
+    min_permission_level = Column(Integer, default=1)  # 最低权限层级（6级树形继承，1-6）
     require_company_match = Column(Boolean, default=True)   # 是否需要企业类型匹配
     require_department_match = Column(Boolean, default=False)  # 是否需要部门匹配
 
@@ -740,6 +752,8 @@ class SOPBusinessFlow(Base):
     is_public = Column(Boolean, default=False)            # 是否公开（所有用户可见）
     allowed_company_types = Column(String, default="[]")  # 允许的企业类型（JSON数组）
     allowed_departments = Column(String, default="[]")    # 允许的部门（JSON数组）
+    security_level = Column(String(20), default="PUBLIC")  # v2.0 密级 PUBLIC/INTERNAL/PRIVATE/CONFIDENTIAL（需求 §3.1）
+    required_node_ids = Column(String, default="[]")       # v2.0 关联全景节点ID JSON（节点范围鉴权，需求 §4）
 
     # ── 版本与状态 ──
     version = Column(String(50), default="v1.0")
@@ -1140,3 +1154,175 @@ class SMSimulationResult(Base):
 
     created_at = Column(String, default=_utc_now)
     created_by = Column(String, default="")
+
+
+# ══════════════════════════════════════════════════════════════════════════════
+# 权限管理系统 (Permission Module) — v2.0（需求-完整版）
+#   8 张新表：
+#     permission_def / permission_grants / permission_requests / permission_audit_log
+#     / public_field_registry / pending_data / data_masking_rules / permission_review_tasks
+# ══════════════════════════════════════════════════════════════════════════════
+
+
+class PermissionDef(Base):
+    """权限码定义表（需求 §6）—— 权限分层编码注册。
+
+    编码格式: [资源类型]-[密级]-[项目ID]-[节点ID]-[资源ID]
+    """
+    __tablename__ = "permission_def"
+    id = Column(String, primary_key=True, default=_new_uuid)
+    perm_code = Column(String(256), unique=True, nullable=False)   # 权限编码
+    resource_type = Column(String(3), nullable=False)              # DOC/DB/SOP/MSG/SYS
+    security_level = Column(String(12), nullable=False)            # PUBLIC/INTERNAL/PRIVATE/CONFIDENTIAL
+    project_id = Column(String, default="*")                       # 项目标识，* 表示全部
+    node_id = Column(String, default="*")                          # 全景节点标识，* 表示全部
+    resource_id = Column(String, default="*")                      # 具体资源标识，* 表示全部
+    description = Column(String(500), default="")
+    created_at = Column(String, default=_utc_now)
+    updated_at = Column(String, default=_utc_now, onupdate=_utc_now)
+    is_deleted = Column(Boolean, default=False)
+
+
+class PermissionGrant(Base):
+    """授权记录表（需求 §5、§6.2）—— 3 种授权形式 AUTO/TEMP/PERMANENT。"""
+    __tablename__ = "permission_grants"
+    id = Column(String, primary_key=True, default=_new_uuid)
+    grant_no = Column(String(50), unique=True, nullable=False)     # PGR-YYYYMMDD-NNNN
+    grantee_id = Column(String, ForeignKey("users.id"), nullable=False)  # 被授权人
+    grantor_id = Column(String, ForeignKey("users.id"), nullable=True)   # 授权人（AUTO 时可空）
+    perm_code = Column(String(256), nullable=False)                # 权限编码
+    grant_type = Column(String(12), nullable=False)                # AUTO/TEMP/PERMANENT
+    operations = Column(String, default='["read"]')                # JSON 操作列表
+    grant_time = Column(String, default=_utc_now)
+    expire_time = Column(String, nullable=True)                    # 过期时间（TEMP 必填）
+    status = Column(String(20), default="ACTIVE")                  # ACTIVE/REVOKED/EXPIRED
+    revoke_time = Column(String, nullable=True)
+    revoke_reason = Column(String(500), default="")
+    remark = Column(String(500), default="")                       # 授权原因（PERMANENT 必填）
+    client_ip = Column(String(64), default="")
+    created_at = Column(String, default=_utc_now)
+    updated_at = Column(String, default=_utc_now, onupdate=_utc_now)
+    is_deleted = Column(Boolean, default=False)
+
+    __table_args__ = (
+        Index("idx_pg_grantee_status", "grantee_id", "status"),
+    )
+
+
+class PermissionRequest(Base):
+    """权限申请审批表（需求 §9）—— 轻量审批流载体，协同待办预留对接。"""
+    __tablename__ = "permission_requests"
+    id = Column(String, primary_key=True, default=_new_uuid)
+    request_no = Column(String(50), unique=True, nullable=False)   # PRQ-YYYYMMDD-NNNN
+    requester_id = Column(String, ForeignKey("users.id"), nullable=False)  # 申请人
+    perm_code = Column(String(256), nullable=False)
+    request_type = Column(String(20), nullable=False)              # TEMP_GRANT/UNIT_BIND/LEVEL_UP/ANOMALY_DATA
+    reason = Column(String(1000), default="")
+    status = Column(String(20), default="PENDING")                 # PENDING/APPROVED/REJECTED/EXPIRED/ESCALATED
+    current_approver_id = Column(String, ForeignKey("users.id"), nullable=True)  # 当前审批人
+    approval_level = Column(Integer, default=1)                    # 当前审批层级 1/2
+    priority = Column(String(20), default="NORMAL")                # NORMAL/HIGH/URGENT
+    expire_at = Column(String, nullable=True)                      # 申请过期时间
+    approved_at = Column(String, nullable=True)
+    approver_id = Column(String, ForeignKey("users.id"), nullable=True)  # 最终审批人
+    approval_remark = Column(String(500), default="")
+    source_data = Column(Text, default="{}")                       # JSON 额外上下文
+    agent_issue_id = Column(String, nullable=True)                 # 协同待办对接 ID（预留）
+    created_at = Column(String, default=_utc_now)
+    updated_at = Column(String, default=_utc_now, onupdate=_utc_now)
+    is_deleted = Column(Boolean, default=False)
+
+    __table_args__ = (
+        Index("idx_prq_approver_status", "current_approver_id", "status"),
+    )
+
+
+class PermissionAuditLog(Base):
+    """授权审计日志表（需求 §8.1）—— ⚠ 仅 INSERT，禁止 UPDATE/DELETE。
+
+    通过 PostgreSQL 触发器强制不可篡改（迁移脚本创建触发器）。
+    """
+    __tablename__ = "permission_audit_log"
+    log_id = Column(BigInteger, primary_key=True, autoincrement=True)  # BIGSERIAL
+    event_time = Column(String, default=_utc_now)
+    grantor_id = Column(String, nullable=True)                     # 授权人/操作人
+    grantee_id = Column(String, nullable=True)                     # 被授权人/被审计人
+    perm_code = Column(String(256), default="")
+    grant_type = Column(String(32), default="")                    # AUTO/TEMP/PERMANENT
+    duration = Column(Integer, nullable=True)                      # 时长秒（PERMANENT 为 NULL）
+    session_id = Column(String(128), nullable=True)
+    operation_type = Column(String(32), nullable=False)            # GRANT/REVOKE/EXPIRE/ACCESS_DENIED/ACCESS_CHECK
+    client_ip = Column(String(64), default="")
+    user_agent = Column(Text, default="")
+    remark = Column(String(512), default="")
+
+    __table_args__ = (
+        Index("idx_pal_grantee_time", "grantee_id", "event_time"),
+        Index("idx_pal_op_time", "operation_type", "event_time"),
+    )
+
+
+class PublicFieldRegistry(Base):
+    """公开字段白名单（设计文档 §3.4）—— 模型-字段级公开信息登记。"""
+    __tablename__ = "public_field_registry"
+    id = Column(String, primary_key=True, default=_new_uuid)
+    project_id = Column(String, nullable=True)                     # 关联项目（NULL=全局公开）
+    model_name = Column(String(100), nullable=False)               # "Project"/"Event"
+    field_name = Column(String(100), nullable=False)               # "name"/"area"
+    description = Column(String(500), default="")
+    created_at = Column(String, default=_utc_now)
+    is_deleted = Column(Boolean, default=False)
+
+
+class PendingData(Base):
+    """越权写入暂存表（需求 §7.2.2）—— 越权数据暂存待主管审批。"""
+    __tablename__ = "pending_data"
+    id = Column(String, primary_key=True, default=_new_uuid)
+    pending_no = Column(String(50), unique=True, nullable=False)   # PND-YYYYMMDD-NNNN
+    user_id = Column(String, ForeignKey("users.id"), nullable=False)  # 提交人
+    data_type = Column(String(50), nullable=False)                 # event/task/file
+    data_content = Column(Text, default="{}")                      # 数据内容快照 JSON
+    exception_reason = Column(String(1000), default="")
+    target_node_id = Column(String, default="")
+    approver_id = Column(String, ForeignKey("users.id"), nullable=True)  # 待审批主管
+    status = Column(String(20), default="PENDING")                 # PENDING/APPROVED/REJECTED/CLEANED
+    expire_time = Column(String, nullable=True)                    # 默认创建后 7 天
+    request_id = Column(String, nullable=True)                     # 关联 permission_requests.id
+    created_at = Column(String, default=_utc_now)
+    updated_at = Column(String, default=_utc_now, onupdate=_utc_now)
+    is_deleted = Column(Boolean, default=False)
+
+    __table_args__ = (
+        Index("idx_pnd_approver_status", "approver_id", "status"),
+    )
+
+
+class DataMaskingRule(Base):
+    """脱敏规则表（需求 §10.1）—— 敏感字段按 permission_level 脱敏。"""
+    __tablename__ = "data_masking_rules"
+    id = Column(String, primary_key=True, default=_new_uuid)
+    rule_code = Column(String(50), unique=True, nullable=False)    # PHONE/ID_CARD/AMOUNT/CONTACT
+    field_pattern = Column(String(200), nullable=False)            # 匹配字段名正则
+    mask_type = Column(String(50), nullable=False)                 # MIDDLE_4/MIDDLE_10/RANGE/NAME
+    min_level_to_view = Column(Integer, default=5)                 # 可见明文的最低 permission_level
+    params = Column(Text, default="{}")                            # JSON 参数（如金额范围）
+    created_at = Column(String, default=_utc_now)
+    updated_at = Column(String, default=_utc_now, onupdate=_utc_now)
+    is_deleted = Column(Boolean, default=False)
+
+
+class PermissionReviewTask(Base):
+    """定期评审任务表（需求 §12.2）—— 季度权限评审。"""
+    __tablename__ = "permission_review_tasks"
+    id = Column(String, primary_key=True, default=_new_uuid)
+    review_no = Column(String(50), unique=True, nullable=False)    # REV-YYYYQQ-NN
+    review_period = Column(String(20), nullable=False)             # "2026Q2"
+    scope_type = Column(String(20), default="ALL")                 # ALL/UNIT/LEVEL
+    scope_value = Column(String, default="")
+    assignee_id = Column(String, ForeignKey("users.id"), nullable=True)  # 评审负责人
+    status = Column(String(20), default="PENDING")                 # PENDING/IN_PROGRESS/COMPLETED
+    deadline = Column(String, nullable=True)
+    result_summary = Column(Text, default="{}")                    # JSON 评审结果
+    created_at = Column(String, default=_utc_now)
+    updated_at = Column(String, default=_utc_now, onupdate=_utc_now)
+    is_deleted = Column(Boolean, default=False)

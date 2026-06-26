@@ -458,7 +458,7 @@ class SOPIntentRegistry:
                 "fallback_guidance": "这是数据查询类请求。若以上 QRY 流程均不匹配，使用 query_data 工具查询。",
             },
             "FLOW": {
-                "fallback_tools": ["guardian_agent"],
+                "fallback_tools": [],
                 "fallback_guidance": "这是深度调查类请求。若以上 FLOW 流程均不匹配，使用系统内置的守护调查Agent执行跨维度分析。",
             },
             "SYS": {
