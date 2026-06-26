@@ -106,6 +106,54 @@ class SMNodeRepository:
             return _impl(sess)
 
     @staticmethod
+    def list_stale(*, statuses: list[str], older_than_iso: str,
+                   session: Optional[Session] = None) -> list[SMNode]:
+        """Find nodes stuck in given statuses whose updated_at is older than threshold.
+
+        Used by ProjectAgent for stale node detection — e.g. IN_PROGRESS nodes
+        unchanged for 14+ days should trigger an alert.
+        """
+        def _impl(sess: Session):
+            return sess.query(SMNode).filter(
+                SMNode.status.in_(statuses),
+                SMNode.updated_at < older_than_iso,
+                SMNode.is_deleted == False,
+            ).order_by(SMNode.stage_id, SMNode.node_id).all()
+
+        if session is not None:
+            return _impl(session)
+        with get_session() as sess:
+            return _impl(sess)
+
+    @staticmethod
+    def list_milestones_near_deadline(*, now_iso: str, warn_before_days: int,
+                                      session: Optional[Session] = None) -> list[SMNode]:
+        """Find milestone nodes whose planned_end_date is within warn_before_days of now.
+
+        Used by ProjectAgent for milestone deadline warnings.
+        """
+        from datetime import datetime, timedelta, timezone
+        try:
+            now_dt = datetime.fromisoformat(now_iso)
+        except (ValueError, TypeError):
+            now_dt = datetime.now(timezone.utc)
+        cutoff_dt = now_dt + timedelta(days=warn_before_days)
+
+        def _impl(sess: Session):
+            return sess.query(SMNode).filter(
+                SMNode.is_milestone == True,
+                SMNode.status.in_(["NOT_STARTED", "IN_PROGRESS", "BLOCKED", "DELAYED"]),
+                SMNode.planned_end_date != "",
+                SMNode.planned_end_date <= cutoff_dt.isoformat(),
+                SMNode.is_deleted == False,
+            ).order_by(SMNode.planned_end_date, SMNode.node_id).all()
+
+        if session is not None:
+            return _impl(session)
+        with get_session() as sess:
+            return _impl(sess)
+
+    @staticmethod
     def count(*, session: Optional[Session] = None) -> int:
         def _impl(sess: Session):
             return sess.query(SMNode).filter(SMNode.is_deleted == False).count()

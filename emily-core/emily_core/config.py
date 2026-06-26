@@ -232,6 +232,22 @@ class Config:
     state_machine_auto_start_nodes: bool = False
     """级联中是否自动启动满足度为 100 的节点（默认关闭，需人工确认）"""
 
+    # ---- 项目级 Agent (ProjectAgent) ----
+    project_agent_enabled: bool = True
+    """项目级 Agent 总开关（状态机主动维护 + 健康度检查 + AI 自动运维）"""
+
+    project_agent_tick_seconds: int = 300
+    """ProjectAgent 调度循环间隔（秒），默认 300 秒（5 分钟）"""
+
+    project_agent_stale_threshold_days: int = 14
+    """节点卡滞判定阈值（天）。IN_PROGRESS/BLOCKED 超过此天数未变化视为卡滞"""
+
+    project_agent_deadline_warn_days: int = 7
+    """milestone 节点到期前 N 天开始预警"""
+
+    project_agent_alert_cooldown_hours: int = 24
+    """同一节点同一问题的告警冷却时间（小时），避免重复推送"""
+
     scheduler_reminder_before_minutes: int = 60
     """临近超时提醒提前量（分钟），默认 60 分钟"""
 
