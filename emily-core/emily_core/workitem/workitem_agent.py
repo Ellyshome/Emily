@@ -92,6 +92,8 @@ class WorkItemAgent:
         guardian_review=None,
         sop_intent_registry=None,
         rag_provider=None,
+        # SM: 全局状态机服务（事件录入后自动匹配完成节点）
+        sm_service=None,
     ):
         self.injector = injector or KnowledgeInjector()
         self.config = config
@@ -110,6 +112,9 @@ class WorkItemAgent:
 
         # Phase C: RAG 依赖
         self._rag_provider = rag_provider
+
+        # SM: 全局状态机服务
+        self._sm_service = sm_service
 
         # Mock 大脑（Phase C 保留作为 fallback）
         self._planner = MockPlanner()

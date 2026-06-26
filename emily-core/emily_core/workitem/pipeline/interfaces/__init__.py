@@ -4,7 +4,6 @@
 Mock 实现和真实实现共享这些接口，替换只需改一行 import。
 """
 
-from .auth import AuthDecision, AuthResult, AuthEngine
 from .routing import IntentType, SubTask, RouteDecision
 from .planning import PlanStep, ExecutionPlan
 from .execution import (
@@ -17,12 +16,8 @@ from .execution import (
     WorkAgent,
 )
 from .guardian import GuardianVerdict, Guardian
-from .risk import RiskGrader
 
 __all__ = [
-    "AuthDecision",
-    "AuthResult",
-    "AuthEngine",
     "IntentType",
     "SubTask",
     "RouteDecision",
@@ -37,5 +32,4 @@ __all__ = [
     "WorkAgent",
     "GuardianVerdict",
     "Guardian",
-    "RiskGrader",
 ]
