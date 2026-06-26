@@ -886,7 +886,7 @@ class PlanTaskInstance(Base):
 
     # ── 状态机 ──
     # WAITING / SUBMITTED / RETURNED / CONFIRMED / ARCHIVED / CANCELLED / ANOMALY_PENDING_REVIEW
-    status = Column(String(20), default="WAITING")
+    status = Column(String(30), default="WAITING")
 
     # ── 时间戳 ──
     submitted_at = Column(String, nullable=True)          # 提交时间

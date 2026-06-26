@@ -1,0 +1,179 @@
+{
+  "summary": {
+    "total": 34,
+    "passed": 34,
+    "failed": 0
+  },
+  "results": [
+    {
+      "case": "A1: 创建任务",
+      "status": "PASS",
+      "detail": "instance_no=PTI-20260625-0012, status=WAITING"
+    },
+    {
+      "case": "A1-verify: 状态=WAITING",
+      "status": "PASS",
+      "detail": "status=WAITING"
+    },
+    {
+      "case": "A1-verify: executor_id已填充",
+      "status": "PASS",
+      "detail": "executor_id=1e2614e5-0f45-40d8-b3fa-2ca42c7ae32f"
+    },
+    {
+      "case": "A1-verify: project_id已填充",
+      "status": "PASS",
+      "detail": "project_id=proj-s4-pave-001"
+    },
+    {
+      "case": "A2: 提交成果",
+      "status": "PASS",
+      "detail": "status=SUBMITTED"
+    },
+    {
+      "case": "A2-verify: 状态=SUBMITTED",
+      "status": "PASS",
+      "detail": "status=SUBMITTED"
+    },
+    {
+      "case": "A2-verify: submitted_at已填充",
+      "status": "PASS",
+      "detail": "submitted_at=2026-06-25T09:12:33.794042+00:00"
+    },
+    {
+      "case": "A2-verify: deliverables已创建",
+      "status": "PASS",
+      "detail": "count=1"
+    },
+    {
+      "case": "A3: 审核确认",
+      "status": "PASS",
+      "detail": "status=CONFIRMED"
+    },
+    {
+      "case": "A3-verify: 状态=CONFIRMED",
+      "status": "PASS",
+      "detail": "status=CONFIRMED"
+    },
+    {
+      "case": "A3-verify: confirmed_at已填充",
+      "status": "PASS",
+      "detail": "confirmed_at=2026-06-25T09:12:33.823403+00:00"
+    },
+    {
+      "case": "A3-verify: 审计日志数量",
+      "status": "PASS",
+      "detail": "log count=3"
+    },
+    {
+      "case": "A3-verify: 日志流转正确",
+      "status": "PASS",
+      "detail": "got=[(None, 'WAITING'), ('WAITING', 'SUBMITTED'), ('SUBMITTED', 'CONFIRMED')], expected=[(None, 'WAITING'), ('WAITING', 'SUBMITTED'), ('SUBMITTED', 'CONFIRMED')]"
+    },
+    {
+      "case": "B1: 创建模板",
+      "status": "PASS",
+      "detail": "template_no=TPL-20260625-0006"
+    },
+    {
+      "case": "B2: 激活模板",
+      "status": "PASS",
+      "detail": "template_no=TPL-20260625-0006"
+    },
+    {
+      "case": "B2-verify: 模板状态=ACTIVE",
+      "status": "PASS",
+      "detail": "status=ACTIVE"
+    },
+    {
+      "case": "B2-verify: deadline_rule保留",
+      "status": "PASS",
+      "detail": "deadline_rule=每周五17:00"
+    },
+    {
+      "case": "C1: 创建任务(应标记异常)",
+      "status": "PASS",
+      "detail": "anomaly=True, instance_no=PTI-20260625-0013"
+    },
+    {
+      "case": "C1-verify: 状态=ANOMALY_PENDING_REVIEW",
+      "status": "PASS",
+      "detail": "status=ANOMALY_PENDING_REVIEW"
+    },
+    {
+      "case": "C1-verify: anomaly_reason有内容",
+      "status": "PASS",
+      "detail": "reason=发起人权限等级（1）低于执行人（2），任务已标记为异常，需上级复核后下发"
+    },
+    {
+      "case": "H1: 手动归档",
+      "status": "PASS",
+      "detail": "status set to ARCHIVED"
+    },
+    {
+      "case": "H1-verify: 状态=ARCHIVED",
+      "status": "PASS",
+      "detail": "status=ARCHIVED"
+    },
+    {
+      "case": "H2: 归档不可变(submit应失败)",
+      "status": "PASS",
+      "detail": "reply=❌ 提交失败：非法状态流转：'ARCHIVED' → 'SUBMITTED'，允许的目标状态：（终态，不可变更）"
+    },
+    {
+      "case": "I1: 创建任务",
+      "status": "PASS",
+      "detail": "instance_no=PTI-20260625-0014"
+    },
+    {
+      "case": "I2: WAITING->CONFIRMED应失败",
+      "status": "PASS",
+      "detail": "reply=❌ 审核失败：非法状态流转：'WAITING' → 'CONFIRMED'，允许的目标状态：['SUBMITTED', 'CANCELLED', 'ANOMAL"
+    },
+    {
+      "case": "I2-verify: 状态保持WAITING",
+      "status": "PASS",
+      "detail": "status=WAITING"
+    },
+    {
+      "case": "J: 不存在实例(submit)",
+      "status": "PASS",
+      "detail": "reply=❌ 提交失败：任务实例不存在: non-existent-id-12345"
+    },
+    {
+      "case": "Q-executor: 查询等待中任务",
+      "status": "PASS",
+      "detail": "count=1"
+    },
+    {
+      "case": "Q-executor: 返回格式正确",
+      "status": "PASS",
+      "detail": "keys=['success', 'tasks', 'count', 'reply']"
+    },
+    {
+      "case": "Q-initiator: 查询发起的任务",
+      "status": "PASS",
+      "detail": "count=6"
+    },
+    {
+      "case": "Q-consistency: DB实例数一致",
+      "status": "PASS",
+      "detail": "total instances=14"
+    },
+    {
+      "case": "Scheduler: _tick执行",
+      "status": "PASS",
+      "detail": "tick completed without error"
+    },
+    {
+      "case": "Scheduler: find_overdue",
+      "status": "PASS",
+      "detail": "count=0"
+    },
+    {
+      "case": "Scheduler: find_near_deadline",
+      "status": "PASS",
+      "detail": "count=0"
+    }
+  ]
+}
