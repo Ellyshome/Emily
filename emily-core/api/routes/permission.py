@@ -30,6 +30,20 @@ def set_permission_app(app: PermissionApplication) -> None:
 
 
 def _get_app() -> PermissionApplication:
+    """获取 PermissionApplication，如未初始化则尝试从 EmilyCore 触发 lazy init。"""
+    global _app
+    if _app is not None:
+        return _app
+
+    # 尝试从 EmilyCore 触发 lazy init（与 state_machine 路由同模式）
+    try:
+        from api.server import get_core
+        core = get_core()
+        core._ensure_initialized()
+        _app = core._permission_app
+    except Exception:
+        pass
+
     if _app is None:
         raise HTTPException(status_code=503, detail="Permission module not initialized")
     return _app

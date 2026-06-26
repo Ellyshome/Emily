@@ -100,8 +100,8 @@ class PermissionService:
         # 授权码（临时/永久授权持有的权限编码，AUTO 不计入 granted_codes）
         granted_codes = [g.perm_code for g in grants if g.grant_type != "AUTO"]
 
-        # denied_codes：从 SOP deny 绑定推导
-        denied_codes = [f"SOP-INTERNAL-*-*-{sid}-*" for sid in denied_sop_ids]
+        # denied_codes：从 SOP deny 绑定推导（5 段编码格式）
+        denied_codes = [f"SOP-INTERNAL-*-*-{sid}" for sid in denied_sop_ids]
 
         # 权限版本号（来自缓存或默认 0）
         perm_version = self._cache.get_version() if self._cache else 0
