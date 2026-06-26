@@ -250,6 +250,16 @@ class Config:
     scheduler_tick_seconds: int = 60
     """调度循环间隔（秒），默认 60 秒"""
 
+    # ---- 全局状态机 (State Machine) ----
+    state_machine_enabled: bool = True
+    """全局状态机模块总开关"""
+
+    state_machine_cascade_max_depth: int = 5
+    """级联更新最大传播深度，默认 5"""
+
+    state_machine_auto_start_nodes: bool = False
+    """级联中是否自动启动满足度为 100 的节点（默认关闭，需人工确认）"""
+
     scheduler_reminder_before_minutes: int = 60
     """临近超时提醒提前量（分钟），默认 60 分钟"""
 

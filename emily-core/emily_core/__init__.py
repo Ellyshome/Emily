@@ -62,6 +62,13 @@ class EmilyCore:
         # Session 池
         self._session_pool = None
 
+        # 全局状态机模块
+        self._sm_node_repo = None
+        self._sm_stage_repo = None
+        self._sm_audit_repo = None
+        self._sm_service = None
+        self._sm_app = None
+
         # Phase B/C: 共享基础设施
         self._sop_intent_registry = None
         self._tool_registry = None
@@ -112,6 +119,9 @@ class EmilyCore:
 
         # ── 计划任务系统 ──
         self._init_plan_task_module()
+
+        # ── 全局状态机模块 ──
+        self._init_state_machine_module()
 
         # 将 plan_task 工具注册到 BusinessFlowToolRegistry
         if self._plan_task_app is not None and self._business_flow_tools is not None:
@@ -175,10 +185,30 @@ class EmilyCore:
             from .tools.query_tool import handle_query_data
 
             self._business_flow_tools = BusinessFlowToolRegistry()
-            self._business_flow_tools.register(BusinessFlowTool(
-                name="record_event", description="记录项目事件",
-                parameters={"type": "object", "properties": {}}, handler=handle_record_event,
-            ))
+
+            # record_event — 如果 SM service 可用，包装以在事件录入后自动匹配全景节点
+            sm_service = getattr(self, "_sm_service", None)
+            if sm_service is not None:
+                async def _sm_record_event(params):
+                    result = await handle_record_event(params)
+                    if result.get("success") and result.get("object_id"):
+                        sm_result = await sm_service.try_match_and_complete(
+                            event_title=params.get("title", ""),
+                            event_type=params.get("event_type", ""),
+                        )
+                        if sm_result.get("matched") and sm_result.get("completed"):
+                            reply = result.get("reply", "")
+                            result["reply"] = reply + "\n" + sm_result.get("reply", "")
+                    return result
+                self._business_flow_tools.register(BusinessFlowTool(
+                    name="record_event", description="记录项目事件",
+                    parameters={"type": "object", "properties": {}}, handler=_sm_record_event,
+                ))
+            else:
+                self._business_flow_tools.register(BusinessFlowTool(
+                    name="record_event", description="记录项目事件",
+                    parameters={"type": "object", "properties": {}}, handler=handle_record_event,
+                ))
             self._business_flow_tools.register(BusinessFlowTool(
                 name="record_task", description="创建任务",
                 parameters={"type": "object", "properties": {}}, handler=handle_record_task,
@@ -240,6 +270,7 @@ class EmilyCore:
             guardian_review=self._guardian_review,
             sop_intent_registry=self._sop_intent_registry,
             rag_provider=self._rag_provider,
+            sm_service=getattr(self, "_sm_service", None),
         )
         self._bus = PipelineBUS.build_default(
             node_handlers=self._workitem_agent.node_handlers(),
@@ -378,6 +409,48 @@ class EmilyCore:
             self._plan_task_scheduler = None
             self._plan_task_app = None
             self._workflow_integrator = None
+
+    def _init_state_machine_module(self) -> None:
+        """初始化全局状态机模块：Repository + Service + Application + API routing。"""
+        try:
+            from .repositories.sm_node_repo import SMNodeRepository
+            from .repositories.sm_stage_repo import SMStageRepository
+            from .repositories.sm_audit_repo import SMAuditRepository
+            from .services.state_machine_service import StateMachineService
+            from .application.state_machine_app import StateMachineApplication
+
+            sm_cascade_depth = getattr(self.config, "state_machine_cascade_max_depth", 5)
+            sm_auto_start = getattr(self.config, "state_machine_auto_start_nodes", False)
+
+            self._sm_node_repo = SMNodeRepository()
+            self._sm_stage_repo = SMStageRepository()
+            self._sm_audit_repo = SMAuditRepository()
+
+            self._sm_service = StateMachineService(
+                node_repo=self._sm_node_repo,
+                stage_repo=self._sm_stage_repo,
+                audit_repo=self._sm_audit_repo,
+                cascade_max_depth=sm_cascade_depth,
+                auto_start_enabled=sm_auto_start,
+            )
+
+            self._sm_app = StateMachineApplication(service=self._sm_service)
+
+            # Register the API router on the FastAPI app
+            try:
+                from emily_core.api.routes.state_machine import set_state_machine_app
+                set_state_machine_app(self._sm_app)
+            except Exception:
+                pass  # router registration handled by api/server.py
+
+            logger.info("StateMachine module initialized: service + app ready")
+        except Exception as e:
+            logger.warning("StateMachine module init failed: %s", e)
+            self._sm_node_repo = None
+            self._sm_stage_repo = None
+            self._sm_audit_repo = None
+            self._sm_service = None
+            self._sm_app = None
 
     def _load_hook_config(self) -> dict | None:
         """加载 Hook 声明式配置（hook_config.json）。"""

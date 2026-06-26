@@ -28,3 +28,6 @@ journal/
 # OS
 Thumbs.db
 .DS_Store
+
+# CodeGraph 索引缓存（自动生成，不提交）
+.codegraph/

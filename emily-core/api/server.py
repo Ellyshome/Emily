@@ -47,10 +47,11 @@ async def lifespan(app: FastAPI):
 app = FastAPI(title="Emily Core API", version="1.0", lifespan=lifespan)
 
 # 注册路由
-from .routes import health, message, session  # noqa: E402
+from .routes import health, message, session, state_machine  # noqa: E402
 from .sse import outbound  # noqa: E402
 
 app.include_router(health.router, prefix="/api/v1")
 app.include_router(message.router, prefix="/api/v1")
 app.include_router(session.router, prefix="/api/v1")
+app.include_router(state_machine.router, prefix="/api/v1")
 app.include_router(outbound.router, prefix="/api/v1")
