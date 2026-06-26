@@ -65,7 +65,6 @@
 | --- | --- | --- |
 | `record_task` | 任务创建 | 核心工具 |
 | `query_data` | 查询现有任务/项目 | 检查重复、推断项目 |
-| `GuardianReview.review_record` | 录入核验 | 录入前自动调用 |
 
 ### 3.3 处理流程
 

@@ -8,13 +8,13 @@ Phase C 实现（蓝图 §12.2）：
   - 节点1 [意图验证+注入]：路由已在 SessionAgent 完成，节点1 仅验证 + 增量注入
   - 节点2 [计划+标准]：EMILY_PLANNER_MODE=real 时 LLM 动态规划，否则 MockPlanner
   - 节点3 [执行+验收]：EMILY_EXECUTOR_MODE=real 时真实执行引擎（M14 工具直调）
-  - 节点4 [成果总结]：EMILY_GUARDIAN_MODE=review|agent 时真实守护审核，移除 [Mock] 前缀
+  - 节点4 [成果总结]：组装 result_text + MockGuardian.review_reply()
 
 节点 ↔ 大脑映射（蓝图 §5.4 + Phase C）：
   wi_node1 [意图验证+注入]  ← KnowledgeInjector + RouteDecision 构建
   wi_node2 [计划+标准]      ← LLM Planning | MockPlanner
-  wi_node3 [执行+验收]      ← RealExecutor (M14) | MockWorkAgent + GuardianReview/MockGuardian
-  wi_node4 [成果总结]        ← 组装 result_text + GuardianReview/MockGuardian.review_reply()
+  wi_node3 [执行+验收]      ← RealExecutor (M14) | MockWorkAgent + MockGuardian
+  wi_node4 [成果总结]        ← 组装 result_text + MockGuardian.review_reply()
 """
 
 from __future__ import annotations
@@ -76,8 +76,6 @@ class WorkItemAgent:
 
     Phase C 升级：
       - 节点3 支持真实执行引擎（EMILY_EXECUTOR_MODE=real）
-      - 节点3/4 支持 GuardianReview（EMILY_GUARDIAN_MODE=review）
-      - 节点4 支持 GuardianAgent 深度审计（EMILY_GUARDIAN_MODE=agent）
       - 全部真实模式时自动移除 [Mock 模式] 前缀
     """
 
@@ -89,11 +87,12 @@ class WorkItemAgent:
         config=None,
         # Phase C: 执行和守护依赖
         business_flow_tools=None,
-        guardian_review=None,
         sop_intent_registry=None,
         rag_provider=None,
         # SM: 全局状态机服务（事件录入后自动匹配完成节点）
         sm_service=None,
+        # 阶段二：三维鉴权引擎
+        permission_engine=None,
     ):
         self.injector = injector or KnowledgeInjector()
         self.config = config
@@ -104,9 +103,6 @@ class WorkItemAgent:
         # Phase C: 执行依赖
         self._business_flow_tools = business_flow_tools
 
-        # Phase C: 守护依赖
-        self._guardian_review = guardian_review
-
         # Phase C: 鉴权依赖
         self._sop_intent_registry = sop_intent_registry
 
@@ -115,6 +111,9 @@ class WorkItemAgent:
 
         # SM: 全局状态机服务
         self._sm_service = sm_service
+
+        # 阶段二：三维鉴权引擎
+        self._permission_engine = permission_engine
 
         # Mock 大脑（Phase C 保留作为 fallback）
         self._planner = MockPlanner()
@@ -249,16 +248,10 @@ class WorkItemAgent:
             step_results = await self._work_agent.execute(wi.execution_plan, context)
 
         # 逐步守护验收（陪跑模式）
-        guardian_mode = self._resolve_mode("guardian")
         criteria = wi.acceptance_criteria
         for sr in step_results:
             try:
-                if guardian_mode == "review":
-                    await self._guardian_review_step(sr, None, criteria)
-                elif guardian_mode == "agent":
-                    await self._guardian_agent_step(sr, None, criteria)
-                else:
-                    await self._guardian.review_step(sr, None, criteria)
+                await self._guardian.review_step(sr, None, criteria)
             except Exception as e:
                 logger.warning("WI %s node3 guardian review_step failed: %s", wi.id, e)
             wi.add_step_result(sr)
@@ -267,8 +260,8 @@ class WorkItemAgent:
         if step_results:
             context.agent_result = step_results[-1]
             context.agent_reply = step_results[-1].output
-        logger.debug("WI %s node3: %d steps, executor=%s guardian=%s",
-                     wi.id, len(step_results), executor_mode, guardian_mode)
+        logger.debug("WI %s node3: %d steps, executor=%s guardian=mock",
+                     wi.id, len(step_results), executor_mode)
 
     async def _real_execute(self, plan: ExecutionPlan, context: BusContext) -> list[StepResult]:
         """Phase C: 真实执行引擎 —— 按 PlanStep 调用 M14 工具 handler。
@@ -390,43 +383,6 @@ class WorkItemAgent:
 
         return results
 
-    # ── Phase C: 守护审核方法 ──
-
-    async def _guardian_review_step(self, step_result, plan_step=None, criteria=None) -> None:
-        """Phase C: 轻量 Guardian 逐步审核 —— GuardianReview.review_record()。
-
-        Returns None（内部处理，异常捕获后默认 PASS）。
-        """
-        if self._guardian_review is None:
-            return
-
-        try:
-            tool_calls = getattr(step_result, 'tool_calls', []) or []
-            for tc in tool_calls:
-                result = await self._guardian_review.review_record(
-                    tool_name=tc.tool_name if hasattr(tc, 'tool_name') else 'unknown',
-                    data={
-                        'output': getattr(step_result, 'output', ''),
-                        'success': getattr(step_result, 'success', True),
-                        'step_id': getattr(step_result, 'step_id', '?'),
-                    },
-                )
-                if not result.passed:
-                    logger.info("GuardianReview FLAG step: %s findings=%s",
-                                getattr(step_result, 'step_id', '?'), result.findings[:80])
-        except Exception as e:
-            logger.warning("GuardianReview review_step failed: %s (defaulting to PASS)", e)
-
-    async def _guardian_agent_step(self, step_result, plan_step=None, criteria=None) -> None:
-        """Phase C: 深度审计逐步审核 —— GuardianAgent.investigate()。
-
-        注意：每步骤都创建 GuardianAgent 成本高，推荐在 DeepAuditHook 中做全量审计。
-        """
-        if self._guardian_review is None:
-            return
-        # Fallback to light review for per-step; deep audit is done via Hook
-        await self._guardian_review_step(step_result, plan_step, criteria)
-
     # ── Phase C: Node 4 成果总结 ──
 
     async def node4_summary(self, context: BusContext) -> None:
@@ -461,17 +417,9 @@ class WorkItemAgent:
             draft = mock_prefix + "Emily 已处理完毕。"
 
         # 出站审核
-        guardian_mode = self._resolve_mode("guardian")
         try:
-            if guardian_mode in ("review", "agent") and self._guardian_review:
-                review_result = await self._guardian_review.review_reply(
-                    reply_text=draft,
-                    user_message=wi.user_input,
-                )
-                verdict_val = "pass" if review_result.passed else "flag"
-            else:
-                verdict = await self._guardian.review_reply(draft, wi)
-                verdict_val = getattr(verdict, "value", "pass")
+            verdict = await self._guardian.review_reply(draft, wi)
+            verdict_val = getattr(verdict, "value", "pass")
         except Exception as e:
             logger.warning("WI %s node4 guardian review_reply failed: %s", wi.id, e)
             verdict_val = "pass"
@@ -487,37 +435,57 @@ class WorkItemAgent:
 
         wi.llm_call_count += 1
         context.verified_reply = wi.result_text
-        logger.debug("WI %s node4: reply_len=%d guardian=%s mock_prefix=%s",
-                     wi.id, len(wi.result_text), guardian_mode, repr(mock_prefix))
+        logger.debug("WI %s node4: reply_len=%d guardian=mock mock_prefix=%s",
+                     wi.id, len(wi.result_text), repr(mock_prefix))
 
     # ── Phase C: 鉴权引擎 ──
 
-    async def authorize(self, user_id: str, route_decision) -> AuthResult:
-        """Phase C: 真实鉴权 —— 基于 SOP allow_roles。
+    async def authorize(self, context: BusContext, route_decision) -> AuthResult:
+        """Phase C: 三维鉴权 —— 基于 PermissionAuthEngine（阶段二重写）。
 
-        当 EMILY_AUTH_MODE=real 时，替代 MockAuthEngine.authorize()。
+        签名从 (user_id, route_decision) 改为 (context: BusContext, route_decision)，
+        从 BusContext 获取权限快照，委托 PermissionAuthEngine 执行三维鉴权。
+        mock 模式：始终 ALLOW。
         """
         auth_mode = self._resolve_mode("auth")
-        if auth_mode != "real" or not self._sop_intent_registry:
+        if auth_mode != "real":
             return AuthResult(decision=AuthDecision.ALLOW, matched_roles=["all"],
                             _source="mock_auth")
 
         sop_id = getattr(route_decision, "sop_id", None)
         if not sop_id:
-            return AuthResult(decision=AuthDecision.ALLOW, _source="real_auth")
+            return AuthResult(decision=AuthDecision.ALLOW, _source="real_auth")  # 纯聊天无需鉴权
 
-        spec = self._sop_intent_registry.get_spec(sop_id)
-        if spec is None:
-            return AuthResult(decision=AuthDecision.ALLOW, _source="real_auth")
-
-        allowed = set(spec.allow_roles)
-        if "all" in allowed:
-            return AuthResult(decision=AuthDecision.ALLOW, matched_roles=["all"],
+        # 获取权限快照
+        perms = context.get_permissions()
+        if perms is None:
+            return AuthResult(decision=AuthDecision.DENY, reason="无权限快照",
                             _source="real_auth")
 
-        # 默认放行（完整用户角色检查 Phase C 后续迭代）
-        return AuthResult(decision=AuthDecision.ALLOW, matched_roles=list(allowed),
-                        _source="real_auth")
+        # 委托 PermissionAuthEngine 三维鉴权
+        engine = getattr(self, "_permission_engine", None)
+        if engine is None:
+            # 无引擎时走快照白名单
+            if sop_id in perms.sop_allow:
+                return AuthResult(decision=AuthDecision.ALLOW,
+                                matched_roles=[f"L{perms.permission_level}"],
+                                _source="real_auth_sop_allow")
+            return AuthResult(
+                decision=AuthDecision.DENY,
+                reason=f"SOP {sop_id} 不在用户白名单中",
+                _source="real_auth_sop_allow",
+            )
+
+        result = await engine.check_sop_access(perms, sop_id, context)
+        if result.allowed:
+            return AuthResult(decision=AuthDecision.ALLOW,
+                            matched_roles=[f"L{perms.permission_level}"],
+                            _source="real_auth_engine")
+        return AuthResult(
+            decision=AuthDecision.DENY,
+            reason=result.reason,
+            _source="real_auth_engine",
+        )
 
     # ── Phase C: 风险评估 ──
 

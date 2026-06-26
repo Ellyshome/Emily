@@ -13,9 +13,10 @@ Emily v0.6.0 是面向企业的 AI Agent 工具，通过 IM（QQ）与员工交�
 - 团队工作流记录与留痕（事件/任务/会议/文件）
 - 业务 SOP 数字化与 LLM 引导
 - 企业知识库 RAG（MaxKB hit_test 纯向量检索，Qwen3-Embedding-0.6B + pgvector）
-- 计划任务周期管理（最新模块）
+- 计划任务周期管理
+- 全景节点图（~90 项目节点 × 7 阶段） + 全局状态机（5 态节点 + 3 态阶段 + 级联更新）
 
-**当前架构一句话**：双容器系统（薄插件 `emily_agent` + 独立 `emily-core` FastAPI 内核），采用 **Session 主线 + WorkItem + 4 节点 PipelineBUS** 的消息处理架构。旧 M15 八阶段 WorkOrder 管道已完全移除。
+**当前架构一句话**：双容器系统（薄插件 `emily_agent` + 独立 `emily-core` FastAPI 内核），采用 **Session 主线 + WorkItem + 4 节点 PipelineBUS** 的消息处理架构 + **全局状态机** 驱动项目全生命周期管理。旧 M15 八阶段 WorkOrder 管道已完全移除。
 
 **Python 环境管理**：本项目基于 uv。请使用 `uv run python ...` 而非裸 `python`。
 
@@ -28,7 +29,7 @@ Emily v0.6.0 是面向企业的 AI Agent 工具，通过 IM（QQ）与员工交�
 | **IM 接入** | NapCat + AstrBot (Docker) | QQ 消息桥接 |
 | **插件** | AstrBot Plugin Shell（薄插件 ~100 行） | 仅负责去重 + 标准化 + HTTP 转发 + SSE 监听，**无业务逻辑** |
 | **业务内核** | FastAPI + Python async | `emily-core` 独立容器，不 import AstrBot |
-| **数据库** | PostgreSQL + SQLAlchemy 2.0 sync | 29 表，esmily-postgres 容器 |
+| **数据库** | PostgreSQL + SQLAlchemy 2.0 sync | 36 表，esmily-postgres 容器 |
 | **AI/LLM** | DeepSeek API（OpenAI 兼容） | chat / chat_json / chat_with_tools |
 | **RAG** | MaxKB hit_test API | Qwen3-Embedding-0.6B 向量检索，可选本地关键词回退 |
 | **部署** | Docker Compose | 5 容器：napcat / astrbot / emily-core / maxkb / emily-postgres |
@@ -77,7 +78,7 @@ QQ → NapCat → AstrBot → emily_agent 薄插件
 | [docs/代码文件目录.md](docs/代码文件目录.md) | 全量 100+ 文件树 + 每文件一句话 | 找代码位置、理解文件职责、了解哪些是弃用/冷备/Mock |
 | [docs/业务模块与运转全景.md](docs/业务模块与运转全景.md) | Mermaid 端到端流程图 + ~30 模块清单 + WorkItem 状态机 + Mock/Real 切换 | 理解系统如何运转、模块之间如何交互、消息处理全路径 |
 | [docs/接口协议与调用约定.md](docs/接口协议与调用约定.md) | 标准协议对象 + 管道接口 ABC + 工具定义 + HTTP/SSE API + 12 条调用约定 | 写新模块/工具前确认契约、排查接口问题 |
-| [docs/数据库设计.md](docs/数据库设计.md) | 29 表速查 + 每表完整字段架构 + ER 关系图 + 维护注意事项 | 改模型、加表/字段、排查数据问题 |
+| [docs/数据库设计.md](docs/数据库设计.md) | 36 表速查 + 每表完整字段架构 + ER 关系图 + 维护注意事项 | 改模型、加表/字段、排查数据问题 |
 | [docs/开发记录.md](docs/开发记录.md) | EmyBot M1-M15→Emily Phase 0/A/B/C 演进 + 7 项架构决策 + 权威文档索引 | 了解历史决策原因、查阅原始设计文档 |
 | [docs/技术踩坑备忘录.md](docs/技术踩坑备忘录.md) | 按类别的 20+ 踩坑（容器/DB/AstrBot/异步/Hook/RAG/模式切换），每条现象+原因+解决 | 遇到问题先查、写新代码避坑 |
 
@@ -94,7 +95,7 @@ QQ → NapCat → AstrBot → emily_agent 薄插件
 | 5 | **M14 结构化输出优先** | 命中 SOP → LLM chat_json → `{tool, params}` → 框架直调 `BusinessFlowTool.handler(params)`。不暴露为 LLM function-calling。Unmatched → ToolRegistry function-calling 兜底 |
 | 6 | **Sync repo + `asyncio.to_thread`** | Repository 全 sync，async Service 用 `asyncio.to_thread()` 包裹 |
 | 7 | **Hook 三态 deny-wins** | ALLOW/WARN/BLOCK。before 异常=BLOCK；after 异常不阻断 |
-| 8 | **旧 `agent/` 冷备不 import** | MasterAgent/BusinessFlowAgent/GuardianAgent 等逻辑已提取到 SessionAgent/WorkItemAgent。旧文件做参考，不 import 到热路径 |
+| 8 | **旧 `agent/` 冷备不 import** | MasterAgent/BusinessFlowAgent 等逻辑已提取到 SessionAgent/WorkItemAgent。旧文件做参考，不 import 到热路径 |
 | 9 | **M15 WorkOrder 已弃用** | `workitem/_work_order_ref.py` + `_pipeline_context_ref.py` 仅保留供兼容，当前唯一路径是 `WorkItem` + `BusContext` + 4 节点 `PipelineBUS` |
 
 ---
@@ -130,7 +131,19 @@ QQ → NapCat → AstrBot → emily_agent 薄插件
 | `emily-core/emily_core/workitem/pipeline/hook.py` | Hook 基类 + 7 种具体 Hook 子类 |
 | `emily-core/emily_core/services/plan_task_service.py` | `PlanTaskService`：计划任务模板/实例生命周期 |
 | `emily-core/emily_core/services/plan_task_scheduler.py` | `PlanTaskScheduler`：后台调度循环（advisory lock/提醒/周期生成/升级） |
-| `emily-core/emily_core/infrastructure/database/models.py` | ORM 模型——**29 张表**（⚠ 不是旧文档说的 22 张） |
+| `emily-core/emily_core/services/state_machine_service.py` | `StateMachineService`：全局状态机引擎——状态变更/前置满足度/级联更新/进度查询/事件匹配 |
+| `emily-core/emily_core/state_machine/node_state.py` | `NodeStatus` 枚举：5 态（未启动/进行中/已阻塞/已延期/已完成）+ 转移矩阵 |
+| `emily-core/emily_core/state_machine/stage_state.py` | `StageStatus` 枚举：3 态（未启动/进行中/已完成）+ 7 阶段名称/边界定义 |
+| `emily-core/api/routes/state_machine.py` | `GET/PUT /api/v1/state-machine/*`：10 个状态机 REST 端点 |
+| `emily-core/emily_core/application/state_machine_app.py` | `StateMachineApplication`：编排层，封装 StateMachineService |
+| `emily-core/emily_core/repositories/sm_node_repo.py` | `SMNodeRepository`：sm_nodes 表 CRUD + 依赖/成果物查询 |
+| `emily-core/emily_core/repositories/sm_stage_repo.py` | `SMStageRepository`：sm_stages 表 CRUD |
+| `emily-core/emily_core/repositories/sm_audit_repo.py` | `SMAuditRepository`：sm_status_history + sm_audit_logs 写入/查询 |
+| `emily-core/emily_core/tools/sm_tool.py` | `query_sm_status` LLM 工具：Agent 按 node_id/stage_id/keyword 查询节点状态 |
+| `scripts/import_nodes.py` | 全景节点导入脚本：解析 `全景节点.md` → 写入 PostgreSQL（支持 --dry-run / --reset） |
+| `emily-data/baseknowledge/全景节点.md` | ~90 个标准节点定义（7 阶段 / 主责部门 / 前置条件 / 任务成果） |
+| `emily-data/sops/SOP-011-SYS-state_machine.md` | 全局状态机管理 SOP：查询/变更/审核 7 种子意图 |
+| `emily-core/emily_core/infrastructure/database/models.py` | ORM 模型——**36 张表**（⚠ 不是旧文档说的 22 张） |
 | `data/plugins/emily_agent/main.py` | AstrBot 薄插件入口（~100 行，无业务逻辑） |
 | `emily-data/config/core_config.json` | 非机密运行时配置 |
 | `emily-data/config/hook_config.json` | Hook 声明式挂载配置 |
@@ -166,6 +179,11 @@ uv run python scripts/smoke_test.py
 
 # MaxKB RAG 测试
 uv run python testsearch.py "消防验收"
+
+# 全景节点图导入（增量或重置）
+uv run python scripts/import_nodes.py          # 增量导入（跳过已存在节点）
+uv run python scripts/import_nodes.py --reset  # 清空重建全部节点
+uv run python scripts/import_nodes.py --dry-run # 仅解析不写入
 
 # 查看 PostgreSQL 表
 docker exec -it emily-postgres psql -U emily -d emily -c "\dt"

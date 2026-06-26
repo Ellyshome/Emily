@@ -50,12 +50,6 @@ class Config:
     storage_root: str = ""
     """文件存储根目录（为空时使用插件目录下的 files/ 文件夹）"""
 
-    notebook_dir: str = ""
-    """守护Agent笔记目录（为空时默认 notebooks/）"""
-
-    guardian_prompt_path: str = ""
-    """守护Agent prompt 文件路径（为空时默认 prompts/守护Agent.md）"""
-
     master_agent_prompt_path: str = ""
     """MasterAgent prompt 文件路径（为空时默认 prompts/master_agent.txt）"""
 
@@ -69,9 +63,6 @@ class Config:
     agent_max_iterations: int = 10
     """MasterAgent ReAct 循环最大迭代次数。"""
 
-    guardian_max_iterations: int = 5
-    """GuardianAgent 最大迭代次数（比 MasterAgent 更低，避免过度查询）。"""
-
     agent_temperature: float = 0.3
     """MasterAgent LLM 采样温度（比路由分类高一些，支持自然对话）。"""
 
@@ -84,19 +75,6 @@ class Config:
     # ---- M7.1: Mermaid 决策树 ----
     flow_maps_dir: str = ""
     """Mermaid 决策树文件目录（为空时默认 prompts/flows/）。"""
-
-    guardian_flow_file: str = ""
-    """GuardianAgent 专用决策树文件路径（为空时不注入额外决策树）。"""
-
-    # ---- M8a: 守护Agent 增强 ----
-    guardian_startup_check: bool = True
-    """系统启动时自动执行 GuardianAgent 体检（需 LLM Key）"""
-
-    guardian_reply_enabled: bool = True
-    """回复前守护核验开关（关闭可提升响应速度）"""
-
-    guardian_record_enabled: bool = True
-    """录入前守护核验开关"""
 
     pending_issues_enabled: bool = True
     """待解决问题清单开关"""
@@ -216,19 +194,13 @@ class Config:
     """执行大脑模式: mock | real（需 EMILY_LLM_API_KEY + BusinessFlowToolRegistry）"""
 
     guardian_mode: str = "mock"
-    """守护大脑模式: mock | review | agent
-       - mock:   永远 PASS（MockGuardian）
-       - review: GuardianReview 单轮 LLM 调用（5s 超时，异常默认 PASS）
-       - agent:  GuardianAgent 多轮 ReAct 深度审计"""
+    """守护大脑模式: mock（MockGuardian 兜底）"""
 
     auth_mode: str = "mock"
     """鉴权引擎模式: mock | real（需 SOPIntentRegistry）"""
 
     risk_mode: str = "mock"
     """风险评估模式: mock | real"""
-
-    deep_audit_enabled: bool = False
-    """深度审计 Hook 开关（before:wi_node4，独立于 guardian_mode）"""
 
     # ── M12b: Checkpoint 持久化 ──
     checkpoint_enabled: bool = True
@@ -268,6 +240,26 @@ class Config:
 
     scheduler_escalate_after_overdue_days: int = 7
     """超期 N 天后自动升级给上级（P2），默认 7 天"""
+
+    # ---- 权限管理 (Permission) ----
+    permission_enabled: bool = True
+    """权限管理模块总开关"""
+
+    permission_cache_ttl_seconds: int = 300
+    """权限矩阵缓存 TTL（秒），默认 5 分钟"""
+
+    permission_super_admin_level: int = 6
+    """系统管理员 permission_level 阈值（L6）"""
+
+    permission_session_max_ttl_hours: int = 24
+    """Session 权限快照最大存活时间（小时），超时自动刷新"""
+
+    permission_fail_open: bool = True
+    """权限查询失败时降级为访客（True）或拒绝（False）"""
+
+    permission_agent_issue_integration_enabled: bool = False
+    """协同待办模块集成开关 —— 关闭时 permission_requests 自身承载审批流；
+    待 agent_issues 模块落地后置 True 切换为真实 HTTP 调用"""
 
     extra: dict = field(default_factory=dict)
     """预留扩展字段"""

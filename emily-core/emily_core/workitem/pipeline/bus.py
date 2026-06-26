@@ -10,7 +10,7 @@ deny always wins（任一 before hook BLOCK → 立即终止），before hook �
 
 Hook 系统完整复用迁移过来的 hook.py / hook_registry.py（M15 实现，逻辑不改）。
 Phase B/C 已将 MockRouter 替换为 SessionAgent 意图识别，MockPlanner 替换为 LLM 规划，
-MockWorkAgent/MockGuardian 替换为真实执行引擎 + GuardianReview/GuardianAgent（见 workitem_agent.py）。
+MockWorkAgent/MockGuardian 作为 Mock 模式兜底（见 workitem_agent.py）。
 """
 
 from __future__ import annotations
@@ -99,15 +99,8 @@ class PipelineBUS:
             if hook_type == "auth":
                 kwargs["resource_type"] = spec.get("resource_type", "")
                 kwargs["action"] = spec.get("action", "")
-                # Phase B: 注入 SOPIntentRegistry 供角色鉴权
-                if "sop_intent_registry" in injected_services:
-                    kwargs["sop_intent_registry"] = injected_services["sop_intent_registry"]
             elif hook_type == "audit":
                 kwargs["event_type"] = spec.get("event_type", "")
-            elif hook_type == "verify":
-                kwargs["verify_type"] = spec.get("verify_type", "")
-                if "guardian_review" in injected_services:
-                    kwargs["guardian_review"] = injected_services["guardian_review"]
             elif hook_type == "trace":
                 kwargs["trace_level"] = spec.get("trace_level", "summary")
                 if "agent_trace_service" in injected_services:
@@ -118,9 +111,6 @@ class PipelineBUS:
                 if "progress_template" in injected_services:
                     kwargs["progress_template"] = injected_services["progress_template"]
                 kwargs["enable_progress"] = spec.get("enabled", True)
-            elif hook_type == "deep_audit":
-                if "guardian_agent_factory" in injected_services:
-                    kwargs["guardian_agent_factory"] = injected_services["guardian_agent_factory"]
             elif hook_type == "plan_task_match":
                 if "plan_task_service" in injected_services:
                     kwargs["plan_task_service"] = injected_services["plan_task_service"]

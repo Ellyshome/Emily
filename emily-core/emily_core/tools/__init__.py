@@ -5,7 +5,7 @@
 
 M9 架构重构（2026-06-19）：
   - invoke_business_flow → MasterAgent._dispatch_specialist()（框架内置方法）
-  - invoke_guardian → MasterAgent._invoke_guardian() + DeepAuditHook（Pipeline Hook）
+  - invoke_guardian → 已移除（原 Pipeline Hook 已删除）
   - list_sop_catalog → 删除（已通过 SOPIntentRegistry.dump_as_text() 注入 system prompt）
   - read_flow_diagram / list_flow_diagrams → 删除（子图全部注入 prompt 的 {SUB_FLOWS}）
 
@@ -16,7 +16,7 @@ M14 架构重构（2026-06-21）：
   - 条件工具（pending_issues / user_memory / knowledge_search 等）保持不变
 
 M7.1: FlowMapManager 决策树已全部注入 system prompt，仅保留 create_flow_diagram 管理员工具。
-M8a: GuardianReview 核验 + PendingIssuesService 待解决问题清单。
+M8a: PendingIssuesService 待解决问题清单。
 M8c: write_user_memory 长期记忆工具。
 """
 
@@ -57,9 +57,8 @@ def create_all_tools(
     user_id: str = "",
     message_id: str = "",
     is_admin: bool = False,
-    llm_client=None,            # M6: invoke_guardian 依赖
-    config=None,                 # M6: invoke_guardian 依赖
-    guardian_review=None,        # M8a: 轻量核验器
+    llm_client=None,            # LLM 客户端
+    config=None,                 # 全局配置
     pending_issues=None,         # M8a: 待解决问题清单服务
     user_memory_service=None,    # M8c: 用户长期记忆服务
     user_name: str = "",         # M8c: 当前用户显示名称
@@ -106,8 +105,8 @@ def create_all_tools(
         from .memory_tool import create_memory_tool
         registry.register(create_memory_tool(user_memory_service, user_name=user_name))
 
-    # M6: 守护调查已迁移为 MasterAgent._invoke_guardian() + DeepAuditHook
-    # （原 invoke_guardian 工具不再注册——LLM 不再通过 tool calling 调用 GuardianAgent）
+    # M6: 守护调查已移除
+    # （原 invoke_guardian 工具不再注册）
 
     # M9: SOP 业务流派发已迁移为 MasterAgent 内置方法 _dispatch_specialist()
     # （原 invoke_business_flow 工具不再注册——LLM 不再通过 tool calling 派发，
@@ -172,7 +171,6 @@ def create_business_flow_tools(
     query_service,
     user_id: str = "",
     message_id: str = "",
-    guardian_review=None,        # M8a: 轻量核验器
     pending_issues=None,         # M8a: 待解决问题清单服务
     config=None,                 # M8a: 配置
     plan_task_app=None,          # 计划任务系统 Application
@@ -191,7 +189,6 @@ def create_business_flow_tools(
         query_service: QueryService 实例
         user_id: 当前用户 ID
         message_id: 当前消息 ID
-        guardian_review: GuardianReview 实例（可选）
         pending_issues: PendingIssuesService 实例（可选）
         config: 全局配置（可选）
         plan_task_app: PlanTaskApplication 实例（可选，计划任务系统）
@@ -201,19 +198,13 @@ def create_business_flow_tools(
     """
     registry = BusinessFlowToolRegistry()
 
-    guardian_record_enabled = (
-        getattr(config, "guardian_record_enabled", True)
-        if config else True
-    )
-    _review = guardian_review if guardian_record_enabled else None
-
     # record_event — 事件录入
     sm_match_handler = None
     if sm_service is not None:
         async def _sm_match_wrapper(params):
             result = await handle_record_event(
                 params, event_app=event_app, user_id=user_id, message_id=message_id,
-                guardian_review=_review, pending_issues=pending_issues, config=config,
+                pending_issues=pending_issues, config=config,
             )
             # 事件录入成功后尝试匹配全景节点并自动完成
             if result.get("success") and result.get("object_id"):
@@ -231,7 +222,7 @@ def create_business_flow_tools(
     else:
         sm_match_handler = lambda params: handle_record_event(
             params, event_app=event_app, user_id=user_id, message_id=message_id,
-            guardian_review=_review, pending_issues=pending_issues, config=config,
+            pending_issues=pending_issues, config=config,
         )
 
     registry.register(BusinessFlowTool(
@@ -248,7 +239,7 @@ def create_business_flow_tools(
         parameters=_TASK_TOOL_SCHEMA,
         handler=lambda params: handle_record_task(
             params, task_app=task_app, user_id=user_id, message_id=message_id,
-            guardian_review=_review, pending_issues=pending_issues, config=config,
+            pending_issues=pending_issues, config=config,
         ),
     ))
 
@@ -259,7 +250,7 @@ def create_business_flow_tools(
         parameters=_MEETING_TOOL_SCHEMA,
         handler=lambda params: handle_record_meeting(
             params, meeting_app=meeting_app, user_id=user_id, message_id=message_id,
-            guardian_review=_review, pending_issues=pending_issues, config=config,
+            pending_issues=pending_issues, config=config,
         ),
     ))
 
@@ -270,7 +261,7 @@ def create_business_flow_tools(
         parameters=_FILE_TOOL_SCHEMA,
         handler=lambda params: handle_record_file(
             params, file_app=file_app, user_id=user_id, message_id=message_id,
-            guardian_review=_review, pending_issues=pending_issues, config=config,
+            pending_issues=pending_issues, config=config,
         ),
     ))
 
@@ -293,7 +284,7 @@ def create_business_flow_tools(
             parameters=_RECORD_PLAN_TASK_SCHEMA,
             handler=lambda params: handle_record_plan_task(
                 params, plan_task_app=plan_task_app, user_id=user_id, message_id=message_id,
-                guardian_review=_review, pending_issues=pending_issues, config=config,
+                pending_issues=pending_issues, config=config,
             ),
         ))
 

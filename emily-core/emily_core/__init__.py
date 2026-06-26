@@ -11,7 +11,6 @@ EmilyCore 是独立容器内的业务内核，不依赖任何 AstrBot 对象。�
 
 Phase C 升级（蓝图 §12.2）：
   · MockWorkAgent → 真实执行引擎（M14 BusinessFlowToolRegistry 直调）
-  · MockGuardian → GuardianReview + GuardianAgent（轻量/深度审计）
   · MockAuthEngine → 角色鉴权（SOP allow_roles）
   · MockRiskGrader → 基于规则的风险评估
 """
@@ -36,8 +35,6 @@ class EmilyCore:
 
     Phase C 升级：
       · _business_flow_tools → 执行引擎（M14 工具直调）
-      · _guardian_review → 守护审核（轻量 + 深度）
-      · _guardian_agent_factory → DeepAuditHook
     """
 
     def __init__(self, config: Config, rag_provider=None):
@@ -73,16 +70,23 @@ class EmilyCore:
         self._sop_intent_registry = None
         self._tool_registry = None
 
-        # Phase C: 执行和守护依赖
+        # Phase C: 执行依赖
         self._business_flow_tools = None
-        self._guardian_review = None
-        self._guardian_agent_factory = None
 
         # 计划任务系统（Scheduled Task Module）
         self._plan_task_service = None
         self._plan_task_scheduler = None
         self._plan_task_app = None
         self._workflow_integrator = None
+
+        # 权限管理模块（Permission Module，v2.0）
+        self._permission_repo = None
+        self._permission_grant_repo = None
+        self._permission_service = None
+        self._permission_cache = None
+        self._permission_auth_engine = None
+        self._permission_audit_repo = None
+        self._permission_app = None
 
     # ────────────────────────────────────────────────────────────────────
     # 延迟初始化
@@ -122,6 +126,9 @@ class EmilyCore:
 
         # ── 全局状态机模块 ──
         self._init_state_machine_module()
+
+        # ── 权限管理模块（v2.0：快照灌注）──
+        self._init_permission_module()
 
         # 将 plan_task 工具注册到 BusinessFlowToolRegistry
         if self._plan_task_app is not None and self._business_flow_tools is not None:
@@ -230,28 +237,6 @@ class EmilyCore:
             logger.warning("Phase C: BusinessFlowToolRegistry init failed: %s", e)
             self._business_flow_tools = None
 
-        # 2. GuardianReview（轻量验证器）
-        if self._llm_client:
-            try:
-                from .agent.guardian_review import GuardianReview
-                self._guardian_review = GuardianReview(self._llm_client, self.config)
-                logger.info("Phase C: GuardianReview initialized")
-
-                # 3. GuardianAgent factory（深度审计，按需创建）
-                def _guardian_agent_factory():
-                    from .agent.guardian_agent import GuardianAgent
-                    return GuardianAgent(
-                        llm_client=self._llm_client,
-                        query_service=None,  # Phase C: query_service 后续 DB 初始化时注入
-                        config=self.config,
-                        notebook_dir=getattr(self.config, "notebook_dir", "") or "",
-                    )
-                self._guardian_agent_factory = _guardian_agent_factory
-                logger.info("Phase C: GuardianAgent factory ready")
-            except Exception as e:
-                logger.warning("Phase C: GuardianReview init failed: %s", e)
-                self._guardian_review = None
-
     def _build_pipeline_bus(self) -> None:
         """构建系统级公共 Pipeline BUS（蓝图 §5.4 + Phase C 升级）。"""
         from .workitem import WorkItemAgent, PipelineBUS, KnowledgeInjector
@@ -265,12 +250,13 @@ class EmilyCore:
             injector=injector,
             llm_client=self._llm_client,
             config=self.config,
-            # Phase C: 执行 + 守护依赖
+            # Phase C: 执行依赖
             business_flow_tools=self._business_flow_tools,
-            guardian_review=self._guardian_review,
             sop_intent_registry=self._sop_intent_registry,
             rag_provider=self._rag_provider,
             sm_service=getattr(self, "_sm_service", None),
+            # 阶段二：三维鉴权引擎
+            permission_engine=self._permission_auth_engine,
         )
         self._bus = PipelineBUS.build_default(
             node_handlers=self._workitem_agent.node_handlers(),
@@ -328,7 +314,7 @@ class EmilyCore:
                 description="创建计划任务（一次性或循环）。用于下达工作任务、布置周期性任务（日报/周报/月报等）。",
                 parameters=_RECORD_PLAN_TASK_SCHEMA,
                 handler=_make_handler(handle_record_plan_task,
-                    plan_task_app=app, guardian_review=None, pending_issues=None, config=cfg),
+                    plan_task_app=app, pending_issues=None, config=cfg),
             ))
             self._business_flow_tools.register(BusinessFlowTool(
                 name="submit_plan_task",
@@ -452,6 +438,85 @@ class EmilyCore:
             self._sm_service = None
             self._sm_app = None
 
+    def _init_permission_module(self) -> None:
+        """初始化权限管理模块（阶段二：三维鉴权 + 校验接口）。
+
+        阶段一：PermissionService 在 SessionFactory._build_context() 中被调用，
+        组装 PermissionSnapshot 注入 SessionContext。
+        阶段二：PermissionCache + PermissionAuthEngine + PermissionAuditLogRepository +
+        PermissionApplication + API 路由注册。
+        fail-open：初始化失败不阻塞 Core。
+        """
+        try:
+            from .repositories.permission_repo import PermissionRepository
+            from .repositories.permission_grant_repo import PermissionGrantRepository
+            from .services.permission_service import PermissionService
+            from .permission.cache import PermissionCache
+            from .permission.auth_engine import PermissionAuthEngine
+            from .permission.row_security import (
+                PermissionAuditLogRepository,
+                register_row_security_listener,
+            )
+            from .application.permission_app import PermissionApplication
+
+            fail_open = getattr(self.config, "permission_fail_open", True)
+            cache_ttl = getattr(self.config, "permission_cache_ttl_seconds", 300)
+
+            # Repository
+            self._permission_repo = PermissionRepository()
+            self._permission_grant_repo = PermissionGrantRepository()
+            self._permission_audit_repo = PermissionAuditLogRepository()
+
+            # L1/L2 缓存
+            self._permission_cache = PermissionCache(ttl_seconds=cache_ttl)
+
+            # 三维鉴权引擎
+            self._permission_auth_engine = PermissionAuthEngine(
+                cache=self._permission_cache,
+                audit_repo=self._permission_audit_repo,
+            )
+
+            # Service（注入缓存 + 引擎 + 审计）
+            self._permission_service = PermissionService(
+                repo=self._permission_repo,
+                grant_repo=self._permission_grant_repo,
+                fail_open=fail_open,
+                cache=self._permission_cache,
+                auth_engine=self._permission_auth_engine,
+                audit_repo=self._permission_audit_repo,
+            )
+
+            # Application 编排层
+            self._permission_app = PermissionApplication(
+                service=self._permission_service,
+            )
+
+            # API 路由注册
+            try:
+                from emily_core.api.routes.permission import set_permission_app
+                set_permission_app(self._permission_app)
+            except Exception:
+                pass  # router registration handled by api/server.py
+
+            # 注册行级安全拦截器
+            try:
+                register_row_security_listener()
+            except Exception as e:
+                logger.warning("Row security listener registration failed: %s", e)
+
+            logger.info(
+                "Permission module initialized: service + cache + auth_engine + app + row_security"
+            )
+        except Exception as e:
+            logger.warning("Permission module init failed: %s", e)
+            self._permission_repo = None
+            self._permission_grant_repo = None
+            self._permission_service = None
+            self._permission_cache = None
+            self._permission_auth_engine = None
+            self._permission_audit_repo = None
+            self._permission_app = None
+
     def _load_hook_config(self) -> dict | None:
         """加载 Hook 声明式配置（hook_config.json）。"""
         import json
@@ -490,12 +555,6 @@ class EmilyCore:
         # Phase B: 鉴权依赖
         if self._sop_intent_registry is not None:
             injected["sop_intent_registry"] = self._sop_intent_registry
-
-        # Phase C: Guardian 服务
-        if self._guardian_review is not None:
-            injected["guardian_review"] = self._guardian_review
-        if self._guardian_agent_factory is not None:
-            injected["guardian_agent_factory"] = self._guardian_agent_factory
 
         # 计划任务系统：注入到 PlanTaskMatchHook（§2.5 计划外事件匹配）
         if self._plan_task_service is not None:

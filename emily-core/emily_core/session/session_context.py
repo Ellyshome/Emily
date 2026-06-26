@@ -27,10 +27,16 @@ class PermissionSnapshot:
     - 不直接灌注到 Session-Agent，避免上下文污染和安全边界不清晰
     - WorkItemAgent 通过只读访问获取权限信息进行鉴权
     - 数据库访问权限限定通过权限可见范围白名单机制实现
+
+    v2.0 权限系统改造（需求-完整版）：
+    - grouping → permission_level（6 级树形继承，值域 1-6，需求 §2）
+    - 新增 permissions_loaded_at / permission_version（轻量变更检测，设计文档 v1.5）
+    - 新增 authorized_node_ids（单位权限范围关联的全景节点 ID）
+    - 新增 granted_codes / denied_codes（权限编码，支持通配符匹配，需求 §6）
     """
 
-    # ── 权限层级（累进继承）──
-    grouping: int = 0                   # 0:访客, 1:参建, 2:主管, 3:一般管理员, 4:系统管理员
+    # ── 权限层级（6 级树形继承，需求 §2）──
+    permission_level: int = 1           # 1:访客 2:参建执行 3:参建管理 4:建设主管 5:管理员 6:系统管理员
 
     # ── 企业归属 ──
     company_id: str = ""                # 所属公司 ID
@@ -49,12 +55,23 @@ class PermissionSnapshot:
     # ── 数据库表级权限 ──
     db_perms: dict[str, str] = field(default_factory=dict)  # {"event": "read_write", "project": "read"}
 
-    # ── 信息访问级别 ──
-    info_level: str = "public"          # public / internal / confidential
+    # ── 信息访问级别（4 级密级，需求 §3.1）──
+    info_level: str = "public"          # public / internal / private / confidential
 
     # ── 组织架构 ──
     supervisor_id: str = ""             # 直接上级（异常审核人）
     org_group: str = ""                 # 企业内分组：管理组 / 业务组
+
+    # ── 权限编码（需求 §6，支持通配符 * 与前缀匹配）──
+    granted_codes: list[str] = field(default_factory=list)   # 临时/永久授权持有的权限编码
+    denied_codes: list[str] = field(default_factory=list)    # 显式拒绝的权限编码（优先级最高）
+
+    # ── 节点范围（单位权限范围关联的全景节点 ID，需求 §4）──
+    authorized_node_ids: list[str] = field(default_factory=list)
+
+    # ── 变更检测（设计文档 v1.5）──
+    permissions_loaded_at: str = ""     # 快照加载时间戳（ISO8601）
+    permission_version: int = 0         # 权限版本号（变更时递增，Hook 处理前对比）
 
     # ── 扩展 ──
     extra_perms: dict[str, Any] = field(default_factory=dict)
@@ -121,6 +138,17 @@ class SessionContext:
             return perm == "read_write"
         return False
 
+    def meets_level_requirement(self, required_level: int) -> bool:
+        """检查是否满足权限层级要求（6 级树形继承，需求 §2）。
+
+        调用 permission.can_access() 判断 required_level 是否在用户继承链内。
+        """
+        from ..permission.level import can_access
+        return can_access(self.permissions.permission_level, required_level)
+
     def meets_grouping_requirement(self, required_grouping: int) -> bool:
-        """检查是否满足权限层级要求（累进继承）。"""
-        return self.permissions.grouping >= required_grouping
+        """【已废弃 v2.0】旧线性继承检查，保留向后兼容。
+
+        新代码应使用 meets_level_requirement()。内部转调树形判断。
+        """
+        return self.meets_level_requirement(required_grouping)

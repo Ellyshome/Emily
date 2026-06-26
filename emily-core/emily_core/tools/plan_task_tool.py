@@ -225,7 +225,6 @@ async def handle_record_plan_task(
     plan_task_app=None,
     user_id: str = "",
     message_id: str = "",
-    guardian_review: Any = None,
     pending_issues: Any = None,
     config: Any = None,
 ) -> dict:
@@ -236,7 +235,6 @@ async def handle_record_plan_task(
         plan_task_app: PlanTaskApplication 实例
         user_id: 当前用户 ID
         message_id: 触发消息 ID
-        guardian_review: GuardianReview 实例（可选）
         pending_issues: PendingIssues 实例（可选）
         config: Config 实例（可选）
 
@@ -258,37 +256,6 @@ async def handle_record_plan_task(
     project_id_param = params.get("project_id", "")
     phase_code = params.get("phase_code", "")
     executor_name = params.get("executor_name", "")
-    force = params.get("force", False)
-    guardian_notes = params.get("guardian_notes", "")
-
-    # 守护核验（可选）
-    if guardian_review is not None and not force:
-        try:
-            review_result = await guardian_review.review_record(
-                tool_name="record_plan_task",
-                data={"title": title, "description": description, "deadline": deadline_at},
-            )
-            if not review_result.passed:
-                # 记录待处理问题
-                if pending_issues is not None:
-                    await pending_issues.add(
-                        f"[plan_task] {title}",
-                        review_result.findings,
-                        user_id,
-                        message_id,
-                    )
-                return {
-                    "success": True,
-                    "object_type": "plan_task",
-                    "object_id": "",
-                    "reply": (
-                        f"⚠️ 守护核验标记：{review_result.findings}\n"
-                        f"任务「{title}」已创建为待处理问题。如需强制执行，请使用 force=true。"
-                    ),
-                    "needs_review": True,
-                }
-        except Exception as e:
-            logger.warning("Guardian review for record_plan_task failed: %s", e)
 
     # 解析执行人姓名 → user_id、项目名称 → project_id（best-effort，在线程池执行避免阻塞事件循环）
     executor_id = await asyncio.to_thread(_resolve_executor_id, executor_name)
