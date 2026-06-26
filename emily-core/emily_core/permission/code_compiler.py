@@ -3,11 +3,14 @@
 编码格式: [资源类型]-[密级]-[项目ID]-[节点ID]-[资源ID]
 示例:
   DOC-PUBLIC-PRJ001-NODE001-FILE001
-  DB-INTERNAL-PRJ002-*-*
-  SOP-CONFIDENTIAL-*-NODE005-FORM003
+  DB-INTERNAL-PR002-*-*
+  SOP-CONFIDENTIAL-*-NODE005-SOP-001-REC
+
+⚠ 注意：资源ID（第5段）可含连字符，如 SOP-001-REC、FILE-2026-001。
+正则仅约束前 4 段不含连字符，第 5 段贪婪匹配剩余部分。
 
 通配符（需求 §6.1.2）:
-  *        匹配任意单段值
+  *        匹配任意单段值（含整个第5段）
   PREFIX*  前缀匹配（如 NODE001* 匹配 NODE001A、NODE001B 等子节点）
 
 compile_code() 将编码字符串编译为 CompiledCode 5 元组结构；
@@ -88,7 +91,8 @@ def _segment_match(pattern: str, value: str) -> bool:
     return pattern == value
 
 
-_CODE_RE = re.compile(r"^([A-Z]+)-([A-Z]+)-([^-]*)-([^-]*)-([^-]*)$")
+# 前 4 段不含连字符，第 5 段（资源ID）贪婪匹配剩余（SOP ID 等可含连字符）
+_CODE_RE = re.compile(r"^([A-Z]+)-([A-Z]+)-([^-]*)-([^-]*)-(.+)$")
 
 
 def compile_code(code: str) -> CompiledCode | None:

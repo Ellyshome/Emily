@@ -134,26 +134,21 @@ class PermissionAuthEngine:
         """检查 denied_codes 是否包含此 SOP 的编码。
 
         denied_codes 优先级最高，任何级别用户命中即 DENY。
+        使用 code_matches_any 进行通配符匹配。
         """
         if not perms.denied_codes:
             return None
 
-        # 构建此 SOP 的各种可能编码，检查是否匹配任一 denied_code
-        # denied_codes 格式: SOP-INTERNAL-*-*-{sop_id}-*
-        for code in perms.denied_codes:
-            compiled = compile_code(code)
-            if compiled is None:
-                continue
-            if compiled.resource_type == "SOP":
-                # 检查资源 ID 段是否匹配 sop_id
-                # denied_codes 中的资源 ID 段可能是 sop_id 或 *
-                if compiled.resource_id == "*" or compiled.resource_id == sop_id:
-                    return AccessCheckResult(
-                        allowed=False,
-                        reason=f"权限显式拒绝（denied_code: {code}）",
-                        matched_details={"deny_code": code, "sop_id": sop_id},
-                        suggested_approver=perms.supervisor_id,
-                    )
+        # 构建此 SOP 的各密级权限编码，检查是否匹配任一 denied_code
+        for security_level in ["PUBLIC", "INTERNAL", "PRIVATE", "CONFIDENTIAL"]:
+            sop_code = _build_sop_code(sop_id, security_level)
+            if code_matches_any(sop_code, perms.denied_codes):
+                return AccessCheckResult(
+                    allowed=False,
+                    reason=f"权限显式拒绝（SOP {sop_id} 在拒绝列表中）",
+                    matched_details={"denied_sop_id": sop_id, "sop_code": sop_code},
+                    suggested_approver=perms.supervisor_id,
+                )
         return None
 
     # ========================================================================
