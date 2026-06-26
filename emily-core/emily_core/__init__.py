@@ -79,6 +79,9 @@ class EmilyCore:
         self._plan_task_app = None
         self._workflow_integrator = None
 
+        # 项目级 Agent (ProjectAgent, v0.7.0)
+        self._project_agent = None
+
         # 权限管理模块（Permission Module，v2.0）
         self._permission_repo = None
         self._permission_grant_repo = None
@@ -126,6 +129,9 @@ class EmilyCore:
 
         # ── 全局状态机模块 ──
         self._init_state_machine_module()
+
+        # ── 项目级 Agent（依赖状态机模块）──
+        self._init_project_agent()
 
         # ── 权限管理模块（v2.0：快照灌注）──
         self._init_permission_module()
@@ -438,6 +444,40 @@ class EmilyCore:
             self._sm_service = None
             self._sm_app = None
 
+    def _init_project_agent(self) -> None:
+        """初始化项目级 Agent：后台 Tick 循环（状态机主动维护 + 健康度检查 + AI 自动运维）。
+
+        Phase 1：卡滞检测（纯规则，不调 LLM）。
+        依赖 _sm_node_repo 和 _sm_service（由 _init_state_machine_module 先行初始化）。
+        fail-open：初始化失败不阻塞 Core。
+        """
+        try:
+            from .project import ProjectAgent, ProjectAgentConfig
+
+            if self._sm_node_repo is None:
+                logger.warning("ProjectAgent: skipped — sm_node_repo not available")
+                return
+
+            pa_config = ProjectAgentConfig.from_config(self.config)
+            self._project_agent = ProjectAgent(
+                config=pa_config,
+                node_repo=self._sm_node_repo,
+                outbound_bus=self.outbound_bus,
+            )
+
+            import asyncio
+            asyncio.ensure_future(self._project_agent.start())
+
+            logger.info(
+                "ProjectAgent initialized: enabled=%s tick=%ds stale=%dd",
+                pa_config.enabled,
+                pa_config.tick_seconds,
+                pa_config.stale_threshold_days,
+            )
+        except Exception as e:
+            logger.warning("ProjectAgent init failed: %s", e)
+            self._project_agent = None
+
     def _init_permission_module(self) -> None:
         """初始化权限管理模块（阶段二：三维鉴权 + 校验接口）。
 
@@ -620,10 +660,13 @@ class EmilyCore:
     def health(self) -> dict:
         """健康状态。"""
         pool = self._session_pool
-        return {
+        result = {
             "status": "ok",
             "initialized": self._initialized,
             "sessions": pool.size if pool else 0,
             "uptime": pool.uptime_seconds if pool else 0,
             "bus_hooks": self._bus.hook_count() if self._bus else 0,
         }
+        if self._project_agent is not None:
+            result["project_agent"] = self._project_agent.status()
+        return result
