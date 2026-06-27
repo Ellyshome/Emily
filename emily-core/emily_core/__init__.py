@@ -52,6 +52,9 @@ class EmilyCore:
         self._llm_client = None
         self._initialized = False
 
+        # 邮箱服务
+        self._email_service = None
+
         # 公共 Pipeline BUS + WorkItem-Agent
         self._bus = None
         self._workitem_agent = None
@@ -117,6 +120,9 @@ class EmilyCore:
                 self._llm_client = None
         else:
             logger.info("No LLM API key — running with Mock WorkItem-Agent brain")
+
+        # ── Email 模块（SMTP + IMAP Providers + EmailService）──
+        self._init_email_module()
 
         # ── Phase B: SOP 意图注册表 + 工具注册表 ──
         self._init_phase_b_deps()
@@ -185,6 +191,21 @@ class EmilyCore:
             except Exception as e:
                 logger.warning("Phase B: ToolRegistry init failed: %s", e)
                 self._tool_registry = None
+
+    def _init_email_module(self) -> None:
+        """初始化邮箱模块：Provider + Service。fail-open，不阻塞 Core。"""
+        try:
+            from .providers.email import SMTPEmailProvider, IMAPEmailProvider
+            from .services.email_service import EmailService
+
+            smtp = SMTPEmailProvider()
+            imap = IMAPEmailProvider()
+            self._email_service = EmailService(smtp=smtp, imap=imap)
+
+            logger.info("Email module initialized: SMTP + IMAP ready")
+        except Exception as e:
+            logger.warning("Email module init failed: %s", e)
+            self._email_service = None
 
     def _init_phase_c_deps(self) -> None:
         """Phase C: 初始化执行引擎 + 守护审核依赖。"""
@@ -599,6 +620,10 @@ class EmilyCore:
         # 计划任务系统：注入到 PlanTaskMatchHook（§2.5 计划外事件匹配）
         if self._plan_task_service is not None:
             injected["plan_task_service"] = self._plan_task_service
+
+        # 邮箱模块：供 LLM Tool 使用
+        if self._email_service is not None:
+            injected["email_service"] = self._email_service
 
         return injected
 

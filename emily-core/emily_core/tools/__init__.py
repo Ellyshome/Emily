@@ -67,6 +67,7 @@ def create_all_tools(
     send_file_callback=None,    # M13: 主动发送文件回调
     file_storage_service=None,  # M13: 文件存储服务（按需读取/下载文件）
     sm_service=None,            # SM: 全局状态机服务（query_sm_status 工具）
+    email_service=None,         # Email: 邮箱服务（send_email / fetch_inbox 工具）
 ) -> ToolRegistry:
     """创建 LLM 工具注册表（仅含条件工具 + query_data 兜底查询）。
 
@@ -154,6 +155,16 @@ def create_all_tools(
         from .sm_tool import create_query_sm_status_tool
         registry.register(create_query_sm_status_tool(sm_service))
         logger.info("SM query_sm_status tool registered")
+
+    # Email: 邮件收发工具（需 EmailService）
+    if email_service is not None:
+        try:
+            from .email_tool import create_send_email_tool, create_fetch_inbox_tool
+            registry.register(create_send_email_tool(email_service, config))
+            registry.register(create_fetch_inbox_tool(email_service, config))
+            logger.info("Email tools registered: send_email, fetch_inbox")
+        except Exception as e:
+            logger.warning("Email tool registration failed: %s", e)
 
     return registry
 

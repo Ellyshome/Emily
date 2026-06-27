@@ -35,8 +35,7 @@ class PendingIssuesService:
         if self._path is not None:
             return self._path
         # 默认路径：从当前文件位置推导项目根目录
-        # pending_issues.py → services/ → emily_core/ → team_brain_agent/ → EmyBot/
-        # pending_issues.py → services/ → emily_core/ → team_brain_agent/ → plugins/ → data/ → EmyBot/
+        # pending_issues.py → services/ → emily_core/ → emily-core/ → Emily/
         project_root = Path(__file__).parent.parent.parent.parent.parent
         self._path = project_root / DEFAULT_ISSUES_PATH
         return self._path

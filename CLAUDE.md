@@ -2,7 +2,7 @@
 
 > **本文档作用**：AI 辅助开发工具的统一入口。Claude Code 启动时自动加载本文档。概述项目全局 + 后续关键文档导引，便于 AI 工具快速理解当前真实架构。
 >
-> **⚠ 注意**：本项目经历过主逻辑重构（EmyBot/teambrain_core → Emily/emily_core）。`看板内容/CLAUDE.md` 描述的是**旧架构**（EmyBot M15 八阶段 WorkOrder + AstrBot 内嵌插件），**已不准确**。本文档为 **当前真实架构**（Emily v0.6.0：双容器 + Session 主线 + WorkItem 4 节点 BUS）。旧架构仅存于 `workitem/_work_order_ref.py` / `_pipeline_context_ref.py` 作为参考。
+> **⚠ 注意**：本项目经历过主逻辑重构（EmyBot/teambrain_core → Emily/emily_core）。`看板内容/CLAUDE.md` 描述的是**旧架构**（EmyBot M15 八阶段 WorkOrder + AstrBot 内嵌插件），**已不准确**。本文档为 **当前真实架构**（Emily v0.6.0：双容器 + Session 主线 + WorkItem 4 节点 BUS）。旧架构已完全移除，当前唯一路径是 `WorkItem` + `BusContext` + 4 节点 `PipelineBUS`。
 
 ---
 
@@ -95,8 +95,8 @@ QQ → NapCat → AstrBot → emily_agent 薄插件
 | 5 | **M14 结构化输出优先** | 命中 SOP → LLM chat_json → `{tool, params}` → 框架直调 `BusinessFlowTool.handler(params)`。不暴露为 LLM function-calling。Unmatched → ToolRegistry function-calling 兜底 |
 | 6 | **Sync repo + `asyncio.to_thread`** | Repository 全 sync，async Service 用 `asyncio.to_thread()` 包裹 |
 | 7 | **Hook 三态 deny-wins** | ALLOW/WARN/BLOCK。before 异常=BLOCK；after 异常不阻断 |
-| 8 | **旧 `agent/` 冷备不 import** | MasterAgent/BusinessFlowAgent 等逻辑已提取到 SessionAgent/WorkItemAgent。旧文件做参考，不 import 到热路径 |
-| 9 | **M15 WorkOrder 已弃用** | `workitem/_work_order_ref.py` + `_pipeline_context_ref.py` 仅保留供兼容，当前唯一路径是 `WorkItem` + `BusContext` + 4 节点 `PipelineBUS` |
+| 8 | **`agent/` 仅保留工具类** | 原 MasterAgent/BusinessFlowAgent 等 Agent 逻辑已提取到 SessionAgent/WorkItemAgent。当前 `agent/` 保留 SOPIntentRegistry / ToolRegistry / sop_parser 等工具模块，仍被热路径 import |
+| 9 | **M15 WorkOrder 已弃用** | 旧 M15 8 阶段 WorkOrder 管道已完全移除，当前唯一路径是 `WorkItem` + `BusContext` + 4 节点 `PipelineBUS` |
 
 ---
 

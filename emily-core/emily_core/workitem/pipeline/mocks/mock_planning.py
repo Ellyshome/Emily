@@ -23,7 +23,7 @@ class MockPlanner:
 
         Args:
             route_decision: 路由决策
-            context: 管道上下文（WorkOrder）
+            context: 管道上下文（BusContext）
 
         Returns:
             ExecutionPlan: 固定的 3 步执行计划

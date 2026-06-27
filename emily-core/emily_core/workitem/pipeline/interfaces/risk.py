@@ -10,7 +10,7 @@ from typing import Any
 
 
 class RiskGrader(ABC):
-    """风险分级器接口。
+    """[reserved] 风险分级器接口 — 无具体实现（MockRiskGrader 已移除），workitem_agent.grade_risk() 为自包含方法。
 
     输入: RouteDecision (intent_type + confidence) + 操作类型
     输出: "L1" | "L2" | "L3"

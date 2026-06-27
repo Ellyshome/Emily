@@ -240,7 +240,7 @@ class MaxKBRagProvider(RagProvider):
                     content=content,
                     score=round(similarity, 4),
                     source_document=source,
-                    source_kb="EmyBot-地产知识库",
+                    source_kb="Emily-地产知识库",
                     metadata={
                         "title": title,
                         "document_name": doc_name,

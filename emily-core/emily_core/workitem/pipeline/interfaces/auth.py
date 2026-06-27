@@ -46,7 +46,7 @@ class AuthResult:
 
 
 class AuthEngine(ABC):
-    """鉴权引擎接口。
+    """[reserved] 鉴权引擎接口 — 无具体实现（MockAuthEngine 已移除），workitem_agent.authorize() 为自包含方法。
 
     输入: user_id + RouteDecision（含 sub_tasks + sop_ids）
     输出: AuthResult（ALLOW/DENY）

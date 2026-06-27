@@ -23,6 +23,12 @@
   "enable_progress_message": true,
   "progress_message_template": "收到，正在为你{action}，请稍候...",
 
+  "email_smtp_host": "smtp.qq.com",
+  "email_smtp_port": 465,
+  "email_imap_host": "imap.qq.com",
+  "email_imap_port": 993,
+  "email_poll_interval": 60,
+
   "checkpoint_enabled": true,
   "checkpoint_ttl_seconds": 300
 }

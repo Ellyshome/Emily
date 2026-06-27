@@ -171,6 +171,139 @@ def get_db_url() -> str:
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
+# 数据库查询函数（用于 Web UI 下拉选择）
+# ═══════════════════════════════════════════════════════════════════════════════
+
+def get_active_users() -> list[dict]:
+    """从数据库获取活跃用户列表。
+
+    用于 Web UI 的发送者下拉选择框，按权限级别排序。
+
+    Returns:
+        list[dict]: 用户列表，每个用户包含 id, real_name, username, 
+                   permission_level, company_name, phone 等字段
+                   失败时返回空列表
+    """
+    try:
+        from sqlalchemy import create_engine, text
+    except ImportError:
+        # 如果没有 SQLAlchemy，返回空列表
+        return []
+
+    try:
+        db_url = get_db_url()
+        engine = create_engine(db_url)
+        
+        query = text("""
+            SELECT 
+                u.id,
+                u.real_name,
+                u.username,
+                u.permission_level,
+                u.phone,
+                u.email,
+                c.company_name,
+                CASE u.permission_level
+                    WHEN 1 THEN '访客'
+                    WHEN 2 THEN '参建执行'
+                    WHEN 3 THEN '参建管理'
+                    WHEN 4 THEN '建设主管'
+                    WHEN 5 THEN '管理员'
+                    WHEN 6 THEN '系统管理员'
+                    ELSE '未知'
+                END as permission_label
+            FROM users u
+            LEFT JOIN company_info c ON u.company = c.id
+            WHERE u.is_deleted = false
+              AND u.status = 'active'
+            ORDER BY u.permission_level DESC, u.real_name
+        """)
+        
+        with engine.connect() as conn:
+            result = conn.execute(query)
+            users = []
+            for row in result:
+                users.append({
+                    "id": row[0],
+                    "real_name": row[1] or row[2] or "未知用户",
+                    "username": row[2],
+                    "permission_level": row[3],
+                    "phone": row[4],
+                    "email": row[5],
+                    "company_name": row[6] or "未分配单位",
+                    "permission_label": row[7],
+                    "display_name": f"{row[1] or row[2]} ({row[7]} - {row[6] or '未分配单位'})"
+                })
+            return users
+    except Exception as e:
+        # 数据库连接失败时返回空列表，不影响 UI 使用
+        logging.getLogger("emys.config_loader").warning(
+            "Failed to load users from database: %s", e
+        )
+        return []
+
+
+def get_user_by_id(user_id: str) -> dict | None:
+    """根据用户 ID 获取用户详情。
+
+    Args:
+        user_id: 用户 ID
+
+    Returns:
+        dict: 用户详情字典，不存在或失败时返回 None
+    """
+    try:
+        from sqlalchemy import create_engine, text
+    except ImportError:
+        return None
+
+    try:
+        db_url = get_db_url()
+        engine = create_engine(db_url)
+        
+        query = text("""
+            SELECT 
+                u.id,
+                u.real_name,
+                u.username,
+                u.permission_level,
+                u.phone,
+                u.email,
+                u.wechat,
+                u.qq,
+                c.company_name,
+                c.type as company_type
+            FROM users u
+            LEFT JOIN company_info c ON u.company = c.id
+            WHERE u.id = :user_id
+              AND u.is_deleted = false
+        """)
+        
+        with engine.connect() as conn:
+            result = conn.execute(query, {"user_id": user_id})
+            row = result.fetchone()
+            if row:
+                return {
+                    "id": row[0],
+                    "real_name": row[1] or row[2],
+                    "username": row[2],
+                    "permission_level": row[3],
+                    "phone": row[4],
+                    "email": row[5],
+                    "wechat": row[6],
+                    "qq": row[7],
+                    "company_name": row[8],
+                    "company_type": row[9],
+                }
+            return None
+    except Exception as e:
+        logging.getLogger("emys.config_loader").warning(
+            "Failed to get user by id: %s", e
+        )
+        return None
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
 # 向后兼容别名（旧代码可能引用这些名称）
 # ═══════════════════════════════════════════════════════════════════════════════
 

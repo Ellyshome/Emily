@@ -8,12 +8,11 @@ MockRiskGrader（workitem_agent.grade_risk 直接返回 L2）
 """
 
 from .mock_planning import MockPlanner
-from .mock_execution import MockWorkAgent, MockWorkAgentQuery
+from .mock_execution import MockWorkAgent, MockWorkAgentQuery  # MockWorkAgentQuery: 冷备（暂无调用者）
 from .mock_guardian import MockGuardian
 
 __all__ = [
     "MockPlanner",
     "MockWorkAgent",
-    "MockWorkAgentQuery",
     "MockGuardian",
 ]

@@ -10,7 +10,7 @@ from enum import Enum
 
 
 class IntentType(Enum):
-    """意图类型枚举。"""
+    """[reserved] 意图类型枚举 — 当前所有代码站点使用原始字符串，此枚举暂无消费者。"""
     SOP = "sop"              # 单 SOP 命中
     COMPOUND = "compound"    # 复合意图，需拆解
     FALLBACK = "fallback"    # 未命中，走兜底

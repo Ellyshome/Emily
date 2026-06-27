@@ -1,13 +1,11 @@
 """WorkItem —— 任务执行单元的全息档案 + 状态机（蓝图 §5）。
 
-借鉴旧 WorkOrder 的"全息数据"思想：WorkItem 携带任务的完整档案——
-所属 Session、路由决策、执行计划、逐步结果、守护意见、最终成果。
-公共 Pipeline BUS 的 4 个节点都从 WorkItem 上取数据、写产出，不跨节点隐式传参。
+WorkItem 携带任务的完整档案——所属 Session、路由决策、执行计划、
+逐步结果、守护意见、最终成果。公共 Pipeline BUS 的 4 个节点都从
+WorkItem 上取数据、写产出，不跨节点隐式传参。
 
-与旧 WorkOrder 的区别：
-- WorkOrder 是"单条消息"的流转单（8 阶段，含 intake/route/auth 等消息级阶段）。
-- WorkItem 是"单个任务"的执行单元（4 节点，消息级处理已上移到 Session 层）。
-  一条消息可拆分为 0..N 个 WorkItem（短路指令 0 个，复合任务 N 个）。
+一条消息可拆分为 0..N 个 WorkItem（短路指令 0 个，复合任务 N 个）。
+消息级处理（接管决策、意图识别、WorkItem 拆分/排队）在 Session 层完成。
 """
 
 from __future__ import annotations
@@ -70,14 +68,6 @@ class WorkItem:
     completed_at: str = ""
 
     # ── 状态机方法 ──
-
-    @property
-    def message_content(self) -> str:
-        """兼容别名 —— 迁移自 M15 的 Mock 组件读取 work_order.message_content。
-
-        WorkItem 用 user_input 表达任务输入；此别名让复用的 MockRouter 等无需改动。
-        """
-        return self.user_input
 
     def transition_to(self, new_state: WorkItemState) -> None:
         """执行状态转换（带合法性校验）。

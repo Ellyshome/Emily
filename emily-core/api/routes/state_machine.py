@@ -17,7 +17,7 @@ from pydantic import BaseModel
 
 from emily_core.application.state_machine_app import StateMachineApplication
 
-router = APIRouter(prefix="/api/v1/state-machine", tags=["state-machine"])
+router = APIRouter(prefix="/state-machine", tags=["state-machine"])
 
 _app: StateMachineApplication | None = None
 
