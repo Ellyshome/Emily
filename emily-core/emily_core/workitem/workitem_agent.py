@@ -248,6 +248,11 @@ class WorkItemAgent:
             step_results = await self._work_agent.execute(wi.execution_plan, context)
 
         # 逐步守护验收（陪跑模式）
+        guardian_mode = self._resolve_mode("guardian")
+        if guardian_mode == "real":
+            logger.warning(
+                "guardian_mode=real 暂未实现 RealGuardian，回退到 MockGuardian"
+            )
         criteria = wi.acceptance_criteria
         for sr in step_results:
             try:
@@ -260,8 +265,8 @@ class WorkItemAgent:
         if step_results:
             context.agent_result = step_results[-1]
             context.agent_reply = step_results[-1].output
-        logger.debug("WI %s node3: %d steps, executor=%s guardian=mock",
-                     wi.id, len(step_results), executor_mode)
+        logger.debug("WI %s node3: %d steps, executor=%s guardian=%s",
+                     wi.id, len(step_results), executor_mode, guardian_mode)
 
     async def _real_execute(self, plan: ExecutionPlan, context: BusContext) -> list[StepResult]:
         """Phase C: 真实执行引擎 —— 按 PlanStep 调用 M14 工具 handler。
@@ -294,7 +299,39 @@ class WorkItemAgent:
                         handler_kwargs["message_id"] = context.db_message_id if hasattr(context, 'db_message_id') else ""
                     handler_result = await tool.handler(**handler_kwargs)
                     handler_dict = handler_result if isinstance(handler_result, dict) else {}
-                    ...
+
+                    # 构建 ToolCallRecord
+                    elapsed_ms = int((_time.monotonic() - t_start) * 1000)
+                    tool_call = ToolCallRecord(
+                        tool_name=tool_name,
+                        tool_input=tool_params,
+                        tool_output=handler_dict,
+                        success=handler_dict.get("success", True),
+                        elapsed_ms=elapsed_ms,
+                    )
+
+                    # 构建 DbResult（如果有 object_id 说明产生了数据库记录）
+                    db_results = []
+                    object_id = handler_dict.get("object_id", "") or ""
+                    if object_id:
+                        db_results.append(DbResult(
+                            operation="insert",
+                            table=tool_name.replace("record_", "") + "s",
+                            affected_rows=1,
+                            result_data=handler_dict,
+                        ))
+
+                    output = handler_dict.get("reply", step.description)
+                    success = handler_dict.get("success", True)
+
+                    sr = StepResult(
+                        step_id=step.step_id,
+                        success=success,
+                        output=str(output),
+                        tool_calls=[tool_call],
+                        db_results=db_results,
+                        business_data=handler_dict,
+                    )
                 elif tool_name == "knowledge_search" and self._rag_provider:
                     # Phase C: RAG 知识库检索 — 内联执行
                     import asyncio
@@ -324,36 +361,6 @@ class WorkItemAgent:
                     except Exception as e:
                         logger.warning("RAG knowledge_search failed: %s", e)
                         sr = StepResult(step_id=step.step_id, success=False, output=f"知识库检索失败: {e}")
-
-                    tool_calls = [ToolCallRecord(
-                        tool_name=tool_name,
-                        tool_input=tool_params,
-                        tool_output=handler_dict,
-                        success=handler_dict.get("success", True),
-                        elapsed_ms=int((_time.monotonic() - t_start) * 1000),
-                    )]
-
-                    db_results = []
-                    object_id = handler_dict.get("object_id", "") or ""
-                    if object_id:
-                        db_results.append(DbResult(
-                            operation="insert",
-                            table=tool_name.replace("record_", "") + "s",
-                            affected_rows=1,
-                            result_data=handler_dict,
-                        ))
-
-                    output = handler_dict.get("reply", step.description)
-                    success = handler_dict.get("success", True)
-
-                    sr = StepResult(
-                        step_id=step.step_id,
-                        success=success,
-                        output=str(output),
-                        tool_calls=tool_calls,
-                        db_results=db_results,
-                        business_data=handler_dict,
-                    )
                 elif tool_name:
                     # 工具未注册
                     sr = StepResult(
@@ -417,6 +424,11 @@ class WorkItemAgent:
             draft = mock_prefix + "Emily 已处理完毕。"
 
         # 出站审核
+        guardian_mode = self._resolve_mode("guardian")
+        if guardian_mode == "real":
+            logger.warning(
+                "guardian_mode=real 暂未实现 RealGuardian，回退到 MockGuardian"
+            )
         try:
             verdict = await self._guardian.review_reply(draft, wi)
             verdict_val = getattr(verdict, "value", "pass")
@@ -435,13 +447,17 @@ class WorkItemAgent:
 
         wi.llm_call_count += 1
         context.verified_reply = wi.result_text
-        logger.debug("WI %s node4: reply_len=%d guardian=mock mock_prefix=%s",
-                     wi.id, len(wi.result_text), repr(mock_prefix))
+        logger.debug("WI %s node4: reply_len=%d guardian=%s mock_prefix=%s",
+                     wi.id, len(wi.result_text), guardian_mode, repr(mock_prefix))
 
     # ── Phase C: 鉴权引擎 ──
 
     async def authorize(self, context: BusContext, route_decision) -> AuthResult:
         """Phase C: 三维鉴权 —— 基于 PermissionAuthEngine（阶段二重写）。
+
+        [reserved] 此方法暂无调用者。鉴权当前由 AuthHook（hook.py）在 pipeline
+        钩子中独立处理。本方法保留用于未来的 pipeline 内联鉴权集成（例如在
+        node1_intent 或 node2_plan 中调用）。
 
         签名从 (user_id, route_decision) 改为 (context: BusContext, route_decision)，
         从 BusContext 获取权限快照，委托 PermissionAuthEngine 执行三维鉴权。
@@ -491,6 +507,11 @@ class WorkItemAgent:
 
     def grade_risk(self, route_decision, operation_type: str = "") -> str:
         """Phase C: 真实风险评估 —— 基于意图类型和置信度。
+
+        [reserved] 此方法暂无调用者。当前风险等级由 node2_plan 通过 LLM 规划器
+        （或 MockPlanner）生成，写入 ExecutionPlan.risk_level。本方法保留用于未来
+        的 node2_plan 内联调用（当 EMILY_RISK_MODE=real 时替代 LLM 输出中的
+        risk_level 字段）。
 
         当 EMILY_RISK_MODE=real 时使用。
         """
