@@ -31,7 +31,7 @@ class LocalFileRagProvider(RagProvider):
     """
 
     def __init__(self, search_dir: str | None = None):
-        # rag/ → providers/ → emily_core/ → team_brain_agent/ → plugins/ → data/ → EmyBot/
+        # rag/ → providers/ → emily_core/ → emily-core/ → Emily/
         project_root = Path(__file__).resolve().parents[7]
         self._search_dir = Path(search_dir) if search_dir else project_root / _DEFAULT_SEARCH_DIR
         self._chunks: list[dict] = []

@@ -48,13 +48,13 @@ class Guardian(ABC):
 
     @abstractmethod
     async def review_reply(
-        self, draft_reply: str, work_order: Any
+        self, draft_reply: str, context: Any
     ) -> GuardianVerdict:
         """出站审核（出站模式）。
 
         Args:
             draft_reply: 回复草稿
-            work_order: 流转单对象（包含完整上下文）
+            context: 总线上下文（包含完整上下文）
 
         Returns:
             GuardianVerdict: 审核决策

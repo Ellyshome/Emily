@@ -20,7 +20,7 @@ if str(_skill_dir) not in sys.path:
 
 import gradio as gr
 
-from config_loader import get_core_url, get_llm_config
+from config_loader import get_core_url, get_llm_config, get_active_users, get_user_by_id
 
 
 # ── 文件上传 / 对话导出辅助函数 ──
@@ -146,8 +146,7 @@ def send_message_sync(
     message: str,
     chat_history: list,
     uploaded_files: list,
-    sender_name: str,
-    sender_id: str,
+    selected_user_id: str,
     platform: str,
     conversation_type: str,
     group_id: str,
@@ -176,9 +175,21 @@ def send_message_sync(
             user_display += "\n\n📎 附件: " + ", ".join(file_names)
 
     try:
-        # 使用唯一的 sender_id 确保 Web 会话隔离
-        sid = sender_id.strip() if sender_id.strip() else f"web_{request.session_hash[:8]}"
-        sname = sender_name.strip() if sender_name.strip() else sid
+        # 根据选择的用户 ID 获取用户信息
+        user_info = None
+        if selected_user_id and selected_user_id != "__custom__":
+            user_info = get_user_by_id(selected_user_id)
+        
+        # 确定 sender_id 和 sender_name
+        if user_info:
+            # 使用数据库中的用户信息
+            sid = user_info["id"]
+            sname = user_info["real_name"] or user_info["username"] or selected_user_id
+        else:
+            # 自定义模式或获取失败，使用默认值
+            sid = f"web_{request.session_hash[:8]}"
+            sname = "访客用户"
+
         cid = sid  # 私聊用 sender_id 作为 conversation_id
 
         if conversation_type == "group":
@@ -218,7 +229,12 @@ def send_message_sync(
     except Exception as e:
         reply_text = f"❌ 错误: {e}"
 
-    chat_history.append({"role": "user", "content": user_display})
+    # 显示发送者信息
+    sender_info = f"👤 {sname}"
+    if user_info:
+        sender_info += f"（{user_info.get('permission_label', '')} - {user_info.get('company_name', '')}）"
+    
+    chat_history.append({"role": "user", "content": f"{sender_info}\n\n{user_display}"})
     chat_history.append({"role": "assistant", "content": reply_text})
     return "", chat_history, None  # clear file input
 
@@ -267,6 +283,18 @@ footer { display: none !important; }
 """
 
 
+def _build_user_choices() -> list[tuple[str, str]]:
+    """构建用户下拉菜单选项列表。"""
+    users = get_active_users()
+    choices = []
+    for user in users:
+        label = user["display_name"]
+        choices.append((label, user["id"]))
+    # 添加自定义选项（用于测试非数据库用户）
+    choices.append(("🔹 自定义访客（最低权限）", "__custom__"))
+    return choices
+
+
 def build_ui():
     llm_available = bool(get_llm_config())
     llm_status = "🟢 LLM 已配置" if llm_available else "⚪ LLM 未配置"
@@ -280,17 +308,24 @@ def build_ui():
         )
 
         with gr.Row():
-            with gr.Column(scale=1, min_width=260):
+            with gr.Column(scale=1, min_width=280):
                 gr.Markdown("### ⚙️ 消息参数")
 
-                sender_name = gr.Textbox(
-                    label="发送者名称", value="张工",
-                    placeholder="QQ/微信昵称",
+                # 用户下拉选择（关联数据库）
+                user_choices = _build_user_choices()
+                default_user = user_choices[0][1] if user_choices else "__custom__"
+                
+                selected_user = gr.Dropdown(
+                    label="发送者（选择数据库用户）",
+                    choices=user_choices,
+                    value=default_user,
+                    allow_custom_value=False,
+                    info="按权限级别排序，系统管理员 > 建设主管 > 参建管理 > 参建执行 > 访客",
                 )
-                sender_id = gr.Textbox(
-                    label="发送者 ID", value="",
-                    placeholder="留空自动生成",
-                )
+                
+                # 刷新用户列表按钮
+                refresh_btn = gr.Button("🔄 刷新用户列表", size="sm")
+                
                 platform = gr.Dropdown(
                     label="平台",
                     choices=["simulator", "napcat", "wechat", "dingtalk", "feishu"],
@@ -346,7 +381,7 @@ def build_ui():
             fn=send_message_sync,
             inputs=[
                 msg_input, chat, uploaded_files,
-                sender_name, sender_id, platform,
+                selected_user, platform,
                 conversation_type, group_id, is_at_bot,
             ],
             outputs=[msg_input, chat, uploaded_files],
@@ -356,6 +391,17 @@ def build_ui():
             fn=export_conversation,
             inputs=[chat, save_dir, export_format],
             outputs=[export_status],
+        )
+
+        # 刷新用户列表
+        def _refresh_users():
+            new_choices = _build_user_choices()
+            new_default = new_choices[0][1] if new_choices else "__custom__"
+            return gr.update(choices=new_choices, value=new_default)
+
+        refresh_btn.click(
+            fn=_refresh_users,
+            outputs=[selected_user],
         )
 
     return demo

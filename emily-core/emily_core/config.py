@@ -51,20 +51,20 @@ class Config:
     """文件存储根目录（为空时使用插件目录下的 files/ 文件夹）"""
 
     master_agent_prompt_path: str = ""
-    """MasterAgent prompt 文件路径（为空时默认 prompts/master_agent.txt）"""
+    """[reserved] MasterAgent prompt 文件路径（SessionAgent 自行构造 prompt，此字段暂无消费者）"""
 
     domain_knowledge_path: str = ""
-    """领域知识文件路径（为空时默认 prompts/domain_knowledge.md）"""
+    """[reserved] 领域知识文件路径（SessionAgent 自行注入领域知识，此字段暂无消费者）"""
 
     # ---- Agent 配置 (M7) ----
     enable_master_agent: bool = True
-    """启用 MasterAgent（ReAct 模式 + Mermaid 决策树导航），为唯一消息处理路径。"""
+    """[reserved] 旧 MasterAgent 开关（已由 SessionAgent + WorkItemAgent 替代，此字段暂无消费者）"""
 
     agent_max_iterations: int = 10
     """MasterAgent ReAct 循环最大迭代次数。"""
 
     agent_temperature: float = 0.3
-    """MasterAgent LLM 采样温度（比路由分类高一些，支持自然对话）。"""
+    """[reserved] 旧 MasterAgent LLM 采样温度（LLM 调用使用 llm_temperature，此字段暂无消费者）"""
 
     agent_context_max_turns: int = 10
     """MasterAgent 对话上下文保留的最大轮数。"""
@@ -74,7 +74,7 @@ class Config:
 
     # ---- M7.1: Mermaid 决策树 ----
     flow_maps_dir: str = ""
-    """Mermaid 决策树文件目录（为空时默认 prompts/flows/）。"""
+    """[reserved] Mermaid 决策树文件目录（FlowMapManager 暂未实例化，此字段暂无消费者）"""
 
     pending_issues_enabled: bool = True
     """待解决问题清单开关"""
@@ -170,7 +170,7 @@ class Config:
 
     # ── Session 主线编排：公共 Pipeline BUS（4 节点）──
     pipeline_mode: str = "session"
-    """消息处理编排模式: session（SessionPool → SessionAgent → WorkItem → 4 节点 Pipeline BUS）"""
+    """[reserved] 消息处理编排模式（当前仅 session 路径，此字段暂无分支逻辑消费者）"""
 
     hook_config_path: str = ""
     """Hook 声明式配置文件路径（为空时默认 /app/config/hook_config.json 或 emily-data/config/hook_config.json）"""
@@ -276,6 +276,22 @@ class Config:
     permission_agent_issue_integration_enabled: bool = False
     """协同待办模块集成开关 —— 关闭时 permission_requests 自身承载审批流；
     待 agent_issues 模块落地后置 True 切换为真实 HTTP 调用"""
+
+    # ---- 邮箱模块 (Email) ----
+    email_smtp_host: str = "smtp.qq.com"
+    """SMTP 服务器地址"""
+
+    email_smtp_port: int = 465
+    """SMTP 端口（465 SSL / 587 STARTTLS）"""
+
+    email_imap_host: str = "imap.qq.com"
+    """IMAP 服务器地址"""
+
+    email_imap_port: int = 993
+    """IMAP 端口（993 SSL）"""
+
+    email_poll_interval: int = 60
+    """Order 邮件轮询间隔（秒），供后续 Scheduler 使用"""
 
     extra: dict = field(default_factory=dict)
     """预留扩展字段"""

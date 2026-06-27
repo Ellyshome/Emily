@@ -31,7 +31,7 @@ class EventJournal:
         self.path = path or ""
         if not self.path:
             # 默认路径：项目根目录下的 tem_log/项目日志.md
-            # event_journal.py → services/ → emily_core/ → team_brain_agent/ → plugins/ → data/ → EmyBot/
+            # event_journal.py → services/ → emily_core/ → emily-core/ → Emily/
             self.path = os.path.join(
                 os.path.dirname(os.path.dirname(os.path.dirname(
                     os.path.dirname(os.path.dirname(os.path.abspath(__file__)))

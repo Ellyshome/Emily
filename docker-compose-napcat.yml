@@ -43,6 +43,8 @@ services:
       - EMILY_HOOK_CONFIG_PATH=/app/config/hook_config.json
       - EMILY_SOP_REPOSITORY_DIR=/app/sops
       - EMILY_API_TOKEN=${EMILY_API_TOKEN:-}
+      - EMILY_EMAIL_IDKEY=${EMILY_EMAIL_IDKEY:-}
+      - EMILY_EMAIL_PASSWORD=${EMILY_EMAIL_PASSWORD:-}
     volumes:
       # ── 人类编辑（只读）──
       - ./emily-data/sops:/app/sops

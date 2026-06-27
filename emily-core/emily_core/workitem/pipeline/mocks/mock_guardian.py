@@ -32,13 +32,13 @@ class MockGuardian(Guardian):
         return GuardianVerdict.PASS
 
     async def review_reply(
-        self, draft_reply: str, work_order: Any
+        self, draft_reply: str, context: Any
     ) -> GuardianVerdict:
         """出站审核（出站模式）— 始终 PASS。
 
         Args:
             draft_reply: 回复草稿
-            work_order: 流转单对象
+            context: 总线上下文
 
         Returns:
             GuardianVerdict: 始终 PASS

@@ -7,6 +7,11 @@ from .models import (
     Project, Event, Task, Meeting, File,
     CompanyInfo, ProjectIndicatorDetail,
     BusinessFlowOrder, InstructionOrder, ProjectPlan, PlanItem,
+    # v0.6+ 子系统模型
+    SOPRoutingLog, SOPCheckpoint,
+    PlanTaskTemplate, PlanTaskInstance, PlanTaskLog,
+    SMNode, SMStage,
+    PermissionDef, PermissionGrant, PermissionRequest,
 )
 
 __all__ = [
@@ -16,4 +21,8 @@ __all__ = [
     "Project", "Event", "Task", "Meeting", "File",
     "CompanyInfo", "ProjectIndicatorDetail",
     "BusinessFlowOrder", "InstructionOrder", "ProjectPlan", "PlanItem",
+    "SOPRoutingLog", "SOPCheckpoint",
+    "PlanTaskTemplate", "PlanTaskInstance", "PlanTaskLog",
+    "SMNode", "SMStage",
+    "PermissionDef", "PermissionGrant", "PermissionRequest",
 ]

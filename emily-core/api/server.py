@@ -46,6 +46,11 @@ async def lifespan(app: FastAPI):
 
 app = FastAPI(title="Emily Core API", version="1.0", lifespan=lifespan)
 
+# 注册中间件
+from .middleware.auth import AuthMiddleware  # noqa: E402
+
+app.add_middleware(AuthMiddleware)
+
 # 注册路由
 from .routes import health, message, session, state_machine, permission  # noqa: E402
 from .sse import outbound  # noqa: E402
