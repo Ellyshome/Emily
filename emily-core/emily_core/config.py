@@ -248,6 +248,30 @@ class Config:
     project_agent_alert_cooldown_hours: int = 24
     """同一节点同一问题的告警冷却时间（小时），避免重复推送"""
 
+    # ---- 运维模块 (Ops / ProjectAgent Phase 3) ----
+    ops_enabled: bool = True
+    """运维调度模块总开关"""
+
+    ops_stale_probe_enabled: bool = True
+    """卡滞节点检测探针开关"""
+
+    ops_mailbox_enabled: bool = False
+    """邮箱轮询探针开关"""
+
+    ops_mail_imap_host: str = ""
+    ops_mail_imap_port: int = 993
+    ops_mail_username: str = ""
+    ops_mail_password: str = ""
+    ops_mail_sender_whitelist: str = ""
+    ops_health_probe_enabled: bool = False
+    """健康度检查探针开关"""
+
+    ops_startup_report_enabled: bool = True
+    """冷启动报告开关"""
+
+    ops_fallback_log_dir: str = "logs/"
+    """降级备份文件目录"""
+
     scheduler_reminder_before_minutes: int = 60
     """临近超时提醒提前量（分钟），默认 60 分钟"""
 
@@ -291,7 +315,7 @@ class Config:
     """IMAP 端口（993 SSL）"""
 
     email_poll_interval: int = 60
-    """Order 邮件轮询间隔（秒），供后续 Scheduler 使用"""
+    """[已废弃] 请使用 ops_mailbox_enabled + ops_tick_interval_seconds 替代。保留字段以兼容旧配置。"""
 
     extra: dict = field(default_factory=dict)
     """预留扩展字段"""

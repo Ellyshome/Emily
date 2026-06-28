@@ -143,7 +143,14 @@ QQ → NapCat → AstrBot → emily_agent 薄插件
 | `scripts/import_nodes.py` | 全景节点导入脚本：解析 `全景节点.md` → 写入 PostgreSQL（支持 --dry-run / --reset） |
 | `emily-data/baseknowledge/全景节点.md` | ~90 个标准节点定义（7 阶段 / 主责部门 / 前置条件 / 任务成果） |
 | `emily-data/sops/SOP-011-SYS-state_machine.md` | 全局状态机管理 SOP：查询/变更/审核 7 种子意图 |
-| `emily-core/emily_core/infrastructure/database/models.py` | ORM 模型——**36 张表**（⚠ 不是旧文档说的 22 张） |
+| `emily-core/emily_core/infrastructure/database/models.py` | ORM 模型——**41 张表**（⚠ 不是旧文档说的 22 张，含 ops_* 5 运维表） |
+| `emily-core/emily_core/project/ops/scheduler.py` | `OpsScheduler`：运维调度执行器（同步，_do_tick() 内调用） |
+| `emily-core/emily_core/project/ops/probe_base.py` | `Probe` ABC + `ProbeFinding` + `TickContext` |
+| `emily-core/emily_core/project/ops/probes/stale_probe.py` | `StaleProbe`：卡滞检测探针 |
+| `emily-core/emily_core/project/ops/probes/mailbox_probe.py` | `MailboxProbe`：邮箱轮询探针 |
+| `emily-core/emily_core/project/ops/startup_report.py` | 冷启动报告生成器 |
+| `emily-core/emily_core/project/ops/repositories/ops_repo.py` | `OpsRepository`：运维表 CRUD |
+| `emily-core/emily_core/project/ops/persistence/fallback_writer.py` | `FallbackWriter`：优雅降级 MD/JSONL |
 | `data/plugins/emily_agent/main.py` | AstrBot 薄插件入口（~100 行，无业务逻辑） |
 | `emily-data/config/core_config.json` | 非机密运行时配置 |
 | `emily-data/config/hook_config.json` | Hook 声明式挂载配置 |

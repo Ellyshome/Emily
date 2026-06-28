@@ -85,6 +85,9 @@ class EmilyCore:
         # 项目级 Agent (ProjectAgent, v0.7.0)
         self._project_agent = None
 
+        # 运维调度模块 (OpsScheduler, Phase 3)
+        self._ops_scheduler = None
+
         # 权限管理模块（Permission Module，v2.0）
         self._permission_repo = None
         self._permission_grant_repo = None
@@ -138,6 +141,9 @@ class EmilyCore:
 
         # ── 项目级 Agent（依赖状态机模块）──
         self._init_project_agent()
+
+        # ── 运维调度模块（必须在 ProjectAgent 之后）──
+        self._init_ops_module()
 
         # ── 权限管理模块（v2.0：快照灌注）──
         self._init_permission_module()
@@ -498,6 +504,56 @@ class EmilyCore:
         except Exception as e:
             logger.warning("ProjectAgent init failed: %s", e)
             self._project_agent = None
+
+    def _init_ops_module(self) -> None:
+        """初始化运维模块。fail-open：异常不阻断 Core 启动。"""
+        if not self.config.ops_enabled:
+            logger.info("Ops module: disabled by config")
+            return
+        try:
+            from emily_core.project.ops.config import OpsConfig
+            from emily_core.project.ops.scheduler import OpsScheduler
+            from emily_core.project.ops.repositories.ops_repo import OpsRepository
+            from emily_core.project.ops.persistence.fallback_writer import FallbackWriter
+
+            ops_config = OpsConfig.from_global_config(self.config)
+            ops_repo = OpsRepository()
+            fallback = FallbackWriter(log_dir=ops_config.fallback_log_dir)
+
+            self._ops_scheduler = OpsScheduler(
+                config=ops_config, db_repo=ops_repo,
+                fallback=fallback, email_service=self._email_service,
+                outbound_bus=self.outbound_bus,
+            )
+            if self._project_agent:
+                self._project_agent.set_ops_scheduler(self._ops_scheduler)
+
+            # Phase 2: 注册 StaleProbe（包装 StaleDetector 为 Probe 接口）
+            if ops_config.stale_probe_enabled and self._project_agent:
+                try:
+                    from emily_core.project.ops.probes.stale_probe import StaleProbe
+                    stale_detector = self._project_agent._stale_detector
+                    stale_probe = StaleProbe(stale_detector, ops_config)
+                    self._ops_scheduler.register_probe(stale_probe)
+                    logger.info("Ops module: StaleProbe registered")
+                except Exception as e:
+                    logger.warning("StaleProbe registration failed: %s", e)
+
+            # Phase 3: 条件注册 MailboxProbe（仅在邮箱配置启用时）
+            if ops_config.mailbox_enabled and self._email_service:
+                try:
+                    from emily_core.project.ops.probes.mailbox_probe import MailboxProbe
+                    self._ops_scheduler.register_probe(
+                        MailboxProbe(ops_config, self._email_service, fallback, ops_repo)
+                    )
+                    logger.info("Ops module: MailboxProbe registered")
+                except Exception as e:
+                    logger.warning("MailboxProbe registration failed: %s", e)
+
+            logger.info("Ops module initialized")
+        except Exception as e:
+            logger.warning("Ops module init failed (fail-open): %s", e)
+            self._ops_scheduler = None
 
     def _init_permission_module(self) -> None:
         """初始化权限管理模块（阶段二：三维鉴权 + 校验接口）。
