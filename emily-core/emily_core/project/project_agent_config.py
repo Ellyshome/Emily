@@ -32,6 +32,9 @@ class ProjectAgentConfig:
     alert_cooldown_hours: int = 24
     """Minimum hours between repeated alerts for the same node+issue."""
 
+    ops_enabled: bool = True
+    """运维模块是否启用。False 时 OpsScheduler 不注入到 ProjectAgent。"""
+
     @classmethod
     def from_config(cls, config) -> "ProjectAgentConfig":
         """Build from the global Config dataclass."""

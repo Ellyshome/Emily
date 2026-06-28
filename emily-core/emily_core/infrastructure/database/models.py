@@ -1326,3 +1326,16 @@ class PermissionReviewTask(Base):
     created_at = Column(String, default=_utc_now)
     updated_at = Column(String, default=_utc_now, onupdate=_utc_now)
     is_deleted = Column(Boolean, default=False)
+
+
+# ══════════════════════════════════════════════════════════════════════════════
+# 运维模块 (Ops Scheduler) — 5 张运维表
+# ══════════════════════════════════════════════════════════════════════════════
+
+from emily_core.project.ops.models import (
+    OpsTickLog,
+    OpsProbeExecution,
+    OpsFinding,
+    OpsMailAudit,
+    OpsStartupReport,
+)

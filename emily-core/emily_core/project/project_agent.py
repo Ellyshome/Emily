@@ -62,6 +62,9 @@ class ProjectAgent:
         # Phase 2+: health checker (not yet wired)
         # Phase 3+: ops runner (not yet wired)
 
+        # Phase 3: ops scheduler (injected by EmilyCore._init_ops_module)
+        self._ops_scheduler = None  # OpsScheduler | None
+
     # ── Lifecycle ──
 
     async def start(self) -> None:
@@ -166,17 +169,30 @@ class ProjectAgent:
                 len(result.stale_nodes), len(result.milestone_warnings),
             )
 
-        # Phase 2+: health_index.check()  ← TODO
-        # Phase 3+: ops_runner.run()      ← TODO
+        # Phase 3: 运维调度（OpsScheduler 嵌入 ProjectAgent tick）
+        if self._ops_scheduler:
+            from uuid import uuid4
+            tick_id = str(uuid4())
+            try:
+                self._ops_scheduler.run_tick(tick_id, self._tick_count)
+            except Exception as e:
+                logger.error("Ops tick failed (degraded): %s", e)
 
     # ── Health / status ──
 
+    def set_ops_scheduler(self, scheduler) -> None:
+        """由 EmilyCore._init_ops_module() 调用，注入 OpsScheduler 实例。"""
+        self._ops_scheduler = scheduler
+
     def status(self) -> dict:
         """Return a summary dict for monitoring / health endpoints."""
-        return {
+        result = {
             "enabled": self._config.enabled,
             "running": self._running,
             "tick_seconds": self._config.tick_seconds,
             "stale_threshold_days": self._config.stale_threshold_days,
             "phases": ["stale_detector"],  # Phase 2/3 append here
         }
+        if self._ops_scheduler:
+            result["ops"] = self._ops_scheduler.status()
+        return result
