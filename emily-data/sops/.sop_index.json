@@ -1,10 +1,10 @@
 {
   "_meta": {
     "version": "1",
-    "built_at": "2026-06-30T09:27:04.383059+00:00",
+    "built_at": "2026-06-30T12:28:33.529769+00:00",
     "source_dir": "sops",
     "source_files_count": 11,
-    "source_files_mtime_latest": "2026-06-30T09:25:11.330700+00:00",
+    "source_files_mtime_latest": "2026-06-30T12:22:48.454842+00:00",
     "parse_result": {
       "ok": 10,
       "partial": 1,

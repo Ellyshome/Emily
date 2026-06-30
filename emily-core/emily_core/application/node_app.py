@@ -14,6 +14,7 @@ if TYPE_CHECKING:
         CreateNodeCommand,
         UpdateNodeCommand,
         DiscardNodeCommand,
+        ActivateNodeCommand,
         CreateDeliverableCommand,
         UpdateDeliverableProgressCommand,
         AddDependencyCommand,
@@ -113,6 +114,21 @@ class NodeApplication:
             "reply": result.message,
             "error_code": result.error_code,
         }
+
+    async def activate_node(self, cmd: "ActivateNodeCommand") -> dict:
+        """激活节点 —— 部门负责人审批通过/拒绝 NOT_ACTIVATED 节点。"""
+        try:
+            result = await self._service.activate_node(cmd)
+            return {
+                "success": result.success,
+                "node_id": result.node_id,
+                "status": result.status,
+                "reply": result.message,
+                "error_code": result.error_code,
+            }
+        except Exception as e:
+            logger.error("activate_node failed: %s", e)
+            return {"success": False, "node_id": cmd.node_id, "reply": f"节点激活失败：{e}"}
 
     async def create_deliverable(self, cmd: "CreateDeliverableCommand") -> dict:
         """新增成果。"""

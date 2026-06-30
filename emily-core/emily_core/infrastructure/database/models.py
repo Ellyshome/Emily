@@ -1193,7 +1193,7 @@ class ProjectNode(Base):
     completed_at = Column(String(50), default="", comment="完成时间（ISO8601）")
     is_discarded = Column(Boolean, default=False, comment="是否被废弃")
     progress = Column(String, default="0.00", comment="整体进度（百分比 0.00-100.00，存为字符串避免精度问题）")
-    status = Column(String(20), default="CONDITIONS_NOT_MET", comment="当前状态：CONDITIONS_NOT_MET / IN_PROGRESS / COMPLETED")
+    status = Column(String(20), default="NOT_ACTIVATED", comment="当前状态：NOT_ACTIVATED / CONDITIONS_NOT_MET / IN_PROGRESS / COMPLETED")
     sort_order = Column(Integer, default=0, comment="排序序号")
     updated_at = Column(String(50), nullable=False, default=_utc_now, onupdate=_utc_now, comment="最后更新时间（ISO8601）")
 
