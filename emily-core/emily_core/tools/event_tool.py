@@ -1,14 +1,13 @@
 """事件录入业务逻辑 — M14 重构为业务流工具。
 
 M14: 核心逻辑提取为独立 handler 函数，供 BusinessFlowTool 使用。
-     原 ToolDefinition 包装器保留供 unmatched 兜底（如需要）。
+     ToolRegistry 已移除，工具不再包装为 LLM function calling 格式。
 """
 
 import json
 import logging
 
 from ..adapters.standard.result import RouteResult
-from ..agent.tool_registry import ToolDefinition
 from ..application.event_app import EventApplication
 
 logger = logging.getLogger("emily.tool.event")
@@ -112,7 +111,7 @@ async def handle_record_event(
     不再通过 LLM function calling 触发。
 
     Args:
-        params: LLM 提取的结构化参数（与 ToolDefinition.parameters schema 一致）
+        params: LLM 提取的结构化参数
         event_app: EventApplication 实例
         user_id: 当前用户 ID
         message_id: 当前消息 ID

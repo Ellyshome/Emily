@@ -99,18 +99,6 @@ class SessionFactory:
             except Exception:
                 pass
 
-        # Phase B: 填充工具目录摘要
-        tool_registry = getattr(core, "_tool_registry", None)
-        if tool_registry is not None:
-            try:
-                tools = tool_registry.tool_names
-                if tools:
-                    ctx.tool_catalog_summary = (
-                        f"可用工具 ({len(tools)}): {', '.join(tools[:20])}"
-                    )
-            except Exception:
-                pass
-
         # v2.0 权限系统：灌注权限快照（需求-完整版 §6.3）
         # PermissionService.build_permission_snapshot() 查 User+Company+权限矩阵，
         # 组装 PermissionSnapshot 注入 ctx.permissions。fail-open：失败降级 L1 访客。

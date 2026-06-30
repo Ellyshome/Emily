@@ -8,10 +8,11 @@ WorkItem-Agent 是全局单例，维护"当前已灌注的知识集合"。新 Wo
 
 Phase B 实现（蓝图 §12.2）：
   · 加载 SOP 全文（通过 SOPLoader）
-  · 加载工具参数 Schema（通过 ToolRegistry）
   · 加载数据库表结构摘要（预定义映射 → Phase C 升级为 ORM inspect）
   · Token 预算控制（总上下文 ≤ 32K tokens 估算）
   · WorkItem 完成时基本回收
+
+M14 重构：ToolRegistry 已移除，工具定义不再通过 Injector 加载。
 """
 
 from __future__ import annotations
@@ -53,15 +54,15 @@ class KnowledgeInjector:
 
     新增能力：
       · 加载 SOP 全文（通过 SOPLoader）
-      · 加载工具参数 Schema（通过 ToolRegistry）
       · Token 预算控制（总上下文 ≤ 32K tokens 估算）
+
+    M14 重构：工具定义通过 BusinessFlowToolRegistry 直调，不再经 Injector 加载。
     """
 
     def __init__(
         self,
         sop_intent_registry=None,   # SOPIntentRegistry: 获取 SOP spec
         sop_loader=None,            # SOPLoader: 加载 SOP 全文
-        tool_registry=None,         # ToolRegistry: 获取工具定义
         max_sop_text_chars: int = 8000,
         max_context_tokens_est: int = 32000,
     ):
@@ -72,13 +73,11 @@ class KnowledgeInjector:
 
         # 实际内容存储
         self._sop_texts: dict[str, str] = {}       # sop_id → SOP 全文
-        self._tool_defs: dict[str, dict] = {}       # tool_name → 工具定义
         self._table_schemas: dict[str, str] = {}    # table_name → schema 摘要
 
         # 依赖
         self._sop_intent_registry = sop_intent_registry
         self._sop_loader = sop_loader
-        self._tool_registry = tool_registry
 
         # 限制
         self._max_sop_text_chars = max_sop_text_chars
@@ -111,14 +110,7 @@ class KnowledgeInjector:
                 # 加载失败也标记为已知，避免重复尝试
                 self._loaded_sops.add(sop_id)
 
-        # 2. 加载工具定义
-        for tool_name in new_tools:
-            tool_def = self._load_tool_def(tool_name)
-            if tool_def:
-                self._tool_defs[tool_name] = tool_def
-                self._loaded_tools.add(tool_name)
-
-        # 3. 加载表 schema
+        # 2. 加载表 schema
         for table_name in new_tables:
             schema = self._load_table_schema(table_name)
             if schema:
@@ -161,11 +153,6 @@ class KnowledgeInjector:
                 self._loaded_sops.discard(sop_id)
                 self._sop_texts.pop(sop_id, None)
                 removed.add(sop_id)
-        for tool_name in work_item.injected_tools:
-            if tool_name in self._loaded_tools:
-                self._loaded_tools.discard(tool_name)
-                self._tool_defs.pop(tool_name, None)
-                removed.add(tool_name)
         for table_name in work_item.injected_tables:
             if table_name in self._loaded_tables:
                 self._loaded_tables.discard(table_name)
@@ -182,10 +169,6 @@ class KnowledgeInjector:
         if self._sop_texts:
             for sop_id, text in self._sop_texts.items():
                 parts.append(f"--- SOP: {sop_id} ---\n{text}")
-        if self._tool_defs:
-            parts.append("--- 可用工具 ---")
-            for name, defn in self._tool_defs.items():
-                parts.append(f"- {name}: {defn.get('description', '')}")
         if self._table_schemas:
             parts.append("--- 可用数据表 ---")
             for name, schema in self._table_schemas.items():
@@ -196,10 +179,8 @@ class KnowledgeInjector:
         """当前已灌注知识摘要（调试用）。"""
         return {
             "sops": sorted(self._loaded_sops),
-            "tools": sorted(self._loaded_tools),
             "tables": sorted(self._loaded_tables),
             "sop_texts_count": len(self._sop_texts),
-            "tool_defs_count": len(self._tool_defs),
             "table_schemas_count": len(self._table_schemas),
         }
 
@@ -218,19 +199,6 @@ class KnowledgeInjector:
             logger.warning("Failed to load SOP text for %s: %s", sop_id, e)
             return None
 
-    def _load_tool_def(self, tool_name: str) -> dict | None:
-        """从 ToolRegistry 获取工具定义。"""
-        if self._tool_registry is None:
-            return None
-        tool = self._tool_registry.get(tool_name)
-        if tool is None:
-            return None
-        return {
-            "name": tool.name,
-            "description": tool.description,
-            "parameters": tool.parameters,
-        }
-
     @staticmethod
     def _load_table_schema(table_name: str) -> str | None:
         """获取数据库表 schema 摘要。"""
@@ -241,7 +209,6 @@ class KnowledgeInjector:
         """Token 预算控制：总字符数超限时 LRU 回收最旧的 SOP。"""
         total_chars = (
             sum(len(v) for v in self._sop_texts.values()) +
-            sum(len(str(v)) for v in self._tool_defs.values()) +
             sum(len(v) for v in self._table_schemas.values())
         )
         est_tokens = total_chars // 3  # 粗略估算：中英文混合 ~3 char/token
@@ -258,7 +225,6 @@ class KnowledgeInjector:
                 self._loaded_sops.discard(oldest)
                 total_chars = (
                     sum(len(v) for v in self._sop_texts.values()) +
-                    sum(len(str(v)) for v in self._tool_defs.values()) +
                     sum(len(v) for v in self._table_schemas.values())
                 )
                 est_tokens = total_chars // 3

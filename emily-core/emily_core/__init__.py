@@ -64,7 +64,6 @@ class EmilyCore:
 
         # Phase B/C: 共享基础设施
         self._sop_intent_registry = None
-        self._tool_registry = None
 
         # Phase C: 执行依赖
         self._business_flow_tools = None
@@ -83,6 +82,11 @@ class EmilyCore:
         self._permission_auth_engine = None
         self._permission_audit_repo = None
         self._permission_app = None
+
+        # 全景节点图 V2
+        self._node_service = None
+        self._node_event_bus = None
+        self._node_app = None
 
     # ────────────────────────────────────────────────────────────────────
     # 延迟初始化
@@ -126,6 +130,9 @@ class EmilyCore:
         # ── 权限管理模块（v2.0：快照灌注）──
         self._init_permission_module()
 
+        # ── 全景节点图 V2 ──
+        self._init_node_module()
+
         # 将 plan_task 工具注册到 BusinessFlowToolRegistry
         if self._plan_task_app is not None and self._business_flow_tools is not None:
             self._register_plan_task_tools()
@@ -143,7 +150,7 @@ class EmilyCore:
         )
 
     def _init_phase_b_deps(self) -> None:
-        """Phase B: 初始化 SOP 意图注册表 + 工具注册表。"""
+        """Phase B: 初始化 SOP 意图注册表。"""
         # 1. SOP 意图注册表
         try:
             from .agent.intent_registry import SOPIntentRegistry
@@ -163,18 +170,7 @@ class EmilyCore:
             logger.warning("Phase B: SOPIntentRegistry init failed: %s", e)
             self._sop_intent_registry = None
 
-        # 2. 工具注册表（Phase B: 仅当 service 初始化成功后才注册 LLM 工具）
-        if self._llm_client:
-            try:
-                from .agent.tool_registry import ToolRegistry
-                from .tools import create_all_tools
-                self._tool_registry = ToolRegistry()
-                # Phase C: Skip create_all_tools in mock mode (needs DB services).
-                # LLM tools are only needed for ReAct fallback; M14 execution uses BusinessFlowToolRegistry.
-                logger.info("Phase B: ToolRegistry created (LLM tools deferred to DB init)")
-            except Exception as e:
-                logger.warning("Phase B: ToolRegistry init failed: %s", e)
-                self._tool_registry = None
+        # 2. ToolRegistry 已移除（M14 重构后走 BusinessFlowToolRegistry 直调）
 
     def _init_email_module(self) -> None:
         """初始化邮箱模块：Provider + Service。fail-open，不阻塞 Core。"""
@@ -224,7 +220,30 @@ class EmilyCore:
                 name="query_data", description="查询项目数据",
                 parameters={"type": "object", "properties": {}}, handler=handle_query_data,
             ))
-            logger.info("Phase C: BusinessFlowToolRegistry initialized with 5 tools")
+
+            # 基座能力：knowledge_search — RAG 知识库检索（供所有 SOP 调用）
+            if self._rag_provider is not None:
+                try:
+                    from .tools.knowledge_search_tool import (
+                        handle_knowledge_search,
+                        _KNOWLEDGE_SEARCH_SCHEMA,
+                        _KNOWLEDGE_SEARCH_DESCRIPTION,
+                    )
+                    _rp = self._rag_provider
+                    async def _rag_handler(params, **kw):
+                        return await handle_knowledge_search(params, rag_provider=_rp)
+                    self._business_flow_tools.register(BusinessFlowTool(
+                        name="knowledge_search",
+                        description=_KNOWLEDGE_SEARCH_DESCRIPTION,
+                        parameters=_KNOWLEDGE_SEARCH_SCHEMA,
+                        handler=_rag_handler,
+                    ))
+                    logger.info("Phase C: knowledge_search registered to BusinessFlowToolRegistry")
+                except Exception as e:
+                    logger.warning("Phase C: knowledge_search registration failed: %s", e)
+
+            logger.info("Phase C: BusinessFlowToolRegistry initialized with %d tools",
+                         len(self._business_flow_tools))
         except Exception as e:
             logger.warning("Phase C: BusinessFlowToolRegistry init failed: %s", e)
             self._business_flow_tools = None
@@ -236,7 +255,6 @@ class EmilyCore:
         injector = KnowledgeInjector(
             sop_intent_registry=self._sop_intent_registry,
             sop_loader=None,
-            tool_registry=self._tool_registry,
         )
         self._workitem_agent = WorkItemAgent(
             injector=injector,
@@ -465,6 +483,94 @@ class EmilyCore:
             self._permission_auth_engine = None
             self._permission_audit_repo = None
             self._permission_app = None
+
+    def _init_node_module(self) -> None:
+        """初始化全景节点图 V2 模块（Service + EventBus + Application + 工具注册）。"""
+        try:
+            from .services.node_service import NodeService
+            from .node_event_bus import NodeEventBus
+            from .application.node_app import NodeApplication
+
+            self._node_service = NodeService()
+            self._node_event_bus = NodeEventBus()
+            self._node_event_bus.set_outbound_bus(self.outbound_bus)
+            self._node_app = NodeApplication(self._node_service)
+
+            # 注入到 API 路由
+            try:
+                from api.routes.node import set_node_service
+                set_node_service(self._node_service)
+            except ImportError:
+                pass  # 非 API 场景（如脚本直接调用 EmilyCore）
+            try:
+                from api.sse.node_events import set_node_event_bus
+                set_node_event_bus(self._node_event_bus)
+            except ImportError:
+                pass
+
+            # 注册节点工具到 BusinessFlowToolRegistry
+            if self._business_flow_tools is not None:
+                self._register_node_tools()
+
+            logger.info("Node graph V2 module initialized")
+        except Exception:
+            logger.warning("Node graph V2 module initialization failed", exc_info=True)
+
+    def _register_node_tools(self) -> None:
+        """将全景节点工具注册到 BusinessFlowToolRegistry。"""
+        try:
+            from .tools.node_tool import (
+                handle_create_node,
+                handle_query_node,
+                handle_update_node_progress,
+                handle_add_node_dependency,
+                handle_mount_child_node,
+                _CREATE_NODE_SCHEMA,
+                _CREATE_NODE_DESCRIPTION,
+                _QUERY_NODE_SCHEMA,
+                _QUERY_NODE_DESCRIPTION,
+                _UPDATE_PROGRESS_SCHEMA,
+                _UPDATE_PROGRESS_DESCRIPTION,
+                _ADD_DEPENDENCY_SCHEMA,
+                _ADD_DEPENDENCY_DESCRIPTION,
+                _MOUNT_CHILD_SCHEMA,
+                _MOUNT_CHILD_DESCRIPTION,
+            )
+            from .tools.business_flow_tools import BusinessFlowTool
+
+            self._business_flow_tools.register(BusinessFlowTool(
+                name="create_node",
+                description=_CREATE_NODE_DESCRIPTION,
+                parameters=_CREATE_NODE_SCHEMA,
+                handler=handle_create_node,
+            ))
+            self._business_flow_tools.register(BusinessFlowTool(
+                name="query_node",
+                description=_QUERY_NODE_DESCRIPTION,
+                parameters=_QUERY_NODE_SCHEMA,
+                handler=handle_query_node,
+            ))
+            self._business_flow_tools.register(BusinessFlowTool(
+                name="update_node_progress",
+                description=_UPDATE_PROGRESS_DESCRIPTION,
+                parameters=_UPDATE_PROGRESS_SCHEMA,
+                handler=handle_update_node_progress,
+            ))
+            self._business_flow_tools.register(BusinessFlowTool(
+                name="add_node_dependency",
+                description=_ADD_DEPENDENCY_DESCRIPTION,
+                parameters=_ADD_DEPENDENCY_SCHEMA,
+                handler=handle_add_node_dependency,
+            ))
+            self._business_flow_tools.register(BusinessFlowTool(
+                name="mount_child_node",
+                description=_MOUNT_CHILD_DESCRIPTION,
+                parameters=_MOUNT_CHILD_SCHEMA,
+                handler=handle_mount_child_node,
+            ))
+            logger.info("Node tools registered to BusinessFlowToolRegistry: 5 tools")
+        except Exception as e:
+            logger.warning("Node tool registration failed: %s", e)
 
     def _load_hook_config(self) -> dict | None:
         """加载 Hook 声明式配置（hook_config.json）。"""
