@@ -66,15 +66,6 @@ def _config_from_env(config_data: dict | None) -> dict:
         "EMILY_MAXKB_ADMIN_PASSWORD": "maxkb_admin_password",
         "EMILY_MAXKB_KNOWLEDGE_ID": "maxkb_knowledge_id",
         "EMILY_KB_ENABLED": "kb_enabled",
-        # Ops Scheduler
-        "EMILY_OPS_ENABLED": "ops_enabled",
-        "EMILY_OPS_MAILBOX_ENABLED": "ops_mailbox_enabled",
-        "EMILY_OPS_MAIL_IMAP_HOST": "ops_mail_imap_host",
-        "EMILY_OPS_MAIL_IMAP_PORT": "ops_mail_imap_port",
-        "EMILY_OPS_MAIL_USERNAME": "ops_mail_username",
-        "EMILY_OPS_MAIL_PASSWORD": "ops_mail_password",
-        "EMILY_OPS_MAIL_SENDER_WHITELIST": "ops_mail_sender_whitelist",
-        "EMILY_OPS_STARTUP_REPORT_ENABLED": "ops_startup_report_enabled",
     }
     for env_key, cfg_key in env_map.items():
         val = os.environ.get(env_key)

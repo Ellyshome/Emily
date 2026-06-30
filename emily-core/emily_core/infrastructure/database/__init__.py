@@ -10,7 +10,6 @@ from .models import (
     # v0.6+ 子系统模型
     SOPRoutingLog, SOPCheckpoint,
     PlanTaskTemplate, PlanTaskInstance, PlanTaskLog,
-    SMNode, SMStage,
     PermissionDef, PermissionGrant, PermissionRequest,
 )
 
@@ -23,6 +22,5 @@ __all__ = [
     "BusinessFlowOrder", "InstructionOrder", "ProjectPlan", "PlanItem",
     "SOPRoutingLog", "SOPCheckpoint",
     "PlanTaskTemplate", "PlanTaskInstance", "PlanTaskLog",
-    "SMNode", "SMStage",
     "PermissionDef", "PermissionGrant", "PermissionRequest",
 ]

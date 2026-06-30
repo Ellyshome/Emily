@@ -3,10 +3,10 @@
     "version": "1",
     "built_at": "2026-06-29T15:40:48.356849+00:00",
     "source_dir": "sops",
-    "source_files_count": 13,
+    "source_files_count": 10,
     "source_files_mtime_latest": "2026-06-29T14:58:37.356260+00:00",
     "parse_result": {
-      "ok": 12,
+      "ok": 10,
       "partial": 1,
       "failed": 0
     }
@@ -53,8 +53,7 @@
       "fallback_tools": [],
       "fallback_guidance": "这是深度调查类请求。若以上 FLOW 流程均不匹配，使用系统内置的守护调查Agent执行跨维度分析。",
       "sops": [
-        "SOP-012-FLOW",
-        "SOP-013-FLOW"
+        "SOP-004-FILE"
       ]
     },
     "SYS": {
@@ -63,7 +62,6 @@
       "fallback_guidance": "这是系统管理类请求。若以上 SYS 流程均不匹配，但仍需系统功能，使用对应原子工具自由推理。",
       "sops": [
         "SOP-008-SYS",
-        "SOP-011-SYS",
         "SOP-999-SYS"
       ]
     }
@@ -417,105 +415,6 @@
         "记录今天验收发现的问题",
         "SOP-009-REC",
         "SOP-002-REC"
-      ],
-      "parse_status": "ok"
-    },
-    "SOP-011-SYS": {
-      "sop_id": "SOP-011-SYS",
-      "display_name": "SOP-011-SYS — 全局状态机管理",
-      "sop_type": "SYS",
-      "version": "v1.0",
-      "file_name": "SOP-011-SYS-state_machine.md",
-      "allow_roles": [
-        "all"
-      ],
-      "trigger_keywords": [],
-      "deny_conditions": [],
-      "positive_examples": [],
-      "negative_examples": [],
-      "parse_status": "partial"
-    },
-    "SOP-012-FLOW": {
-      "sop_id": "SOP-012-FLOW",
-      "display_name": "全景节点图构造",
-      "sop_type": "FLOW",
-      "version": "v2.1",
-      "file_name": "SOP-012-FLOW-node_import.md",
-      "allow_roles": [
-        "admin",
-        "project_owner"
-      ],
-      "trigger_keywords": [
-        "用户上传或指定了一个 Excel 文件（.xlsx），并表达了将其作为项目节点计划导入的意图",
-        "用户要求\"解析这份项目计划\"",
-        "\"导入节点计划\"",
-        "\"根据这份 Excel 生成全景节点\"",
-        "\"把项目计划转成节点树\"",
-        "用户发送了类似\"这是 XX 项目的全生命周期计划，帮我导入\"的消息",
-        "用户要求\"生成全景节点索引\"",
-        "\"画一张全景节点图\"",
-        "\"分析 Excel 节点计划的依赖关系\""
-      ],
-      "deny_conditions": [
-        "用户要求\"帮我把 SG-JG 的监理单位补上\" → 单节点实例填充，走 SOP-013-FLOW",
-        "用户要求\"帮我更新 SG-015 节点的完成标准\" → 单节点实例填充，走 SOP-013-FLOW",
-        "用户询问\"项目有哪些节点\"、\"XX 节点是什么状态\" → 查询，走 SOP-005-QRY",
-        "用户要求\"修改某个节点的状态\" → 状态机管理，走 SOP-011-SYS",
-        "用户要求\"新建一个节点模板\"或\"起草新的 SOP\" → 走 SOP-000-SYS"
-      ],
-      "positive_examples": [
-        "这是我们生态城 26#地的全生命周期计划，帮我生成全景节点索引和依赖关系图",
-        "H:\\工作经验\\全生命周期计划\\生态城26#地.xlsx，帮我解析导入",
-        "这份 Excel 是项目甲方的节点计划，帮我生成全景节点树，然后对每个节点调用 SOP-013 生成实例文档"
-      ],
-      "negative_examples": [
-        "景观设计节点的完成标准是什么？",
-        "帮我把景观设计节点的监理单位补上",
-        "全景节点图长什么样？",
-        "查询，走 SOP-005-QRY",
-        "单节点实例填充，走 SOP-013-FLOW"
-      ],
-      "parse_status": "ok"
-    },
-    "SOP-013-FLOW": {
-      "sop_id": "SOP-013-FLOW",
-      "display_name": "节点实例填充",
-      "sop_type": "FLOW",
-      "version": "v1.0",
-      "file_name": "SOP-013-FLOW-node_detail.md",
-      "allow_roles": [
-        "admin",
-        "project_owner"
-      ],
-      "trigger_keywords": [
-        "用户要求针对某个具体节点\"生成实例文档\"",
-        "\"填充节点详情\"",
-        "\"套用模板生成节点文档\"",
-        "用户为已有节点补充或更新字段，如\"帮我把 SG-JG 的监理单位补上\"",
-        "\"SG-015 的完成标准改为：...\"",
-        "用户提供节点编号 + 已知字段值，要求生成该节点的完整实例 .md",
-        "SOP-012 批量调用：导入 Excel 后，对每个解析出的节点自动串联调用本 SOP",
-        "用户说\"帮我给 XX 节点出一份完整的节点说明书\""
-      ],
-      "deny_conditions": [
-        "用户上传 Excel 文件要求\"解析这份项目计划\" → 宏观导入，走 SOP-012-FLOW",
-        "用户询问\"XX 节点是什么状态\" → 查询，走 SOP-005-QRY",
-        "用户要求\"修改节点状态为已阻塞\" → 状态机管理，走 SOP-011-SYS",
-        "用户要求\"起草一份新的 SOP\" → 走 SOP-000-SYS"
-      ],
-      "positive_examples": [
-        "景观工程节点 SG-JG 的监理单位是中建监理，帮我更新到节点实例文档里",
-        "SG-015 节点缺少完成标准，我现在补充：主体结构封顶且通过质监站验收",
-        "帮我给 QQ-001 土拓节点生成一份完整的节点实例文档",
-        "SOP-012 已完成节点树解析，现在对 SJ-JG 节点调用 SOP-013 生成实例"
-      ],
-      "negative_examples": [
-        "这是我们项目的全生命周期 Excel，帮我导入",
-        "景观工程节点现在是什么状态？",
-        "帮我把所有工程节点的完成标准批量更新",
-        "宏观导入，走 SOP-012-FLOW",
-        "查询，走 SOP-005-QRY",
-        "批量操作，建议先走 SOP-005-QRY 列出节点，再逐个走本 SOP"
       ],
       "parse_status": "ok"
     },

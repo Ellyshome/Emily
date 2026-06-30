@@ -62,13 +62,6 @@ class EmilyCore:
         # Session 池
         self._session_pool = None
 
-        # 全局状态机模块
-        self._sm_node_repo = None
-        self._sm_stage_repo = None
-        self._sm_audit_repo = None
-        self._sm_service = None
-        self._sm_app = None
-
         # Phase B/C: 共享基础设施
         self._sop_intent_registry = None
         self._tool_registry = None
@@ -81,12 +74,6 @@ class EmilyCore:
         self._plan_task_scheduler = None
         self._plan_task_app = None
         self._workflow_integrator = None
-
-        # 项目级 Agent (ProjectAgent, v0.7.0)
-        self._project_agent = None
-
-        # 运维调度模块 (OpsScheduler, Phase 3)
-        self._ops_scheduler = None
 
         # 权限管理模块（Permission Module，v2.0）
         self._permission_repo = None
@@ -135,15 +122,6 @@ class EmilyCore:
 
         # ── 计划任务系统 ──
         self._init_plan_task_module()
-
-        # ── 全局状态机模块 ──
-        self._init_state_machine_module()
-
-        # ── 项目级 Agent（依赖状态机模块）──
-        self._init_project_agent()
-
-        # ── 运维调度模块（必须在 ProjectAgent 之后）──
-        self._init_ops_module()
 
         # ── 权限管理模块（v2.0：快照灌注）──
         self._init_permission_module()
@@ -226,29 +204,10 @@ class EmilyCore:
 
             self._business_flow_tools = BusinessFlowToolRegistry()
 
-            # record_event — 如果 SM service 可用，包装以在事件录入后自动匹配全景节点
-            sm_service = getattr(self, "_sm_service", None)
-            if sm_service is not None:
-                async def _sm_record_event(params):
-                    result = await handle_record_event(params)
-                    if result.get("success") and result.get("object_id"):
-                        sm_result = await sm_service.try_match_and_complete(
-                            event_title=params.get("title", ""),
-                            event_type=params.get("event_type", ""),
-                        )
-                        if sm_result.get("matched") and sm_result.get("completed"):
-                            reply = result.get("reply", "")
-                            result["reply"] = reply + "\n" + sm_result.get("reply", "")
-                    return result
-                self._business_flow_tools.register(BusinessFlowTool(
-                    name="record_event", description="记录项目事件",
-                    parameters={"type": "object", "properties": {}}, handler=_sm_record_event,
-                ))
-            else:
-                self._business_flow_tools.register(BusinessFlowTool(
-                    name="record_event", description="记录项目事件",
-                    parameters={"type": "object", "properties": {}}, handler=handle_record_event,
-                ))
+            self._business_flow_tools.register(BusinessFlowTool(
+                name="record_event", description="记录项目事件",
+                parameters={"type": "object", "properties": {}}, handler=handle_record_event,
+            ))
             self._business_flow_tools.register(BusinessFlowTool(
                 name="record_task", description="创建任务",
                 parameters={"type": "object", "properties": {}}, handler=handle_record_task,
@@ -287,7 +246,6 @@ class EmilyCore:
             business_flow_tools=self._business_flow_tools,
             sop_intent_registry=self._sop_intent_registry,
             rag_provider=self._rag_provider,
-            sm_service=getattr(self, "_sm_service", None),
             # 阶段二：三维鉴权引擎
             permission_engine=self._permission_auth_engine,
         )
@@ -428,132 +386,6 @@ class EmilyCore:
             self._plan_task_scheduler = None
             self._plan_task_app = None
             self._workflow_integrator = None
-
-    def _init_state_machine_module(self) -> None:
-        """初始化全局状态机模块：Repository + Service + Application + API routing。"""
-        try:
-            from .repositories.sm_node_repo import SMNodeRepository
-            from .repositories.sm_stage_repo import SMStageRepository
-            from .repositories.sm_audit_repo import SMAuditRepository
-            from .services.state_machine_service import StateMachineService
-            from .application.state_machine_app import StateMachineApplication
-
-            sm_cascade_depth = getattr(self.config, "state_machine_cascade_max_depth", 5)
-            sm_auto_start = getattr(self.config, "state_machine_auto_start_nodes", False)
-
-            self._sm_node_repo = SMNodeRepository()
-            self._sm_stage_repo = SMStageRepository()
-            self._sm_audit_repo = SMAuditRepository()
-
-            self._sm_service = StateMachineService(
-                node_repo=self._sm_node_repo,
-                stage_repo=self._sm_stage_repo,
-                audit_repo=self._sm_audit_repo,
-                cascade_max_depth=sm_cascade_depth,
-                auto_start_enabled=sm_auto_start,
-            )
-
-            self._sm_app = StateMachineApplication(service=self._sm_service)
-
-            # Register the API router on the FastAPI app
-            try:
-                from emily_core.api.routes.state_machine import set_state_machine_app
-                set_state_machine_app(self._sm_app)
-            except Exception:
-                pass  # router registration handled by api/server.py
-
-            logger.info("StateMachine module initialized: service + app ready")
-        except Exception as e:
-            logger.warning("StateMachine module init failed: %s", e)
-            self._sm_node_repo = None
-            self._sm_stage_repo = None
-            self._sm_audit_repo = None
-            self._sm_service = None
-            self._sm_app = None
-
-    def _init_project_agent(self) -> None:
-        """初始化项目级 Agent：后台 Tick 循环（状态机主动维护 + 健康度检查 + AI 自动运维）。
-
-        Phase 1：卡滞检测（纯规则，不调 LLM）。
-        依赖 _sm_node_repo 和 _sm_service（由 _init_state_machine_module 先行初始化）。
-        fail-open：初始化失败不阻塞 Core。
-        """
-        try:
-            from .project import ProjectAgent, ProjectAgentConfig
-
-            if self._sm_node_repo is None:
-                logger.warning("ProjectAgent: skipped — sm_node_repo not available")
-                return
-
-            pa_config = ProjectAgentConfig.from_config(self.config)
-            self._project_agent = ProjectAgent(
-                config=pa_config,
-                node_repo=self._sm_node_repo,
-                outbound_bus=self.outbound_bus,
-            )
-
-            import asyncio
-            asyncio.ensure_future(self._project_agent.start())
-
-            logger.info(
-                "ProjectAgent initialized: enabled=%s tick=%ds stale=%dd",
-                pa_config.enabled,
-                pa_config.tick_seconds,
-                pa_config.stale_threshold_days,
-            )
-        except Exception as e:
-            logger.warning("ProjectAgent init failed: %s", e)
-            self._project_agent = None
-
-    def _init_ops_module(self) -> None:
-        """初始化运维模块。fail-open：异常不阻断 Core 启动。"""
-        if not self.config.ops_enabled:
-            logger.info("Ops module: disabled by config")
-            return
-        try:
-            from emily_core.project.ops.config import OpsConfig
-            from emily_core.project.ops.scheduler import OpsScheduler
-            from emily_core.project.ops.repositories.ops_repo import OpsRepository
-            from emily_core.project.ops.persistence.fallback_writer import FallbackWriter
-
-            ops_config = OpsConfig.from_global_config(self.config)
-            ops_repo = OpsRepository()
-            fallback = FallbackWriter(log_dir=ops_config.fallback_log_dir)
-
-            self._ops_scheduler = OpsScheduler(
-                config=ops_config, db_repo=ops_repo,
-                fallback=fallback, email_service=self._email_service,
-                outbound_bus=self.outbound_bus,
-            )
-            if self._project_agent:
-                self._project_agent.set_ops_scheduler(self._ops_scheduler)
-
-            # Phase 2: 注册 StaleProbe（包装 StaleDetector 为 Probe 接口）
-            if ops_config.stale_probe_enabled and self._project_agent:
-                try:
-                    from emily_core.project.ops.probes.stale_probe import StaleProbe
-                    stale_detector = self._project_agent._stale_detector
-                    stale_probe = StaleProbe(stale_detector, ops_config)
-                    self._ops_scheduler.register_probe(stale_probe)
-                    logger.info("Ops module: StaleProbe registered")
-                except Exception as e:
-                    logger.warning("StaleProbe registration failed: %s", e)
-
-            # Phase 3: 条件注册 MailboxProbe（仅在邮箱配置启用时）
-            if ops_config.mailbox_enabled and self._email_service:
-                try:
-                    from emily_core.project.ops.probes.mailbox_probe import MailboxProbe
-                    self._ops_scheduler.register_probe(
-                        MailboxProbe(ops_config, self._email_service, fallback, ops_repo)
-                    )
-                    logger.info("Ops module: MailboxProbe registered")
-                except Exception as e:
-                    logger.warning("MailboxProbe registration failed: %s", e)
-
-            logger.info("Ops module initialized")
-        except Exception as e:
-            logger.warning("Ops module init failed (fail-open): %s", e)
-            self._ops_scheduler = None
 
     def _init_permission_module(self) -> None:
         """初始化权限管理模块（阶段二：三维鉴权 + 校验接口）。
@@ -748,6 +580,4 @@ class EmilyCore:
             "uptime": pool.uptime_seconds if pool else 0,
             "bus_hooks": self._bus.hook_count() if self._bus else 0,
         }
-        if self._project_agent is not None:
-            result["project_agent"] = self._project_agent.status()
         return result

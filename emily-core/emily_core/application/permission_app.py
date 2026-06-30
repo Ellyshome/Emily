@@ -1,6 +1,6 @@
 """PermissionApplication — 权限管理编排层（阶段二）。
 
-遵循 plan_task_app.py / state_machine_app.py 模式：
+遵循 plan_task_app.py 模式：
   - 接收 PermissionService 实例
   - 编排服务调用并格式化面向用户的文本回复
   - 返回 dict with {"success", "reply", ...} keys

@@ -35,7 +35,7 @@ def _get_app() -> PermissionApplication:
     if _app is not None:
         return _app
 
-    # 尝试从 EmilyCore 触发 lazy init（与 state_machine 路由同模式）
+    # 尝试从 EmilyCore 触发 lazy init
     try:
         from api.server import get_core
         core = get_core()

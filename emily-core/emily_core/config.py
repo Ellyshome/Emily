@@ -222,57 +222,7 @@ class Config:
     scheduler_tick_seconds: int = 60
     """调度循环间隔（秒），默认 60 秒"""
 
-    # ---- 全局状态机 (State Machine) ----
-    state_machine_enabled: bool = True
-    """全局状态机模块总开关"""
-
-    state_machine_cascade_max_depth: int = 5
-    """级联更新最大传播深度，默认 5"""
-
-    state_machine_auto_start_nodes: bool = False
-    """级联中是否自动启动满足度为 100 的节点（默认关闭，需人工确认）"""
-
-    # ---- 项目级 Agent (ProjectAgent) ----
-    project_agent_enabled: bool = True
-    """项目级 Agent 总开关（状态机主动维护 + 健康度检查 + AI 自动运维）"""
-
-    project_agent_tick_seconds: int = 300
-    """ProjectAgent 调度循环间隔（秒），默认 300 秒（5 分钟）"""
-
-    project_agent_stale_threshold_days: int = 14
-    """节点卡滞判定阈值（天）。IN_PROGRESS/BLOCKED 超过此天数未变化视为卡滞"""
-
-    project_agent_deadline_warn_days: int = 7
-    """milestone 节点到期前 N 天开始预警"""
-
-    project_agent_alert_cooldown_hours: int = 24
-    """同一节点同一问题的告警冷却时间（小时），避免重复推送"""
-
-    # ---- 运维模块 (Ops / ProjectAgent Phase 3) ----
-    ops_enabled: bool = True
-    """运维调度模块总开关"""
-
-    ops_stale_probe_enabled: bool = True
-    """卡滞节点检测探针开关"""
-
-    ops_mailbox_enabled: bool = False
-    """邮箱轮询探针开关"""
-
-    ops_mail_imap_host: str = ""
-    ops_mail_imap_port: int = 993
-    ops_mail_username: str = ""
-    ops_mail_password: str = ""
-    ops_mail_sender_whitelist: str = ""
-    ops_health_probe_enabled: bool = False
-    """健康度检查探针开关"""
-
-    ops_startup_report_enabled: bool = True
-    """冷启动报告开关"""
-
-    ops_fallback_log_dir: str = "logs/"
-    """降级备份文件目录"""
-
-    scheduler_reminder_before_minutes: int = 60
+    # ---- 权限管理 (Permission) ----
     """临近超时提醒提前量（分钟），默认 60 分钟"""
 
     scheduler_overdue_check_interval: int = 300
@@ -313,9 +263,6 @@ class Config:
 
     email_imap_port: int = 993
     """IMAP 端口（993 SSL）"""
-
-    email_poll_interval: int = 60
-    """[已废弃] 请使用 ops_mailbox_enabled + ops_tick_interval_seconds 替代。保留字段以兼容旧配置。"""
 
     extra: dict = field(default_factory=dict)
     """预留扩展字段"""

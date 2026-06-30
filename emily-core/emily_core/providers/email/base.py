@@ -128,7 +128,7 @@ class EmailProvider(ABC):
         creds: EmailCredentials,
         since_uid: Optional[str] = None,
     ) -> list[EmailEnvelope]:
-        """获取 Order 邮件（ProjectAgent 专用便捷方法）。
+        """获取 Order 邮件。
 
         等价于 fetch_inbox(creds, subject_filter="order", from_self=True, unread_only=True)。
         返回的 Envelope 已设 is_order=True。
