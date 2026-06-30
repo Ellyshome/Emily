@@ -5,6 +5,7 @@
     GET    /api/v1/project-nodes/{node_id}                — 查询节点详情
     PATCH  /api/v1/project-nodes/{node_id}                — 更新节点字段
     DELETE /api/v1/project-nodes/{node_id}                — 废弃节点
+    POST   /api/v1/project-nodes/{node_id}/activate       — 激活节点（审批 NOT_ACTIVATED → CONDITIONS_NOT_MET）
     POST   /api/v1/project-nodes/{node_id}/deliverables   — 新增成果
     PATCH  /api/v1/node-deliverables/{deliverable_id}     — 更新成果进度
     POST   /api/v1/project-nodes/{node_id}/dependencies   — 添加依赖
@@ -24,6 +25,7 @@ from fastapi import APIRouter, HTTPException, Query
 from .node_schemas import (
     CreateNodeRequest,
     UpdateNodeRequest,
+    ActivateNodeRequest,
     CreateDeliverableRequest,
     UpdateDeliverableProgressRequest,
     AddDependencyRequest,
@@ -146,6 +148,32 @@ async def discard_node(node_id: str, operator_id: str = Query(default="")):
     if not result.success:
         raise HTTPException(status_code=400, detail=result.message)
     return ApiResponse(message=result.message)
+
+
+@router.post("/{node_id}/activate")
+async def activate_node(node_id: str, body: ActivateNodeRequest):
+    """激活节点 —— 部门负责人审批 NOT_ACTIVATED 节点。
+
+    审批通过 → 流转到 CONDITIONS_NOT_MET，正式纳入全景图。
+    审批拒绝 → 节点废弃（is_discarded=True）。
+    """
+    from emily_core.services.node_commands import ActivateNodeCommand
+
+    svc = _get_service()
+    cmd = ActivateNodeCommand(
+        node_id=node_id,
+        approver_id=body.approver_id,
+        approved=body.approved,
+        remark=body.remark,
+    )
+    result = await svc.activate_node(cmd)
+    if not result.success:
+        status_code = 403 if result.error_code == "40302" else 400
+        raise HTTPException(status_code=status_code, detail=result.message)
+    return ApiResponse(
+        message=result.message,
+        data={"node_id": result.node_id, "status": result.status},
+    )
 
 
 # ══════════════════════════════════════════════════════════════════════════════

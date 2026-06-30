@@ -232,6 +232,50 @@ class ProjectNodeRepo:
             )
 
     @staticmethod
+    def find_by_status(status: str, project_id: str | None = None,
+                       owner_dept_id: str | None = None,
+                       limit: int = 200) -> list[ProjectNode]:
+        """按状态查询节点（用于查询待审批节点等）。
+
+        Args:
+            status: 节点状态（NOT_ACTIVATED / CONDITIONS_NOT_MET / IN_PROGRESS / COMPLETED）
+            project_id: 可选项目过滤
+            owner_dept_id: 可选主责条线过滤
+            limit: 返回上限
+        """
+        with get_session() as session:
+            q = (
+                session.query(ProjectNode)
+                .filter(
+                    ProjectNode.status == status,
+                    ProjectNode.is_discarded == False,
+                )
+            )
+            if project_id:
+                q = q.filter(ProjectNode.project_id == project_id)
+            if owner_dept_id:
+                q = q.filter(ProjectNode.owner_dept_id == owner_dept_id)
+            return q.order_by(ProjectNode.created_at.desc()).limit(limit).all()
+
+    @staticmethod
+    def find_pending_approval(owner_dept_id: str | None = None,
+                              project_id: str | None = None,
+                              limit: int = 200) -> list[ProjectNode]:
+        """查询待审批节点（status=NOT_ACTIVATED）。
+
+        Args:
+            owner_dept_id: 可选按主责条线过滤（部门负责人查看自己部门的待审批节点）
+            project_id: 可选项目过滤
+            limit: 返回上限
+        """
+        return ProjectNodeRepo.find_by_status(
+            "NOT_ACTIVATED",
+            project_id=project_id,
+            owner_dept_id=owner_dept_id,
+            limit=limit,
+        )
+
+    @staticmethod
     def get_ancestor_chain(node_id: str, max_depth: int = 3) -> list[ProjectNode]:
         """向上追溯祖先链（用于递归进度重算）。最多 3 层。"""
         ancestors = []

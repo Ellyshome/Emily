@@ -46,6 +46,19 @@ class UpdateNodeCommand:
 
 
 @dataclass
+class ActivateNodeCommand:
+    """激活节点命令 —— 部门负责人审批通过/拒绝，NOT_ACTIVATED → CONDITIONS_NOT_MET。
+
+    审批通过（approved=True）：节点从未启用流转到条件不足，正式纳入全景图。
+    审批拒绝（approved=False）：节点废弃（is_discarded=True）。
+    """
+    node_id: str
+    approver_id: str = ""
+    approved: bool = True
+    remark: str = ""
+
+
+@dataclass
 class DiscardNodeCommand:
     """废弃节点命令。"""
     node_id: str

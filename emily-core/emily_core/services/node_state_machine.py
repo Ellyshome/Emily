@@ -7,7 +7,7 @@
   - 父子进度加权汇总
   - 循环依赖检测（BFS）
 
-基于需求文档 §2.1（三态模型）和 §4.1（状态自动流转计算）。
+基于需求文档 §2.1（四态模型：未启用→条件不足→进行中→已完成）和 §4.1（状态自动流转计算）。
 """
 
 from __future__ import annotations
@@ -22,14 +22,20 @@ logger = logging.getLogger("emily.node_state_machine")
 # 状态常量
 # ══════════════════════════════════════════════════════════════════════════════
 
+NOT_ACTIVATED = "NOT_ACTIVATED"
 CONDITIONS_NOT_MET = "CONDITIONS_NOT_MET"
 IN_PROGRESS = "IN_PROGRESS"
 COMPLETED = "COMPLETED"
 
-VALID_STATUSES = frozenset({CONDITIONS_NOT_MET, IN_PROGRESS, COMPLETED})
+VALID_STATUSES = frozenset({NOT_ACTIVATED, CONDITIONS_NOT_MET, IN_PROGRESS, COMPLETED})
 
-# 三态流转规则（仅两跳合法）
+# 四态流转规则
+# NOT_ACTIVATED → CONDITIONS_NOT_MET：部门负责人审批通过
+# CONDITIONS_NOT_MET → IN_PROGRESS：条件满足
+# IN_PROGRESS → COMPLETED：成果 100% 完成
+# IN_PROGRESS → CONDITIONS_NOT_MET：阻塞时回退
 VALID_TRANSITIONS: dict[str, frozenset[str]] = {
+    NOT_ACTIVATED: frozenset({CONDITIONS_NOT_MET}),   # 审批通过后激活
     CONDITIONS_NOT_MET: frozenset({IN_PROGRESS}),
     IN_PROGRESS: frozenset({COMPLETED, CONDITIONS_NOT_MET}),  # 阻塞时回退
     COMPLETED: frozenset(),  # 终态
@@ -45,7 +51,7 @@ class NodeSnapshot:
     __slots__ = ("node_id", "status", "progress", "parent_node_id",
                  "dependencies", "deliverables", "children")
 
-    def __init__(self, node_id: str, status: str = CONDITIONS_NOT_MET,
+    def __init__(self, node_id: str, status: str = NOT_ACTIVATED,
                  progress: float = 0.0, parent_node_id: str = ""):
         self.node_id = node_id
         self.status = status
