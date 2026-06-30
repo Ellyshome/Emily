@@ -66,7 +66,6 @@ def create_all_tools(
     chat_archive_service=None,  # M11: 聊天归档服务
     send_file_callback=None,    # M13: 主动发送文件回调
     file_storage_service=None,  # M13: 文件存储服务（按需读取/下载文件）
-    sm_service=None,            # SM: 全局状态机服务（query_sm_status 工具）
     email_service=None,         # Email: 邮箱服务（send_email / fetch_inbox 工具）
 ) -> ToolRegistry:
     """创建 LLM 工具注册表（仅含条件工具 + query_data 兜底查询）。
@@ -150,12 +149,6 @@ def create_all_tools(
         ))
         logger.info("M13 read_local_file tool registered")
 
-    # SM: 全局状态机查询工具（需 sm_service）
-    if sm_service is not None:
-        from .sm_tool import create_query_sm_status_tool
-        registry.register(create_query_sm_status_tool(sm_service))
-        logger.info("SM query_sm_status tool registered")
-
     # Email: 邮件收发工具（需 EmailService）
     if email_service is not None:
         try:
@@ -185,7 +178,6 @@ def create_business_flow_tools(
     pending_issues=None,         # M8a: 待解决问题清单服务
     config=None,                 # M8a: 配置
     plan_task_app=None,          # 计划任务系统 Application
-    sm_service=None,             # SM: 全局状态机服务（事件录入后自动匹配完成节点）
 ) -> BusinessFlowToolRegistry:
     """创建业务流工具注册表（框架直接执行，不经过 LLM tool calling）。
 
@@ -210,37 +202,14 @@ def create_business_flow_tools(
     registry = BusinessFlowToolRegistry()
 
     # record_event — 事件录入
-    sm_match_handler = None
-    if sm_service is not None:
-        async def _sm_match_wrapper(params):
-            result = await handle_record_event(
-                params, event_app=event_app, user_id=user_id, message_id=message_id,
-                pending_issues=pending_issues, config=config,
-            )
-            # 事件录入成功后尝试匹配全景节点并自动完成
-            if result.get("success") and result.get("object_id"):
-                sm_result = await sm_service.try_match_and_complete(
-                    event_title=params.get("title", ""),
-                    event_type=params.get("event_type", ""),
-                )
-                if sm_result.get("matched") and sm_result.get("completed"):
-                    reply = result.get("reply", "")
-                    result["reply"] = reply + "\n" + sm_result.get("reply", "")
-                    result["sm_matched"] = True
-                    result["sm_node_id"] = sm_result.get("node_id")
-            return result
-        sm_match_handler = _sm_match_wrapper
-    else:
-        sm_match_handler = lambda params: handle_record_event(
-            params, event_app=event_app, user_id=user_id, message_id=message_id,
-            pending_issues=pending_issues, config=config,
-        )
-
     registry.register(BusinessFlowTool(
         name="record_event",
         description=_EVENT_TOOL_DESCRIPTION,
         parameters=_EVENT_TOOL_SCHEMA,
-        handler=sm_match_handler,
+        handler=lambda params: handle_record_event(
+            params, event_app=event_app, user_id=user_id, message_id=message_id,
+            pending_issues=pending_issues, config=config,
+        ),
     ))
 
     # record_task — 任务管理

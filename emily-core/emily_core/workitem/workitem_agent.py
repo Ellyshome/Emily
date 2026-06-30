@@ -89,8 +89,6 @@ class WorkItemAgent:
         business_flow_tools=None,
         sop_intent_registry=None,
         rag_provider=None,
-        # SM: 全局状态机服务（事件录入后自动匹配完成节点）
-        sm_service=None,
         # 阶段二：三维鉴权引擎
         permission_engine=None,
     ):
@@ -108,9 +106,6 @@ class WorkItemAgent:
 
         # Phase C: RAG 依赖
         self._rag_provider = rag_provider
-
-        # SM: 全局状态机服务
-        self._sm_service = sm_service
 
         # 阶段二：三维鉴权引擎
         self._permission_engine = permission_engine

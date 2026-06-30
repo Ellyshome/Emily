@@ -1,6 +1,6 @@
 """PermissionRepository — 权限快照加载所需数据查询。
 
-遵循项目约定：纯 @staticmethod，可选 session 参数（sm_node_repo 完整版范式）。
+遵循项目约定：纯 @staticmethod，可选 session 参数。
 """
 
 from typing import Optional
