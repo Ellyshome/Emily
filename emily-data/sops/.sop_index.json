@@ -1,10 +1,10 @@
 {
   "_meta": {
     "version": "1",
-    "built_at": "2026-06-29T15:40:48.356849+00:00",
+    "built_at": "2026-06-30T09:27:04.383059+00:00",
     "source_dir": "sops",
-    "source_files_count": 10,
-    "source_files_mtime_latest": "2026-06-29T14:58:37.356260+00:00",
+    "source_files_count": 11,
+    "source_files_mtime_latest": "2026-06-30T09:25:11.330700+00:00",
     "parse_result": {
       "ok": 10,
       "partial": 1,
@@ -48,20 +48,13 @@
         "SOP-005-QRY"
       ]
     },
-    "FLOW": {
-      "description": "流程类 —— 跨维度深度调查与分析",
-      "fallback_tools": [],
-      "fallback_guidance": "这是深度调查类请求。若以上 FLOW 流程均不匹配，使用系统内置的守护调查Agent执行跨维度分析。",
-      "sops": [
-        "SOP-004-FILE"
-      ]
-    },
     "SYS": {
       "description": "系统类 —— 系统维护与管理功能",
       "fallback_tools": [],
       "fallback_guidance": "这是系统管理类请求。若以上 SYS 流程均不匹配，但仍需系统功能，使用对应原子工具自由推理。",
       "sops": [
         "SOP-008-SYS",
+        "SOP-011-SYS",
         "SOP-999-SYS"
       ]
     }
@@ -417,6 +410,24 @@
         "SOP-002-REC"
       ],
       "parse_status": "ok"
+    },
+    "SOP-011-SYS": {
+      "sop_id": "SOP-011-SYS",
+      "display_name": "全景节点管理",
+      "sop_type": "SYS",
+      "version": "v1.0",
+      "file_name": "SOP-011-SYS-node_manage.md",
+      "allow_roles": [
+        "Level0",
+        "Level1",
+        "Level2",
+        "Level3"
+      ],
+      "trigger_keywords": [],
+      "deny_conditions": [],
+      "positive_examples": [],
+      "negative_examples": [],
+      "parse_status": "partial"
     },
     "SOP-999-SYS": {
       "sop_id": "SOP-999-SYS",

@@ -300,6 +300,10 @@ class File(Base):
     attachment_refs = relationship("MessageAttachment", back_populates="file",
                                    foreign_keys="MessageAttachment.file_id")
 
+    # 全景节点图 V2 —— 文件溯源字段（需求文档 §6.1）
+    source_module_id = Column(String(100), default="", comment="来源模块ID（节点ID/其他业务对象ID）")
+    source_module_type = Column(String(50), default="", comment="来源模块类型：NODE_STARTUP_DOC/NODE_WORKLOAD_DOC/NODE_DELIVERABLE_DOC/NODE_ATTACHMENT")
+
 
 # ══════════════════════════════════════════════════════════════════════════════
 # 新增表（对齐需求文档 清单-数据库表.md）
@@ -1148,3 +1152,158 @@ class PermissionReviewTask(Base):
     created_at = Column(String, default=_utc_now)
     updated_at = Column(String, default=_utc_now, onupdate=_utc_now)
     is_deleted = Column(Boolean, default=False)
+
+
+# ============================================================================
+# 全景节点图 V2 — 5 张表（Phase 1-1）
+# 基于需求文档 §3.2–§3.6
+# ============================================================================
+
+
+class ProjectNode(Base):
+    """节点主表 —— 需求文档 §3.2 project_nodes。
+
+    三态状态机：CONDITIONS_NOT_MET / IN_PROGRESS / COMPLETED。
+    支持父子层级（parent_node_id 自引用），嵌套深度上限 3 层。
+    多项目隔离：project_id 为必填。
+    """
+    __tablename__ = "project_nodes"
+
+    # ── 必填业务字段（6个）──
+    project_id = Column(String(100), nullable=False, comment="项目归属ID（FK→projects.id）")
+    node_id = Column(String(100), nullable=False, comment="节点编号（业务主键），例：SG-JG-01-2026")
+    node_name = Column(String(500), nullable=False, comment="节点名称")
+    owner_dept_id = Column(String(100), nullable=False, default="项目总", comment="主责条线（FK→company_info.id）")
+    related_company_id = Column(String(100), nullable=False, default="建设单位", comment="关联单位（FK→company_info.id）")
+    deadline = Column(String(50), nullable=False, comment="截止时间（ISO8601）")
+
+    # ── 选填业务字段（6个）──
+    land_parcel_id = Column(String(100), default="", comment="关联地块ID")
+    remark = Column(Text, default="", comment="备注")
+    parent_node_id = Column(String(100), default="", comment="父节点ID（FK→project_nodes.node_id）")
+    stage_id = Column(Integer, default=0, comment="所属阶段ID（对齐 projects.lifecycle_stage）")
+    child_weight = Column(String, default="1.0000", comment="作为子节点时在父节点中的权重（DECIMAL(5,4)，存为字符串避免精度问题）")
+    startup_doc_id = Column(String(100), default="", comment="启动文档记录ID（FK→files.id）")
+
+    # ── 系统字段（10个）──
+    creator_id = Column(String(100), nullable=False, comment="录入人ID")
+    created_at = Column(String(50), nullable=False, default=_utc_now, comment="录入时间（ISO8601）")
+    approver_id = Column(String(100), default="", comment="批准人ID")
+    approved_at = Column(String(50), default="", comment="批准时间（ISO8601）")
+    completed_at = Column(String(50), default="", comment="完成时间（ISO8601）")
+    is_discarded = Column(Boolean, default=False, comment="是否被废弃")
+    progress = Column(String, default="0.00", comment="整体进度（百分比 0.00-100.00，存为字符串避免精度问题）")
+    status = Column(String(20), default="CONDITIONS_NOT_MET", comment="当前状态：CONDITIONS_NOT_MET / IN_PROGRESS / COMPLETED")
+    sort_order = Column(Integer, default=0, comment="排序序号")
+    updated_at = Column(String(50), nullable=False, default=_utc_now, onupdate=_utc_now, comment="最后更新时间（ISO8601）")
+
+    # ── 主键 ──
+    id = Column(String, primary_key=True, default=_new_uuid)
+
+    __table_args__ = (
+        Index("idx_nodes_project", "project_id"),
+        Index("idx_nodes_status", "status"),
+        Index("idx_nodes_stage", "stage_id"),
+        Index("idx_nodes_owner", "owner_dept_id"),
+        Index("idx_nodes_parent", "parent_node_id"),
+    )
+
+
+class NodeDependency(Base):
+    """前置依赖表 —— 需求文档 §3.3 node_dependencies。
+
+    核心机制：依赖不锁定节点，锁定具体成果文件。
+    下游节点只需依赖文件就绪即可启动，无需等待上游节点整体完成。
+    权重支持阻塞场景（权重 999 的人工依赖）。
+    """
+    __tablename__ = "node_dependencies"
+
+    node_id = Column(String(100), nullable=False, comment="本节点（下游节点，FK→project_nodes.node_id）")
+    depends_on_deliverable_id = Column(String(100), nullable=False, comment="依赖的成果ID（FK→node_deliverables.deliverable_id）")
+    depends_on_node_id = Column(String(100), nullable=False, comment="成果所属上游节点ID（冗余字段，FK→project_nodes.node_id）")
+    dependency_type = Column(String(20), nullable=False, default="DELIVERABLE", comment="依赖类型：DELIVERABLE / TIME")
+    weight = Column(String, nullable=False, default="1.0000", comment="权重（0.0000-1.0000，存为字符串）")
+    created_at = Column(String(50), nullable=False, default=_utc_now, comment="创建时间（ISO8601）")
+
+    id = Column(String, primary_key=True, default=_new_uuid)
+
+    __table_args__ = (
+        UniqueConstraint("node_id", "depends_on_deliverable_id", name="uq_dep_node_deliverable"),
+        Index("idx_ndep_node", "node_id"),
+        Index("idx_ndep_deliverable", "depends_on_deliverable_id"),
+    )
+
+
+class NodeDeliverable(Base):
+    """产出成果表 —— 需求文档 §3.4 node_deliverables。
+
+    每个节点可定义多个产出成果，每个成果有目标量和当前量。
+    成果完成度 = current_amount / target_amount。
+    必需成果全部 100% 完成 → 节点状态自动流转至「已完成」。
+    """
+    __tablename__ = "node_deliverables"
+
+    deliverable_id = Column(String(100), nullable=False, comment="成果编号（业务主键）")
+    node_id = Column(String(100), nullable=False, comment="所属节点ID（FK→project_nodes.node_id）")
+    deliverable_name = Column(String(500), nullable=False, comment="成果名称")
+    target_amount = Column(String, nullable=False, comment="目标量（DECIMAL(12,2)，存为字符串）")
+    current_amount = Column(String, nullable=False, default="0.00", comment="当前量（DECIMAL(12,2)，存为字符串）")
+    unit = Column(String(50), nullable=False, comment="量纲（份/吨/平方米...）")
+    is_required = Column(Boolean, nullable=False, default=True, comment="是否必需成果")
+    file_id = Column(String(100), default="", comment="关联文件ID（FK→files.id）")
+    completed_at = Column(String(50), default="", comment="完成时间（ISO8601）")
+    created_at = Column(String(50), nullable=False, default=_utc_now, comment="创建时间（ISO8601）")
+
+    id = Column(String, primary_key=True, default=_new_uuid)
+
+    __table_args__ = (
+        Index("idx_ndel_node", "node_id"),
+    )
+
+
+class NodeAccessibleFile(Base):
+    """节点可见文件中间表 —— 需求文档 §3.5 node_accessible_files。
+
+    M:N 关系，替代 JSON 数组方案，支持索引查询和权限审计。
+    文件只对与之关联的节点的企业用户可见。
+    """
+    __tablename__ = "node_accessible_files"
+
+    node_id = Column(String(100), nullable=False, comment="节点ID（FK→project_nodes.node_id）")
+    file_id = Column(String(100), nullable=False, comment="文件ID（FK→files.id）")
+    added_by = Column(String(100), nullable=False, comment="授权人ID")
+    added_at = Column(String(50), nullable=False, default=_utc_now, comment="授权时间（ISO8601）")
+
+    id = Column(String, primary_key=True, default=_new_uuid)
+
+    __table_args__ = (
+        UniqueConstraint("node_id", "file_id", name="uq_naf_node_file"),
+        Index("idx_naf_node", "node_id"),
+        Index("idx_naf_file", "file_id"),
+    )
+
+
+class NodeEvent(Base):
+    """事件总线持久化表 —— 需求文档 §3.6 node_events。
+
+    所有节点操作与变更记录，只增不改（immutable）。
+    软删除也记录为 DELETE 事件，原始记录永久保留。
+    """
+    __tablename__ = "node_events"
+
+    event_id = Column(String(100), nullable=False, comment="事件唯一ID")
+    node_id = Column(String(100), nullable=False, comment="关联节点ID（FK→project_nodes.node_id）")
+    event_type = Column(String(50), nullable=False, comment="事件类型枚举")
+    old_value = Column(Text, default="", comment="变更前值（JSON快照）")
+    new_value = Column(Text, default="", comment="变更后值（JSON快照）")
+    operator_id = Column(String(100), default="", comment="操作人ID（系统自动触发则为空）")
+    remark = Column(Text, default="", comment="操作说明/备注")
+    created_at = Column(String(50), nullable=False, default=_utc_now, comment="事件发生时间（ISO8601）")
+
+    id = Column(String, primary_key=True, default=_new_uuid)
+
+    __table_args__ = (
+        Index("idx_nev_node", "node_id"),
+        Index("idx_nev_type", "event_type"),
+        Index("idx_nev_created", "created_at"),
+    )

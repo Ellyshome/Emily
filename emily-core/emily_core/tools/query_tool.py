@@ -1,13 +1,12 @@
-"""数据查询业务逻辑 — M14 重构为业务流工具 + 保留 LLM 工具供 unmatched 兜底。
+"""数据查询业务逻辑 — M14 重构为业务流工具。
 
 M14: 核心逻辑提取为独立 handler，供 BusinessFlowTool 使用。
-     同时保留 ToolDefinition 包装器供 unmatched 兜底路径（LLM tool calling）。
+     ToolRegistry 已移除，不再需要 LLM ToolDefinition 包装器。
 """
 
 import logging
 
 from ..adapters.standard.command import QueryCommand
-from ..agent.tool_registry import ToolDefinition
 from ..services.query_service import QueryService
 
 logger = logging.getLogger("emily.tool.query")
@@ -130,26 +129,3 @@ async def handle_query_data(
     except Exception as e:
         logger.error("query_data tool failed: %s", e, exc_info=True)
         return {"success": False, "error": str(e)}
-
-
-# ══════════════════════════════════════════════════════════════════════════════
-# LLM ToolDefinition 包装器 — 供 unmatched 兜底路径使用
-# ══════════════════════════════════════════════════════════════════════════════
-
-
-def create_query_tool(query_service: QueryService) -> ToolDefinition:
-    """将 QueryService 包装为 query_data LLM 工具（供 unmatched 兜底）。
-
-    Args:
-        query_service: 已初始化的 QueryService 实例
-    """
-
-    async def execute(args: dict) -> dict:
-        return await handle_query_data(args, query_service)
-
-    return ToolDefinition(
-        name="query_data",
-        description=_QUERY_TOOL_DESCRIPTION,
-        parameters=_QUERY_TOOL_SCHEMA,
-        execute=execute,
-    )

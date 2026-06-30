@@ -60,3 +60,11 @@ app.include_router(message.router, prefix="/api/v1")
 app.include_router(session.router, prefix="/api/v1")
 app.include_router(permission.router, prefix="/api/v1")
 app.include_router(outbound.router, prefix="/api/v1")
+
+# 全景节点图 V2 路由 + SSE 事件端点（Phase 1-3）
+from .routes import node as node_routes  # noqa: E402
+from .sse import node_events  # noqa: E402
+
+app.include_router(node_routes.router, prefix="/api/v1")
+app.include_router(node_routes.cross_router, prefix="/api/v1")
+app.include_router(node_events.router, prefix="/api/v1")

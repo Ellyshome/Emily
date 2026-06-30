@@ -26,7 +26,7 @@ from .injector import KnowledgeInjector
 from .pipeline.context import BusContext
 from .pipeline.interfaces.routing import RouteDecision, SubTask
 from .pipeline.interfaces.planning import ExecutionPlan, PlanStep
-from .pipeline.interfaces.execution import StepResult, ToolCallRecord, DbResult
+from .pipeline.interfaces.execution import StepResult, ToolCallRecord, DbResult, RagResult, RagChunk
 from .pipeline.interfaces.guardian import GuardianVerdict
 from .pipeline.interfaces.auth import AuthResult, AuthDecision
 from .pipeline.mocks import (
@@ -49,12 +49,16 @@ _PLANNER_SYSTEM_PROMPT = """你是 Emily 的执行规划器。根据业务流程
 ## 用户输入
 {user_input}
 
+## 可用工具
+{available_tools}
+
 ## 规划规则
 1. 根据 SOP 中定义的流程阶段拆解步骤（通常 2-5 步）
-2. 每个步骤绑定一个具体的工具（tool_name），如 record_event, record_task, record_meeting, record_file, query_data 等
-3. 步骤间如有依赖关系，在 depends_on 中标明
-4. 评估整体风险等级：L1(低风险-查询类) / L2(中风险-录入类) / L3(高风险-删除/批量修改)
-5. 对于需要工具调用的步骤，在 tool_params 中提供完整的参数对象
+2. 每个步骤绑定一个具体的工具（tool_name），从"可用工具"列表中选择
+3. 如果需要查询领域知识（规范标准、施工工艺、政策法规等），应在执行业务工具之前先调用 knowledge_search 获取相关知识
+4. 步骤间如有依赖关系，在 depends_on 中标明
+5. 评估整体风险等级：L1(低风险-查询类) / L2(中风险-录入类) / L3(高风险-删除/批量修改)
+6. 对于需要工具调用的步骤，在 tool_params 中提供完整的参数对象
 
 ## 输出格式
 仅输出一个 JSON 对象（不要包含其他文字）：
@@ -187,9 +191,20 @@ class WorkItemAgent:
         if hasattr(self.injector, 'get_context_text'):
             sop_text = self.injector.get_context_text()
 
+        # 构建可用工具列表（从 BusinessFlowToolRegistry 动态生成）
+        tools_text = ""
+        if self._business_flow_tools:
+            tool_entries = []
+            for name in sorted(self._business_flow_tools.list_names()):
+                tool = self._business_flow_tools.get(name)
+                if tool:
+                    tool_entries.append(f"- {name}: {tool.description}")
+            tools_text = "\n".join(tool_entries) if tool_entries else "（无可用工具）"
+
         prompt = _PLANNER_SYSTEM_PROMPT.format(
             sop_text=sop_text[:4000] if sop_text else f"SOP: {wi.sop_id or '未知'}（全文未加载）",
             user_input=wi.user_input,
+            available_tools=tools_text,
         )
 
         try:
@@ -316,6 +331,22 @@ class WorkItemAgent:
                             result_data=handler_dict,
                         ))
 
+                    # 构建 RagResult（如果 handler 返回了 RAG 检索数据，如 knowledge_search）
+                    rag_results = []
+                    if handler_dict.get("rag_results_data"):
+                        rrd = handler_dict["rag_results_data"]
+                        rag_chunks = [
+                            RagChunk(content=c["content"], score=c.get("score", 0.0), doc_name=c.get("doc_name", ""))
+                            for c in rrd.get("chunks", [])
+                        ]
+                        rag_results.append(RagResult(
+                            query=rrd.get("query", ""),
+                            provider=rrd.get("provider", ""),
+                            chunks=rag_chunks,
+                            hit_count=rrd.get("hit_count", len(rag_chunks)),
+                            elapsed_ms=rrd.get("elapsed_ms", 0),
+                        ))
+
                     output = handler_dict.get("reply", step.description)
                     success = handler_dict.get("success", True)
 
@@ -325,37 +356,9 @@ class WorkItemAgent:
                         output=str(output),
                         tool_calls=[tool_call],
                         db_results=db_results,
+                        rag_results=rag_results,
                         business_data=handler_dict,
                     )
-                elif tool_name == "knowledge_search" and self._rag_provider:
-                    # Phase C: RAG 知识库检索 — 内联执行
-                    import asyncio
-                    try:
-                        from ..providers.rag.base import RagSearchResponse
-                        rag_result = await self._rag_provider.search(
-                            query=tool_params.get("query", step.description),
-                            top_k=tool_params.get("top_k", 5),
-                        )
-                        rag_chunks = [
-                            type('RagChunk', (), {'content': r.content, 'score': r.score, 'doc_name': r.source_document})()
-                            for r in rag_result.results
-                        ] if hasattr(rag_result, 'results') else []
-                        rag_obj = type('RagResult', (), {
-                            'query': tool_params.get("query", ""),
-                            'provider': rag_result.provider_name,
-                            'chunks': rag_chunks,
-                            'hit_count': len(rag_chunks),
-                            'elapsed_ms': 0,
-                        })()
-                        sr = StepResult(
-                            step_id=step.step_id,
-                            success=True,
-                            output=rag_result.context_text or "未找到相关知识",
-                            rag_results=[rag_obj],
-                        )
-                    except Exception as e:
-                        logger.warning("RAG knowledge_search failed: %s", e)
-                        sr = StepResult(step_id=step.step_id, success=False, output=f"知识库检索失败: {e}")
                 elif tool_name:
                     # 工具未注册
                     sr = StepResult(
