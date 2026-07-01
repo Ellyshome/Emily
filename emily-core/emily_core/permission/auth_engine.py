@@ -122,8 +122,12 @@ class PermissionAuthEngine:
                 await self._log_access_denied(perms, sop_id, matrix_result.reason)
             return matrix_result
 
-        # ── 4. 默认允许（未命中任何 SOP 规则时放行，如纯聊天）──
-        return AccessCheckResult(allowed=True, matched_details={"source": "default_allow"})
+        # ── 4. 默认拒绝（未命中任何 SOP 规则时拒绝，符合最小权限原则）──
+        return AccessCheckResult(
+            allowed=False,
+            reason="SOP 未配置权限规则，默认拒绝（请联系管理员配置）",
+            matched_details={"source": "default_deny"},
+        )
 
     # ========================================================================
     #  Step 1: DENY 编码检查

@@ -135,8 +135,7 @@ QQ → NapCat → AstrBot → emily_agent 薄插件
 | `emily-data/config/core_config.json` | 非机密运行时配置 |
 | `emily-data/config/hook_config.json` | Hook 声明式挂载配置 |
 | `emily-data/sops/` | SOP 业务流手册仓库（10 份 .md） |
-| `emily-data/prompts/master_agent.txt` | MasterAgent system prompt 模板 |
-| `emily-data/prompts/domain_knowledge.md` | L1 核心领域认知（~320 tokens） |
+| `emily-data/prompts/` | Agent system prompt 模板（session/workitem/guardian_step/guardian_reply/project .md） |
 
 ---
 

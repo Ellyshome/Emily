@@ -50,11 +50,11 @@ class Config:
     storage_root: str = ""
     """文件存储根目录（为空时使用插件目录下的 files/ 文件夹）"""
 
-    master_agent_prompt_path: str = ""
-    """[reserved] MasterAgent prompt 文件路径（SessionAgent 自行构造 prompt，此字段暂无消费者）"""
-
-    domain_knowledge_path: str = ""
-    """[reserved] 领域知识文件路径（SessionAgent 自行注入领域知识，此字段暂无消费者）"""
+    # ── Prompt 文件目录 ──
+    prompts_dir: str = ""
+    """Prompt 模板文件目录路径（为空时走多级回退：环境变量 EMILY_PROMPTS_DIR →
+    /app/prompts → emily-data/prompts）。目录下按名称存放 .md 文件：
+    routing.md / planner.md / guardian_step.md / guardian_reply.md"""
 
     # ---- Agent 配置 (M7) ----
     enable_master_agent: bool = True
@@ -192,9 +192,6 @@ class Config:
     # ── Phase C: Pipeline 节点大脑模式开关 ──
     executor_mode: str = "real"
     """执行大脑模式: mock | real（需 EMILY_LLM_API_KEY + BusinessFlowToolRegistry）"""
-
-    guardian_mode: str = "mock"
-    """守护大脑模式: mock（MockGuardian 兜底）"""
 
     auth_mode: str = "mock"
     """鉴权引擎模式: mock | real（需 SOPIntentRegistry）"""

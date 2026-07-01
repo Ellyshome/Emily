@@ -59,13 +59,13 @@ def _config_from_env(config_data: dict | None) -> dict:
         # Phase C: Pipeline node brain mode switches
         "EMILY_EXECUTOR_MODE": "executor_mode",
         "EMILY_PLANNER_MODE": "planner_mode",
-        "EMILY_GUARDIAN_MODE": "guardian_mode",
         "EMILY_AUTH_MODE": "auth_mode",
         "EMILY_RISK_MODE": "risk_mode",
         "EMILY_MAXKB_URL": "maxkb_url",
         "EMILY_MAXKB_ADMIN_PASSWORD": "maxkb_admin_password",
         "EMILY_MAXKB_KNOWLEDGE_ID": "maxkb_knowledge_id",
         "EMILY_KB_ENABLED": "kb_enabled",
+        "EMILY_PROMPTS_DIR": "prompts_dir",
     }
     for env_key, cfg_key in env_map.items():
         val = os.environ.get(env_key)

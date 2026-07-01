@@ -10,7 +10,7 @@ deny always wins（任一 before hook BLOCK → 立即终止），before hook �
 
 Hook 系统完整复用迁移过来的 hook.py / hook_registry.py（M15 实现，逻辑不改）。
 Phase B/C 已将 MockRouter 替换为 SessionAgent 意图识别，MockPlanner 替换为 LLM 规划，
-MockWorkAgent/MockGuardian 作为 Mock 模式兜底（见 workitem_agent.py）。
+MockWorkAgent 作为 Mock 模式兜底，RealGuardian 在 LLM 可用时自动启用输出审核（见 workitem_agent.py）。
 """
 
 from __future__ import annotations

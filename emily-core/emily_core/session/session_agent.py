@@ -55,34 +55,20 @@ _SIMPLE_FAREWELLS = {"再见", "拜拜", "bye", "goodbye", "晚安", "回头见"
 _SIMPLE_SELF_INTRO = {"你是谁", "你叫什么", "你是什么", "who are you", "介绍自己", "介绍一下自己"}
 
 # ══════════════════════════════════════════════════════════════════════════════
-# Phase B: LLM 意图识别 System Prompt（从 MasterAgent 路由逻辑提取）
+# Phase B: Session Agent 系统提示（从 prompt 文件加载，含人格 + 路由）
 # ══════════════════════════════════════════════════════════════════════════════
 
-_ROUTING_SYSTEM_PROMPT = """你是 Emily 的意图路由器，负责将用户消息匹配到对应的业务流程（SOP）。
+def _load_session_prompt() -> str:
+    """加载 SessionAgent 核心系统 prompt（带缓存）
 
-## 当前时间
-{current_datetime}
+    session.md 包含：Emy 人格 / 回复格式规范 / 路由规则 / JSON 输出约束
+    旧 routing.md 的内容已合并到此 prompt 中，不再单独加载。
+    """
+    from ..infrastructure.llm.prompt_loader import load_prompt
+    return load_prompt("session")
 
-## 可用业务流程目录
-{sop_catalog}
 
-## 路由规则
-1. 仔细分析用户消息的**核心意图**，而非表面关键词
-2. 如果消息包含多个独立请求（如"查一下A，然后处理B"），标记为复合请求 (is_compound=true)
-3. 如果没有任何 SOP 能匹配用户意图，设置 fallback=true
-4. 置信度判断标准：
-   - high: 用户明确表达了某个业务意图，关键词高度匹配
-   - medium: 用户意图可以推断但不够明确
-   - low: 用户表达模糊，可能匹配多个 SOP
-   - none: 无法匹配任何 SOP
-
-## 输出要求
-仅输出一个 JSON 对象（不要包含其他文字）：
-{{"sop_id": "SOP-XXX-YYY" | null, "confidence": "high|medium|low|none", "reasoning": "简短匹配理由", "is_compound": false, "sub_tasks": [], "fallback": false}}
-
-对于复合请求，sub_tasks 数组中每项包含 sop_id 和 user_input：
-{{"sop_id": null, "is_compound": true, "sub_tasks": [{{"sop_id": "SOP-001-XXX", "user_input": "子任务描述"}}, ...], "fallback": false}}
-"""
+_SESSION_SYSTEM_PROMPT = _load_session_prompt()
 
 
 def _beijing_now_str() -> str:
@@ -207,7 +193,7 @@ class SessionAgent:
             return {"sop_id": None, "confidence": "none", "reasoning": f"SOP目录加载失败: {e}",
                     "is_compound": False, "sub_tasks": [], "fallback": True}
 
-        prompt = _ROUTING_SYSTEM_PROMPT.format(
+        prompt = _SESSION_SYSTEM_PROMPT.format(
             sop_catalog=sop_catalog,
             current_datetime=_beijing_now_str(),
         )

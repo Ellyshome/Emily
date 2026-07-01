@@ -1,5 +1,5 @@
 ---
-name: emy-verify
+name: req-verify
 description: >
   Emily验证测试。根据模块需求文档、实施计划、实施记录，化身资深测试工程师对Emily新开发模块/系统/脚本进行专业验证测试。
   覆盖测试计划设计、环境准备（Docker状态检查、DB预埋数据、文件系统预设）、测试执行（emy-test IM对话模拟、

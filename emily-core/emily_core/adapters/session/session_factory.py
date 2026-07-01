@@ -113,4 +113,19 @@ class SessionFactory:
                     )
                     # 保持默认空快照（L1 访客），fail-open 不阻塞 Session 创建
 
+        # M8c: 灌装用户长期记忆到 SessionContext
+        memory_service = getattr(core, "_user_memory_service", None)
+        if memory_service is not None and user_id:
+            try:
+                # 尝试通过 user_id 获取用户显示名
+                user_name = ctx.user_name or ""
+                if user_name:
+                    memory_text = memory_service.load_memory_context(user_name)
+                    if memory_text:
+                        ctx.history_summary = memory_text
+                        logger.debug("M8c: user memory loaded for %s — %d chars",
+                                     user_name, len(memory_text))
+            except Exception as e:
+                logger.debug("M8c: user memory load skipped: %s", e)
+
         return ctx
