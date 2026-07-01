@@ -18,7 +18,7 @@ from .execution import (
     StepResult,
     WorkAgent,
 )
-from .guardian import GuardianVerdict, Guardian
+from .guardian import GuardianVerdict
 
 __all__ = [
     "IntentType",
@@ -34,5 +34,4 @@ __all__ = [
     "StepResult",
     "WorkAgent",
     "GuardianVerdict",
-    "Guardian",
 ]

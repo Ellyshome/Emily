@@ -88,6 +88,17 @@ class EmilyCore:
         self._node_event_bus = None
         self._node_app = None
 
+        # M8c: 项目日记 + 长期记忆（文件级持久化）
+        self._event_journal = None
+        self._user_memory_service = None
+
+        # Application 层实例（供工具 handler 注入）
+        self._event_app = None
+        self._task_app = None
+        self._meeting_app = None
+        self._file_app = None
+        self._query_service = None
+
     # ────────────────────────────────────────────────────────────────────
     # 延迟初始化
     # ────────────────────────────────────────────────────────────────────
@@ -121,17 +132,20 @@ class EmilyCore:
         # ── Phase B: SOP 意图注册表 + 工具注册表 ──
         self._init_phase_b_deps()
 
-        # ── Phase C: 执行 + 守护依赖 ──
+        #  ── Phase C: 执行 + 守护依赖 ──
         self._init_phase_c_deps()
 
-        # ── 计划任务系统 ──
+        #  ── 计划任务系统 ──
         self._init_plan_task_module()
 
-        # ── 权限管理模块（v2.0：快照灌注）──
+        #  ── 权限管理模块（v2.0：快照灌注）──
         self._init_permission_module()
 
-        # ── 全景节点图 V2 ──
+        #  ── 全景节点图 V2 ──
         self._init_node_module()
+
+        #  ── M8c: 项目日记 + 长期记忆（必须在 Phase C 之后，依赖 Application 实例）──
+        self._init_m8c_services()
 
         # 将 plan_task 工具注册到 BusinessFlowToolRegistry
         if self._plan_task_app is not None and self._business_flow_tools is not None:
@@ -200,25 +214,56 @@ class EmilyCore:
 
             self._business_flow_tools = BusinessFlowToolRegistry()
 
+            # ── 创建 Application 实例（供工具 handler 注入）──
+            from .application import EventApplication
+            from .application import TaskApplication
+            from .application import MeetingApplication
+            from .application import FileApplication
+            from .services import EventService, TaskService, MeetingService, FileService, QueryService
+
+            self._event_app = EventApplication(EventService())
+            self._task_app = TaskApplication(TaskService())
+            self._meeting_app = MeetingApplication(MeetingService())
+            self._file_app = FileApplication(FileService())
+            self._query_service = QueryService()
+
+            # M8c: 注入项目日记到 Application 层
+            if self._event_journal is not None:
+                self._event_app.set_journal(self._event_journal)
+                self._task_app.set_journal(self._event_journal)
+                self._meeting_app.set_journal(self._event_journal)
+                self._file_app.set_journal(self._event_journal)
+                self._query_service.set_journal(self._event_journal)
+                logger.info("M8c: EventJournal injected into 4 apps + query_service")
+
+            # 用 partial + self._*_app 包装 handler
+            from functools import partial
+
+            _event_handler = partial(handle_record_event, event_app=self._event_app)
+            _task_handler = partial(handle_record_task, task_app=self._task_app)
+            _meeting_handler = partial(handle_record_meeting, meeting_app=self._meeting_app)
+            _file_handler = partial(handle_record_file, file_app=self._file_app)
+            _query_handler = partial(handle_query_data, query_service=self._query_service)
+
             self._business_flow_tools.register(BusinessFlowTool(
                 name="record_event", description="记录项目事件",
-                parameters={"type": "object", "properties": {}}, handler=handle_record_event,
+                parameters={"type": "object", "properties": {}}, handler=_event_handler,
             ))
             self._business_flow_tools.register(BusinessFlowTool(
                 name="record_task", description="创建任务",
-                parameters={"type": "object", "properties": {}}, handler=handle_record_task,
+                parameters={"type": "object", "properties": {}}, handler=_task_handler,
             ))
             self._business_flow_tools.register(BusinessFlowTool(
                 name="record_meeting", description="归档会议纪要",
-                parameters={"type": "object", "properties": {}}, handler=handle_record_meeting,
+                parameters={"type": "object", "properties": {}}, handler=_meeting_handler,
             ))
             self._business_flow_tools.register(BusinessFlowTool(
                 name="record_file", description="记录文件元数据",
-                parameters={"type": "object", "properties": {}}, handler=handle_record_file,
+                parameters={"type": "object", "properties": {}}, handler=_file_handler,
             ))
             self._business_flow_tools.register(BusinessFlowTool(
                 name="query_data", description="查询项目数据",
-                parameters={"type": "object", "properties": {}}, handler=handle_query_data,
+                parameters={"type": "object", "properties": {}}, handler=_query_handler,
             ))
 
             # 基座能力：knowledge_search — RAG 知识库检索（供所有 SOP 调用）
@@ -515,6 +560,90 @@ class EmilyCore:
             logger.info("Node graph V2 module initialized")
         except Exception:
             logger.warning("Node graph V2 module initialization failed", exc_info=True)
+
+    # ── M8c: 项目日记 + 长期记忆 ──
+
+    def _init_m8c_services(self) -> None:
+        """初始化 M8c 文件级持久化服务：EventJournal + UserMemoryService。
+
+        EventJournal：项目事件流水日志，记录所有系统事件的摘要行。
+        通过 set_journal() 注入到 event_app / task_app / meeting_app / file_app /
+        query_service，在业务操作完成后自动追加。
+
+        UserMemoryService：用户长期工作记忆，Agent 通过 write_user_memory 工具
+        写入用户的长期需求。Session 创建时加载为上下文字段。
+        """
+        # ── 1. EventJournal（项目日记）──
+        try:
+            from .services.event_journal import EventJournal
+            journal_path = self.config.journal_path or ""
+            if not journal_path:
+                # Docker 容器内默认路径：/app/journal/项目日志.md
+                container_path = Path("/app/journal/项目日志.md")
+                if container_path.parent.exists():
+                    journal_path = str(container_path)
+                else:
+                    # 开发环境回退
+                    journal_path = str(
+                        Path(__file__).resolve().parents[2]
+                        / "emily-data" / "journal" / "项目日志.md"
+                    )
+            journal = EventJournal(
+                path=journal_path,
+                enabled=self.config.journal_enabled,
+            )
+            self._event_journal = journal
+            logger.info("M8c: EventJournal initialized — path=%s enabled=%s",
+                         journal_path, journal.enabled)
+
+            # 注入到已创建的 Application 实例
+            if self._event_app is not None:
+                self._event_app.set_journal(journal)
+                self._task_app.set_journal(journal)
+                self._meeting_app.set_journal(journal)
+                self._file_app.set_journal(journal)
+                self._query_service.set_journal(journal)
+                logger.info("M8c: EventJournal injected into 4 apps + query_service")
+        except Exception as e:
+            logger.warning("M8c: EventJournal init failed: %s", e)
+            self._event_journal = None
+
+        # ── 2. UserMemoryService（长期记忆）──
+        try:
+            from .services.user_memory_service import UserMemoryService
+            memory_dir = self.config.user_memory_dir or ""
+            if not memory_dir:
+                container_path = Path("/app/user_memory")
+                if container_path.exists():
+                    memory_dir = str(container_path)
+                else:
+                    memory_dir = str(
+                        Path(__file__).resolve().parents[2]
+                        / "emily-data" / "user_memory"
+                    )
+            self._user_memory_service = UserMemoryService(
+                memory_dir=memory_dir,
+                enabled=self.config.user_memory_enabled,
+                max_entries=self.config.user_memory_max_entries,
+            )
+            logger.info("M8c: UserMemoryService initialized — dir=%s enabled=%s",
+                         memory_dir, self._user_memory_service.enabled)
+
+            # 将 write_user_memory 工具注册到 BusinessFlowToolRegistry
+            if self._business_flow_tools is not None:
+                from .tools.memory_tool import create_memory_tool
+                from .tools.business_flow_tools import BusinessFlowTool as _BFT
+                mem_tool = create_memory_tool(self._user_memory_service)
+                self._business_flow_tools.register(_BFT(
+                    name=mem_tool.name,
+                    description=mem_tool.description,
+                    parameters=mem_tool.parameters,
+                    handler=mem_tool.execute,
+                ))
+                logger.info("M8c: write_user_memory tool registered to BusinessFlowToolRegistry")
+        except Exception as e:
+            logger.warning("M8c: UserMemoryService init failed: %s", e)
+            self._user_memory_service = None
 
     def _register_node_tools(self) -> None:
         """将全景节点工具注册到 BusinessFlowToolRegistry。"""

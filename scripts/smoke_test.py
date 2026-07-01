@@ -81,7 +81,7 @@ async def run(with_db: bool) -> int:
 
     print("\n✅ 全部冒烟用例通过（Session 主线编排端到端跑通）")
     print(f"   health: {core.health()}")
-    print(f"   Phase C: executor_mode={core.config.executor_mode} guardian_mode={core.config.guardian_mode}")
+    print(f"   Phase C: executor_mode={core.config.executor_mode}")
     return 0
 
 

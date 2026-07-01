@@ -8,17 +8,18 @@ Phase C 实现（蓝图 §12.2）：
   - 节点1 [意图验证+注入]：路由已在 SessionAgent 完成，节点1 仅验证 + 增量注入
   - 节点2 [计划+标准]：EMILY_PLANNER_MODE=real 时 LLM 动态规划，否则 MockPlanner
   - 节点3 [执行+验收]：EMILY_EXECUTOR_MODE=real 时真实执行引擎（M14 工具直调）
-  - 节点4 [成果总结]：组装 result_text + MockGuardian.review_reply()
+  - 节点4 [成果总结]：组装 result_text + Guardian 出站审核（追加式标记）
 
 节点 ↔ 大脑映射（蓝图 §5.4 + Phase C）：
   wi_node1 [意图验证+注入]  ← KnowledgeInjector + RouteDecision 构建
   wi_node2 [计划+标准]      ← LLM Planning | MockPlanner
-  wi_node3 [执行+验收]      ← RealExecutor (M14) | MockWorkAgent + MockGuardian
-  wi_node4 [成果总结]        ← 组装 result_text + MockGuardian.review_reply()
+  wi_node3 [执行+验收]      ← RealExecutor (M14) | MockWorkAgent + RealGuardian（并进审核）
+  wi_node4 [成果总结]        ← 组装 result_text + RealGuardian.review_reply()（追加标记）
 """
 
 from __future__ import annotations
 
+import asyncio
 import logging
 import time as _time
 
@@ -26,44 +27,31 @@ from .injector import KnowledgeInjector
 from .pipeline.context import BusContext
 from .pipeline.interfaces.routing import RouteDecision, SubTask
 from .pipeline.interfaces.planning import ExecutionPlan, PlanStep
-from .pipeline.interfaces.execution import StepResult, ToolCallRecord, DbResult, RagResult, RagChunk
-from .pipeline.interfaces.guardian import GuardianVerdict
+from .pipeline.interfaces.execution import StepResult, ToolCallRecord, DbResult, RagResult, RagChunk, GuardianStepVerdict
 from .pipeline.interfaces.auth import AuthResult, AuthDecision
-from .pipeline.mocks import (
-    MockPlanner,
-    MockWorkAgent,
-    MockGuardian,
-)
+from .pipeline.mocks import MockPlanner, MockWorkAgent
+from .pipeline.real_guardian import RealGuardian, GuardianNote
 
 logger = logging.getLogger("emily.workitem_agent")
 
 # ══════════════════════════════════════════════════════════════════════════════
-# Phase B/C: LLM 规划器 System Prompt
+# Phase B/C: LLM System Prompts（从 prompt 文件加载）
 # ══════════════════════════════════════════════════════════════════════════════
 
-_PLANNER_SYSTEM_PROMPT = """你是 Emily 的执行规划器。根据业务流程（SOP）和用户输入，制定逐步的执行计划。
+def _load_planner_prompt() -> str:
+    """加载执行规划 system prompt（带缓存），用于 node2 规划。"""
+    from ..infrastructure.llm.prompt_loader import load_prompt
+    return load_prompt("planner")
 
-## SOP 参考
-{sop_text}
 
-## 用户输入
-{user_input}
+def _load_workitem_prompt() -> str:
+    """加载 WorkItem 完整 system prompt（带缓存），用于 node4 回复合成。
 
-## 可用工具
-{available_tools}
-
-## 规划规则
-1. 根据 SOP 中定义的流程阶段拆解步骤（通常 2-5 步）
-2. 每个步骤绑定一个具体的工具（tool_name），从"可用工具"列表中选择
-3. 如果需要查询领域知识（规范标准、施工工艺、政策法规等），应在执行业务工具之前先调用 knowledge_search 获取相关知识
-4. 步骤间如有依赖关系，在 depends_on 中标明
-5. 评估整体风险等级：L1(低风险-查询类) / L2(中风险-录入类) / L3(高风险-删除/批量修改)
-6. 对于需要工具调用的步骤，在 tool_params 中提供完整的参数对象
-
-## 输出格式
-仅输出一个 JSON 对象（不要包含其他文字）：
-{{"risk_level": "L1|L2|L3", "steps": [{{"step_id": "step-01", "description": "步骤描述", "tool_name": "record_event|null", "tool_params": {{"title": "事件标题", "event_type": "施工节点", "description": "详细描述"}}, "expected_output": "预期产出", "depends_on": []}}], "acceptance_criteria": ["验收标准1"], "estimated_steps": N}}
-"""
+    workitem.md 包含：执行角色 / 规划规则 / 回复合成规则 / step_results 模板
+    与 planner.md 的区别：workitem.md 含回复合成指令，用于 node4；planner.md 仅 JSON 规划输出令，用于 node2。
+    """
+    from ..infrastructure.llm.prompt_loader import load_prompt
+    return load_prompt("workitem")
 
 
 def _fallback_steps() -> list[PlanStep]:
@@ -117,7 +105,14 @@ class WorkItemAgent:
         # Mock 大脑（Phase C 保留作为 fallback）
         self._planner = MockPlanner()
         self._work_agent = MockWorkAgent()
-        self._guardian = MockGuardian()
+
+        # Guardian: LLM 可用则自动启用，不可用则为 None（静默跳过）
+        if self._llm:
+            self._guardian = RealGuardian(llm_client=self._llm, config=config)
+            logger.info("Guardian enabled: RealGuardian (lightweight LLM review)")
+        else:
+            self._guardian = None
+            logger.info("LLM not available — Guardian disabled (silent skip)")
 
     # ── 模式解析 ──
 
@@ -201,7 +196,8 @@ class WorkItemAgent:
                     tool_entries.append(f"- {name}: {tool.description}")
             tools_text = "\n".join(tool_entries) if tool_entries else "（无可用工具）"
 
-        prompt = _PLANNER_SYSTEM_PROMPT.format(
+        planner_prompt = _load_planner_prompt()
+        prompt = planner_prompt.format(
             sop_text=sop_text[:4000] if sop_text else f"SOP: {wi.sop_id or '未知'}（全文未加载）",
             user_input=wi.user_input,
             available_tools=tools_text,
@@ -245,7 +241,7 @@ class WorkItemAgent:
     # ── Phase C: Node 3 真实执行引擎 ──
 
     async def node3_execute(self, context: BusContext) -> None:
-        """Node 3 [执行+验收] —— Phase C: 真实执行引擎 + 守护验收。"""
+        """Node 3 [执行+验收] —— 真实执行引擎 + Guardian 并进审核。"""
         wi = context.work_item
         if wi.execution_plan is None:
             return
@@ -257,26 +253,45 @@ class WorkItemAgent:
         else:
             step_results = await self._work_agent.execute(wi.execution_plan, context)
 
-        # 逐步守护验收（陪跑模式）
-        guardian_mode = self._resolve_mode("guardian")
-        if guardian_mode == "real":
-            logger.warning(
-                "guardian_mode=real 暂未实现 RealGuardian，回退到 MockGuardian"
-            )
-        criteria = wi.acceptance_criteria
-        for sr in step_results:
+        # Guardian 并进审核：每个 step 的 review 作为后台 Task，
+        # 在全部步骤执行完后 gather() 汇合，不阻塞主链路
+        guardian_tasks: list[asyncio.Task] = []
+        if self._guardian:
+            for sr in step_results:
+                task = asyncio.create_task(
+                    self._guardian.review_step(sr),
+                    name=f"guardian_step_{sr.step_id}",
+                )
+                guardian_tasks.append(task)
+
+        # 汇合点：等待所有 guardian task 完成（大部分早已自然完成）
+        if guardian_tasks:
             try:
-                await self._guardian.review_step(sr, None, criteria)
+                notes = await asyncio.gather(*guardian_tasks, return_exceptions=True)
+                for sr, note in zip(step_results, notes):
+                    if isinstance(note, GuardianNote) and note.issues:
+                        for issue in note.issues:
+                            wi.add_warning(f"[{note.source}] {issue}")
+                        # 写入 StepResult 的 guardian 字段（已有结构）
+                        sr.guardian = GuardianStepVerdict(
+                            verdict="FLAG",
+                            reason="; ".join(note.issues),
+                        )
             except Exception as e:
-                logger.warning("WI %s node3 guardian review_step failed: %s", wi.id, e)
+                logger.warning("Guardian gather failed: %s", e)
+
+        for sr in step_results:
             wi.add_step_result(sr)
 
         wi.llm_call_count += len(step_results)
         if step_results:
             context.agent_result = step_results[-1]
             context.agent_reply = step_results[-1].output
-        logger.debug("WI %s node3: %d steps, executor=%s guardian=%s",
-                     wi.id, len(step_results), executor_mode, guardian_mode)
+        logger.debug(
+            "WI %s node3: %d steps, executor=%s guardian=%s",
+            wi.id, len(step_results), executor_mode,
+            "enabled" if self._guardian else "disabled",
+        )
 
     async def _real_execute(self, plan: ExecutionPlan, context: BusContext) -> list[StepResult]:
         """Phase C: 真实执行引擎 —— 按 PlanStep 调用 M14 工具 handler。
@@ -391,16 +406,94 @@ class WorkItemAgent:
     # ── Phase C: Node 4 成果总结 ──
 
     async def node4_summary(self, context: BusContext) -> None:
-        """Node 4 [成果总结] —— Phase C: 移除 Mock 前缀 + 真实守护审核。"""
+        """Node 4 [成果总结] —— LLM 回复合成 + Guardian 出站审核（追加标记）。
+
+        优先使用 LLM 根据 workitem.md prompt + 步骤结果生成自然语言回复；
+        LLM 不可用时回退到硬编码拼串。
+        """
         wi = context.work_item
         summary = wi.to_summary()
         steps = summary.get("steps_executed", 0)
-        rag_hits = summary.get("rag_hits", 0)
         tool_calls = summary.get("tool_calls", 0)
 
         # Phase C: executor_mode=real 时无 Mock 前缀
         executor_mode = self._resolve_mode("executor")
         mock_prefix = "" if executor_mode == "real" else "[Mock 模式] "
+
+        # ---- LLM 回复合成 ----
+        draft = await self._llm_synthesize_reply(wi, mock_prefix)
+
+        # Guardian 出站审核 —— 只标记不拦截
+        if self._guardian:
+            try:
+                note = await self._guardian.review_reply(draft, wi)
+                if note and note.issues:
+                    for issue in note.issues:
+                        wi.add_warning(f"[reply] {issue}")
+            except Exception as e:
+                logger.debug("Guardian review_reply failed (silent skip): %s", e)
+
+        # 将 warnings 追加到回复末尾（只标记，不替换）
+        if wi.warnings:
+            warning_text = (
+                "\n\n⚠️ Emily 提醒（系统自动审核标记，供参考）：\n"
+                + "\n".join(f"  • {w}" for w in wi.warnings[-5:])
+            )
+            wi.result_text = draft + warning_text
+        else:
+            wi.result_text = draft
+
+        wi.llm_call_count += 1
+        context.verified_reply = wi.result_text
+        logger.debug(
+            "WI %s node4: reply_len=%d guardian=%s warnings=%d",
+            wi.id, len(wi.result_text),
+            "enabled" if self._guardian else "disabled",
+            len(wi.warnings),
+        )
+
+    async def _llm_synthesize_reply(self, wi, mock_prefix: str = "") -> str:
+        """用 LLM 根据 workitem.md prompt 合成自然语言回复。
+
+        回退链：LLM chat_json → 硬编码拼串（与旧逻辑一致）。
+        """
+        # 组装步骤结果摘要
+        steps_text = ""
+        for sr in getattr(wi, "step_results", []) or []:
+            status = "OK" if getattr(sr, "success", True) else "FAIL"
+            output = (getattr(sr, "output", "") or "")[:300]
+            steps_text += f"[{getattr(sr, 'step_id', '?')}] {status}: {output}\n"
+
+        warnings_text = "\n".join(f"  • {w}" for w in (getattr(wi, "warnings", []) or []))
+        if not warnings_text:
+            warnings_text = "（无）"
+
+        # 尝试 LLM 合成
+        if self._llm:
+            try:
+                prompt = _load_workitem_prompt().format(
+                    available_tools=self._build_tools_text(),
+                    sop_text=self.injector.get_context_text()[:3000] if self.injector else f"SOP: {wi.sop_id or '未知'}",
+                    user_input=(getattr(wi, "user_input", "") or "")[:1000],
+                    step_results=steps_text[:2000],
+                    warnings=warnings_text,
+                )
+                data = await self._llm.chat_json(
+                    prompt,
+                    f"合成回复: {getattr(wi, 'user_input', '?')[:100]}",
+                )
+                reply = data.get("reply", "") if isinstance(data, dict) else ""
+                if reply and len(reply) > 20:
+                    logger.debug("node4: LLM synthesized reply (%d chars)", len(reply))
+                    return mock_prefix + reply
+            except Exception as e:
+                logger.warning("node4: LLM reply synthesis failed, falling back: %s", e)
+
+        # 硬编码回退（保留旧逻辑）
+        summary = wi.to_summary()
+        rag_hits = summary.get("rag_hits", 0)
+        tool_calls = summary.get("tool_calls", 0)
+        steps = summary.get("steps_executed", 0)
 
         if rag_hits > 0:
             rag_texts = []
@@ -410,43 +503,33 @@ class WorkItemAgent:
                         doc_name = getattr(chunk, "doc_name", "") or "未知来源"
                         rag_texts.append(f"根据《{doc_name}》：{chunk.content}")
             if rag_texts:
-                draft = mock_prefix + "根据知识库检索，找到以下相关信息：\n\n" + "\n".join(rag_texts[:5])
-            else:
-                draft = mock_prefix + f"已完成知识库查询，共找到 {rag_hits} 条相关信息。"
+                return mock_prefix + "根据知识库检索，找到以下相关信息：\n\n" + "\n".join(rag_texts[:5])
+            return mock_prefix + f"已完成知识库查询，共找到 {rag_hits} 条相关信息。"
         elif tool_calls > 0:
-            draft = (
+            return (
                 f"{mock_prefix}操作已完成！共执行 {steps} 个步骤，"
                 f"调用 {tool_calls} 个工具，数据库操作 {summary.get('db_operations', 0)} 次。"
             )
         else:
-            draft = mock_prefix + "Emily 已处理完毕。"
+            return mock_prefix + "Emily 已处理完毕。"
 
-        # 出站审核
-        guardian_mode = self._resolve_mode("guardian")
-        if guardian_mode == "real":
-            logger.warning(
-                "guardian_mode=real 暂未实现 RealGuardian，回退到 MockGuardian"
-            )
+    @staticmethod
+    def _build_tools_text() -> str:
+        """构建可用工具列表文本（供 prompt 注入）。"""
+        # 惰性导入避免循环依赖
         try:
-            verdict = await self._guardian.review_reply(draft, wi)
-            verdict_val = getattr(verdict, "value", "pass")
-        except Exception as e:
-            logger.warning("WI %s node4 guardian review_reply failed: %s", wi.id, e)
-            verdict_val = "pass"
-
-        if verdict_val == "pass":
-            wi.result_text = draft
-        elif verdict_val == "flag":
-            wi.result_text = draft + "\n\n⚠️ Emily 提醒：以上回复建议复核。"
-            wi.add_warning("Guardian 标记")
-        else:
-            wi.result_text = "Emily 已处理完毕。（回复未通过审核，已使用兜底回复）"
-            wi.add_warning("Guardian 拒绝，使用兜底回复")
-
-        wi.llm_call_count += 1
-        context.verified_reply = wi.result_text
-        logger.debug("WI %s node4: reply_len=%d guardian=%s mock_prefix=%s",
-                     wi.id, len(wi.result_text), guardian_mode, repr(mock_prefix))
+            from ..tools.business_flow_tools import BusinessFlowToolRegistry
+            registry = BusinessFlowToolRegistry.get_instance()
+            if registry:
+                entries = []
+                for name in sorted(registry.list_names()):
+                    tool = registry.get(name)
+                    if tool:
+                        entries.append(f"- {name}: {tool.description}")
+                return "\n".join(entries) if entries else "（无可用工具）"
+        except Exception:
+            pass
+        return "（无可用工具）"
 
     # ── Phase C: 鉴权引擎 ──
 
