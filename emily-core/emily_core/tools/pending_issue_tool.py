@@ -73,8 +73,7 @@ def create_pending_issue_tool(
                         u = UserRepository.get(user_id)
                         if u:
                             raised_by = (
-                                getattr(u, "real_name", "") or
-                                getattr(u, "username", "") or
+                                u.username or
                                 "用户"
                             )
                     except Exception:

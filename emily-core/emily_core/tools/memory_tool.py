@@ -52,7 +52,7 @@ def create_memory_tool(user_memory_service) -> ToolDefinition:
         # 1. LLM 可能在 params 中传了 user_name
         user_name = args.get("user_name", "")
 
-        # 2. 否则从 _user_id（UUID）查 User 表获取 real_name
+        # 2. 否则从 _user_id（UUID）查 User 表获取 username
         if not user_name:
             user_id = args.get("_user_id", "")
             if user_id:
@@ -60,10 +60,7 @@ def create_memory_tool(user_memory_service) -> ToolDefinition:
                     from ..repositories.user_repo import UserRepository
                     u = UserRepository.get(user_id)
                     if u:
-                        user_name = (
-                            getattr(u, "real_name", "") or
-                            getattr(u, "username", "") or ""
-                        )
+                        user_name = u.username or ""
                 except Exception:
                     pass
 

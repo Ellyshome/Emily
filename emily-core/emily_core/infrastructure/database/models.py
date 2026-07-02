@@ -64,7 +64,6 @@ class User(Base):
     # ── 原 users 字段（系统身份）──
     id = Column(String, primary_key=True, default=_new_uuid)
     username = Column(String(100))
-    real_name = Column(String(100))
     phone = Column(String(50))
     email = Column(String(200))
     status = Column(String(50), default="active")
