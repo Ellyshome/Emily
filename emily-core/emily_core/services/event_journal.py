@@ -4,7 +4,7 @@ M8c: 以追加模式记录项目事件到 Markdown 日志文件。
 格式：[YYYY-MM-DD] 姓名 操作摘要
 
 使用方式：
-    journal = EventJournal(path="tem_log/项目日志.md")
+    journal = EventJournal(path="emily-data/journal/项目日志.md")
     journal.append(name="彭工", summary="确认录入事件：铺装完成（EVT-20260612-0001）")
 """
 

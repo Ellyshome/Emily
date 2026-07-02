@@ -44,10 +44,23 @@
    - low: 用户表达模糊，可能匹配多个 SOP
    - none: 无法匹配任何 SOP
 
+6. **上下文确认响应规则**（TC-J03）：
+   如果系统提示"当前存在待确认的录入项"，且用户消息表达了确认/取消/修改意图
+   （如"确认"、"好的"、"嗯"、"可以"、"行"、"没问题"、"取消"、"算了"、"不对"、
+   "改一下"、"不要了"等），必须输出 sop_id="SYS-confirm"，confidence="high"，
+   并在 data 中指明具体操作。不要走其他 SOP 路由。
+
+   具体意图映射：
+   - 用户确认 / 同意 → data.action="confirm"
+   - 用户取消 / 放弃 → data.action="cancel"
+
+   输出格式（JSON）：
+   sop_id 为 "SYS-confirm"，confidence 为 "high"，data 中 action 指明 confirm 或 cancel。
+
 ## 输出要求
 
 仅输出一个 JSON 对象（不要包含其他文字）：
-{{"sop_id": "SOP-XXX-YYY" | null, "confidence": "high|medium|low|none", "reasoning": "简短匹配理由", "is_compound": false, "sub_tasks": [], "fallback": false}}
+sop_id 为匹配的 SOP 编号或 null，confidence 为 high/medium/low/none，is_compound 为 false 或 true，
+sub_tasks 为子任务数组，fallback 为 false（无匹配时为 true）。
 
-对于复合请求，sub_tasks 数组中每项包含 sop_id 和 user_input：
-{{"sop_id": null, "is_compound": true, "sub_tasks": [{{"sop_id": "SOP-001-XXX", "user_input": "子任务描述"}}, ...], "fallback": false}}
+对于复合请求，sub_tasks 数组中每项包含 sop_id 和 user_input 字段。

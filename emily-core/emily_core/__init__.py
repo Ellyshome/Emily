@@ -88,9 +88,10 @@ class EmilyCore:
         self._node_event_bus = None
         self._node_app = None
 
-        # M8c: 项目日记 + 长期记忆（文件级持久化）
+        # M8c: 项目日记 + 长期记忆 + 待解决问题（文件级持久化）
         self._event_journal = None
         self._user_memory_service = None
+        self._pending_issues_service = None
 
         # Application 层实例（供工具 handler 注入）
         self._event_app = None
@@ -147,9 +148,10 @@ class EmilyCore:
         #  ── M8c: 项目日记 + 长期记忆（必须在 Phase C 之后，依赖 Application 实例）──
         self._init_m8c_services()
 
-        # 将 plan_task 工具注册到 BusinessFlowToolRegistry
-        if self._plan_task_app is not None and self._business_flow_tools is not None:
-            self._register_plan_task_tools()
+        # ── 统一工具注册（在全部子系统和 Application 就绪后，一次性注册）──
+        if self._business_flow_tools is not None:
+            from .tools.registry import register_all
+            register_all(self)
 
         # ── 公共 Pipeline BUS ──
         self._build_pipeline_bus()
@@ -202,32 +204,40 @@ class EmilyCore:
             self._email_service = None
 
     def _init_phase_c_deps(self) -> None:
-        """Phase C: 初始化执行引擎 + 守护审核依赖。"""
-        # 1. BusinessFlowToolRegistry（执行引擎）
+        """Phase C: 初始化执行引擎 + 守护审核依赖 + Application 层。"""
         try:
-            from .tools.business_flow_tools import BusinessFlowToolRegistry, BusinessFlowTool
-            from .tools.event_tool import handle_record_event
-            from .tools.task_tool import handle_record_task
-            from .tools.meeting_tool import handle_record_meeting
-            from .tools.file_tool import handle_record_file
-            from .tools.query_tool import handle_query_data
+            from .tools.business_flow_tools import BusinessFlowToolRegistry
 
             self._business_flow_tools = BusinessFlowToolRegistry()
 
-            # ── 创建 Application 实例（供工具 handler 注入）──
+            # ── 创建 Application 实例（供工具 registry 注入）──
             from .application import EventApplication
             from .application import TaskApplication
             from .application import MeetingApplication
             from .application import FileApplication
             from .services import EventService, TaskService, MeetingService, FileService, QueryService
+            from .services.file_storage_service import FileStorageService
 
             self._event_app = EventApplication(EventService())
             self._task_app = TaskApplication(TaskService())
             self._meeting_app = MeetingApplication(MeetingService())
-            self._file_app = FileApplication(FileService())
+
+            # M13 (TC-A01): 创建 FileStorageService 并注入 FileApplication
+            storage_root = self.config.storage_root or ""
+            if not storage_root:
+                container_path = Path("/app/attachments")
+                if container_path.parent.exists():
+                    storage_root = str(container_path)
+                else:
+                    storage_root = str(
+                        Path(__file__).resolve().parents[2]
+                        / "emily-data" / "attachments"
+                    )
+            file_storage = FileStorageService(storage_root=storage_root)
+            self._file_app = FileApplication(FileService(), storage_service=file_storage)
             self._query_service = QueryService()
 
-            # M8c: 注入项目日记到 Application 层
+            # M8c: 注入项目日记到 Application 层（如果 journal 先于此处初始化则注入）
             if self._event_journal is not None:
                 self._event_app.set_journal(self._event_journal)
                 self._task_app.set_journal(self._event_journal)
@@ -236,61 +246,8 @@ class EmilyCore:
                 self._query_service.set_journal(self._event_journal)
                 logger.info("M8c: EventJournal injected into 4 apps + query_service")
 
-            # 用 partial + self._*_app 包装 handler
-            from functools import partial
-
-            _event_handler = partial(handle_record_event, event_app=self._event_app)
-            _task_handler = partial(handle_record_task, task_app=self._task_app)
-            _meeting_handler = partial(handle_record_meeting, meeting_app=self._meeting_app)
-            _file_handler = partial(handle_record_file, file_app=self._file_app)
-            _query_handler = partial(handle_query_data, query_service=self._query_service)
-
-            self._business_flow_tools.register(BusinessFlowTool(
-                name="record_event", description="记录项目事件",
-                parameters={"type": "object", "properties": {}}, handler=_event_handler,
-            ))
-            self._business_flow_tools.register(BusinessFlowTool(
-                name="record_task", description="创建任务",
-                parameters={"type": "object", "properties": {}}, handler=_task_handler,
-            ))
-            self._business_flow_tools.register(BusinessFlowTool(
-                name="record_meeting", description="归档会议纪要",
-                parameters={"type": "object", "properties": {}}, handler=_meeting_handler,
-            ))
-            self._business_flow_tools.register(BusinessFlowTool(
-                name="record_file", description="记录文件元数据",
-                parameters={"type": "object", "properties": {}}, handler=_file_handler,
-            ))
-            self._business_flow_tools.register(BusinessFlowTool(
-                name="query_data", description="查询项目数据",
-                parameters={"type": "object", "properties": {}}, handler=_query_handler,
-            ))
-
-            # 基座能力：knowledge_search — RAG 知识库检索（供所有 SOP 调用）
-            if self._rag_provider is not None:
-                try:
-                    from .tools.knowledge_search_tool import (
-                        handle_knowledge_search,
-                        _KNOWLEDGE_SEARCH_SCHEMA,
-                        _KNOWLEDGE_SEARCH_DESCRIPTION,
-                    )
-                    _rp = self._rag_provider
-                    async def _rag_handler(params, **kw):
-                        return await handle_knowledge_search(params, rag_provider=_rp)
-                    self._business_flow_tools.register(BusinessFlowTool(
-                        name="knowledge_search",
-                        description=_KNOWLEDGE_SEARCH_DESCRIPTION,
-                        parameters=_KNOWLEDGE_SEARCH_SCHEMA,
-                        handler=_rag_handler,
-                    ))
-                    logger.info("Phase C: knowledge_search registered to BusinessFlowToolRegistry")
-                except Exception as e:
-                    logger.warning("Phase C: knowledge_search registration failed: %s", e)
-
-            logger.info("Phase C: BusinessFlowToolRegistry initialized with %d tools",
-                         len(self._business_flow_tools))
         except Exception as e:
-            logger.warning("Phase C: BusinessFlowToolRegistry init failed: %s", e)
+            logger.warning("Phase C: init failed: %s", e)
             self._business_flow_tools = None
 
     def _build_pipeline_bus(self) -> None:
@@ -629,21 +586,31 @@ class EmilyCore:
             logger.info("M8c: UserMemoryService initialized — dir=%s enabled=%s",
                          memory_dir, self._user_memory_service.enabled)
 
-            # 将 write_user_memory 工具注册到 BusinessFlowToolRegistry
-            if self._business_flow_tools is not None:
-                from .tools.memory_tool import create_memory_tool
-                from .tools.business_flow_tools import BusinessFlowTool as _BFT
-                mem_tool = create_memory_tool(self._user_memory_service)
-                self._business_flow_tools.register(_BFT(
-                    name=mem_tool.name,
-                    description=mem_tool.description,
-                    parameters=mem_tool.parameters,
-                    handler=mem_tool.execute,
-                ))
-                logger.info("M8c: write_user_memory tool registered to BusinessFlowToolRegistry")
+            # write_user_memory 工具注册已移至 register_all() → _register_business()
+            # 此处不再重复注册，避免 user_name 参数在初始化时固定为空
         except Exception as e:
             logger.warning("M8c: UserMemoryService init failed: %s", e)
             self._user_memory_service = None
+
+        # ── 3. PendingIssuesService（待解决问题清单 / notebooks 目录）──
+        try:
+            from .services.pending_issues import PendingIssuesService
+            issues_path = self.config.pending_issues_path or ""
+            if not issues_path:
+                container_path = Path("/app/notebooks/待解决问题.md")
+                if container_path.parent.exists():
+                    issues_path = str(container_path)
+                else:
+                    issues_path = str(
+                        Path(__file__).resolve().parents[2]
+                        / "emily-data" / "notebooks" / "待解决问题.md"
+                    )
+            self._pending_issues_service = PendingIssuesService(issues_path=issues_path)
+            self._pending_issues_service._ensure_file()  # 确保文件存在
+            logger.info("M8c: PendingIssuesService initialized — path=%s", issues_path)
+        except Exception as e:
+            logger.warning("M8c: PendingIssuesService init failed: %s", e)
+            self._pending_issues_service = None
 
     def _register_node_tools(self) -> None:
         """将全景节点工具注册到 BusinessFlowToolRegistry。"""

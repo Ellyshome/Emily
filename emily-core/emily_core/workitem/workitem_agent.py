@@ -308,7 +308,26 @@ class WorkItemAgent:
         for step in plan.steps:
             t_start = _time.monotonic()
             tool_name = step.tool_name
-            tool_params = getattr(step, 'tool_params', {}) or {}
+            tool_params = dict(getattr(step, 'tool_params', {}) or {})
+            # TC-M01: 注入运行时上下文到 tool_params（所有 handler 可统一获取）
+            tool_params["_user_id"] = context.user_id or ""
+            tool_params["_message_id"] = context.db_message_id or ""
+            tool_params["_conversation_id"] = (
+                context.message.conversation_id if context.message else ""
+            )
+            # ── 文件上传链路: 注入原始消息附件 URL 到 tool_params ──
+            if context.message is not None:
+                raw_attachments = getattr(context.message, "attachments", None) or []
+                if raw_attachments:
+                    tool_params["_attachments"] = raw_attachments
+                    # 第一个附件作为主文件信息注入
+                    first = raw_attachments[0] if isinstance(raw_attachments[0], dict) else {}
+                    tool_params["_attachment_url"] = first.get("url", "")
+                    tool_params["_attachment_type"] = first.get("type", 0)
+                    logger.debug(
+                        "Injected attachments: %d item(s), primary_url=%s",
+                        len(raw_attachments), first.get("url", "")[:80],
+                    )
 
             try:
                 if tool_name and tool_name in self._business_flow_tools:

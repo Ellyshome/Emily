@@ -73,6 +73,24 @@ class SessionScheduler:
             results.append(await self._run_one(wi))
         return results
 
+    async def run_all_with_message(self, message) -> list[WorkItem]:
+        """顺序执行队列中所有 WorkItem，携带原始入站消息（含附件等信息）。
+
+        文件上传链路需要 message.attachments 在 BusContext 中可用，
+        此方法将 message 传递到每个 WorkItem 的 BusContext 中。
+
+        Args:
+            message: 原始 StandardMessage（含 attachments）
+
+        Returns:
+            list[WorkItem]: 全部执行完毕的 WorkItem。
+        """
+        results: list[WorkItem] = []
+        while self._queue:
+            wi = self._queue.pop(0)
+            results.append(await self._run_one(wi, message=message))
+        return results
+
     async def _run_one(self, wi: WorkItem, message=None) -> WorkItem:
         """在公共 BUS 上执行单个 WorkItem，驱动其状态机。"""
         self._active[wi.id] = wi
@@ -89,6 +107,13 @@ class SessionScheduler:
                 is_admin=wi.is_admin,
                 _session_context=self._session_context,  # 私有字段，仅初始化时设置
             )
+
+            # 文件上传链路：确保 context.message 携带原始消息附件
+            # 回退路径——从 WorkItem 上存储的原始消息对象恢复
+            if context.message is None:
+                stored = getattr(wi, '_source_message', None)
+                if stored is not None:
+                    context.message = stored
 
             # PLANNING → EXECUTING（节点内部经过 node1/node2 规划 + node3 执行）
             wi.transition_to(WorkItemState.EXECUTING)

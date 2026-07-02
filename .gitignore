@@ -15,6 +15,7 @@ dist/
 
 # 运行时数据
 pgdata/
+emily-data/db_seeds/
 *.log
 logs/
 notebooks/

@@ -11,8 +11,8 @@ from pathlib import Path
 
 logger = logging.getLogger("emily.service.pending_issues")
 
-# 默认路径：项目根目录 tem_log/待解决问题.md
-DEFAULT_ISSUES_PATH = "tem_log/待解决问题.md"
+# 默认路径由 EmilyCore._init_m8c_services() 显式传入（优先 /app/notebooks/，回退 emily-data/notebooks/）
+DEFAULT_ISSUES_PATH = "emily-data/notebooks/待解决问题.md"
 
 
 class PendingIssuesService:

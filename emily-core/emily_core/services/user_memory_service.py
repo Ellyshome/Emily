@@ -48,7 +48,8 @@ class UserMemoryService:
         self.memory_dir = memory_dir or ""
 
         if not self.memory_dir:
-            # 默认路径：项目根目录下的 memory/
+            # 默认路径由 EmilyCore._init_m8c_services() 显式传入
+            # （优先 /app/user_memory/，回退 emily-data/user_memory/）
             self.memory_dir = os.path.join(
                 os.path.dirname(os.path.dirname(os.path.dirname(
                     os.path.dirname(os.path.abspath(__file__))

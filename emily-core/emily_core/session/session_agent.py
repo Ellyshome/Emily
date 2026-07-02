@@ -35,6 +35,7 @@ from .focus_lock import FocusLock
 from .confirm_queue import ConfirmQueue
 from ..workitem import WorkItem, SessionScheduler
 from ..adapters.standard.reply import ReplyMessage
+from ..services.event_journal import EventJournal
 
 if TYPE_CHECKING:
     from ..adapters.standard.message import StandardMessage
@@ -144,10 +145,18 @@ class SessionAgent:
         # ②b Phase B: 设置焦点到第一个 WorkItem
         self.focus.set_focus(work_items[0].id)
 
-        # ③ 入队 + 经公共 Pipeline BUS 执行
+        # ═══ TC-J03: SYS-confirm 直接处理，不经过 Pipeline BUS ═══
+        for wi in work_items:
+            if wi.sop_id == "SYS-confirm":
+                confirm_reply = await self._handle_confirm(wi)
+                if confirm_reply:
+                    return self._reply(message, confirm_reply)
+                return self._reply(message, "确认处理完成。")
+
+        # ③ 入队 + 经公共 Pipeline BUS 执行（携带原始消息，确保附件等元数据可用）
         for wi in work_items:
             self.scheduler.enqueue(wi)
-        done = await self.scheduler.run_all()
+        done = await self.scheduler.run_all_with_message(message)
 
         # ③b Phase B: 检查待确认队列
         pending = self._collect_pending_confirms(done)
@@ -167,6 +176,9 @@ class SessionAgent:
 
         从 MasterAgent 的路由逻辑提取核心——单次 chat_json() 调用，
         不做 ReAct 循环。LLM 根据 SOP 目录语义匹配用户意图。
+
+        TC-J03: 注入当前 session 的 pending 确认状态到 LLM 上下文，
+        使 LLM 能识别"确认"/"取消"类回复并路由到 SYS-confirm。
 
         Returns:
             dict: LLM 输出的 JSON 字典，字段：
@@ -198,6 +210,21 @@ class SessionAgent:
             current_datetime=_beijing_now_str(),
         )
 
+        # ═══ TC-J03: 注入 pending 确认状态到 LLM 上下文 ═══
+        pending_event = self._get_pending_event()
+        if pending_event:
+            pending_context = (
+                f"\n\n⚠️ 当前存在待确认的录入项：\n"
+                f"  编号：{pending_event.event_no}\n"
+                f"  内容：{pending_event.title}\n"
+                f"  状态：等待用户确认\n"
+                f"  如果用户表达了确认/取消/修改意图，请路由到 SYS-confirm，"
+                f"不要走其他 SOP 路由。\n"
+            )
+            prompt += pending_context
+            logger.debug("Session[%s] injected pending context: %s",
+                         self.conversation_id, pending_event.event_no)
+
         try:
             result = await self._llm.chat_json(prompt, content)
             logger.debug("SessionAgent intent for '%s': sop=%s conf=%s compound=%s",
@@ -214,9 +241,10 @@ class SessionAgent:
 
         流程：
         1. LLM 意图识别 → 获取 sop_id / is_compound / sub_tasks
-        2. 回退 → 1 个 fallback WorkItem
-        3. 复合请求 → N 个 WorkItem（每个子任务一个）
-        4. 单 SOP 匹配 → 1 个 WorkItem
+        2. TC-J03: SYS-confirm → 特殊处理，直接确认/取消 pending 事件
+        3. 回退 → 1 个 fallback WorkItem
+        4. 复合请求 → N 个 WorkItem（每个子任务一个）
+        5. 单 SOP 匹配 → 1 个 WorkItem
         """
         content = message.content or ""
 
@@ -233,6 +261,40 @@ class SessionAgent:
             "Session[%s] intent: sop=%s conf=%s compound=%s fallback=%s sub_tasks=%d",
             self.conversation_id, sop_id, confidence, is_compound, fallback, len(sub_tasks),
         )
+
+        # ═══ TC-J03: SYS-confirm 特殊处理 ═══
+        if sop_id == "SYS-confirm":
+            action = (intent.get("data") or {}).get("action", "confirm")
+            pending_event = self._get_pending_event()
+            if pending_event:
+                wi = WorkItem(
+                    session_id=self.conversation_id,
+                    user_input=content,
+                    user_id=self.context.user_id,
+                    sop_id="SYS-confirm",
+                    intent_type="sop",
+                    priority=0,  # 最高优先级
+                )
+                # 将确认上下文存入 WorkItem（避免创建新的属性字段污染 WorkItem 模型）
+                # 使用已有的 payload 机制
+                setattr(wi, "_confirm_action", action)
+                setattr(wi, "_confirm_event_id", pending_event.id)
+                logger.info(
+                    "Session[%s] SYS-confirm: action=%s event=%s",
+                    self.conversation_id, action, pending_event.event_no,
+                )
+                return [wi]
+            else:
+                logger.debug("Session[%s] SYS-confirm but no pending event — fallback", self.conversation_id)
+                # 无 pending 事件，降级为普通对话
+                return [WorkItem(
+                    session_id=self.conversation_id,
+                    user_input=content,
+                    user_id=self.context.user_id,
+                    sop_id=None,
+                    intent_type="fallback",
+                    priority=1,
+                )]
 
         # 回退：无匹配 SOP → 1 个 fallback WorkItem
         if fallback or not sop_id:
@@ -274,6 +336,78 @@ class SessionAgent:
         )]
 
     # ── Phase B: 待确认队列收集 ──
+
+    def _get_pending_event(self):
+        """TC-J03: 查找当前 conversation 中最近的 pending 事件。
+
+        用于确认流程：当用户在已有 pending 事件的 Session 中回复时，
+        将此信息注入 LLM 上下文，使 LLM 能正确路由到 SYS-confirm。
+
+        Returns:
+            Event | None: 最近的 pending 事件，或 None
+        """
+        try:
+            from ..repositories.event_repo import EventRepository
+            repo = EventRepository()
+            return repo.find_pending_by_message_conversation(self.conversation_id)
+        except Exception as e:
+            logger.debug("_get_pending_event failed: %s", e)
+            return None
+
+    async def _handle_confirm(self, wi) -> str | None:
+        """TC-J03: 处理 SYS-confirm WorkItem，直接确认/取消 pending 事件。
+
+        不经过 Pipeline BUS（无需 LLM planning/execution），
+        直接调用 EventApplication.handle_confirmation() + journal 写入。
+
+        Args:
+            wi: SYS-confirm 类型的 WorkItem
+
+        Returns:
+            用户可读的确认结果文本，或 None
+        """
+        action = getattr(wi, "_confirm_action", "confirm")
+        event_id = getattr(wi, "_confirm_event_id", "")
+
+        if not event_id:
+            logger.warning("SYS-confirm: no _confirm_event_id on WorkItem %s", wi.id)
+            return "没有待确认的事件。请重新录入。"
+
+        try:
+            from ..repositories.event_repo import EventRepository
+            from ..services.event_service import EventService
+            from ..application.event_app import EventApplication
+
+            # 查找 pending 事件
+            event_repo = EventRepository()
+            event = event_repo.get_by_id(event_id)
+
+            if event is None:
+                return "找不到该事件记录，可能已被处理。"
+            if event.status != "pending":
+                return f"该事件（{event.event_no}）已经处理过了，当前状态为「{event.status}」。"
+
+            # 创建 Application 并注入 journal
+            event_service = EventService()
+            event_app = EventApplication(event_service)
+
+            # TC-J03: 注入 journal（与 EmilyCore 中路径一致，追加写幂等）
+            journal = EventJournal(
+                path="",  # 使用默认路径推导
+                enabled=True,
+            )
+            event_app.set_journal(journal)
+
+            result = event_app.handle_confirmation(event_id=event_id, action=action)
+            logger.info(
+                "SYS-confirm: event=%s action=%s success=%s",
+                event.event_no, action, result.success,
+            )
+            return result.reply or "确认操作完成。"
+
+        except Exception as e:
+            logger.error("SYS-confirm handling failed: %s", e)
+            return f"确认处理失败：{e}"
 
     def _collect_pending_confirms(self, done_workitems: list) -> str | None:
         """收集需要用户确认的 WorkItem（蓝图 §4.3.3）。"""

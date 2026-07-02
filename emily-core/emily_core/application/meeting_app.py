@@ -35,8 +35,10 @@ class MeetingApplication:
             meeting = self.meeting_service.create_meeting(cmd)
             # M8c: 写入项目日志
             if self._journal is not None:
+                from ._user_utils import resolve_user_name
+                user_name = resolve_user_name(cmd.creator_id) or "用户"
                 self._journal.append(
-                    name=cmd.creator_id or "用户",
+                    name=user_name,
                     summary=f"录入会议纪要：{meeting.title}（{meeting.meeting_no}）",
                 )
             reply = MeetingService.format_reply(meeting)
