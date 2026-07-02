@@ -82,7 +82,10 @@ class User(Base):
     permission_level = Column(Integer, default=1)            # 权限层级（v2.0 6级树形）：1=访客 2=参建执行 3=参建管理 4=建设主管 5=管理员 6=系统管理员
     supervisor_id = Column(String, nullable=True)            # 直接上级 ID（执行人升级/异常复核）
     company = Column(String, ForeignKey("company_info.id"), nullable=True)  # 隶属公司 FK→company_info.id（v2.0 改单 FK）
+    project_id = Column(String, ForeignKey("projects.id"), nullable=True)  # 所属项目 FK→projects.id
     position = Column(String, default="[]")                  # 本项目中负责岗位角色（JSON数组）
+    long_term_memory = Column(String, default="")            # 用户长期记忆（Agent 自动维护的 Markdown 文本）
+    conversation_summary = Column(String, default="")        # 历史对话摘要（LLM 压缩的对话要点）
     # ── 时间戳 ──
     created_at = Column(String, default=_utc_now)
     updated_at = Column(String, default=_utc_now, onupdate=_utc_now)

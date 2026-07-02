@@ -1,0 +1,126 @@
+[
+  {
+    "_user_id": "user-zhang-gong-001",
+    "_description": "张工 — 建设单位工程部主管，L4建设主管权限",
+
+    "user_name": "张工",
+    "user_position": "工程部主管",
+
+    "project_name": "生态城三期A标段",
+    "project_type": "房屋建筑",
+    "project_status": "工程施工",
+
+    "user_company": "绿城建设管理有限公司",
+    "user_company_type": "建设单位",
+    "user_department": "工程部",
+
+    "user_permission_level": 4,
+    "current_node_ids": "N-S3-B01,N-S3-B02,N-S3-B05,N-S3-C01",
+    "User_responsibilities": "负责工程施工阶段的进度管控、质量验收与现场协调工作，监督总包与分包单位履约情况，审核工程变更与签证",
+
+    "user_longterm_memory": "- [2026-06-15] 偏好简洁回复: 张工喜欢直接给出结论和行动项，不喜欢冗长的解释\n- [2026-06-22] 关注样板段施工: 最近两周反复查看样板段放线和铺装相关记录，可能是近期检查重点\n- [2026-06-28] 习惯备注日期: 录入事件时通常主动提供具体日期和位置信息\n- [2026-06-30] 管理A标段: 张工主要负责生态城三期A标段",
+    "conversation_summary": "最近讨论了样板段放线完成确认（6月22日已确认）、景观铺装材料进场验收（6月25日）、消防管道试压问题排查（6月28日已升级给李总）。用户关注施工质量和进度节点，对消防验收材料特别关注，询问过3次消防相关SOP。",
+
+    "partner_ids": ["company-lvjian-002", "company-anju-003"],
+    "scopes": ["景观", "绿化", "1标段"],
+    "project_ids": ["proj-ecocity-s3"],
+    "sop_allow": ["SOP-001-REC", "SOP-002-TSK", "SOP-003-MTG", "SOP-004-FILE", "SOP-005-QUERY", "SOP-006-CONFIRM"],
+    "db_perms": {"events": "read_write", "tasks": "read_write", "meetings": "read_write", "files": "read_write", "projects": "read", "company_info": "read", "users": "read"},
+    "info_level": "internal",
+    "granted_codes": ["SOP-INTERNAL-EVENT-*-*", "SOP-INTERNAL-TASK-*-*"],
+    "denied_codes": ["SOP-INTERNAL-ADMIN-*-*"],
+    "supervisor_id": "user-li-zong-002",
+    "permission_version": 3,
+
+    "recent_turns": [
+      {"role": "user", "time": "2026-07-02 09:30", "content": "帮我查一下消防管道试压的记录"},
+      {"role": "agent", "time": "2026-07-02 09:30", "content": "已查到3条相关记录：6月28日A标段消防管道试压异常（已升级），6月25日B标段试压合格，6月20日材料进场检验。需要查看哪条的详情？"},
+      {"role": "user", "time": "2026-07-02 09:31", "content": "A标段那个异常的，现在处理进度怎么样了"},
+      {"role": "agent", "time": "2026-07-02 09:31", "content": "该事件（EVT-20260628-0003）已升级给李总，当前状态为「处理中」。上次更新：6月30日总包回复已在排查，预计7月3日前提交整改方案。"}
+    ],
+
+    "extra_perms": {}
+  },
+  {
+    "_user_id": "user-li-zong-002",
+    "_description": "李总 — 建设单位负责人，L5管理员权限",
+
+    "user_name": "李总",
+    "user_position": "项目总负责人",
+
+    "project_name": "生态城三期",
+    "project_type": "房屋建筑",
+    "project_status": "工程施工",
+
+    "user_company": "绿城建设管理有限公司",
+    "user_company_type": "建设单位",
+    "user_department": "管理组",
+
+    "user_permission_level": 5,
+    "current_node_ids": "N-S1-A01,N-S2-A01,N-S3-A01,N-S4-A01",
+    "User_responsibilities": "统筹项目整体进度、质量与成本控制，审批重大变更与异常升级事项，协调各参建单位资源",
+
+    "user_longterm_memory": "- [2026-06-18] 关注关键节点: 李总重点关注里程碑节点进度，要求每周一汇报\n- [2026-06-28] 消防异常升级: 李总接手了A标段消防管道试压异常的处理\n- [2026-07-01] 偏好日报: 习惯每天早上查看昨日项目进展汇总",
+    "conversation_summary": "近期处理了消防管道试压异常升级、审批了样板段方案变更、检查了B标段进度滞后问题。关注异常事件的处理闭环和关键节点的风险预警。",
+
+    "partner_ids": ["company-lvjian-002", "company-anju-003", "company-zhongtie-004"],
+    "scopes": ["景观", "绿化", "1标段", "2标段"],
+    "project_ids": ["proj-ecocity-s3"],
+    "sop_allow": ["SOP-001-REC", "SOP-002-TSK", "SOP-003-MTG", "SOP-004-FILE", "SOP-005-QUERY", "SOP-006-CONFIRM", "SOP-007-NODE", "SOP-008-REPORT", "SOP-009-RISK", "SOP-010-ARCHIVE"],
+    "db_perms": {"events": "read_write", "tasks": "read_write", "meetings": "read_write", "files": "read_write", "projects": "read_write", "company_info": "read_write", "users": "read_write"},
+    "info_level": "confidential",
+    "granted_codes": ["SOP-INTERNAL-*-*-*", "SOP-ADMIN-*-*-*"],
+    "denied_codes": [],
+    "supervisor_id": "",
+    "permission_version": 5,
+
+    "recent_turns": [
+      {"role": "user", "time": "2026-07-02 08:00", "content": "汇总一下昨天A标段各条线的进展"},
+      {"role": "agent", "time": "2026-07-02 08:00", "content": "昨日A标段：样板段铺装完成80%（按计划）、消防管道整改方案待提交（7月3日前）、材料进场3批次验收合格。无新增异常。"}
+    ],
+
+    "extra_perms": {}
+  },
+  {
+    "_user_id": "user-wang-fen-003",
+    "_description": "王芬 — 总包（绿建）施工员，L2参建执行权限",
+
+    "user_name": "王芬",
+    "user_position": "现场施工员",
+
+    "project_name": "生态城三期A标段",
+    "project_type": "房屋建筑",
+    "project_status": "工程施工",
+
+    "user_company": "绿建工程有限公司",
+    "user_company_type": "总包",
+    "user_department": "施工部",
+
+    "user_permission_level": 2,
+    "current_node_ids": "N-S3-B01,N-S3-B02",
+    "User_responsibilities": "负责现场施工执行，按施工计划完成放线、铺装、浇筑等工序，及时上报每日完成量和异常情况",
+
+    "user_longterm_memory": "- [2026-06-22] 样板段放线: 王芬负责样板段放线工作，6月22日确认完成\n- [2026-06-28] 关注铺装修复: 入职2个月，对铺装工艺细节特别关注",
+    "conversation_summary": "王芬主要通过Emily录入现场施工完成情况（事件）和提交材料进场验收申请。上周完成了样板段放线确认和3次材料进场录入。",
+
+    "partner_ids": ["company-green-001"],
+    "scopes": ["景观", "1标段"],
+    "project_ids": ["proj-ecocity-s3"],
+    "sop_allow": ["SOP-001-REC", "SOP-002-TSK", "SOP-004-FILE"],
+    "db_perms": {"events": "read_write", "tasks": "read", "files": "read"},
+    "info_level": "internal",
+    "granted_codes": ["SOP-INTERNAL-EVENT-REC-WRITE"],
+    "denied_codes": ["SOP-INTERNAL-ADMIN-*-*", "SOP-INTERNAL-REPORT-*-*"],
+    "supervisor_id": "user-zhang-gong-001",
+    "permission_version": 2,
+
+    "recent_turns": [
+      {"role": "user", "time": "2026-07-01 16:00", "content": "帮我记录一下，今天下午完成了景观铺装区域B的材料进场验收，水泥和砂石都合格"},
+      {"role": "agent", "time": "2026-07-01 16:00", "content": "已录入事件——景观铺装区域B材料进场验收，水泥和砂石检验合格。编号：EVT-20260701-0012，等待确认中。是否确认录入？"},
+      {"role": "user", "time": "2026-07-01 16:01", "content": "确认"},
+      {"role": "agent", "time": "2026-07-01 16:01", "content": "已确认！事件 EVT-20260701-0012 正式入库。"}
+    ],
+
+    "extra_perms": {}
+  }
+]
