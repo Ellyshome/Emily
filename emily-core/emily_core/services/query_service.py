@@ -325,7 +325,7 @@ class QueryService:
             results.append({
                 "user_id": u.id,
                 "username": u.username,
-                "real_name": u.real_name,
+                "real_name": u.username,
                 "status": u.status or "active",
                 "created_at": u.created_at,
             })

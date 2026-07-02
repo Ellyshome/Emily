@@ -63,7 +63,6 @@ class UserRepository:
             # 创建 User
             user = User(
                 username=im_display_name or im_user_id,
-                real_name=im_display_name,
             )
             session.add(user)
             session.flush()  # 获取 user.id
@@ -97,20 +96,14 @@ class UserRepository:
 
     @staticmethod
     def find_by_name(name: str) -> User | None:
-        """按姓名/用户名查找用户（执行人姓名 → user_id 解析，best-effort）。
+        """按用户名查找用户（执行人姓名 → user_id 解析，best-effort）。
 
-        匹配优先级：real_name 精确 → username 精确。返回首个匹配，未找到返回 None。
+        匹配：username 精确。返回首个匹配，未找到返回 None。
+        注：原 real_name 字段已移除，统一使用 username。
         """
         if not name:
             return None
         with get_session() as session:
-            user = (
-                session.query(User)
-                .filter(User.real_name == name, User.is_deleted == False)
-                .first()
-            )
-            if user:
-                return user
             return (
                 session.query(User)
                 .filter(User.username == name, User.is_deleted == False)
