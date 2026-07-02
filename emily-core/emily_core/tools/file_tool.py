@@ -79,10 +79,18 @@ async def handle_record_file(
     pending_issues=None,
     config=None,
 ) -> dict:
-    """处理文件归档（M14 业务流工具 handler）。"""
+    """处理文件归档（M14 业务流工具 handler）。
+
+    M13 (TC-A01): 从 params 提取附件 URL 信息并传递给 FileApplication。
+    """
     data = params.get("data", {})
     force = params.get("force", False)
     guardian_notes = params.get("guardian_notes", "")
+
+    # M13 (TC-A01): 提取附件 URL 信息
+    attachment_url = params.get("_attachment_url", "")
+    attachment_type = params.get("_attachment_type", 0)
+    source_filename = data.get("filename", "")
 
     # ── 正常录入流程 ──
     route_result = RouteResult(
@@ -90,11 +98,16 @@ async def handle_record_file(
         project_name=params.get("project_name"),
         project_id=params.get("project_id"),
         data={
-            "filename": data.get("filename", "未命名文件"),
+            "filename": source_filename or "未命名文件",
             "file_type": data.get("file_type", ""),
         },
     )
-    result = await file_app.handle_file(route_result, user_id, message_id)
+    result = await file_app.handle_file(
+        route_result, user_id, message_id,
+        attachment_url=attachment_url,
+        attachment_type=attachment_type,
+        source_filename=source_filename,
+    )
 
     reply_text = result.reply or ""
     if force and guardian_notes and result.success and pending_issues is not None:

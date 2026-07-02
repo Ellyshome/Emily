@@ -96,14 +96,8 @@ class EventApplication:
             if event:
                 # M8c: 写入项目日志
                 if self._journal is not None:
-                    user_name = getattr(event, "user_id", "") or ""
-                    try:
-                        from ..repositories.user_repo import UserRepository
-                        u = UserRepository.get(event.user_id) if event.user_id else None
-                        if u:
-                            user_name = getattr(u, "real_name", "") or getattr(u, "username", "") or ""
-                    except Exception:
-                        pass
+                    from ._user_utils import resolve_user_name
+                    user_name = resolve_user_name(event.user_id) if event.user_id else ""
                     self._journal.append(
                         name=user_name or "用户",
                         summary=f"确认录入事件：{event.title}（{event.event_no}）",

@@ -9,6 +9,7 @@
 import logging
 
 from ..agent.tool_registry import ToolDefinition
+from ..services.chat_archive_service import ChatArchiveService
 
 logger = logging.getLogger(__name__)
 

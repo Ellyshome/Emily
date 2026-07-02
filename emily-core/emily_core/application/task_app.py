@@ -37,11 +37,13 @@ class TaskApplication:
             task = self.task_service.create_task(cmd)
             # M8c: 写入项目日志
             if self._journal is not None:
+                from ._user_utils import resolve_user_name
+                user_name = resolve_user_name(cmd.creator_id) or "用户"
                 assignee = cmd.assignee_text or ""
                 summary = f"创建任务：{task.title}（{task.task_no}）"
                 if assignee:
                     summary += f"，负责人{assignee}"
-                self._journal.append(name=cmd.creator_id or "用户", summary=summary)
+                self._journal.append(name=user_name, summary=summary)
             reply = f"✅ 已创建任务（{task.task_no}）\n──────────────\n标题：{task.title}"
             if task.owner_text:
                 reply += f"\n负责人：{task.owner_text}"

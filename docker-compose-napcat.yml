@@ -94,7 +94,7 @@ services:
       - POSTGRES_PASSWORD=emily_secret_2026
       - POSTGRES_DB=emily
     volumes:
-      - D:\app\Emily\pgdata\emily:/var/lib/postgresql/data
+      - D:\app\Emily\emily-data\db_seeds:/var/lib/postgresql/data
     networks:
       - emily_network
     restart: always
