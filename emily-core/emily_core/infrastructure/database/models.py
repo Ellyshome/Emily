@@ -63,7 +63,7 @@ class User(Base):
     __tablename__ = "users"
     # ── 原 users 字段（系统身份）──
     id = Column(String, primary_key=True, default=_new_uuid)
-    username = Column(String(100))
+    username = Column(String(100), nullable=False)
     phone = Column(String(50))
     email = Column(String(200))
     status = Column(String(50), default="active")
@@ -74,7 +74,7 @@ class User(Base):
     qq = Column(String(50), default="")                      # QQ号
     wechat = Column(String(100), default="")                 # 微信号
     remark = Column(String, default="")                      # 人员备注（自然语言描述）
-    creator_id = Column(String, nullable=True)               # 创建人ID
+    creator_id = Column(String, nullable=False)              # 创建人ID
     is_deleted = Column(Boolean, default=False)                  # 逻辑删除标记
     perm_list = Column(String, default="[]")                 # 权限集（JSON数组）
     org_category = Column(Integer, default=0)                # 组织类型标签（原 grouping，v2.0 改名只读不参与鉴权）：0=临时组 1=访客组 2=工程组 3=供货商 4=管理组
@@ -86,8 +86,8 @@ class User(Base):
     long_term_memory = Column(String, default="")            # 用户长期记忆（Agent 自动维护的 Markdown 文本）
     conversation_summary = Column(String, default="")        # 历史对话摘要（LLM 压缩的对话要点）
     # ── 时间戳 ──
-    created_at = Column(String, default=_utc_now)
-    updated_at = Column(String, default=_utc_now, onupdate=_utc_now)
+    created_at = Column(String, default=_utc_now, nullable=False)
+    updated_at = Column(String, default=_utc_now, onupdate=_utc_now, nullable=False)
     im_bindings = relationship("UserImBinding", back_populates="user", lazy="selectin")
 
 
