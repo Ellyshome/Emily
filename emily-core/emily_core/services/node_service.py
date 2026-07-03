@@ -125,25 +125,35 @@ class NodeService:
     # ── 节点 CRUD ──
 
     async def create_node(self, cmd: CreateNodeCommand) -> NodeOperationResult:
-        """创建节点（初始状态 NOT_ACTIVATED，待部门负责人审批）。
+        """创建节点。
 
         权限要求：仅建设单位（company_type == "建设单位"）人员可创建。
+        管理员快捷通道：创建人 permission_level >= 5 时自动激活，跳过审批。
         """
-        # 权限校验：仅建设单位人员可创建节点
+        # 权限校验 + 管理员级别检测
+        is_admin = False
         if cmd.creator_id and self._user_repo:
-            company_type = await asyncio.to_thread(
-                self._get_creator_company_type, cmd.creator_id,
-            )
-            if company_type and company_type != "建设单位":
-                return NodeOperationResult(
-                    success=False, node_id=cmd.node_id,
-                    message="仅建设单位人员可创建全景节点",
-                    error_code="40301",
-                )
+            user = await asyncio.to_thread(self._user_repo.get_user, cmd.creator_id)
+            if user:
+                # 管理员（Level 5/6）跳过审批
+                is_admin = getattr(user, "permission_level", 0) >= 5
+                # 非管理员：仅建设单位人员可创建节点
+                if not is_admin:
+                    company_type = await asyncio.to_thread(
+                        self._get_creator_company_type, cmd.creator_id,
+                    )
+                    if company_type and company_type != "建设单位":
+                        return NodeOperationResult(
+                            success=False, node_id=cmd.node_id,
+                            message="仅建设单位人员可创建全景节点",
+                            error_code="40301",
+                        )
 
         child_weight_str = _to_decimal_str(cmd.child_weight, precision=4)
 
-        # 不传 status 参数，继承 DB 默认值 NOT_ACTIVATED
+        # 管理员直接以 CONDITIONS_NOT_MET 创建，普通用户以 NOT_ACTIVATED 创建
+        initial_status = CONDITIONS_NOT_MET if is_admin else NOT_ACTIVATED
+
         node = await asyncio.to_thread(
             self._node_repo.create,
             project_id=cmd.project_id,
@@ -160,43 +170,94 @@ class NodeService:
             land_parcel_id=cmd.land_parcel_id,
             startup_doc_id=cmd.startup_doc_id,
             sort_order=cmd.sort_order,
+            status=initial_status,
         )
 
-        self._record_event(
-            node_id=cmd.node_id,
-            event_type="node_created_pending_approval",
-            new_value=json.dumps({
-                "node_name": cmd.node_name,
-                "project_id": cmd.project_id,
-                "owner_dept_id": cmd.owner_dept_id,
-                "creator_id": cmd.creator_id,
-            }),
-            operator_id=cmd.creator_id,
-            remark=f"节点创建，待「{cmd.owner_dept_id}」部门负责人审批",
-        )
+        now_iso = self._now_iso()
 
-        # 通知：通过 OutboundEventBus 发布待审批事件
-        if self._outbound_bus:
-            try:
-                self._outbound_bus.publish("node_pending_approval", {
-                    "node_id": cmd.node_id,
+        if is_admin:
+            # ── 管理员自动激活 ──
+            # 记录审批信息（创建人即审批人）
+            await asyncio.to_thread(
+                self._node_repo.update_fields,
+                cmd.node_id,
+                approver_id=cmd.creator_id,
+                approved_at=now_iso,
+            )
+
+            self._record_event(
+                node_id=cmd.node_id,
+                event_type="node_created_auto_activated",
+                new_value=json.dumps({
                     "node_name": cmd.node_name,
                     "project_id": cmd.project_id,
                     "owner_dept_id": cmd.owner_dept_id,
                     "creator_id": cmd.creator_id,
-                })
-            except Exception:
-                logger.exception("Failed to publish node_pending_approval event")
+                    "auto_activated": True,
+                }),
+                operator_id=cmd.creator_id,
+                remark=f"管理员创建节点，自动激活（跳过审批）",
+            )
 
-        logger.info("Node created (pending approval): %s (project=%s, dept=%s)",
-                    cmd.node_id, cmd.project_id, cmd.owner_dept_id)
-        return NodeOperationResult(
-            success=True,
-            node_id=cmd.node_id,
-            status=node.status,
-            progress=_parse_decimal(node.progress),
-            message=f"节点「{cmd.node_name}」已创建，待「{cmd.owner_dept_id}」部门负责人审批后启用",
-        )
+            # 通知：管理员创建并自动激活
+            if self._outbound_bus:
+                try:
+                    self._outbound_bus.publish("node_auto_activated", {
+                        "node_id": cmd.node_id,
+                        "node_name": cmd.node_name,
+                        "project_id": cmd.project_id,
+                        "owner_dept_id": cmd.owner_dept_id,
+                        "creator_id": cmd.creator_id,
+                    })
+                except Exception:
+                    logger.exception("Failed to publish node_auto_activated event")
+
+            logger.info("Node created (auto-activated by admin): %s (project=%s, dept=%s)",
+                        cmd.node_id, cmd.project_id, cmd.owner_dept_id)
+            return NodeOperationResult(
+                success=True,
+                node_id=cmd.node_id,
+                status=CONDITIONS_NOT_MET,
+                progress=_parse_decimal(node.progress),
+                message=f"节点「{cmd.node_name}」已创建并激活",
+            )
+        else:
+            # ── 普通用户：待审批 ──
+            self._record_event(
+                node_id=cmd.node_id,
+                event_type="node_created_pending_approval",
+                new_value=json.dumps({
+                    "node_name": cmd.node_name,
+                    "project_id": cmd.project_id,
+                    "owner_dept_id": cmd.owner_dept_id,
+                    "creator_id": cmd.creator_id,
+                }),
+                operator_id=cmd.creator_id,
+                remark=f"节点创建，待「{cmd.owner_dept_id}」部门负责人审批",
+            )
+
+            # 通知：通过 OutboundEventBus 发布待审批事件
+            if self._outbound_bus:
+                try:
+                    self._outbound_bus.publish("node_pending_approval", {
+                        "node_id": cmd.node_id,
+                        "node_name": cmd.node_name,
+                        "project_id": cmd.project_id,
+                        "owner_dept_id": cmd.owner_dept_id,
+                        "creator_id": cmd.creator_id,
+                    })
+                except Exception:
+                    logger.exception("Failed to publish node_pending_approval event")
+
+            logger.info("Node created (pending approval): %s (project=%s, dept=%s)",
+                        cmd.node_id, cmd.project_id, cmd.owner_dept_id)
+            return NodeOperationResult(
+                success=True,
+                node_id=cmd.node_id,
+                status=node.status,
+                progress=_parse_decimal(node.progress),
+                message=f"节点「{cmd.node_name}」已创建，待「{cmd.owner_dept_id}」部门负责人审批后启用",
+            )
 
     async def update_node(self, cmd: UpdateNodeCommand) -> NodeOperationResult:
         """更新节点字段。"""

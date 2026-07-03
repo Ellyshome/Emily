@@ -2,12 +2,15 @@
 
 供 SOP-011-SYS-node_manage 调用，在 WorkItem Pipeline 的 execute 节点中直调。
 
-5 个核心工具：
-  - create_node: 创建全景节点
+8 个核心工具：
+  - create_node: 创建全景节点（支持单节点 + 批量模式）
   - query_node: 查询节点详情
   - update_node_progress: 更新节点成果进度（触发状态流转）
   - add_node_dependency: 添加前置依赖
   - mount_child_node: 挂载子节点
+  - update_nodes: 批量更新节点字段
+  - activate_nodes: 批量激活（审批）节点
+  - discard_nodes: 批量废弃节点
 """
 
 from __future__ import annotations
@@ -24,19 +27,27 @@ _CREATE_NODE_SCHEMA = {
     "type": "object",
     "properties": {
         "project_id": {"type": "string", "description": "项目归属ID"},
-        "node_id": {"type": "string", "description": "节点编号（业务主键），如 SG-JG-01-2026"},
-        "node_name": {"type": "string", "description": "节点名称/工作项描述"},
-        "deadline": {"type": "string", "description": "截止时间（ISO8601格式）"},
+        "node_id": {"type": "string", "description": "节点编号（业务主键），如 SG-JG-01-2026。单节点模式必填"},
+        "node_name": {"type": "string", "description": "节点名称/工作项描述。单节点模式必填"},
+        "deadline": {"type": "string", "description": "截止时间（ISO8601格式）。单节点模式必填"},
         "owner_dept_id": {"type": "string", "description": "主责条线/部门，默认'项目总'"},
         "stage_id": {"type": "integer", "description": "阶段ID: 0=立项 1=规划 2=施工 3=交付，默认0"},
         "parent_node_id": {"type": "string", "description": "父节点编号（如果是子节点则填写）"},
         "remark": {"type": "string", "description": "备注/说明"},
+        "nodes": {
+            "type": "array",
+            "description": "批量创建模式：节点树列表。每项含 node_id/node_name/deadline/deliverables/dependencies/children",
+            "items": {"type": "object"},
+        },
     },
-    "required": ["project_id", "node_id", "node_name", "deadline"],
+    "required": ["project_id"],
 }
 
 _CREATE_NODE_DESCRIPTION = (
-    "创建项目全景节点。用于录入项目工作项/里程碑节点，包含编号、名称、截止时间、主责条线等。"
+    "创建项目全景节点。支持两种模式："
+    "1) 单节点：提供 node_id+node_name+deadline 创建单个节点；"
+    "2) 批量创建：提供 nodes 列表，一次性创建节点树（含成果、依赖、子节点）。"
+    "批量模式下 nodes 中每个节点可含 deliverables/dependencies/children 字段。"
     "创建后节点初始状态为 CONDITIONS_NOT_MET（条件不足），需进一步添加成果和依赖。"
 )
 
@@ -110,11 +121,42 @@ async def handle_create_node(
     message_id: str = "",
     **kw,
 ) -> dict[str, Any]:
-    """创建全景节点。"""
+    """创建全景节点。
+
+    支持两种模式：
+      - 单节点：params 含 node_id + node_name（原逻辑）
+      - 批量创建：params 含 nodes 列表，委托 emily_core.services.node_batch.create_node_tree
+    """
+    # ── 批量创建路径 ──
+    batch_nodes = params.get("nodes")
+    if batch_nodes and isinstance(batch_nodes, list):
+        from emily_core.services.node_batch import create_node_tree
+
+        results = await create_node_tree(
+            project_id=params.get("project_id", ""),
+            creator_id=user_id,
+            nodes=batch_nodes,
+            auto_activate=True,
+            dry_run=False,
+        )
+        success_count = sum(1 for r in results if r.get("success"))
+        fail_count = sum(1 for r in results if not r.get("success"))
+        return {
+            "success": fail_count == 0,
+            "batch": True,
+            "total": len(results),
+            "success_count": success_count,
+            "fail_count": fail_count,
+            "results": results,
+            "message": f"批量创建完成：{success_count} 成功，{fail_count} 失败",
+        }
+
+    # ── 单节点创建路径（原逻辑）──
     from emily_core.services.node_commands import CreateNodeCommand
     from emily_core.services.node_service import NodeService
+    from emily_core.repositories.permission_repo import PermissionRepository
 
-    svc = NodeService()
+    svc = NodeService(user_repo=PermissionRepository())
     cmd = CreateNodeCommand(
         project_id=params.get("project_id", ""),
         node_id=params.get("node_id", ""),
@@ -143,8 +185,9 @@ async def handle_query_node(
 ) -> dict[str, Any]:
     """查询节点详情。"""
     from emily_core.services.node_service import NodeService
+    from emily_core.repositories.permission_repo import PermissionRepository
 
-    svc = NodeService()
+    svc = NodeService(user_repo=PermissionRepository())
     node_id = params.get("node_id", "")
     detail = await svc.get_node_detail(node_id)
     if detail is None:
@@ -165,8 +208,9 @@ async def handle_update_node_progress(
     """更新成果进度——触发状态流转。"""
     from emily_core.services.node_commands import UpdateDeliverableProgressCommand
     from emily_core.services.node_service import NodeService
+    from emily_core.repositories.permission_repo import PermissionRepository
 
-    svc = NodeService()
+    svc = NodeService(user_repo=PermissionRepository())
     cmd = UpdateDeliverableProgressCommand(
         deliverable_id=params.get("deliverable_id", ""),
         current_amount=float(params.get("current_amount", 0)),
@@ -193,8 +237,9 @@ async def handle_add_node_dependency(
     """添加前置依赖。"""
     from emily_core.services.node_commands import AddDependencyCommand
     from emily_core.services.node_service import NodeService
+    from emily_core.repositories.permission_repo import PermissionRepository
 
-    svc = NodeService()
+    svc = NodeService(user_repo=PermissionRepository())
     cmd = AddDependencyCommand(
         node_id=params.get("node_id", ""),
         depends_on_deliverable_id=params.get("depends_on_deliverable_id", ""),
@@ -219,8 +264,9 @@ async def handle_mount_child_node(
     """挂载子节点。"""
     from emily_core.services.node_commands import MountChildCommand
     from emily_core.services.node_service import NodeService
+    from emily_core.repositories.permission_repo import PermissionRepository
 
-    svc = NodeService()
+    svc = NodeService(user_repo=PermissionRepository())
     cmd = MountChildCommand(
         parent_node_id=params.get("parent_node_id", ""),
         child_node_id=params.get("child_node_id", ""),
@@ -233,4 +279,154 @@ async def handle_mount_child_node(
         "node_id": result.node_id,
         "message": result.message,
         "error_code": result.error_code,
+    }
+
+
+# ── 批量更新 Schema ──
+
+_UPDATE_NODES_SCHEMA = {
+    "type": "object",
+    "properties": {
+        "updates": {
+            "type": "array",
+            "description": "节点更新列表。每项含 node_id（必填）+ 要更新的字段（node_name/deadline/owner_dept_id/remark/stage_id 等）",
+            "items": {"type": "object"},
+        },
+    },
+    "required": ["updates"],
+}
+
+_UPDATE_NODES_DESCRIPTION = (
+    "批量更新节点字段。每项指定 node_id + 要修改的字段（只填要改的），"
+    "支持：node_name/deadline/owner_dept_id/related_company_id/remark/stage_id/sort_order。"
+)
+
+_ACTIVATE_NODES_SCHEMA = {
+    "type": "object",
+    "properties": {
+        "node_ids": {
+            "type": "array",
+            "description": "要激活（审批通过）的节点编号列表",
+            "items": {"type": "string"},
+        },
+        "approved": {
+            "type": "boolean",
+            "description": "True=审批通过，False=审批拒绝（默认 True）",
+        },
+        "remark": {"type": "string", "description": "审批备注"},
+    },
+    "required": ["node_ids"],
+}
+
+_ACTIVATE_NODES_DESCRIPTION = (
+    "批量激活（审批通过/拒绝）节点。审批通过：NOT_ACTIVATED → CONDITIONS_NOT_MET。"
+    "审批拒绝：节点废弃。需部门负责人或 L5+ 管理员权限。"
+)
+
+_DISCARD_NODES_SCHEMA = {
+    "type": "object",
+    "properties": {
+        "node_ids": {
+            "type": "array",
+            "description": "要废弃的节点编号列表",
+            "items": {"type": "string"},
+        },
+    },
+    "required": ["node_ids"],
+}
+
+_DISCARD_NODES_DESCRIPTION = (
+    "批量废弃节点。已完成子节点的父节点不可废弃。废弃为软删除。"
+)
+
+
+# ── 批量更新 Handler ──
+
+
+async def handle_update_nodes(
+    params: dict[str, Any],
+    user_id: str = "",
+    message_id: str = "",
+    **kw,
+) -> dict[str, Any]:
+    """批量更新节点字段。"""
+    from emily_core.services.node_batch_update import batch_update_nodes
+
+    updates = params.get("updates", [])
+    if not updates:
+        return {"success": False, "message": "updates 列表为空"}
+
+    results = await batch_update_nodes(
+        updates=updates,
+        operator_id=user_id,
+    )
+    success_count = sum(1 for r in results if r.get("success"))
+    fail_count = sum(1 for r in results if not r.get("success"))
+    return {
+        "success": fail_count == 0,
+        "total": len(results),
+        "success_count": success_count,
+        "fail_count": fail_count,
+        "results": results,
+        "message": f"批量更新完成：{success_count} 成功，{fail_count} 失败",
+    }
+
+
+async def handle_activate_nodes(
+    params: dict[str, Any],
+    user_id: str = "",
+    message_id: str = "",
+    **kw,
+) -> dict[str, Any]:
+    """批量激活（审批）节点。"""
+    from emily_core.services.node_batch_update import batch_activate_nodes
+
+    node_ids = params.get("node_ids", [])
+    if not node_ids:
+        return {"success": False, "message": "node_ids 列表为空"}
+
+    results = await batch_activate_nodes(
+        node_ids=node_ids,
+        approver_id=user_id,
+        approved=params.get("approved", True),
+        remark=params.get("remark", ""),
+    )
+    success_count = sum(1 for r in results if r.get("success"))
+    fail_count = sum(1 for r in results if not r.get("success"))
+    return {
+        "success": fail_count == 0,
+        "total": len(results),
+        "success_count": success_count,
+        "fail_count": fail_count,
+        "results": results,
+        "message": f"批量审批完成：{success_count} 成功，{fail_count} 失败",
+    }
+
+
+async def handle_discard_nodes(
+    params: dict[str, Any],
+    user_id: str = "",
+    message_id: str = "",
+    **kw,
+) -> dict[str, Any]:
+    """批量废弃节点。"""
+    from emily_core.services.node_batch_update import batch_discard_nodes
+
+    node_ids = params.get("node_ids", [])
+    if not node_ids:
+        return {"success": False, "message": "node_ids 列表为空"}
+
+    results = await batch_discard_nodes(
+        node_ids=node_ids,
+        operator_id=user_id,
+    )
+    success_count = sum(1 for r in results if r.get("success"))
+    fail_count = sum(1 for r in results if not r.get("success"))
+    return {
+        "success": fail_count == 0,
+        "total": len(results),
+        "success_count": success_count,
+        "fail_count": fail_count,
+        "results": results,
+        "message": f"批量废弃完成：{success_count} 成功，{fail_count} 失败",
     }

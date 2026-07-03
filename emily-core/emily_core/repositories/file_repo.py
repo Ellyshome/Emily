@@ -73,6 +73,12 @@ class FileRepository:
         with get_session() as session:
             return session.query(File).filter(File.id == file_id).first()
 
+    @staticmethod
+    def get_by_file_no(file_no: str) -> Optional[File]:
+        """按文件编号查询。"""
+        with get_session() as session:
+            return session.query(File).filter(File.file_no == file_no).first()
+
     # ── M5 查询 ──
 
     @staticmethod

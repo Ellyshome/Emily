@@ -119,3 +119,7 @@ session
 ---
 对脚本emily-core\emily_core\adapters\session\session_factory.py
 进行系统化改造
+---
+message的附件，没有接入自动下载流程，
+文件没有统一管理，应该统一下载，只给一个message ID
+---

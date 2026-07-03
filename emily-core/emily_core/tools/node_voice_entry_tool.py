@@ -188,11 +188,12 @@ async def voice_execute_create(user_id: str, project_id: str, extracted: dict) -
     try:
         from ..services.node_commands import CreateNodeCommand
         from ..services.node_service import NodeService
+        from ..repositories.permission_repo import PermissionRepository
 
         # 生成节点编号
         node_id = _generate_node_id(extracted.get("node_name", ""), project_id)
 
-        svc = NodeService()
+        svc = NodeService(user_repo=PermissionRepository())
         cmd = CreateNodeCommand(
             project_id=project_id,
             node_id=node_id,
