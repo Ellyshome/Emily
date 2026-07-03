@@ -102,3 +102,20 @@ db_seeds/ — 如果从未需要过种子数据（因为 SOP 驱动而非数据�
 - 计划任务，发起时，需填写节点归属。暂时无对应归属节点，应引导用户提醒所属建设单位对应的部门负责人建立节点。
 - 虚拟节点；暂时无对应归属节点，（如节点还在定制申报中，）统一归入虚拟节点，等待二次分配。
    - 虚拟节点中有数据被视为异常数据，作为管理员需处理信息
+---
+
+实现 recent_turns 写入 — SessionAgent.handle() 末尾把本轮交互追加进 self.context.recent_turns，到 pipeline 层拼接成 messages 传给 chat_with_tools()
+实现会话冷启动灌注 — 你打开的 session灌注.md 里列的：项目元认知世界书、工具列表、数据库 schema，在 SessionFactory._build_context() 里补全
+TTL 过期时调 archive() — sweep_expired() 改掉静默丢弃的行为
+
+---
+session 的实现
+需要有类作为操控抓手
+需要有上下文连贯性
+需要有归档脚本
+---
+session
+注销脚本、数据库查询脚本、rag查询脚本
+---
+对脚本emily-core\emily_core\adapters\session\session_factory.py
+进行系统化改造

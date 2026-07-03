@@ -31,6 +31,7 @@ from .pipeline.interfaces.execution import StepResult, ToolCallRecord, DbResult,
 from .pipeline.interfaces.auth import AuthResult, AuthDecision
 from .pipeline.mocks import MockPlanner, MockWorkAgent
 from .pipeline.real_guardian import RealGuardian, GuardianNote
+from ..session.session_context import format_message_history
 
 logger = logging.getLogger("emily.workitem_agent")
 
@@ -181,7 +182,10 @@ class WorkItemAgent:
                      getattr(plan, "_source", "mock"))
 
     async def _llm_plan(self, wi, context) -> ExecutionPlan:
-        """LLM 动态规划 —— 从 SOP 全文和用户输入生成 ExecutionPlan。"""
+        """LLM 动态规划 —— 从 SOP 全文、对话历史、用户输入生成 ExecutionPlan。
+
+        使用 chat_messages() 传入完整 message_history，利用 KV cache 复用。
+        """
         sop_text = ""
         if hasattr(self.injector, 'get_context_text'):
             sop_text = self.injector.get_context_text()
@@ -197,14 +201,28 @@ class WorkItemAgent:
             tools_text = "\n".join(tool_entries) if tool_entries else "（无可用工具）"
 
         planner_prompt = _load_planner_prompt()
-        prompt = planner_prompt.format(
+        system_prompt = planner_prompt.format(
             sop_text=sop_text[:4000] if sop_text else f"SOP: {wi.sop_id or '未知'}（全文未加载）",
             user_input=wi.user_input,
             available_tools=tools_text,
         )
 
+        # 从 SessionContext 获取消息历史
+        session_ctx = context.get_session_context() if context else None
+        message_history = getattr(session_ctx, 'message_history', []) if session_ctx else []
+
+        # 组装多轮 messages: [system] + message_history + [plan_request]
+        # 组装多轮 messages: [system] + message_history + [plan_request]
+        full_messages = [{"role": "system", "content": system_prompt}]
+        full_messages.extend(message_history)
+        full_messages.append({
+            "role": "user",
+            "content": f"Plan for: {wi.user_input[:200]}",
+        })
+
         try:
-            data = await self._llm.chat_json(prompt, f"Plan for: {wi.user_input[:200]}")
+            result = await self._llm.chat_messages(full_messages, json_mode=True)
+            data = result.get("data", {})
             logger.debug("LLM planner response: %s", data)
         except Exception as e:
             logger.error("LLM planner failed: %s, falling back to MockPlanner", e)
@@ -408,7 +426,12 @@ class WorkItemAgent:
                         output=step.description,
                     )
             except Exception as e:
-                logger.error("Step %s failed: %s", step.step_id, e)
+                logger.error(
+                    "Step %s failed: %s (tool=%s params_keys=%s)",
+                    step.step_id, e, tool_name or "(none)",
+                    list(tool_params.keys()) if tool_params else [],
+                    exc_info=True,
+                )
                 sr = StepResult(
                     step_id=step.step_id,
                     success=False,
@@ -439,8 +462,11 @@ class WorkItemAgent:
         executor_mode = self._resolve_mode("executor")
         mock_prefix = "" if executor_mode == "real" else "[Mock 模式] "
 
-        # ---- LLM 回复合成 ----
-        draft = await self._llm_synthesize_reply(wi, mock_prefix)
+        # ---- LLM 回复合成（传入对话历史）----
+        session_ctx = context.get_session_context() if context else None
+        message_history = getattr(session_ctx, 'message_history', []) if session_ctx else []
+        draft = await self._llm_synthesize_reply(wi, mock_prefix,
+                                                   message_history=message_history if message_history else None)
 
         # Guardian 出站审核 —— 只标记不拦截
         if self._guardian:
@@ -471,10 +497,17 @@ class WorkItemAgent:
             len(wi.warnings),
         )
 
-    async def _llm_synthesize_reply(self, wi, mock_prefix: str = "") -> str:
-        """用 LLM 根据 workitem.md prompt 合成自然语言回复。
+    async def _llm_synthesize_reply(self, wi, mock_prefix: str = "",
+                                      message_history: list[dict] | None = None) -> str:
+        """用 LLM 根据 workitem.md prompt + 步骤结果 + 对话历史合成自然语言回复。
 
-        回退链：LLM chat_json → 硬编码拼串（与旧逻辑一致）。
+        使用 chat_messages() 传入完整 message_history，利用 KV cache 复用。
+        回退链：LLM chat_messages json → 硬编码拼串。
+
+        Args:
+            wi: WorkItem 实例
+            mock_prefix: Mock 模式下的前缀
+            message_history: 对话历史，由 node4_summary 从 BusContext 提取后传入
         """
         # 组装步骤结果摘要
         steps_text = ""
@@ -490,17 +523,24 @@ class WorkItemAgent:
         # 尝试 LLM 合成
         if self._llm:
             try:
-                prompt = _load_workitem_prompt().format(
+                system_prompt = _load_workitem_prompt().format(
                     available_tools=self._build_tools_text(),
                     sop_text=self.injector.get_context_text()[:3000] if self.injector else f"SOP: {wi.sop_id or '未知'}",
                     user_input=(getattr(wi, "user_input", "") or "")[:1000],
                     step_results=steps_text[:2000],
                     warnings=warnings_text,
                 )
-                data = await self._llm.chat_json(
-                    prompt,
-                    f"合成回复: {getattr(wi, 'user_input', '?')[:100]}",
-                )
+
+                full_messages = [{"role": "system", "content": system_prompt}]
+                if message_history:
+                    full_messages.extend(message_history)
+                full_messages.append({
+                    "role": "user",
+                    "content": f"合成回复: {getattr(wi, 'user_input', '?')[:100]}",
+                })
+
+                result = await self._llm.chat_messages(full_messages, json_mode=True)
+                data = result.get("data", {})
                 reply = data.get("reply", "") if isinstance(data, dict) else ""
                 if reply and len(reply) > 20:
                     logger.debug("node4: LLM synthesized reply (%d chars)", len(reply))

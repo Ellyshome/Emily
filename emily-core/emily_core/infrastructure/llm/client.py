@@ -59,162 +59,94 @@ class LLMClient:
         """
         self._trace_callback = callback
 
-    async def chat(self, system_prompt: str, user_message: str) -> str:
-        """单轮对话，返回原始文本。
+    # ── 多轮对话主入口（统一 chat / chat_json / chat_with_tools）──
 
-        Args:
-            system_prompt: 系统提示词
-            user_message: 用户消息
-
-        Returns:
-            str: 模型回复文本
-        """
-        try:
-            response = await self._client.chat.completions.create(
-                model=self.model,
-                messages=[
-                    {"role": "system", "content": system_prompt},
-                    {"role": "user", "content": user_message},
-                ],
-                temperature=self.temperature,
-                max_tokens=self.max_tokens,
-            )
-            content = response.choices[0].message.content or ""
-            logger.debug("LLM chat response: %d chars", len(content))
-            return content
-        except Exception as e:
-            logger.error("LLM chat failed: %s", e)
-            raise
-
-    async def chat_json(self, system_prompt: str, user_message: str) -> dict:
-        """单轮对话，强制 JSON 输出，返回解析后的 dict。
-
-        使用 response_format={"type": "json_object"} 强制模型输出 JSON。
-        如果模型不支持该参数，则回退到手动解析。
-
-        Args:
-            system_prompt: 系统提示词（应包含"请输出 JSON"的指示）
-            user_message: 用户消息
-
-        Returns:
-            dict: 解析后的 JSON 对象
-
-        Raises:
-            ValueError: 无法解析为有效 JSON
-        """
-        try:
-            response = await self._client.chat.completions.create(
-                model=self.model,
-                messages=[
-                    {"role": "system", "content": system_prompt},
-                    {"role": "user", "content": user_message},
-                ],
-                temperature=self.temperature,
-                max_tokens=self.max_tokens,
-                response_format={"type": "json_object"},
-            )
-            raw = response.choices[0].message.content or ""
-        except Exception as e:
-            # 回退：不支持 response_format 的模型
-            logger.warning("LLM chat_json with response_format failed, fallback: %s", e)
-            raw = await self.chat(system_prompt, user_message)
-
-        # 解析 JSON
-        try:
-            # 尝试直接解析
-            return json.loads(raw)
-        except json.JSONDecodeError:
-            # 尝试从 markdown 代码块中提取
-            import re
-            match = re.search(r"```(?:json)?\s*\n?(.*?)\n?```", raw, re.DOTALL)
-            if match:
-                try:
-                    return json.loads(match.group(1).strip())
-                except json.JSONDecodeError:
-                    pass
-            logger.error("Failed to parse LLM response as JSON: %s", raw[:500])
-            raise ValueError(f"LLM response is not valid JSON: {raw[:200]}")
-
-    # ── M7: Tool Calling ──
-
-    async def chat_with_tools(
+    async def chat_messages(
         self,
         messages: list[dict],
-        tools: list[dict],
+        *,
+        json_mode: bool = False,
+        tools: list[dict] | None = None,
         temperature: float | None = None,
         max_tokens: int | None = None,
     ) -> dict:
-        """多轮对话，支持 function calling。
+        """多轮对话主入口 —— 接受完整 OpenAI 格式 messages 列表。
 
-        发送消息历史 + 工具定义给 LLM，返回文本回复或工具调用指令。
+        综合 chat_json（JSON 输出）+ chat_with_tools（多轮 + 工具）的能力。
+        chat / chat_json / chat_with_tools 内部均转调此方法。
 
         Args:
-            messages: OpenAI 格式的消息列表
-                [{"role": "system/user/assistant/tool", "content": "...", ...}, ...]
-            tools: OpenAI 格式的工具定义列表
-                [{"type": "function", "function": {"name": ..., "description": ..., "parameters": ...}}, ...]
+            messages: OpenAI 格式消息列表 [{"role":..., "content":..., ...}]
+            json_mode: 是否强制 JSON 输出（response_format）
+            tools: 工具定义列表（可选）
             temperature: 采样温度（None 则用默认值）
             max_tokens: 最大输出 token（None 则用默认值）
 
         Returns:
             dict:
-                - type="text": {"type": "text", "content": str, "finish_reason": str}
-                - type="tool_call": {"type": "tool_call", "tool_name": str, "tool_arguments": dict, "tool_call_id": str, "finish_reason": str}
+                - json_mode=True:  {"type": "json", "data": {...}, "finish_reason": str}
+                - json_mode=False: {"type": "text", "content": str, "finish_reason": str}
+                如果有 tool_call:     {"type": "tool_call", "tool_name": str, "tool_arguments": dict, ...}
         """
         # M11: trace callback — start
         call_seq = getattr(self, "_trace_call_seq", 0) + 1
         self._trace_call_seq = call_seq
+        call_type = "chat_messages" + ("_json" if json_mode else "")
         if self._trace_callback:
             try:
                 self._trace_callback({
                     "phase": "start",
-                    "call_type": "chat_with_tools",
+                    "call_type": call_type,
                     "call_sequence": call_seq,
                     "model": self.model,
                     "message_count": len(messages),
                     "tool_count": len(tools) if tools else 0,
+                    "json_mode": json_mode,
                 })
             except Exception:
                 pass
 
         t0 = time.time()
+
+        kwargs = dict(
+            model=self.model,
+            messages=messages,
+            temperature=temperature if temperature is not None else self.temperature,
+            max_tokens=max_tokens if max_tokens is not None else self.max_tokens,
+        )
+        if json_mode:
+            kwargs["response_format"] = {"type": "json_object"}
+        if tools:
+            kwargs["tools"] = tools
+
         try:
-            response = await self._client.chat.completions.create(
-                model=self.model,
-                messages=messages,
-                tools=tools if tools else None,
-                temperature=temperature if temperature is not None else self.temperature,
-                max_tokens=max_tokens if max_tokens is not None else self.max_tokens,
-            )
+            response = await self._client.chat.completions.create(**kwargs)
         except Exception as e:
-            # 如果 tools 参数不被支持（某些兼容 API），回退到无 tools 调用
+            # tools 不被支持时的回退
             if tools and "tools" in str(e).lower():
-                logger.warning("Tools not supported by model, falling back to text-only: %s", e)
+                logger.warning("Tools not supported, falling back: %s", e)
+                del kwargs["tools"]
                 try:
-                    response = await self._client.chat.completions.create(
-                        model=self.model,
-                        messages=messages,
-                        temperature=temperature if temperature is not None else self.temperature,
-                        max_tokens=max_tokens if max_tokens is not None else self.max_tokens,
-                    )
+                    response = await self._client.chat.completions.create(**kwargs)
                 except Exception as e2:
-                    logger.error("LLM chat_with_tools fallback also failed: %s", e2)
+                    logger.error("LLM chat_messages fallback failed: %s", e2)
                     raise
+            elif json_mode and "response_format" in str(e).lower():
+                # json_mode 不被支持时的回退
+                logger.warning("LLM json_mode not supported, falling back: %s", e)
+                del kwargs["response_format"]
+                response = await self._client.chat.completions.create(**kwargs)
             else:
-                logger.error("LLM chat_with_tools failed: %s", e)
+                logger.error("LLM chat_messages failed: %s", e)
                 raise
 
         choice = response.choices[0]
         finish_reason = choice.finish_reason or ""
-
-        # 提取 reasoning_content（DeepSeek thinking mode 返回的思考链）
-        # 在 tool call 场景下，reasoning_content 必须在后续消息中原样回传，
-        # 否则 API 返回 400: "Missing reasoning_content field in the assistant message"
         reasoning_content = getattr(choice.message, "reasoning_content", None) or ""
+        elapsed_ms = int((time.time() - t0) * 1000)
 
-        # 检查是否有工具调用
+        # tool_call 分支
         if choice.message.tool_calls:
-            # 取第一个 tool_call（MVP 简化：每次只处理一个）
             tc = choice.message.tool_calls[0]
             try:
                 arguments = json.loads(tc.function.arguments)
@@ -222,20 +154,12 @@ class LLMClient:
                 logger.warning("Failed to parse tool arguments: %s", tc.function.arguments)
                 arguments = {}
 
-            logger.debug(
-                "LLM tool call: %s(%s)",
-                tc.function.name,
-                str(arguments)[:200],
-            )
-            elapsed_ms = int((time.time() - t0) * 1000)
+            logger.debug("LLM tool call: %s(%s)", tc.function.name, str(arguments)[:200])
 
-            # M11: trace callback — end
             if self._trace_callback:
                 try:
                     self._trace_callback({
-                        "phase": "end",
-                        "call_type": "chat_with_tools",
-                        "call_sequence": call_seq,
+                        "phase": "end", "call_type": call_type, "call_sequence": call_seq,
                         "response_type": "tool_call",
                         "response_summary": f"{tc.function.name}({str(arguments)[:200]})",
                         "finish_reason": finish_reason,
@@ -256,20 +180,17 @@ class LLMClient:
                 "reasoning_content": reasoning_content,
             }
 
-        # 纯文本回复
         content = choice.message.content or ""
-        elapsed_ms = int((time.time() - t0) * 1000)
-        logger.debug("LLM text response: %d chars", len(content))
+        logger.debug("LLM chat_messages: %d chars, finish=%s, elapsed=%dms",
+                     len(content), finish_reason, elapsed_ms)
 
-        # M11: trace callback — end (text response)
+        # M11: trace callback — end
         if self._trace_callback:
             try:
                 self._trace_callback({
-                    "phase": "end",
-                    "call_type": "chat_with_tools",
-                    "call_sequence": call_seq,
-                    "response_type": "text",
-                    "response_summary": (content or "")[:500],
+                    "phase": "end", "call_type": call_type, "call_sequence": call_seq,
+                    "response_type": "json" if json_mode else "text",
+                    "response_summary": content[:500],
                     "finish_reason": finish_reason,
                     "prompt_tokens": getattr(response.usage, "prompt_tokens", 0) if response.usage else 0,
                     "completion_tokens": getattr(response.usage, "completion_tokens", 0) if response.usage else 0,
@@ -279,8 +200,59 @@ class LLMClient:
             except Exception:
                 pass
 
-        return {
-            "type": "text",
-            "content": content,
-            "finish_reason": finish_reason,
-        }
+        if json_mode:
+            data = self._parse_json_response(content)
+            return {"type": "json", "data": data, "finish_reason": finish_reason}
+
+        return {"type": "text", "content": content, "finish_reason": finish_reason}
+
+    @staticmethod
+    def _parse_json_response(raw: str) -> dict:
+        """解析 LLM 返回的 JSON 文本（含 markdown 代码块回退）。"""
+        try:
+            return json.loads(raw)
+        except json.JSONDecodeError:
+            import re
+            match = re.search(r"```(?:json)?\s*\n?(.*?)\n?```", raw, re.DOTALL)
+            if match:
+                try:
+                    return json.loads(match.group(1).strip())
+                except json.JSONDecodeError:
+                    pass
+            logger.error("Failed to parse LLM response as JSON: %s", raw[:500])
+            raise ValueError(f"LLM response is not valid JSON: {raw[:200]}")
+
+    # ── 便捷方法（thin wrappers，保持现有调用者兼容）──
+
+    async def chat(self, system_prompt: str, user_message: str) -> str:
+        """单轮对话，返回原始文本。"""
+        result = await self.chat_messages([
+            {"role": "system", "content": system_prompt},
+            {"role": "user", "content": user_message},
+        ])
+        return result["content"]
+
+    async def chat_json(self, system_prompt: str, user_message: str) -> dict:
+        """单轮对话，强制 JSON 输出，返回解析后的 dict。"""
+        result = await self.chat_messages([
+            {"role": "system", "content": system_prompt},
+            {"role": "user", "content": user_message},
+        ], json_mode=True)
+        return result["data"]
+
+    # ── M7: Tool Calling ──
+
+    async def chat_with_tools(
+        self,
+        messages: list[dict],
+        tools: list[dict],
+        temperature: float | None = None,
+        max_tokens: int | None = None,
+    ) -> dict:
+        """多轮对话，支持 function calling（转调 chat_messages）。"""
+        return await self.chat_messages(
+            messages,
+            tools=tools,
+            temperature=temperature,
+            max_tokens=max_tokens,
+        )

@@ -1,10 +1,10 @@
 {
   "_meta": {
     "version": "1",
-    "built_at": "2026-07-01T07:21:02.681240+00:00",
+    "built_at": "2026-07-03T06:47:03.608894+00:00",
     "source_dir": "sops",
     "source_files_count": 11,
-    "source_files_mtime_latest": "2026-07-01T07:09:28.948075+00:00",
+    "source_files_mtime_latest": "2026-07-03T01:45:30.156511+00:00",
     "parse_result": {
       "ok": 10,
       "partial": 1,
@@ -342,7 +342,7 @@
       "sop_id": "SOP-009-REC",
       "display_name": "SOP-009-REC — 计划任务录入",
       "sop_type": "REC",
-      "version": "v1.0",
+      "version": "v1.1",
       "file_name": "SOP-009-REC-plan_task.md",
       "allow_roles": [
         "all"
@@ -429,7 +429,7 @@
       "sop_id": "SOP-011-SYS",
       "display_name": "全景节点管理",
       "sop_type": "SYS",
-      "version": "v1.0",
+      "version": "v1.1",
       "file_name": "SOP-011-SYS-node_manage.md",
       "allow_roles": [
         "Level0",

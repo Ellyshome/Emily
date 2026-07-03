@@ -1,4 +1,4 @@
-"""配置模块 —— M7 MasterAgent + Mermaid 决策树架构。"""
+"""配置模块 —— Emily Core 运行时配置。"""
 
 from dataclasses import dataclass, field
 
@@ -57,14 +57,8 @@ class Config:
     routing.md / planner.md / guardian_step.md / guardian_reply.md"""
 
     # ---- Agent 配置 (M7) ----
-    enable_master_agent: bool = True
-    """[reserved] 旧 MasterAgent 开关（已由 SessionAgent + WorkItemAgent 替代，此字段暂无消费者）"""
-
     agent_max_iterations: int = 10
     """MasterAgent ReAct 循环最大迭代次数。"""
-
-    agent_temperature: float = 0.3
-    """[reserved] 旧 MasterAgent LLM 采样温度（LLM 调用使用 llm_temperature，此字段暂无消费者）"""
 
     agent_context_max_turns: int = 10
     """MasterAgent 对话上下文保留的最大轮数。"""
@@ -73,9 +67,6 @@ class Config:
     """对话上下文过期时间（秒），默认 10 分钟。"""
 
     # ---- M7.1: Mermaid 决策树 ----
-    flow_maps_dir: str = ""
-    """[reserved] Mermaid 决策树文件目录（FlowMapManager 暂未实例化，此字段暂无消费者）"""
-
     pending_issues_enabled: bool = True
     """待解决问题清单开关"""
 
@@ -169,9 +160,6 @@ class Config:
     """附件自动下载开关（M13: 默认开启，下载失败会自动跳过不阻断管道）"""
 
     # ── Session 主线编排：公共 Pipeline BUS（4 节点）──
-    pipeline_mode: str = "session"
-    """[reserved] 消息处理编排模式（当前仅 session 路径，此字段暂无分支逻辑消费者）"""
-
     hook_config_path: str = ""
     """Hook 声明式配置文件路径（为空时默认 /app/config/hook_config.json 或 emily-data/config/hook_config.json）"""
 
@@ -227,6 +215,15 @@ class Config:
 
     scheduler_escalate_after_overdue_days: int = 7
     """超期 N 天后自动升级给上级（P2），默认 7 天"""
+
+    # ---- 用户准入 (User Binding) ----
+    auto_create_user: bool = False
+    """未知 IM 用户是否自动创建系统用户。True=自动创建（开发/测试），
+    False=拒绝未知用户（生产环境推荐）。"""
+
+    auto_create_whitelist: list = field(default_factory=list)
+    """IM 用户 ID 白名单——仅当 auto_create_user=False 时生效。
+    白名单内的 im_user_id 仍可自动创建用户。"""
 
     # ---- 权限管理 (Permission) ----
     permission_enabled: bool = True

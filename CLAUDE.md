@@ -104,8 +104,10 @@ QQ → NapCat → AstrBot → emily_agent 薄插件
 | 工具 | 说明 | 用法 |
 |------|------|------|
 | **CodeGraph MCP** | 代码知识图谱索引（169 文件 / 2,110 符号 / 4,051 边），SQLite 后端，文件变更秒级热更新 | `codegraph_explore` 理解代码/架构/流程；`codegraph_search` 搜符号；`codegraph_callers/callees` 查调用链；`codegraph_impact` 评估改动影响 |
-| **emy-test** | Docker 内 emily-core 生产实战测试（HTTP + SSE） | `uv run python .claude/skills/emy-test/cli.py --managed --llm --message "..." --sender "张工"` |
+| **emy-test** | Docker 内 emily-core 生产实战测试（HTTP + SSE） | `uv run python .claude/skills/emy-test/cli.py --managed --llm --message "..." --sender "真实用户名" --sender-id "真实UUID"` |
 | **smoke_test** | 离线烟雾测试（无 LLM，全 Mock 路径） | `uv run python scripts/smoke_test.py` |
+
+**emy-test 强制规则**：`--sender-id` 必须使用 `users` 表中真实存在的用户 UUID。随便编一个不存在的 ID 会导致：系统自动创建用户（污染 users 表）+ 权限降级到 level 1（测试的是访客降级路径，结果完全不可信）。每次测试前先查：`docker exec emily-postgres psql -U emily -d emily -c "SELECT id, username, permission_level FROM users WHERE status = 'active' ORDER BY permission_level LIMIT 10;"`
 
 **CodeGraph 优先原则**：代码探索类问题（"X 怎么工作"、"谁调用了 Y"、"改动 Z 会影响什么"）优先用 CodeGraph，一句 `codegraph_explore("SessionAgent handle_message")` 替代多轮 Grep+Read。日常写代码前先用 `codegraph_explore` 了解相关模块，而非全量通读文件。
 
@@ -154,11 +156,12 @@ docker logs --tail 100 emily-core 2>&1
 # 查看全体容器状态
 docker compose -f docker-compose-napcat.yml ps
 
-# 生产环境实战测试
-uv run python .claude/skills/emy-test/cli.py --managed --no-daemon --llm --message "帮我创建事件：样板段放线完成" --sender "张工" --sender-id "zhang_gong"
+# 生产环境实战测试（推荐用 --sender 传入用户名，自动从 users 表解析 QQ 号）
+docker exec emily-postgres psql -U emily -d emily -c "SELECT id, username, permission_level FROM users WHERE status = 'active' LIMIT 5;"
+uv run python .claude/skills/emy-test/cli.py --managed --llm --message "帮我创建事件：样板段放线完成" --sender "真实用户名"
 
-# 命令行快速测试
-uv run python .claude/skills/emy-test/emys_tester.py --message "你好" --sender "Alice"
+# 命令行快速测试（不指定用户则交互式选择）
+uv run python .claude/skills/emy-test/cli.py --managed --llm --message "你好"
 
 # 离线烟雾测试（无 LLM，检查 Session→WorkItem→4节点BUS）
 uv run python scripts/smoke_test.py
@@ -188,6 +191,7 @@ docker exec emily-core find /app/emily_core -name '__pycache__' -type d -exec rm
 - **Mock 是默认模式**：`EMILY_PLANNER_MODE=mock` 等。`real` 需有 LLM client 才生效
 - **expire_on_commit=False**：避免 ORM 对象在 session 外访问报 `DetachedInstanceError`
 - **Windows PowerShell GBK 乱码**：预先 `$env:PYTHONIOENCODING="utf-8"`
+- **emy-test 禁用假 sender-id**：随便造一个 `--sender-id`（如 `zhang_gong`、`alice`）不在 users 表中，会导致系统自动创建用户（permission_level=1）污染 DB，且权限降级使测试结果完全不可信。必须先查 users 表取真实 UUID 再测试
 
 > 完整踩坑清单见 [docs/技术踩坑备忘录.md](docs/技术踩坑备忘录.md)
 

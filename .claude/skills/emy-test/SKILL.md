@@ -72,43 +72,110 @@ emily-core HTTP API 的 `POST /api/v1/message/send` 返回两种结果：
 ### 单轮快速测试
 
 ```powershell
-# 简单问候
-python .claude/skills/emy-test/emys_tester.py --managed --message "你好" --sender "Alice" --sender-id "alice"
+# 方式一（推荐）：指定用户名，自动从 users 表查找
+uv run python .claude/skills/emy-test/cli.py --managed --llm \
+  --message "你好" --sender "李明华"
 
-# 查询类
-python .claude/skills/emy-test/emys_tester.py --managed --message "今天有什么任务？" --sender "张工" --sender-id "zhang"
+# 方式二：指定 QQ 号作为 sender_id（与 AstrBot 行为一致）
+uv run python .claude/skills/emy-test/cli.py --managed --llm \
+  --message "你好" --qq "123456789"
 
-# 不带 --managed 时私聊自动接管
-python .claude/skills/emy-test/emys_tester.py --message "你好" --sender "Alice" --sender-id "alice"
+# 方式三：不指定任何用户，交互式选择
+uv run python .claude/skills/emy-test/cli.py --managed --llm \
+  --message "你好"
+# → 自动枚举 users 表，提示选择用户
 ```
+
+> **推荐方式一**：`--sender` 传入用户名，CLI 自动从 users 表查找该用户，
+> 提取其 QQ 号作为 `sender_id`，`platform` 固定为 `"napcat"`，
+> 消息结构与 AstrBot 真实插件完全一致。
 
 ### 多轮确认测试（核心场景）
 
 emily-core 服务端通过 `SessionPoolManager` 管理会话状态。同一 `sender_id` 的消息路由到同一 Session，保持上下文。
 
 ```powershell
-# 第 1 轮：创建事件
-python .claude/skills/emy-test/emys_tester.py --managed --message "帮我创建事件：样板段放线完成，时间是今天下午3点" --sender "张工" --sender-id "zhang_gong"
+# 第 1 轮：创建事件（用 --sender 指定用户名，自动提取 QQ 号）
+uv run python .claude/skills/emy-test/cli.py --managed --llm \
+  --message "帮我创建事件：样板段放线完成，时间是今天下午3点" \
+  --sender "李明华"
 
-# 第 2 轮：确认录入（同一 sender-id → 同一 Session → 确认流程触发）
-python .claude/skills/emy-test/emys_tester.py --managed --message "确认" --sender "张工" --sender-id "zhang_gong"
+# 第 2 轮：确认录入（同一 sender → 同一 QQ 号 → 同一 Session → 确认流程触发）
+uv run python .claude/skills/emy-test/cli.py --managed --llm \
+  --message "确认" \
+  --sender "李明华"
 
 # 第 3 轮：查询验证
-python .claude/skills/emy-test/emys_tester.py --managed --message "查一下刚才记录的事件" --sender "张工" --sender-id "zhang_gong"
+uv run python .claude/skills/emy-test/cli.py --managed --llm \
+  --message "查一下刚才记录的事件" \
+  --sender "李明华"
 ```
 
 **注意**：
-- `--sender-id` 是关键！emily-core 用它确定 Session 归属
+- `sender_id`（QQ 号）是关键！emily-core 用它确定 Session 归属和用户绑定
+- `--sender` 传入用户名后，CLI 自动从 users 表提取 QQ 号作为 `sender_id`
 - 也可以用 `--cid` 显式指定会话 ID
+
+### ⚠️ 强制规则：必须使用 users 表中真实存在的用户！
+
+**【踩坑固化】不能随便编一个 `--sender-id` 或 `--qq`！** Session 构建时会查询 `users` 表加载权限数据，假用户会导致：
+
+1. **PermissionSnapshot 全为空** → 权限校验永远走 fallback 访客路径
+2. **自动创建用户** → 系统会为不存在的 sender 自动 INSERT 到 users 表（permission_level=1），污染生产数据
+3. **业务逻辑无法触发** → 依赖公司/部门/节点范围的业务全部失效
+4. **测试结果完全不可信** → 你测试的是"未登录访客"的边缘降级路径，不是真实生产场景
+
+**推荐方式：直接用 `--sender` 传入用户名，CLI 自动解析。**
+
+也可以手动查询 users 表获取 QQ 号：
+
+```powershell
+# 查询可用用户（含 QQ 号）
+docker exec emily-postgres psql -U emily -d emily -c "
+SELECT u.id, u.username, u.real_name, u.qq, u.permission_level, c.company_name
+FROM users u
+LEFT JOIN company_info c ON u.company = c.id
+WHERE u.is_deleted = false AND u.status = 'active'
+ORDER BY u.permission_level DESC LIMIT 10;
+"
+
+# 用 QQ 号测试（与 AstrBot 行为完全一致）
+uv run python .claude/skills/emy-test/cli.py --managed --llm \
+  --message "帮我创建事件..." --qq "123456789"
+```
+
+**正确的测试命令示例：**
+
+```powershell
+# ✅ 推荐：--sender 传入用户名，自动解析 QQ 号
+uv run python .claude/skills/emy-test/cli.py --managed --llm \
+  --message "帮我创建事件..." --sender "李明华"
+
+# ✅ 也可以：直接用 QQ 号（与 AstrBot 行为完全一致）
+uv run python .claude/skills/emy-test/cli.py --managed --llm \
+  --message "帮我创建事件..." --qq "123456789"
+
+# ✅ 也可以：用 --sender-id 传 UUID（走 UUID 直查路径，需存在于 users 表）
+uv run python .claude/skills/emy-test/cli.py --managed --llm \
+  --message "帮我创建事件..." --sender-id "b2c3d4e5-f6a7-4b6c-9d0e-1f2a3b4c5d6e"
+
+# ❌ 错误：随便编一个不存在的 ID
+uv run python .claude/skills/emy-test/cli.py --managed --llm \
+  --message "帮我创建事件..." --qq "fake_qq"    # ← 不在 user_im_bindings 中！
+```
 
 ### 群聊模拟（多人协作）
 
 ```powershell
 # 王工在项目群中录入事件
-python .claude/skills/emy-test/emys_tester.py --managed --message "帮我创建事件：B标段协调会完成，今天上午10点" --sender "王工" --sender-id "wang_gong" --cid "project_x"
+uv run python .claude/skills/emy-test/cli.py --managed --llm \
+  --message "帮我创建事件：B标段协调会完成，今天上午10点" \
+  --sender "王工" --cid "project_x"
 
 # 李工在同一群中确认
-python .claude/skills/emy-test/emys_tester.py --managed --message "确认" --sender "李工" --sender-id "li_gong" --cid "project_x"
+uv run python .claude/skills/emy-test/cli.py --managed --llm \
+  --message "确认" \
+  --sender "李明华" --cid "project_x"
 ```
 
 ### REPL 交互模式
@@ -121,10 +188,14 @@ python .claude/skills/emy-test/emys_tester.py -i
 
 ```powershell
 # 发送文件
-python .claude/skills/emy-test/emys_tester.py --managed --message "看看这个图纸" --file "D:\drawings\plan.dwg" --sender "张工"
+uv run python .claude/skills/emy-test/cli.py --managed --llm \
+  --message "看看这个图纸" --file "D:\drawings\plan.dwg" \
+  --sender "{真实用户名}" --sender-id "{真实用户UUID}"
 
 # 发送多个文件
-python .claude/skills/emy-test/emys_tester.py --managed --message "这是相关文件" --file "D:\a.pdf" --file "D:\b.png" --sender "张工"
+uv run python .claude/skills/emy-test/cli.py --managed --llm \
+  --message "这是相关文件" --file "D:\a.pdf" --file "D:\b.png" \
+  --sender "{真实用户名}" --sender-id "{真实用户UUID}"
 ```
 
 ---
@@ -134,9 +205,10 @@ python .claude/skills/emy-test/emys_tester.py --managed --message "这是相关�
 | 参数 | 作用 |
 |------|------|
 | `--message "..."` | 发送单条消息 |
-| `--sender "张工"` | 发送者显示名称 |
-| `--sender-id "zhang"` | 发送者稳定 ID（决定 Session 归属！） |
-| `--cid "conv_01"` | 显式会话 ID（覆盖 sender-id 推导） |
+| `--sender "李明华"` | 发送者用户名（从 users 表自动查找，提取 QQ 号作为 sender_id）**推荐** |
+| `--qq "123456789"` | 发送者 QQ 号（直接作为 sender_id，与 AstrBot 行为完全一致） |
+| `--sender-id "UUID"` | 发送者 UUID（走 Core UUID 直查路径，需在 users 表中存在） |
+| `--cid "conv_01"` | 显式会话 ID（覆盖自动推导） |
 | `--file "D:\path"` | 附件文件路径（可多次指定） |
 | `--managed` | 接管所有消息 |
 | `--llm` | 启用 LLM 模式（保留向后兼容） |
@@ -199,3 +271,4 @@ $env:EMILY_LLM_API_KEY = "sk-xxx"
 | 不接管（None） | 检查消息内容是否触发接管条件 |
 | 多轮确认失败 | 确认两轮使用相同的 `--sender-id` |
 | 文件发送失败 | 确认文件路径存在且可读 |
+| **权限行为异常/测试结果不可信** | **检查 `--sender-id` 是否存在于 `users` 表中！假用户会被自动创建(level=1)，测试的是访客路径** |

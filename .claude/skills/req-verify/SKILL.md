@@ -149,6 +149,41 @@ uv run python -c "from config_loader import get_llm_config; c = get_llm_config()
 | LLM 未配置 | **警告但继续**。记录在测试报告中。仅执行不依赖 LLM 的测试（直接 API 调用、DB 验证、日志检查）。依赖 LLM 对话的 emy-test 测试标记为 SKIP |
 | 部分容器缺失 | 仅需要 emily-core + emily-postgres。napcat/astrbot/maxkb 缺失不影响测试 |
 
+---
+
+### ⚠️ Step 2.5：强制检查 — 必须使用真实用户测试！
+
+**【踩坑固化】绝对不能随便造一个 `--sender-id` 就开始测试！** Session 构建时会查询 `users` 表加载权限数据，假用户会导致：
+1. PermissionSnapshot 全为空 → 权限校验永远走 fallback
+2. 降级到访客级别 → 测试的是"未登录用户"路径，与真实生产场景完全不符
+3. 依赖公司/部门/节点范围的业务逻辑全部无法触发
+
+**本步骤强制执行，不完成不得进入 Step 3！**
+
+```bash
+# 1. 从 users 表查询已有的活跃用户（选 permission_level 覆盖 1-5）
+docker exec emily-postgres psql -U emily -d emily -c "
+SELECT id, name, permission_level, company_id, department
+FROM users WHERE status = 'active' ORDER BY permission_level LIMIT 10;
+"
+
+# 2. 记录至少 3 类测试用户，后续所有 emy-test 必须使用这些 ID：
+#    - 访客级（level 1）：测试边界和拒绝逻辑
+#    - 执行级（level 2-3）：测试正常业务流程
+#    - 管理级（level 5）：测试管理员权限功能
+
+# 3. 如确无合适用户，才创建测试用户（必须补全 company_id/department 等关键字段）
+docker exec emily-postgres psql -U emily -d emily -c "
+INSERT INTO users (id, name, permission_level, status, company_id, department)
+SELECT 'test_verify_level3', '验证测试执行员', 3, 'active', 'company_001', '工程部'
+WHERE NOT EXISTS (SELECT 1 FROM users WHERE id = 'test_verify_level3');
+"
+```
+
+**测试约定**：后续所有 emy-test 命令中的 `--sender-id` 和 `--sender` 必须使用上述查询到的真实值，禁止使用 `test_xxx`、`user_123` 等不存在于 DB 的 ID。
+
+---
+
 ### Step 3：分析测试范围，设计测试用例
 
 基于 Step 1 读取的文档，设计覆盖以下维度的测试用例：
@@ -161,7 +196,7 @@ uv run python -c "from config_loader import get_llm_config; c = get_llm_config()
 | **状态机** | 所有合法流转路径验证、非法流转拒绝、终态不可变 | DB 直接查询 + API 响应 |
 | **数据持久化** | DB 写入字段完整性、审计日志、关联数据一致性 | DB 查询验证 |
 | **API 契约** | 状态码、响应格式、错误信息结构 | curl 直接调用 |
-| **权限控制** | 不同 permission_level 用户的访问边界 | 切换不同 sender-id 的 emy-test 对话 |
+| **权限控制** | 不同 permission_level 用户的访问边界；真实用户 vs 假用户的行为差异 | 切换不同 sender-id 的 emy-test 对话；至少覆盖 3 个权限级别（level 1 访客 / level 3 执行 / level 5 管理员）+ 假用户对照 |
 | **Docker 运行时** | 日志无 ERROR、容器不重启、内存稳定 | docker logs 检查 |
 | **与已有系统协同** | 不破坏现有功能、事件兼容 | emy-test 回归消息 |
 
@@ -546,6 +581,7 @@ uv run python .claude/skills/emy-test/cli.py --managed --llm --message "..." --s
 | 10 | 跳过测试用例不注明原因 | SKIP 的用例必须写明原因（环境限制/LLM不可用/功能未实现等） |
 | 11 | 编造测试结果 | 实际未执行的测试不能写 PASS。没有证据支撑的结论不能下 |
 | 12 | 报告写得像日志流水账 | 报告必须有结构：环境→计划→结果→Bug→结论。逐项结果用表格 |
+| **13** | **用假 sender-id 测试** | **绝对禁止随便造一个 sender-id！必须先查 users 表，用真实存在的 ID 测试，否则测试的是访客降级路径，结果完全无参考价值** |
 
 ---
 

@@ -57,6 +57,7 @@ class EventRepository:
         payload: str = "{}",
         status: str = "pending",
         related_event_ids: list[str] | None = None,  # M8a
+        conversation_id: Optional[str] = None,  # BUG-005: 会话 ID
     ) -> Event:
         """创建事件记录。
 
@@ -72,6 +73,7 @@ class EventRepository:
             event_date: 事件发生日期
             payload: LLM 提取的额外结构化数据（JSON 字符串）
             status: 初始状态（pending）
+            conversation_id: 来源会话 ID（供确认流程直查）
         """
         with get_session() as session:
             import json as _json
@@ -91,6 +93,7 @@ class EventRepository:
                 related_event_ids=_json.dumps(related_event_ids, ensure_ascii=False)
                 if related_event_ids
                 else "[]",
+                conversation_id=conversation_id,
             )
             session.add(event)
             session.flush()
@@ -156,6 +159,9 @@ class EventRepository:
         """查找指定会话中最近一条 pending 事件。
 
         通过 messages 表关联 conversation_id 再查找对应 pending 事件。
+
+        ⚠️ DEPRECATED: 依赖 messages 表中转，当系统不创建 Message 记录时
+        此方法始终返回 None。请改用 find_pending_by_conversation_id()。
         """
         from ..infrastructure.database.models import Message
         with get_session() as session:
@@ -169,6 +175,24 @@ class EventRepository:
                 session.query(Event)
                 .filter(
                     Event.message_id.in_(msg_ids),
+                    Event.status == "pending",
+                )
+                .order_by(Event.created_at.desc())
+                .first()
+            )
+
+    @staticmethod
+    def find_pending_by_conversation_id(conversation_id: str) -> Optional[Event]:
+        """BUG-005: 通过 conversation_id 直查最近的 pending 事件。
+
+        替代 find_pending_by_message_conversation()，不再依赖 messages 表中转。
+        要求 Event 表有 conversation_id 字段（BUG-005 修复新增）。
+        """
+        with get_session() as session:
+            return (
+                session.query(Event)
+                .filter(
+                    Event.conversation_id == conversation_id,
                     Event.status == "pending",
                 )
                 .order_by(Event.created_at.desc())

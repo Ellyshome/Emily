@@ -86,8 +86,15 @@ class SessionContext:
     user_id: str = ""
     user_name: str = ""
 
-    # ── 1. 最近对话（滑动窗口，蓝图建议最近 20 轮）──
-    recent_turns: list[dict] = field(default_factory=list)
+    # ── 1. 多轮对话记忆（v2 — OpenAI 格式消息列表）──
+    message_history: list[dict] = field(default_factory=list)
+    # OpenAI 格式消息列表，不含 system prompt（调用时拼接）：
+    # [{"role":"user","content":"...","name":"张工"},
+    #  {"role":"assistant","content":"..."},
+    #  {"role":"user","content":"...","name":"张工"}, ...]
+    #
+    # 压缩后会在开头插入一条摘要消息：
+    # {"role":"user","content":"[对话历史摘要] ...", "name":"system"}
 
     # ── 2. 用户长期记忆（压缩摘要版）──
     user_preferences: str = ""           # 例："喜欢简洁回复, 负责消防"
@@ -152,3 +159,55 @@ class SessionContext:
         新代码应使用 meets_level_requirement()。内部转调树形判断。
         """
         return self.meets_level_requirement(required_grouping)
+
+
+# ══════════════════════════════════════════════════════════════════════════════
+# messages 多轮记忆工具函数（模块级，供 SessionAgent + WorkItemAgent 共用）
+# ══════════════════════════════════════════════════════════════════════════════
+
+
+def format_message_history(message_history: list[dict]) -> str:
+    """将 message_history 格式化为可读文本（供日志/调试使用）。
+
+    注意：这不是给 LLM 用的——LLM 调用直接传 message_history 列表。
+    此函数仅用于日志输出和调试。
+    """
+    if not message_history:
+        return "（无历史消息）"
+    lines = []
+    for msg in message_history:
+        role = msg.get("role", "?")
+        role_label = "用户" if role == "user" else ("Emy" if role == "assistant" else "系统")
+        content = (msg.get("content", "") or "")[:100]
+        name = msg.get("name", "")
+        name_part = f"（{name}）" if name and name != "system" else ""
+        lines.append(f"[{role_label}{name_part}] {content}")
+    return "\n".join(lines)
+
+
+def build_compress_messages(history: list[dict], existing_summary: str) -> list[dict]:
+    """构建压缩用的 messages 列表。
+
+    将需要压缩的消息列表组装成一条 LLM 调用，返回增量摘要文本。
+
+    Args:
+        history: 即将被压缩的消息子列表
+        existing_summary: 已有摘要（用于增量合并）
+
+    Returns:
+        可直接传给 LLMClient.chat_messages() 的 messages 列表
+    """
+    if not history:
+        return []
+    history_text = format_message_history(history)
+    return [
+        {"role": "system", "content": (
+            "你是一个对话摘要助手。请将以下对话压缩为简短的要点摘要（中文，不超过 300 字），"
+            "只保留关键事实：人物、事件、决策、任务、时间。不要包含套话。"
+        )},
+        {"role": "user", "content": (
+            f"## 已有摘要\n{existing_summary or '（无）'}\n\n"
+            f"## 近期对话\n{history_text}\n\n"
+            f"请输出合并后的完整摘要（不超过 300 字）："
+        )},
+    ]

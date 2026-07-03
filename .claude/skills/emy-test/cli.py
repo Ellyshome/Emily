@@ -1,6 +1,12 @@
 """CLI 入口 —— argparse / demo / REPL。
 
 用法: python emys_tester.py [options]
+
+用户模拟策略（贴近 AstrBot 真实行为）：
+  - 自动从 users 表枚举活跃用户供选择
+  - 用 QQ 号作为 sender_id（与 AstrBot 行为一致）
+  - platform 默认 "napcat"
+  - 私聊 conversation_id = QQ号（与 AstrBot 行为一致）
 """
 from __future__ import annotations
 
@@ -10,46 +16,178 @@ import sys
 import uuid
 from pathlib import Path
 
-from config_loader import get_llm_config
+from config_loader import get_llm_config, get_active_users
 from tester import EmysTester
 
 
+def _resolve_sender(
+    sender_name: str | None,
+    sender_id: str | None,
+    qq: str | None,
+) -> dict:
+    """解析发送者信息，自动从 users 表补全。
+
+    优先级：
+    1. --qq 指定 QQ 号 → 用 QQ 号作为 sender_id（与 AstrBot 行为一致）
+    2. --sender-id 指定 → 直接使用（走 UUID 直查路径，需在 users 表中存在）
+    3. --sender 指定用户名 → 从 users 表查找匹配用户，提取 QQ 号
+    4. 都未指定 → 交互式选择
+
+    Returns:
+        dict: {sender_id, sender_name, qq, platform, user_record}
+    """
+    result = {
+        "sender_id": "",
+        "sender_name": "Tester",
+        "qq": "",
+        "platform": "napcat",
+        "user_record": None,
+    }
+
+    # ① --qq 指定 QQ 号 → 直接用
+    if qq:
+        result["sender_id"] = qq
+        result["qq"] = qq
+        result["sender_name"] = sender_name or f"QQ用户{qq}"
+        return result
+
+    # ② --sender-id 指定 → 直接使用（UUID 或其他 ID）
+    if sender_id:
+        result["sender_id"] = sender_id
+        result["sender_name"] = sender_name or sender_id[:8]
+        return result
+
+    # ③ --sender 指定用户名 → 从 users 表查找
+    if sender_name:
+        users = get_active_users()
+        for u in users:
+            uname = u.get("real_name", "") or u.get("username", "")
+            if uname == sender_name:
+                result["user_record"] = u
+                result["sender_name"] = uname
+                # 优先用 QQ 号作为 sender_id（与 AstrBot 行为一致）
+                uqq = u.get("qq", "") or u.get("phone", "")
+                if uqq:
+                    result["sender_id"] = uqq
+                    result["qq"] = uqq
+                else:
+                    result["sender_id"] = u["id"]
+                return result
+
+    # ④ 都未指定 → 交互式枚举选择
+    return _interactive_user_selection()
+
+
+def _interactive_user_selection() -> dict:
+    """交互式用户选择：枚举 users 表活跃用户，让测试者选择。
+
+    Returns:
+        dict: {sender_id, sender_name, qq, platform, user_record}
+    """
+    result = {
+        "sender_id": "",
+        "sender_name": "Tester",
+        "qq": "",
+        "platform": "napcat",
+        "user_record": None,
+    }
+
+    users = get_active_users()
+    if not users:
+        print("⚠️  未找到活跃用户，使用默认测试身份")
+        result["sender_id"] = f"test_{uuid.uuid4().hex[:8]}"
+        return result
+
+    print("\n📋 可选测试用户：")
+    print("─" * 60)
+    for i, u in enumerate(users, 1):
+        uname = u.get("real_name", "") or u.get("username", "未知")
+        level = u.get("permission_label", f"L{u.get('permission_level', '?')}")
+        company = u.get("company_name", "未分配单位")
+        uqq = u.get("qq", "") or u.get("phone", "")
+        qq_display = f"QQ:{uqq}" if uqq else "无QQ号"
+        uid_short = u["id"][:8]
+        print(f"  {i}. {uname} ({level}, {company}) [{qq_display}, ID:{uid_short}...]")
+    print(f"  0. 使用自定义身份（不选用户）")
+    print("─" * 60)
+
+    while True:
+        try:
+            choice = input("请选择用户编号 [0-{}]: ".format(len(users))).strip()
+        except (EOFError, KeyboardInterrupt):
+            print("\n已取消")
+            sys.exit(0)
+
+        if choice == "0":
+            result["sender_id"] = f"test_{uuid.uuid4().hex[:8]}"
+            return result
+
+        try:
+            idx = int(choice) - 1
+            if 0 <= idx < len(users):
+                u = users[idx]
+                result["user_record"] = u
+                result["sender_name"] = u.get("real_name", "") or u.get("username", "")
+                # 优先用 QQ 号作为 sender_id
+                uqq = u.get("qq", "") or u.get("phone", "")
+                if uqq:
+                    result["sender_id"] = uqq
+                    result["qq"] = uqq
+                else:
+                    result["sender_id"] = u["id"]
+                print(f"✅ 已选择: {result['sender_name']} (sender_id={result['sender_id']})")
+                return result
+            else:
+                print(f"  ❌ 无效编号，请输入 0-{len(users)}")
+        except ValueError:
+            print("  ❌ 请输入数字")
+
+
 def demo():
-    """运行演示：用 EmysTester 模拟几条消息。"""
+    """运行演示：用 EmysTester 模拟几条消息（使用真实用户身份）。"""
     print("=" * 60)
     print("  EmysTester Demo — Emily Core 容器接口测试")
     print("=" * 60)
 
+    # 从 users 表获取真实用户
+    users = get_active_users()
+    if not users:
+        print("⚠️  未找到活跃用户，使用默认测试身份")
+        demo_users = [
+            {"sender_id": "test_user_1", "sender_name": "Alice"},
+            {"sender_id": "test_user_2", "sender_name": "Bob"},
+        ]
+    else:
+        # 取前两个用户（按权限排序）
+        demo_users = []
+        for u in users[:2]:
+            uqq = u.get("qq", "") or u.get("phone", "") or u["id"]
+            demo_users.append({
+                "sender_id": uqq,
+                "sender_name": u.get("real_name", "") or u.get("username", ""),
+            })
+
     with EmysTester() as emy:
         # ── 1. 私聊问候（接管） ──
-        print("\n[1] 私聊消息（总是接管）")
-        reply = emy.send_sync("你好", sender_name="Alice")
+        print(f"\n[1] 私聊消息（用户: {demo_users[0]['sender_name']}）")
+        reply = emy.send_sync(
+            "你好",
+            sender_id=demo_users[0]["sender_id"],
+            sender_name=demo_users[0]["sender_name"],
+        )
         if reply:
             print(f"  Emily → {reply.content!r}")
         else:
             print("  [不接管] (None)")
 
-        # ── 2. 群聊未 @bot（不接管） ──
-        print("\n[2] 群聊消息（未 @bot，不接管）")
-        reply = emy.send_sync(
-            "今天天气不错",
-            conversation_type="group",
-            group_id="group_001",
-            sender_name="Bob",
-            is_at_bot=False,
-        )
-        if reply:
-            print(f"  Emily → {reply.content!r}")
-        else:
-            print("  [不接管] (None) -- 符合预期")
-
-        # ── 3. 群聊 @bot（接管） ──
-        print("\n[3] 群聊消息（@bot，接管）")
+        # ── 2. 群聊 @bot（接管）
+        print(f"\n[2] 群聊消息（用户: {demo_users[1]['sender_name']}）")
         reply = emy.send_sync(
             "@Emily 你是谁",
+            sender_id=demo_users[1]["sender_id"],
+            sender_name=demo_users[1]["sender_name"],
             conversation_type="group",
             group_id="group_001",
-            sender_name="Bob",
             is_at_bot=True,
         )
         if reply:
@@ -57,33 +195,13 @@ def demo():
         else:
             print("  [不接管] (None)")
 
-        # ── 4. 自我介绍（快速通道回复） ──
-        print("\n[4] 自我介绍请求")
-        reply = emy.send_sync("你叫什么名字", sender_name="Charlie")
-        if reply:
-            print(f"  Emily → {reply.content!r}")
-        else:
-            print("  [不接管] (None)")
-
-        # ── 5. 查看持久化消息 ──
-        print("\n[5] 已持久化的消息:")
+        # ── 3. 查看注册用户 ──
+        print("\n[3] 已注册用户:")
         try:
-            msgs = emy.get_messages()
-            for m in msgs:
+            db_users = emy.get_users()
+            for u in db_users:
                 print(
-                    f"  [{m['created_at']}] {m['sender_name']}: "
-                    f"{m['content'][:50]} → takeover={m['takeover']}"
-                )
-        except Exception as e:
-            print(f"  (无法查询: {e})")
-
-        # ── 6. 查看注册用户 ──
-        print("\n[6] 已注册用户:")
-        try:
-            users = emy.get_users()
-            for u in users:
-                print(
-                    f"  {u['user_id']}: {u['real_name']} "
+                    f"  {u['user_id'][:8]}... {u['real_name']} "
                     f"(IM: {u['im_platform']}/{u['im_user_id']})"
                 )
         except Exception as e:
@@ -94,18 +212,20 @@ def demo():
     print("=" * 60)
 
 
-def repl(emy: "EmysTester", cid: str, sender_name: str) -> None:
+def repl(emy: "EmysTester", cid: str, sender_name: str, sender_id: str = "") -> None:
     """交互式 REPL 模式。在同一进程内持续对话，保持上下文。
 
     Args:
         emy: 已启动的 EmysTester 实例。
         cid: 会话 ID。
         sender_name: 发送者名称。
+        sender_id: 发送者 ID（QQ 号或 UUID）。
     """
     llm_cfg = get_llm_config()
     print(f"╔══════════════════════════════════════════════════════╗")
     print(f"║   EmysTester REPL — 输入消息与 Emily 持续对话      ║")
     print(f"║   发送者: {sender_name:<38} ║")
+    print(f"║   sender_id: {sender_id[:36]:<36} ║")
     print(f"║   会话ID: {cid:<38} ║")
     if llm_cfg:
         print(f"║   LLM:    {llm_cfg.get('model', '?'):<38} ║")
@@ -187,6 +307,7 @@ def repl(emy: "EmysTester", cid: str, sender_name: str) -> None:
         is_group = state["conversation_type"] == "group"
         reply = emy.send_sync(
             raw,
+            sender_id=sender_id or None,
             sender_name=sender_name,
             conversation_type=state["conversation_type"],
             conversation_id=cid,
@@ -228,17 +349,24 @@ def main():
         default=None,
         help="发送单条消息并打印回复",
     )
+    # ── 用户身份参数（三选一，优先级: --qq > --sender-id > --sender）──
     parser.add_argument(
-        "--sender",
+        "--qq",
         type=str,
-        default="Tester",
-        help="发送者名称（与 --message 配合）",
+        default=None,
+        help="发送者 QQ 号（作为 sender_id 传入，与 AstrBot 行为一致。推荐使用此参数）",
     )
     parser.add_argument(
         "--sender-id",
         type=str,
         default=None,
-        help="发送者稳定 ID（与 --message 配合，同一发送者跨轮次保持一致）",
+        help="发送者 UUID（走 Core UUID 直查路径，需在 users 表中存在）",
+    )
+    parser.add_argument(
+        "--sender",
+        type=str,
+        default=None,
+        help="发送者名称（从 users 表自动查找匹配用户，提取 QQ 号作为 sender_id）",
     )
     parser.add_argument(
         "--cid",
@@ -257,16 +385,31 @@ def main():
 
     args = parser.parse_args()
 
+    # ── 解析发送者身份（自动从 users 表枚举选择）──
+    sender_info = _resolve_sender(
+        sender_name=args.sender,
+        sender_id=args.sender_id,
+        qq=args.qq,
+    )
+
+    # ── 推导 conversation_id（与 AstrBot 行为一致）──
+    # 私聊: conversation_id = sender_id（QQ 号）
+    # 如果用户指定了 --cid 则优先使用
+    if args.cid:
+        cid = args.cid
+    elif sender_info["qq"]:
+        # 有 QQ 号时用 QQ 号作为 conversation_id（与 AstrBot 行为一致）
+        cid = sender_info["qq"]
+    else:
+        cid = f"once_{uuid.uuid4().hex[:8]}"
+
     if args.interactive:
         # ── REPL 模式 ──
-        sender = args.sender
-        cid = args.cid or f"repl_{uuid.uuid4().hex[:8]}"
         use_llm = args.llm or bool(get_llm_config())
         with EmysTester(use_llm=use_llm) as emy:
-            repl(emy, cid, sender)
+            repl(emy, cid, sender_info["sender_name"], sender_info["sender_id"])
     elif args.message:
         # ── 单条消息模式 ──
-        cid = args.cid or f"once_{uuid.uuid4().hex[:8]}"
         use_llm = args.llm or bool(get_llm_config())
 
         with EmysTester(use_llm=use_llm) as emy:
@@ -297,8 +440,8 @@ def main():
 
             reply = emy.send_sync(
                 args.message,
-                sender_name=args.sender,
-                sender_id=args.sender_id,
+                sender_id=sender_info["sender_id"],
+                sender_name=sender_info["sender_name"],
                 conversation_id=cid,
                 attachments=attachments,
             )

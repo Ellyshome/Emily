@@ -204,7 +204,27 @@ class Event(Base):
     created_at = Column(String, default=_utc_now)
     confirmed_at = Column(String)
     related_event_ids = Column(String, default="[]")   # 关联事件ID（JSON数组），如 ["EVT-20260612-0001"]
+    conversation_id = Column(String(200), nullable=True, index=True)  # BUG-005: 来源会话 ID，直查用
     project = relationship("Project", back_populates="events")
+
+
+class SessionArchive(Base):
+    """会话归档表 —— Session 注销时持久化关键数据（BUG-004）。
+
+    记录每个 Session 的对话历史快照、上下文快照、归档原因等。
+    conversation_summary 的整合写入 users 表，此表保存原始快照供审计/恢复。
+    """
+    __tablename__ = "session_archives"
+    id = Column(String, primary_key=True, default=_new_uuid)
+    conversation_id = Column(String(200), nullable=False, index=True)
+    user_id = Column(String, ForeignKey("users.id"), nullable=True)
+    user_name = Column(String(200), default="")
+    turn_count = Column(Integer, default=0)
+    message_history_snapshot = Column(Text, default="")     # JSON: 最近对话快照
+    context_snapshot = Column(Text, default="")             # JSON: 上下文摘要
+    started_at = Column(String, nullable=True)
+    archived_at = Column(String, default=_utc_now)
+    archive_reason = Column(String(50), default="expired")  # expired | terminated | manual
 
 
 class Task(Base):
@@ -990,9 +1010,9 @@ class PlanTaskDeliverable(Base):
 
 # ══════════════════════════════════════════════════════════════════════════════
 # 权限管理系统 (Permission Module) — v2.0（需求-完整版）
-#   8 张新表：
-#     permission_def / permission_grants / permission_requests / permission_audit_log
-#     / public_field_registry / pending_data / data_masking_rules / permission_review_tasks
+#   8 张表（4 张已实现 + 4 张预留待后续阶段落地）：
+#     已实现：permission_def / permission_grants / permission_requests / permission_audit_log
+#     预留：public_field_registry / pending_data / data_masking_rules / permission_review_tasks
 # ══════════════════════════════════════════════════════════════════════════════
 
 

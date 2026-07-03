@@ -61,6 +61,7 @@ class EventService:
             payload=json.dumps(payload, ensure_ascii=False),
             status="pending",
             related_event_ids=cmd.related_event_ids,  # M8a
+            conversation_id=cmd.conversation_id or None,  # BUG-005: 写入会话 ID
         )
 
         logger.info(
@@ -112,8 +113,11 @@ class EventService:
         return self.repo.get_by_id(event_id)
 
     def find_pending_by_conversation(self, conversation_id: str) -> Optional[Event]:
-        """查找会话中最近的 pending 事件。"""
-        return self.repo.find_pending_by_message_conversation(conversation_id)
+        """查找会话中最近的 pending 事件。
+
+        BUG-005 修复：改用 conversation_id 直查，不再依赖 messages 表中转。
+        """
+        return self.repo.find_pending_by_conversation_id(conversation_id)
 
     @staticmethod
     def format_confirmation_reply(event: Event, project_name: Optional[str] = None) -> str:

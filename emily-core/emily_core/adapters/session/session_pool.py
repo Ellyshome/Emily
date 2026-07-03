@@ -151,8 +151,8 @@ class SessionPoolManager:
     def sweep_expired(self) -> int:
         """扫描并移除过期 Session（TTL 到期，蓝图 §3.4）。
 
-        Returns:
-            int: 被移除的 Session 数量。
+        BUG-004 修复：先调用 archive()（含归档持久化 + conversation_summary 整合），
+        再从内存移除。
         """
         now = time.time()
         ttl = self._config.ttl_seconds
@@ -161,7 +161,13 @@ class SessionPoolManager:
             if now - e.last_active > ttl
         ]
         for cid in expired:
-            self._sessions.pop(cid, None)
+            entry = self._sessions.pop(cid, None)
+            if entry:
+                # BUG-004: 归档（含 conversation_summary 整合）再删除
+                try:
+                    asyncio.ensure_future(entry.agent.archive())
+                except Exception as e:
+                    logger.warning("SessionPool sweep archive failed for %s: %s", cid, e)
         if expired:
             logger.info("SessionPool swept %d expired session(s)", len(expired))
         return len(expired)
