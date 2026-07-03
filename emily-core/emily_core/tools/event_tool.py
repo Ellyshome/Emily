@@ -126,6 +126,17 @@ async def handle_record_event(
     guardian_notes = params.get("guardian_notes", "")
     related_event_ids = params.get("related_event_ids", [])
 
+    # BUG-003 修复：兼容 LLM 扁平输出——如果 data 为空但顶层有 title/event_type，
+    # 说明 LLM 输出了扁平结构而非嵌套的 {"data": {...}} 结构，自动包装
+    if not data and ("title" in params or "event_type" in params):
+        data = {
+            "title": params.get("title", "未命名事件"),
+            "event_type": params.get("event_type", "general"),
+            "event_date": params.get("event_date"),
+            "description": params.get("description", ""),
+        }
+        logger.debug("event_tool: flat params detected, auto-wrapped into data dict")
+
     # ── 正常录入流程 ──
     route_result = RouteResult(
         intent="event_record",
@@ -137,6 +148,7 @@ async def handle_record_event(
             "event_date": data.get("event_date"),
             "description": data.get("description", ""),
             "related_event_ids": related_event_ids,
+            "_conversation_id": params.get("_conversation_id", ""),  # BUG-005: 从 tool_params 透传
         },
     )
     result = await event_app.handle_event(route_result, user_id, message_id)

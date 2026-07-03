@@ -20,7 +20,7 @@
 | 参与编辑人 | 资深内业、系统架构师、AI Agent 训练师 |
 | 最后编辑人 | 系统管理员 |
 | 最后编辑时间 | 2026-06-14 |
-| 关联系统模块 | teambrain_core → MasterAgent / IntentRegistry fallback 机制 / 全量原子化工具集 |
+| 关联系统模块 | emily_core → MasterAgent / IntentRegistry fallback 机制 / 全量原子化工具集 |
 
 ---
 

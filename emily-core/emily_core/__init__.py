@@ -40,7 +40,11 @@ class EmilyCore:
     def __init__(self, config: Config, rag_provider=None):
         self.config = config
         self.takeover_service = DomainTakeoverService(config)
-        self.user_binding_service = UserBindingService()
+        # BUG-002: 传入 auto_create 配置给 UserBindingService
+        self.user_binding_service = UserBindingService(
+            auto_create=getattr(config, "auto_create_user", True),
+            whitelist=getattr(config, "auto_create_whitelist", []) or [],
+        )
 
         # 出站事件总线
         self.outbound_bus = OutboundEventBus()
@@ -740,16 +744,30 @@ class EmilyCore:
 
         self._ensure_initialized()
 
-        # 用户自动绑定
+        # 用户解析：BUG-001 修复 — 增加 UUID 直查路径
         user_id = ""
         try:
-            user, _is_new = self.user_binding_service.get_or_create_user(
-                im_platform=message.platform,
-                im_user_id=message.sender_id,
-                im_display_name=message.sender_name,
-            )
-            user_id = user.id if user else ""
+            # ① 如果 sender_id 看起来是 UUID，先直接查 users 表
+            if self._looks_like_uuid(message.sender_id):
+                from .repositories.user_repo import UserRepository
+                direct_user = UserRepository.get_by_id(message.sender_id)
+                if direct_user:
+                    user_id = direct_user.id
+                    logger.debug(
+                        "handle_message: sender_id resolved as UUID -> user %s (%s)",
+                        user_id, direct_user.username,
+                    )
+
+            # ② 回退到 IM 绑定解析（含 BUG-002 门禁）
+            if not user_id:
+                user, _is_new = self.user_binding_service.get_or_create_user(
+                    im_platform=message.platform,
+                    im_user_id=message.sender_id,
+                    im_display_name=message.sender_name,
+                )
+                user_id = user.id if user else ""
         except Exception as e:
+            # UserNotAllowedError 不应吞掉——记录但继续（返回无用户回复）
             logger.warning("user binding failed (continuing): %s", e)
 
         # SessionPool 路由
@@ -783,3 +801,23 @@ class EmilyCore:
             "bus_hooks": self._bus.hook_count() if self._bus else 0,
         }
         return result
+
+    # ── 辅助方法 ──
+
+    @staticmethod
+    def _looks_like_uuid(value: str) -> bool:
+        """判断 sender_id 是否看起来像 UUID（含连字符的 8-4-4 格式）。
+
+        用于 BUG-001 修复：emy-test 等工具传入 users 表 UUID 作为 sender_id，
+        需优先走 UUID 直查路径而非 IM 绑定查找。
+        """
+        if not value:
+            return False
+        # 标准 UUID 格式：xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx（36 字符）
+        parts = value.split("-")
+        if len(parts) == 5 and all(p.isalnum() for p in parts):
+            return True
+        # 无连字符 UUID（32 字符十六进制）
+        if len(value) == 32 and value.isalnum():
+            return True
+        return False

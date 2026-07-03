@@ -271,6 +271,15 @@ async def handle_record_plan_task(
     executor_id = await asyncio.to_thread(_resolve_executor_id, executor_name)
     project_id = await asyncio.to_thread(_resolve_project_id, project_name, project_id_param)
 
+    # BUG-007 修复：executor_id 缺失时降级为发起人自己（待分配），而非直接失败
+    if not executor_id:
+        executor_id = user_id
+        logger.info(
+            "record_plan_task: no executor resolved (executor_name=%r), "
+            "falling back to initiator_id=%s",
+            executor_name, user_id,
+        )
+
     # ── 循环任务：创建模板 + 激活，调度机自动生成每期实例 ──
     if is_recurring and deadline_rule:
         task_type = _infer_task_type(deadline_rule)

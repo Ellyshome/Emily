@@ -223,7 +223,7 @@ class EmysTester:
         *,
         sender_id: str | None = None,
         sender_name: str | None = None,
-        platform: str = "simulator",
+        platform: str = "napcat",
         conversation_type: str = "private",
         conversation_id: str | None = None,
         group_id: str | None = None,

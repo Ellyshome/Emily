@@ -19,6 +19,7 @@ class EventCommand:
     creator_id: str = ""
     source_message_id: str = ""
     related_event_ids: list[str] | None = None  # M8a: 关联事件编号列表
+    conversation_id: str = ""  # BUG-005: 来源会话 ID，供确认流程直查
 
 
 @dataclass

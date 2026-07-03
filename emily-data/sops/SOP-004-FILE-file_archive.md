@@ -17,7 +17,7 @@
 | 参与编辑人 | admin |
 | 最后编辑人 | admin |
 | 最后编辑时间 | 2026-06-14 |
-| 关联系统模块 | teambrain_core → FileApplication / record_file Tool |
+| 关联系统模块 | emily_core → FileApplication / record_file Tool |
 
 ---
 

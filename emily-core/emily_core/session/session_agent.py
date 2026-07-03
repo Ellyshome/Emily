@@ -25,12 +25,13 @@ Phase B 实现：
 
 from __future__ import annotations
 
+import asyncio
 import logging
 from datetime import datetime, timezone, timedelta
 from typing import TYPE_CHECKING
 
 from .session_state import SessionState
-from .session_context import SessionContext
+from .session_context import SessionContext, format_message_history, build_compress_messages
 from .focus_lock import FocusLock
 from .confirm_queue import ConfirmQueue
 from ..workitem import WorkItem, SessionScheduler
@@ -71,6 +72,10 @@ def _load_session_prompt() -> str:
 
 _SESSION_SYSTEM_PROMPT = _load_session_prompt()
 
+# ── messages 多轮记忆配置 ──
+_MAX_HISTORY_MESSAGES = 40       # message_history 上限（20 轮 × 2）
+_COMPRESS_BATCH_SIZE = 20        # 每次压缩处理的消息数（溢出时取最旧 20 条）
+
 
 def _beijing_now_str() -> str:
     """返回北京时间字符串（供 LLM prompt 使用）。"""
@@ -110,11 +115,25 @@ class SessionAgent:
         self._llm = llm_client
         self._sop_intent_registry = sop_intent_registry
 
+        # BUG-004: 记录 Session 创建时间（供归档时使用）
+        from datetime import datetime, timezone
+        self._created_at = datetime.now(timezone.utc).isoformat()
+
         # 灌注完成 → ACTIVE
         self.state = SessionState.ACTIVE
 
     async def handle(self, message: "StandardMessage") -> ReplyMessage | None:
         """处理一条入站消息（蓝图 §4.3.2 + Phase B 升级）。
+
+        包装 _handle_impl()，在回复后记录本轮对话到 message_history。
+        """
+        reply = await self._handle_impl(message)
+        if reply is not None:
+            self._record_turn(message, reply.content)
+        return reply
+
+    async def _handle_impl(self, message: "StandardMessage") -> ReplyMessage | None:
+        """内部方法：实际的消息处理逻辑（从 handle() 提取）。
 
         Returns:
             ReplyMessage: 需要同步回复时返回；None 表示无回复。
@@ -174,8 +193,8 @@ class SessionAgent:
     async def _recognize_intent(self, message: "StandardMessage") -> dict:
         """LLM 意图识别：匹配用户消息到 SOP（蓝图 §4.3.2 Phase B）。
 
-        从 MasterAgent 的路由逻辑提取核心——单次 chat_json() 调用，
-        不做 ReAct 循环。LLM 根据 SOP 目录语义匹配用户意图。
+        使用 chat_messages() 传入完整 message_history，利用 KV cache 复用。
+        LLM 根据 SOP 目录 + 对话历史语义匹配用户意图。
 
         TC-J03: 注入当前 session 的 pending 确认状态到 LLM 上下文，
         使 LLM 能识别"确认"/"取消"类回复并路由到 SYS-confirm。
@@ -197,7 +216,7 @@ class SessionAgent:
             return {"sop_id": None, "confidence": "none", "reasoning": "空消息",
                     "is_compound": False, "sub_tasks": [], "fallback": True}
 
-        # 构建 prompt：注入 SOP 目录
+        # 构建 system prompt：注入 SOP 目录
         try:
             sop_catalog = self._sop_intent_registry.dump_as_text()
         except Exception as e:
@@ -205,32 +224,48 @@ class SessionAgent:
             return {"sop_id": None, "confidence": "none", "reasoning": f"SOP目录加载失败: {e}",
                     "is_compound": False, "sub_tasks": [], "fallback": True}
 
-        prompt = _SESSION_SYSTEM_PROMPT.format(
+        system_prompt = _SESSION_SYSTEM_PROMPT.format(
             sop_catalog=sop_catalog,
             current_datetime=_beijing_now_str(),
         )
 
-        # ═══ TC-J03: 注入 pending 确认状态到 LLM 上下文 ═══
+        # ═══ 组装多轮 messages: [system] + message_history + [current_user] ═══
+        full_messages = [{"role": "system", "content": system_prompt}]
+        full_messages.extend(self.context.message_history)
+        # 注：不拼接当前 user message 到 message_history 中——那是 _record_turn 的工作。
+        # 这里只是临时拼一条 user message 给 LLM 看。
+
+        # TC-J03: 注入 pending 确认状态
         pending_event = self._get_pending_event()
         if pending_event:
-            pending_context = (
-                f"\n\n⚠️ 当前存在待确认的录入项：\n"
-                f"  编号：{pending_event.event_no}\n"
-                f"  内容：{pending_event.title}\n"
-                f"  状态：等待用户确认\n"
-                f"  如果用户表达了确认/取消/修改意图，请路由到 SYS-confirm，"
-                f"不要走其他 SOP 路由。\n"
-            )
-            prompt += pending_context
+            full_messages.append({
+                "role": "system",
+                "content": (
+                    f"⚠️ 当前存在待确认的录入项：\n"
+                    f"  编号：{pending_event.event_no}\n"
+                    f"  内容：{pending_event.title}\n"
+                    f"  状态：等待用户确认\n"
+                    f"  如果用户表达了确认/取消/修改意图，请路由到 SYS-confirm，"
+                    f"不要走其他 SOP 路由。"
+                ),
+            })
             logger.debug("Session[%s] injected pending context: %s",
                          self.conversation_id, pending_event.event_no)
 
+        sender = getattr(message, "sender_name", "") or ""
+        full_messages.append({
+            "role": "user",
+            "content": content,
+            "name": sender if sender else None,
+        })
+
         try:
-            result = await self._llm.chat_json(prompt, content)
+            result = await self._llm.chat_messages(full_messages, json_mode=True)
+            data = result.get("data", {})
             logger.debug("SessionAgent intent for '%s': sop=%s conf=%s compound=%s",
-                         content[:40], result.get("sop_id"), result.get("confidence"),
-                         result.get("is_compound"))
-            return result
+                         content[:40], data.get("sop_id"), data.get("confidence"),
+                         data.get("is_compound"))
+            return data
         except Exception as e:
             logger.warning("SessionAgent intent recognition failed: %s", e)
             return {"sop_id": None, "confidence": "none", "reasoning": f"LLM调用失败: {e}",
@@ -343,13 +378,16 @@ class SessionAgent:
         用于确认流程：当用户在已有 pending 事件的 Session 中回复时，
         将此信息注入 LLM 上下文，使 LLM 能正确路由到 SYS-confirm。
 
+        BUG-005 修复：改用 EventRepository.find_pending_by_conversation_id()
+        直查，不再依赖 messages 表中转。
+
         Returns:
             Event | None: 最近的 pending 事件，或 None
         """
         try:
             from ..repositories.event_repo import EventRepository
             repo = EventRepository()
-            return repo.find_pending_by_message_conversation(self.conversation_id)
+            return repo.find_pending_by_conversation_id(self.conversation_id)
         except Exception as e:
             logger.debug("_get_pending_event failed: %s", e)
             return None
@@ -433,16 +471,18 @@ class SessionAgent:
     # ── Session 注销归档（蓝图 §3.5）──
 
     async def archive(self) -> None:
-        """Phase B: 执行注销归档（蓝图 §3.5）。
+        """Phase B + BUG-004: 执行注销归档（蓝图 §3.5）。
 
-        流程：状态推进 → 清空待确认队列 → 标记活跃 WorkItem 失败 → 关闭。
-        SOP-010 完整归档逻辑（用户记忆更新 + 通信记录归档）属 Phase C。
+        流程：状态推进 → 清空待确认队列 → 标记活跃 WorkItem 失败
+              → 持久化归档到 session_archives 表
+              → 整合 conversation_summary 到 users 表
+              → 关闭。
         """
         if self.state in (SessionState.CLOSED, SessionState.ARCHIVING):
             return
         self.state = SessionState.ARCHIVING
-        logger.info("Session[%s] archiving (turns=%d)...",
-                     self.conversation_id, len(self.context.recent_turns))
+        logger.info("Session[%s] archiving (history_msgs=%d)...",
+                     self.conversation_id, len(self.context.message_history))
 
         try:
             # 1. 清空待确认队列
@@ -457,11 +497,173 @@ class SessionAgent:
                     except ValueError:
                         pass
 
+            # 3. BUG-004: 持久化归档到 session_archives 表
+            await self._persist_archive()
+
+            # 4. BUG-004: 整合 conversation_summary 到 users 表
+            if self.context.user_id and self._llm:
+                await self._consolidate_conversation_summary()
+
             logger.info("Session[%s] archived successfully", self.conversation_id)
         except Exception as e:
             logger.warning("Session[%s] archive warning: %s", self.conversation_id, e)
         finally:
             self.state = SessionState.CLOSED
+
+    async def _persist_archive(self) -> None:
+        """BUG-004: 将 Session 关键数据持久化到 session_archives 表。"""
+        try:
+            import json
+            from ..repositories.session_archive_repo import SessionArchiveRepo
+
+            turn_count = len(self.context.message_history) // 2
+            # 快照：保留最近 40 条消息（约 20 轮）
+            history_snapshot = json.dumps(
+                self.context.message_history[-40:], ensure_ascii=False
+            )
+            context_snapshot = json.dumps({
+                "user_name": self.context.user_name,
+                "sop_catalog_summary": self.context.sop_catalog_summary,
+                "permission_level": self.context.permissions.permission_level,
+                "company_name": self.context.permissions.company_name,
+            }, ensure_ascii=False)
+
+            SessionArchiveRepo.create(
+                conversation_id=self.conversation_id,
+                user_id=self.context.user_id or None,
+                user_name=self.context.user_name,
+                turn_count=turn_count,
+                message_history_snapshot=history_snapshot,
+                context_snapshot=context_snapshot,
+                started_at=getattr(self, "_created_at", None),
+                archive_reason="expired",
+            )
+            logger.info(
+                "Session[%s] archive persisted: %d turns",
+                self.conversation_id, turn_count,
+            )
+        except Exception as e:
+            logger.warning("Session[%s] archive persist failed: %s", self.conversation_id, e)
+
+    async def _consolidate_conversation_summary(self) -> None:
+        """BUG-004: 归档时整合本次对话到 users.conversation_summary。
+
+        流程：
+        1. 读取 users.conversation_summary 已有内容
+        2. 将本次 message_history 格式化为文本
+        3. 调用 LLM 将（旧摘要 + 新对话）压缩为新的摘要
+        4. 回写 users.conversation_summary
+        """
+        from ..repositories.user_repo import UserRepository
+
+        user_id = self.context.user_id
+        if not user_id:
+            return
+
+        user = UserRepository.get_by_id(user_id)
+        if not user:
+            return
+
+        existing_summary = user.conversation_summary or ""
+        current_conversation = format_message_history(self.context.message_history)
+
+        # 空对话不整合
+        if not current_conversation or current_conversation == "（无历史消息）":
+            return
+
+        # 构建压缩 prompt
+        compress_messages = [
+            {"role": "system", "content": (
+                "你是一个对话摘要助手。将用户的「已有历史摘要」和「本次对话」合并为一份新的摘要。"
+                "只保留关键事实：人物、事件、决策、任务、时间。不超过 500 字。"
+            )},
+            {"role": "user", "content": (
+                f"## 已有历史摘要\n{existing_summary or '（无）'}\n\n"
+                f"## 本次对话\n{current_conversation}\n\n"
+                f"请输出合并后的完整摘要："
+            )},
+        ]
+
+        try:
+            result = await self._llm.chat_messages(compress_messages)
+            new_summary = result.get("content", "") or ""
+            if new_summary and len(new_summary) > 20:
+                UserRepository.update_user(user_id, conversation_summary=new_summary)
+                logger.info(
+                    "Session[%s] conversation_summary consolidated for user %s (%d→%d chars)",
+                    self.conversation_id, user_id,
+                    len(existing_summary), len(new_summary),
+                )
+        except Exception as e:
+            logger.warning("Session[%s] conversation_summary consolidation failed: %s",
+                           self.conversation_id, e)
+
+    # ── messages 多轮记忆：轮次记录 + 溢出压缩 ──
+
+    def _record_turn(self, message: "StandardMessage", reply_content: str) -> None:
+        """记录一轮对话到 message_history 滑动窗口。
+
+        消息历史存储为 OpenAI 格式的 user/assistant 消息对。
+        窗口满时异步触发压缩（不阻塞当前回复）。
+        """
+        sender = getattr(message, "sender_name", "") or ""
+        self.context.message_history.append({
+            "role": "user",
+            "content": (message.content or "")[:2000],
+            "name": sender if sender else None,
+        })
+        self.context.message_history.append({
+            "role": "assistant",
+            "content": (reply_content or "")[:2000],
+        })
+
+        # 溢出检查：异步触发压缩
+        if len(self.context.message_history) > _MAX_HISTORY_MESSAGES:
+            asyncio.ensure_future(self._compress_overflow())
+
+        logger.debug("Session[%s] recorded turn → history: %d msgs",
+                     self.conversation_id, len(self.context.message_history))
+
+    async def _compress_overflow(self) -> None:
+        """裁剪 message_history：取最旧一批消息，调用 LLM 压缩为摘要。
+
+        摘要以 {"role":"user","name":"system","content":"[对话历史摘要] ..."} 的
+        形式插入 message_history 头部，替换被压缩的旧消息。
+        LLM 不可用时直接丢弃旧消息（fail-open）。
+        """
+        batch = self.context.message_history[:_COMPRESS_BATCH_SIZE]
+        self.context.message_history = self.context.message_history[_COMPRESS_BATCH_SIZE:]
+
+        if not self._llm:
+            logger.debug("Session[%s] compression skipped (no LLM): %d msgs dropped",
+                         self.conversation_id, len(batch))
+            return
+
+        # 提取已有的历史摘要（如果存在）
+        existing_summary = ""
+        if (self.context.message_history
+                and self.context.message_history[0].get("name") == "system"
+                and "[对话历史摘要]" in self.context.message_history[0].get("content", "")):
+            existing_summary = self.context.message_history[0]["content"]
+            self.context.message_history = self.context.message_history[1:]
+
+        compress_msgs = build_compress_messages(batch, existing_summary)
+        try:
+            result = await self._llm.chat_messages(compress_msgs)
+            summary_content = result.get("content", "") or ""
+            if summary_content and len(summary_content) > 20:
+                self.context.message_history.insert(0, {
+                    "role": "user",
+                    "content": f"[对话历史摘要] {summary_content.strip()}",
+                    "name": "system",
+                })
+                logger.info("Session[%s] compressed %d msgs → summary (%d chars), history now %d msgs",
+                            self.conversation_id, len(batch),
+                            len(summary_content), len(self.context.message_history))
+        except Exception as e:
+            logger.warning("Session[%s] compression failed (msgs dropped): %s",
+                           self.conversation_id, e)
+            # fail-open: 旧消息已被截除，不阻塞对话
 
     # ── 辅助 ──
 

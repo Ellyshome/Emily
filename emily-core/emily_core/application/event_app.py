@@ -175,4 +175,5 @@ class EventApplication:
             creator_id=user_id,
             source_message_id=message_id,
             related_event_ids=related if isinstance(related, list) else None,
+            conversation_id=data.get("_conversation_id", ""),  # BUG-005: 透传会话 ID
         )
