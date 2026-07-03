@@ -478,6 +478,22 @@ class NodeDeliverableRepo:
 
             return total_ratio / len(deliverables)
 
+    @staticmethod
+    def update_file_id(deliverable_id: str, file_id: str) -> NodeDeliverable | None:
+        """更新成果关联文件。"""
+        with get_session() as session:
+            deliv = (
+                session.query(NodeDeliverable)
+                .filter(NodeDeliverable.deliverable_id == deliverable_id)
+                .first()
+            )
+            if deliv is None:
+                return None
+            deliv.file_id = file_id
+            session.commit()
+            logger.info("NodeDeliverable file_id updated: %s → %s", deliverable_id, file_id or "(cleared)")
+            return deliv
+
 
 # ══════════════════════════════════════════════════════════════════════════════
 # NodeAccessibleFileRepo

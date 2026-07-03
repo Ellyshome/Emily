@@ -497,7 +497,9 @@ class EmilyCore:
             from .node_event_bus import NodeEventBus
             from .application.node_app import NodeApplication
 
-            self._node_service = NodeService()
+            from .repositories.permission_repo import PermissionRepository
+
+            self._node_service = NodeService(user_repo=PermissionRepository())
             self._node_event_bus = NodeEventBus()
             self._node_event_bus.set_outbound_bus(self.outbound_bus)
             self._node_app = NodeApplication(self._node_service)
@@ -625,6 +627,9 @@ class EmilyCore:
                 handle_update_node_progress,
                 handle_add_node_dependency,
                 handle_mount_child_node,
+                handle_update_nodes,
+                handle_activate_nodes,
+                handle_discard_nodes,
                 _CREATE_NODE_SCHEMA,
                 _CREATE_NODE_DESCRIPTION,
                 _QUERY_NODE_SCHEMA,
@@ -635,40 +640,32 @@ class EmilyCore:
                 _ADD_DEPENDENCY_DESCRIPTION,
                 _MOUNT_CHILD_SCHEMA,
                 _MOUNT_CHILD_DESCRIPTION,
+                _UPDATE_NODES_SCHEMA,
+                _UPDATE_NODES_DESCRIPTION,
+                _ACTIVATE_NODES_SCHEMA,
+                _ACTIVATE_NODES_DESCRIPTION,
+                _DISCARD_NODES_SCHEMA,
+                _DISCARD_NODES_DESCRIPTION,
             )
             from .tools.business_flow_tools import BusinessFlowTool
 
-            self._business_flow_tools.register(BusinessFlowTool(
-                name="create_node",
-                description=_CREATE_NODE_DESCRIPTION,
-                parameters=_CREATE_NODE_SCHEMA,
-                handler=handle_create_node,
-            ))
-            self._business_flow_tools.register(BusinessFlowTool(
-                name="query_node",
-                description=_QUERY_NODE_DESCRIPTION,
-                parameters=_QUERY_NODE_SCHEMA,
-                handler=handle_query_node,
-            ))
-            self._business_flow_tools.register(BusinessFlowTool(
-                name="update_node_progress",
-                description=_UPDATE_PROGRESS_DESCRIPTION,
-                parameters=_UPDATE_PROGRESS_SCHEMA,
-                handler=handle_update_node_progress,
-            ))
-            self._business_flow_tools.register(BusinessFlowTool(
-                name="add_node_dependency",
-                description=_ADD_DEPENDENCY_DESCRIPTION,
-                parameters=_ADD_DEPENDENCY_SCHEMA,
-                handler=handle_add_node_dependency,
-            ))
-            self._business_flow_tools.register(BusinessFlowTool(
-                name="mount_child_node",
-                description=_MOUNT_CHILD_DESCRIPTION,
-                parameters=_MOUNT_CHILD_SCHEMA,
-                handler=handle_mount_child_node,
-            ))
-            logger.info("Node tools registered to BusinessFlowToolRegistry: 5 tools")
+            for name, desc, schema, handler in [
+                ("create_node", _CREATE_NODE_DESCRIPTION, _CREATE_NODE_SCHEMA, handle_create_node),
+                ("query_node", _QUERY_NODE_DESCRIPTION, _QUERY_NODE_SCHEMA, handle_query_node),
+                ("update_node_progress", _UPDATE_PROGRESS_DESCRIPTION, _UPDATE_PROGRESS_SCHEMA, handle_update_node_progress),
+                ("add_node_dependency", _ADD_DEPENDENCY_DESCRIPTION, _ADD_DEPENDENCY_SCHEMA, handle_add_node_dependency),
+                ("mount_child_node", _MOUNT_CHILD_DESCRIPTION, _MOUNT_CHILD_SCHEMA, handle_mount_child_node),
+                ("update_nodes", _UPDATE_NODES_DESCRIPTION, _UPDATE_NODES_SCHEMA, handle_update_nodes),
+                ("activate_nodes", _ACTIVATE_NODES_DESCRIPTION, _ACTIVATE_NODES_SCHEMA, handle_activate_nodes),
+                ("discard_nodes", _DISCARD_NODES_DESCRIPTION, _DISCARD_NODES_SCHEMA, handle_discard_nodes),
+            ]:
+                self._business_flow_tools.register(BusinessFlowTool(
+                    name=name,
+                    description=desc,
+                    parameters=schema,
+                    handler=handler,
+                ))
+            logger.info("Node tools registered to BusinessFlowToolRegistry: 8 tools")
         except Exception as e:
             logger.warning("Node tool registration failed: %s", e)
 

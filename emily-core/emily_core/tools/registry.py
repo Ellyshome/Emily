@@ -168,18 +168,22 @@ def _register_project(core, reg):
     global _pjc
     _pjc = 0
 
-    # 全景节点 (5 tools)
+    # 全景节点 (8 tools)
     na = getattr(core, "_node_app", None)
     if na is not None:
         try:
             from .node_tool import (
                 handle_create_node, handle_query_node, handle_update_node_progress,
                 handle_add_node_dependency, handle_mount_child_node,
+                handle_update_nodes, handle_activate_nodes, handle_discard_nodes,
                 _CREATE_NODE_SCHEMA, _CREATE_NODE_DESCRIPTION,
                 _QUERY_NODE_SCHEMA, _QUERY_NODE_DESCRIPTION,
                 _UPDATE_PROGRESS_SCHEMA, _UPDATE_PROGRESS_DESCRIPTION,
                 _ADD_DEPENDENCY_SCHEMA, _ADD_DEPENDENCY_DESCRIPTION,
                 _MOUNT_CHILD_SCHEMA, _MOUNT_CHILD_DESCRIPTION,
+                _UPDATE_NODES_SCHEMA, _UPDATE_NODES_DESCRIPTION,
+                _ACTIVATE_NODES_SCHEMA, _ACTIVATE_NODES_DESCRIPTION,
+                _DISCARD_NODES_SCHEMA, _DISCARD_NODES_DESCRIPTION,
             )
             for name, desc, schema, handler in [
                 ("create_node", _CREATE_NODE_DESCRIPTION, _CREATE_NODE_SCHEMA, handle_create_node),
@@ -187,6 +191,9 @@ def _register_project(core, reg):
                 ("update_node_progress", _UPDATE_PROGRESS_DESCRIPTION, _UPDATE_PROGRESS_SCHEMA, handle_update_node_progress),
                 ("add_node_dependency", _ADD_DEPENDENCY_DESCRIPTION, _ADD_DEPENDENCY_SCHEMA, handle_add_node_dependency),
                 ("mount_child_node", _MOUNT_CHILD_DESCRIPTION, _MOUNT_CHILD_SCHEMA, handle_mount_child_node),
+                ("update_nodes", _UPDATE_NODES_DESCRIPTION, _UPDATE_NODES_SCHEMA, handle_update_nodes),
+                ("activate_nodes", _ACTIVATE_NODES_DESCRIPTION, _ACTIVATE_NODES_SCHEMA, handle_activate_nodes),
+                ("discard_nodes", _DISCARD_NODES_DESCRIPTION, _DISCARD_NODES_SCHEMA, handle_discard_nodes),
             ]:
                 if not reg.has(name):
                     reg.register(_tool(name, desc, schema, handler))

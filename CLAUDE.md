@@ -132,6 +132,9 @@ QQ → NapCat → AstrBot → emily_agent 薄插件
 | `emily-core/emily_core/workitem/pipeline/hook.py` | Hook 基类 + 7 种具体 Hook 子类 |
 | `emily-core/emily_core/services/plan_task_service.py` | `PlanTaskService`：计划任务模板/实例生命周期 |
 | `emily-core/emily_core/services/plan_task_scheduler.py` | `PlanTaskScheduler`：后台调度循环（advisory lock/提醒/周期生成/升级） |
+| `emily-core/emily_core/services/node_batch.py` | `create_node_tree`：全景节点批量创建核心（CLI 和系统工具共享） |
+| `emily-core/emily_core/services/node_batch_update.py` | 批量更新/激活/废弃/进度更新核心（CLI 和系统工具共享） |
+| `scripts/manage_nodes.py` | 全景节点管理 CLI 脚本（create/update/activate/discard/progress/query） |
 | `emily-core/emily_core/infrastructure/database/models.py` | ORM 模型——**29 张表** |
 | `data/plugins/emily_agent/main.py` | AstrBot 薄插件入口（~100 行，无业务逻辑） |
 | `emily-data/config/core_config.json` | 非机密运行时配置 |
@@ -165,6 +168,25 @@ uv run python .claude/skills/emy-test/cli.py --managed --llm --message "你好"
 
 # 离线烟雾测试（无 LLM，检查 Session→WorkItem→4节点BUS）
 uv run python scripts/smoke_test.py
+
+# 全景节点批量创建（预览模式）
+uv run python scripts/manage_nodes.py create --file nodes.yaml --dry-run
+
+# 全景节点批量创建（实际写入）
+uv run python scripts/manage_nodes.py create --file nodes.yaml
+
+# 批量更新节点字段
+uv run python scripts/manage_nodes.py update --file updates.yaml
+
+# 批量激活/废弃节点
+uv run python scripts/manage_nodes.py activate --node-ids SG-001,SG-002 --operator-id <UUID>
+uv run python scripts/manage_nodes.py discard --node-ids SG-001,SG-002 --operator-id <UUID>
+
+# 批量更新成果进度
+uv run python scripts/manage_nodes.py progress --file progress.yaml
+
+# 全景节点查询
+uv run python scripts/manage_nodes.py query --project-id ECOCITY-26
 
 # MaxKB RAG 测试
 uv run python testsearch.py "消防验收"

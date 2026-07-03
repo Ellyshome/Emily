@@ -1,0 +1,17 @@
+# 景观铺装工程 - 独立节点
+project_id: "ECOCITY-01"
+creator_id: "0c37eded-9365-4b83-8c50-dffd03417589"
+
+nodes:
+  - node_id: "ECO-009"       # 手动指定编号，避开冲突
+    node_name: "景观铺装工程"
+    deadline: "2026-10-31"
+    owner_dept_id: "工程部"
+    stage_id: 2
+    deliverables:
+      - name: "铺装施工图纸"
+        target: 1
+        unit: "套"
+      - name: "材料验收报告"
+        target: 1
+        unit: "份"
