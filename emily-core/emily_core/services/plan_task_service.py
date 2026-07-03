@@ -37,6 +37,7 @@ from ..repositories.plan_task_repo import (
     InvalidStateTransitionError,
     ArchivedTaskError,
     TaskNotFoundError,
+    ComplianceChainError,
     _to_utc_iso,
 )
 from ..repositories.user_repo import UserRepository
@@ -174,7 +175,19 @@ class PlanTaskService:
           - 正常：发起人 permission_level >= 执行人 → 状态 = WAITING
           - 异常：发起人 permission_level < 执行人 → 状态 = ANOMALY_PENDING_REVIEW
             （如业务执行者向主管下达任务，需上级复核）
+
+        合规链校验（SOP-009 §0）：
+          - 若指定了 node_id，校验节点存在且状态为 IN_PROGRESS
         """
+        # ── 合规链校验：若指定了 node_id，检查节点状态 ──
+        if cmd.node_id:
+            node_check = await self._check_node_valid(cmd.node_id, cmd.project_id)
+            if not node_check["valid"]:
+                raise ComplianceChainError(
+                    reason=node_check["reason"],
+                    guidance=node_check["guidance"],
+                )
+
         # 鉴权检查
         auth_result = await self._authorize_task_creation(
             initiator_id=cmd.initiator_id,
@@ -198,6 +211,7 @@ class PlanTaskService:
                 executor_id=cmd.executor_id,
                 project_id=cmd.project_id,
                 phase_code=cmd.phase_code,
+                node_id=cmd.node_id,
                 deadline_at=_to_utc_iso(cmd.deadline_at),
                 verification_standard=cmd.verification_standard or "{}",
                 period_key=cmd.period_key,
@@ -239,6 +253,7 @@ class PlanTaskService:
                 initiator_id=cmd.initiator_id,
                 executor_id=cmd.executor_id,
                 project_id=cmd.project_id,
+                node_id=cmd.node_id,
                 deadline_at=_to_utc_iso(cmd.deadline_at),
                 verification_standard=cmd.verification_standard or "{}",
                 period_key=cmd.period_key,
@@ -260,12 +275,35 @@ class PlanTaskService:
         return instance
 
     async def submit_deliverable(self, cmd: SubmitDeliverableCommand):
-        """提交成果（WAITING → SUBMITTED）。"""
+        """提交成果（WAITING → SUBMITTED）。
+
+        前置合规校验（成果上报合规链 §0）：
+          1. 任务实例必须存在
+          2. 任务必须关联执行中的全景节点
+          任一缺失则返回阻断信息，引导用户补充任务布置或节点启动。
+        """
         instance = self._instance_repo.get_by_id(cmd.instance_id)
         if instance is None:
             raise TaskNotFoundError(f"任务实例不存在: {cmd.instance_id}")
 
         self._validate_transition(instance.status, "SUBMITTED")
+
+        # ── 合规链校验：任务 → 节点 ──
+        compliance_result = await self._validate_compliance_chain(
+            instance, is_acceptance_check=cmd.is_acceptance_check,
+        )
+        if not compliance_result["valid"]:
+            raise ComplianceChainError(
+                reason=compliance_result["reason"],
+                guidance=compliance_result["guidance"],
+            )
+
+        # ── 虚拟节点路由：完工确认报告无实体节点时自动归入 VIRTUAL-NODE ──
+        routed_to_virtual = compliance_result.get("routed_to_virtual", False)
+        if routed_to_virtual:
+            instance = self._instance_repo.update_node_id(
+                cmd.instance_id, compliance_result["virtual_node_id"],
+            )
 
         # 成果 + 状态变更 + 日志在同一事务（4.6）
         with get_session() as session:
@@ -277,6 +315,7 @@ class PlanTaskService:
                 file_url=cmd.file_url,
                 file_name=cmd.file_name,
                 submitted_by=cmd.submitted_by,
+                is_acceptance_check=cmd.is_acceptance_check,
                 submitted_at=datetime.now(timezone.utc).isoformat(),
             )
             instance = self._instance_repo.update_status(
@@ -366,6 +405,7 @@ class PlanTaskService:
                 file_url=cmd.file_url,
                 file_name=cmd.file_name,
                 submitted_by=cmd.submitted_by,
+                is_acceptance_check=cmd.is_acceptance_check,
                 submitted_at=datetime.now(timezone.utc).isoformat(),
             )
             instance = self._instance_repo.update_status(
@@ -677,6 +717,7 @@ class PlanTaskService:
                 file_url=deliverable.file_url,
                 file_name=deliverable.file_name,
                 submitted_by=user_id,
+                is_acceptance_check=getattr(deliverable, "is_acceptance_check", False),
                 submitted_at=datetime.now(timezone.utc).isoformat(),
             )
 
@@ -743,6 +784,132 @@ class PlanTaskService:
             )
 
         return AuthCheckResult(allowed=True, anomaly=False, target_status="WAITING")
+
+    # ── 合规链校验（SOP-009 §0）──
+
+    async def _check_node_valid(self, node_id: str, project_id: str = "") -> dict:
+        """校验全景节点是否存在且处于 IN_PROGRESS 状态（task creation 时用）。
+
+        Returns:
+            {"valid": bool, "reason": str, "guidance": str}
+        """
+        from ..repositories.node_repo import NodeRepository
+
+        node = await asyncio.to_thread(
+            NodeRepository.get_by_node_id, node_id,
+            project_id=project_id if project_id else None,
+        )
+        if node is None:
+            return {
+                "valid": False,
+                "reason": f"全景节点 {node_id} 不存在",
+                "guidance": "请联系项目负责人确认节点编号，或通过 create_node 创建对应全景节点后再布置任务。",
+            }
+        node_status = getattr(node, "status", "")
+        if node_status not in ("IN_PROGRESS",):
+            return {
+                "valid": False,
+                "reason": f"全景节点 {node_id} 当前状态为「{node_status}」，非「IN_PROGRESS」，无法挂载任务",
+                "guidance": "请联系部门负责人审批并启动该全景节点后，再布置任务。",
+            }
+        return {"valid": True, "reason": "", "guidance": ""}
+
+    async def _validate_compliance_chain(self, instance, is_acceptance_check: bool = False) -> dict:
+        """校验成果上报合规链：任务 → 执行中的全景节点。
+
+        规则：
+          1. 若任务实例有 node_id → 直接校验该节点状态
+          2. 若任务来自模板，且模板有 required_node_ids → 校验模板关联节点
+          3. 若均无：
+             a. 完工确认报告（is_acceptance_check=True）→ 自动路由到虚拟节点
+             b. 普通成果 → 阻断，引导用户补充节点关联
+
+        Returns:
+            {"valid": bool, "reason": str, "guidance": str,
+             "routed_to_virtual": bool, "virtual_node_id": str}
+        """
+        from ..repositories.node_repo import NodeRepository
+
+        VIRTUAL_NODE_ID = "VIRTUAL-NODE"
+
+        # 1. 检查实例直连的 node_id
+        instance_node_id = getattr(instance, "node_id", "") or ""
+        if instance_node_id:
+            node = await asyncio.to_thread(
+                NodeRepository.get_by_node_id, instance_node_id,
+                project_id=getattr(instance, "project_id", None),
+            )
+            if node is None:
+                return {
+                    "valid": False,
+                    "reason": f"任务关联的全景节点 {instance_node_id} 不存在",
+                    "guidance": "请联系项目负责人确认节点编号是否正确，或通过 create_node 创建对应全景节点。",
+                }
+            node_status = getattr(node, "status", "")
+            if node_status not in ("IN_PROGRESS",):
+                return {
+                    "valid": False,
+                    "reason": f"全景节点 {instance_node_id} 当前状态为「{node_status}」，非「IN_PROGRESS」",
+                    "guidance": "请联系部门负责人审批并启动该全景节点（状态流转至 IN_PROGRESS），再提交成果。",
+                }
+            return {"valid": True, "reason": "", "guidance": ""}
+
+        # 2. 检查模板的 required_node_ids
+        template_id = getattr(instance, "template_id", None)
+        if template_id:
+            template = await asyncio.to_thread(
+                PlanTaskTemplateRepo.get_by_id, template_id
+            )
+            if template:
+                try:
+                    required_ids = json.loads(getattr(template, "required_node_ids", "[]") or "[]")
+                except (json.JSONDecodeError, TypeError):
+                    required_ids = []
+                if required_ids:
+                    # 取第一个节点校验
+                    first_node_id = required_ids[0]
+                    node = await asyncio.to_thread(
+                        NodeRepository.get_by_node_id, first_node_id,
+                        project_id=getattr(instance, "project_id", None),
+                    )
+                    if node is None:
+                        return {
+                            "valid": False,
+                            "reason": f"任务模板关联的全景节点 {first_node_id} 不存在",
+                            "guidance": "请联系项目负责人确认节点是否存在，或重新指定有效的全景节点。",
+                        }
+                    node_status = getattr(node, "status", "")
+                    if node_status not in ("IN_PROGRESS",):
+                        return {
+                            "valid": False,
+                            "reason": f"全景节点 {first_node_id} 当前状态为「{node_status}」，非「IN_PROGRESS」",
+                            "guidance": "请联系部门负责人审批并启动该全景节点（状态流转至 IN_PROGRESS），再提交成果。",
+                        }
+                    return {"valid": True, "reason": "", "guidance": ""}
+
+        # 3. 无节点关联 → 完工确认报告走虚拟节点，普通成果阻断
+        if is_acceptance_check:
+            # 完工确认报告自动归入虚拟节点，等待二次分配
+            return {
+                "valid": True,
+                "reason": "",
+                "guidance": (
+                    "当前完工确认报告暂无对应实体节点，已自动归入虚拟节点（VIRTUAL-NODE）。\n"
+                    "管理员将定期处理虚拟节点中的数据，在实体节点建立后执行二次分配。"
+                ),
+                "routed_to_virtual": True,
+                "virtual_node_id": VIRTUAL_NODE_ID,
+            }
+
+        return {
+            "valid": False,
+            "reason": "当前任务未关联任何全景节点，不符合成果上报合规要求",
+            "guidance": (
+                "员工产出的工作成果必须来源于已分配的任务，而任务必须挂载于执行中的全景节点。\n"
+                "请先联系有权限的项目负责人，通过 record_plan_task 布置任务时指定关联的全景节点，\n"
+                "并确保该节点已通过审批处于「IN_PROGRESS」状态，再重新提交成果。"
+            ),
+        }
 
     # ── 查询方法 ──
     # 注：Repository 为同步实现，这里用 asyncio.to_thread 包裹，

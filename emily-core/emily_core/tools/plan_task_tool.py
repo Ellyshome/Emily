@@ -60,6 +60,10 @@ _RECORD_PLAN_TASK_SCHEMA = {
             "type": "string",
             "description": "关联项目阶段编码",
         },
+        "node_id": {
+            "type": "string",
+            "description": "关联全景节点编号（必填，成果→任务→节点合规链要求）",
+        },
         "force": {
             "type": "boolean",
             "description": "强制执行，跳过守护核验",
@@ -92,6 +96,11 @@ _SUBMIT_PLAN_TASK_SCHEMA = {
             "type": "string",
             "description": "成果类型：TEXT / FILE / JSON",
             "default": "TEXT",
+        },
+        "is_acceptance_check": {
+            "type": "boolean",
+            "description": "是否为完工确认报告",
+            "default": False,
         },
     },
     "required": ["instance_no", "content"],
@@ -255,6 +264,7 @@ async def handle_record_plan_task(
     project_name = params.get("project_name", "")
     project_id_param = params.get("project_id", "")
     phase_code = params.get("phase_code", "")
+    node_id = params.get("node_id", "")
     executor_name = params.get("executor_name", "")
 
     # 解析执行人姓名 → user_id、项目名称 → project_id（best-effort，在线程池执行避免阻塞事件循环）
@@ -303,6 +313,7 @@ async def handle_record_plan_task(
         executor_id=executor_id,
         project_id=project_id,
         phase_code=phase_code,
+        node_id=node_id,
         deadline_at=deadline_at,
         verification_standard=verification_standard,
     )
@@ -351,6 +362,7 @@ async def handle_submit_plan_task(
         file_url=params.get("file_url", ""),
         file_name=params.get("file_name", ""),
         submitted_by=user_id,
+        is_acceptance_check=params.get("is_acceptance_check", False),
     )
 
     result = await plan_task_app.submit_task(cmd)
@@ -362,6 +374,7 @@ async def handle_submit_plan_task(
         "status": result.get("status", ""),
         "reply": result["reply"],
     }
+
 
 
 async def handle_review_plan_task(

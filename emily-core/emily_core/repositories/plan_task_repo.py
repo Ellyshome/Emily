@@ -40,6 +40,18 @@ class TaskNotFoundError(ValueError):
     """任务实例不存在。"""
 
 
+class ComplianceChainError(ValueError):
+    """成果上报合规链断裂 —— 任务未关联执行中的全景节点，或节点尚未启用。
+
+    对应 SOP-009 §0 前置合规理念：成果→任务→节点 不可断开。
+    """
+
+    def __init__(self, reason: str = "", guidance: str = ""):
+        super().__init__(reason)
+        self.reason = reason
+        self.guidance = guidance
+
+
 # ── 时区归一化辅助（统一为 UTC ISO8601，naive 视为北京时间；5.4）──
 
 def _to_utc_iso(value: str) -> str:
@@ -315,6 +327,26 @@ class PlanTaskInstanceRepo:
                 .filter(PlanTaskInstance.instance_no == instance_no, PlanTaskInstance.is_deleted == False)
                 .first()
             )
+
+    @staticmethod
+    def update_node_id(instance_id: str, node_id: str, session=None) -> PlanTaskInstance | None:
+        """更新任务实例关联的全景节点编号（虚拟节点路由用）。"""
+        def _impl(sess):
+            inst = sess.query(PlanTaskInstance).filter(
+                PlanTaskInstance.id == instance_id,
+                PlanTaskInstance.is_deleted == False,
+            ).first()
+            if inst is None:
+                return None
+            inst.node_id = node_id
+            return inst
+
+        if session is not None:
+            return _impl(session)
+        with get_session() as sess:
+            result = _impl(sess)
+            sess.commit()
+            return result
 
     @staticmethod
     def get_by_period_key(template_id: str, period_key: str) -> PlanTaskInstance | None:

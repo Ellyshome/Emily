@@ -60,13 +60,17 @@ class PlanTaskApplication:
                 "reply": reply,
             }
         except ValueError as e:
+            guidance = getattr(e, "guidance", "")
+            reply = f"❌ 创建失败：{e}"
+            if guidance:
+                reply += f"\n\n💡 处理建议：{guidance}"
             return {
                 "success": False,
                 "object_id": "",
                 "instance_no": "",
                 "status": "",
                 "anomaly": False,
-                "reply": f"❌ 创建失败：{e}",
+                "reply": reply,
             }
 
     async def create_template_from_command(
@@ -118,23 +122,44 @@ class PlanTaskApplication:
         """提交计划任务成果。"""
         try:
             instance = await self._service.submit_deliverable(cmd)
+
+            # 检查是否路由到虚拟节点
+            node_id = getattr(instance, "node_id", "")
+            if node_id == "VIRTUAL-NODE":
+                reply = (
+                    f"✅ 完工确认报告已提交（任务编号：{instance.instance_no}）。\n"
+                    f"⚠️ 当前暂无对应实体节点，已自动归入虚拟节点（VIRTUAL-NODE），"
+                    f"管理员将在实体节点建立后执行二次分配。"
+                )
+            elif cmd.is_acceptance_check:
+                reply = (
+                    f"✅ 完工确认报告已提交（任务编号：{instance.instance_no}），"
+                    f"节点管理员将负责验收。"
+                )
+            else:
+                reply = (
+                    f"✅ 成果已提交（任务编号：{instance.instance_no}），"
+                    f"等待发起人确认。"
+                )
+
             return {
                 "success": True,
                 "object_id": instance.id,
                 "instance_no": instance.instance_no,
                 "status": instance.status,
-                "reply": (
-                    f"✅ 成果已提交（任务编号：{instance.instance_no}），"
-                    f"等待发起人确认。"
-                ),
+                "reply": reply,
             }
         except ValueError as e:
+            guidance = getattr(e, "guidance", "")
+            reply = f"❌ 提交失败：{e}"
+            if guidance:
+                reply += f"\n\n💡 处理建议：{guidance}"
             return {
                 "success": False,
                 "object_id": "",
                 "instance_no": "",
                 "status": "",
-                "reply": f"❌ 提交失败：{e}",
+                "reply": reply,
             }
 
     # ── 审核任务 ──
