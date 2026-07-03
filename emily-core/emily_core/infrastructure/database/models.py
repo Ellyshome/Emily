@@ -891,6 +891,7 @@ class PlanTaskInstance(Base):
     executor_id = Column(String, ForeignKey("users.id"), nullable=True)     # 执行人
     project_id = Column(String, ForeignKey("projects.id"), nullable=True)
     phase_code = Column(String(100), nullable=True)                         # 关联项目阶段编码
+    node_id = Column(String(100), default="")                               # 关联全景节点编号（FK→project_nodes.node_id），合规链校验用
 
     # ── 时间字段 ──
     deadline_at = Column(String, nullable=True)           # 截止时间（ISO8601）
@@ -979,6 +980,9 @@ class PlanTaskDeliverable(Base):
     # ── 提交信息 ──
     submitted_by = Column(String, ForeignKey("users.id"), nullable=False)
     submitted_at = Column(String, default=_utc_now)
+
+    # ── 完工确认标记 ──
+    is_acceptance_check = Column(Boolean, default=False)           # 是否为完工确认报告
 
     # ── 审计 ──
     created_at = Column(String, default=_utc_now)

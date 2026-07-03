@@ -31,6 +31,7 @@ class CreateInstanceCommand:
     executor_id: str = ""
     project_id: str = ""
     phase_code: str = ""
+    node_id: str = ""
     deadline_at: str = ""
     verification_standard: str = "{}"
     period_key: str = ""
@@ -45,6 +46,7 @@ class CreateInstanceFromTemplateCommand:
     initiator_id: str = ""
     executor_id: str = ""
     project_id: str = ""
+    node_id: str = ""
     deadline_at: str = ""
     verification_standard: str = "{}"
     period_key: str = ""
@@ -60,6 +62,7 @@ class SubmitDeliverableCommand:
     file_url: str = ""
     file_name: str = ""
     submitted_by: str = ""
+    is_acceptance_check: bool = False   # 是否为完工确认报告
 
 
 @dataclass
