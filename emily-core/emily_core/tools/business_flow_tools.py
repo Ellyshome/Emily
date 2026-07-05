@@ -29,6 +29,8 @@ class BusinessFlowTool:
     description: str                    # 工具描述（注入 LLM prompt 帮助参数提取）
     parameters: dict                    # JSON Schema 参数定义
     handler: Callable                   # async fn(params: dict) -> dict
+    category: str = "base"              # base / business / project
+    permission_flag: str = "all"        # all / admin / write
 
 
 class BusinessFlowToolRegistry:

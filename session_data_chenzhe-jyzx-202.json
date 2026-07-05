@@ -1,0 +1,101 @@
+{
+  "session_snapshot": {
+    "conversation_id": "",
+    "user_id": "chenzhe-jyzx-2026-0001",
+    "user_name": "陈哲",
+    "user_position": "精装深化设计主管、BIM负责人",
+    "created_at": "2026-07-05T17:20:36.530959+00:00",
+    "project_name": "临港科技城T1塔楼精装工程",
+    "project_type": "房屋建筑",
+    "project_status": "进行中",
+    "permission_level": 3,
+    "company_id": "JYZX-2026-0002",
+    "company_type": "设计单位",
+    "company_name": "精艺精装设计有限公司",
+    "department": [
+      "设计部",
+      "深化部",
+      "软装部",
+      "工程部",
+      "品控部"
+    ],
+    "project_ids": [
+      "proj-lg-t1-jz-2026-001"
+    ],
+    "partner_ids": [],
+    "scopes": [
+      "室内精装",
+      "软装深化",
+      "BIM建模",
+      "幕墙精装"
+    ],
+    "sop_allow": [],
+    "db_perms": {
+      "project": "read",
+      "event": "read_write",
+      "task": "read",
+      "meeting": "read_write"
+    },
+    "info_level": "internal",
+    "supervisor_id": "admin-jyzx-2026-0001",
+    "granted_codes": [],
+    "denied_codes": [],
+    "authorized_node_ids": [
+      "node-001",
+      "node-002",
+      "node-003",
+      "node-004"
+    ],
+    "permission_version": 0,
+    "permissions_loaded_at": "2026-07-05T17:20:36.475533+00:00",
+    "long_term_memory": "【语言风格偏好】\n- 喜欢 AI 用可爱风趣的语言风格回答，可以适当加一些表情符号（😊✨🎉）\n- 不喜欢太生硬的官方话术，尽量口语化、亲切，像朋友聊天\n- 数据部分要清晰，结论部分可以用轻松的语气\n\n【回复格式偏好】\n- 进度类问题优先报百分比和关键数字，再讲细节\n- 列表项用数字编号或 emoji 项目符号，便于快速扫读\n- 周报告默认要分「完成事项」「下周计划」「风险与问题」三个板块\n- 涉及时间节点需要加粗提示，重要事项用「⚠️」标注\n\n【个人习惯】\n- 喜欢简洁直接，不要太啰嗦，每条回答控制在 300 字以内\n- 涉及验收、审批等流程要把负责人名字、时间、地点说清楚\n- 汇报给上级的邮件或报告，内容要正式，但可适当加一些鼓励的话\n- 有问题主动提醒，不要等到用户追问\n\n【禁止事项】\n- 不要用「好的」「收到」这类没有信息量的简短回复\n- 不要把简单问题复杂化，要直接给出答案或建议\n- 不要猜测没有数据支撑的结论，不确定就明确说明",
+    "conversation_summary": "对话摘要：\n1. 用户询问T1大堂进度，得知石材铺装完成780㎡(65%)，色差合格率92%\n2. 询问天花吊顶进度，完成42.5%，3处龙骨平整度偏差(>2mm)正在整改\n3. 询问节点验收资料清单，获完整5项清单 + 验收时间(7/12下午2点)\n4. 要求生成周报告，已生成第18周报告并抄送王院长等3人\n\n未决事项：3处龙骨平整度整改跟进",
+    "available_tools": [
+      {
+        "api_id": "search_files",
+        "display_name": "根据自然语言描述搜索可见文件",
+        "signature": "{\"params\": {\"type\": \"object\", \"properties\": {\"query\": {\"type\": \"string\", \"description\": \"自然语言描述或关键词，用于匹配文件名或文件一句话描述\"}, \"top_k\": {\"type\": \"integer\", \"description\": \"返回结果数上限，默认 5\"}}, \"required\": [\"query\"]}, \"returns\": \"dict\"}",
+        "category": "base",
+        "permission_flag": "all",
+        "handler_module": "emily_core.tools.scripts.search_files",
+        "is_active": true,
+        "registered_at": "2026-07-05T15:32:36.514282+00:00",
+        "updated_at": "2026-07-05T15:32:36.514282+00:00"
+      }
+    ],
+    "visible_schema_summary": "  · event: 读写\n  · meeting: 读写\n  · 项目表: 只读\n  · task: 只读",
+    "visible_files_count": 2,
+    "visible_files_summary": "共 2 个文件（pdf(1个), dwg(1个)）",
+    "rag_available": false,
+    "rag_collections": []
+  },
+  "session_runtime": {
+    "recent_turns": [
+      {
+        "role": "user",
+        "time": "2024-07-05T09:00.123456+00:00",
+        "content": "T1大堂装修现在进度怎么样了？石材铺装完成多少了？",
+        "sender_name": "陈哲"
+      },
+      {
+        "role": "user",
+        "time": "2024-07-05T09:00.123458+00:00",
+        "content": "那天花吊顶呢？有没有什么问题？",
+        "sender_name": "陈哲"
+      },
+      {
+        "role": "user",
+        "time": "2024-07-05T09:00.123460+00:00",
+        "content": "下周的节点验收，都需要准备什么资料？",
+        "sender_name": "陈哲"
+      },
+      {
+        "role": "user",
+        "time": "2024-07-05T09:00.123462+00:00",
+        "content": "帮我把进度生成一个周报告，发王院长审阅",
+        "sender_name": "陈哲"
+      }
+    ]
+  },
+  "errors": []
+}

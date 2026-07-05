@@ -34,6 +34,7 @@ class SkillExecutionContext:
     step_results: dict[str, dict]  # output_key → 前步 business_data
     business_flow_tools: BusinessFlowToolRegistry
     llm_client: Any = None         # ParamExtractor 用
+    session_available_tools: list[dict] = field(default_factory=list)
 
 
 class SkillExecutor:
@@ -47,15 +48,15 @@ class SkillExecutor:
         results: list[StepResult] = []
         self._param_extractor = ParamExtractor(llm_client=ctx.llm_client)
 
-        # 构建 tool 白名单集合
+        # 构建工具可见性集合
         allowed_tools = {t.name for t in ctx.skill.tools}
+        session_api_ids = {t["api_id"] for t in ctx.session_available_tools}
 
         for step in ctx.skill.steps:
             t_start = _time.monotonic()
 
             # 0. 跳过纯逻辑步骤（tool_name 为空/None）
             if not step.tool_name:
-                # 纯逻辑步骤：由 instructions 引导 LLM 自行处理，不调用工具
                 logger.debug("Step %s: pure logic step, skipping tool call", step.id)
                 results.append(StepResult(
                     step_id=step.id,
@@ -64,16 +65,16 @@ class SkillExecutor:
                 ))
                 continue
 
-            # 1. 工具白名单校验
-            if step.tool_name not in allowed_tools:
+            # 1. 检查工具是否在 Session 可见 API 中
+            if step.tool_name not in session_api_ids:
                 results.append(StepResult(
                     step_id=step.id,
                     success=False,
-                    output=f"工具 '{step.tool_name}' 不在 Skill 工具白名单中",
+                    output=f"工具 '{step.tool_name}' 不在 Session 可见 API 中",
                 ))
-                break  # 失败即停止
+                break
 
-            # 2. 获取工具
+            # 2. 获取工具（在 BusinessFlowToolRegistry 中查找）
             tool = ctx.business_flow_tools.get(step.tool_name)
             if tool is None:
                 results.append(StepResult(
@@ -84,10 +85,15 @@ class SkillExecutor:
                 break
 
             try:
-                # 3. 解析参数
-                tool_params = await self._param_extractor.resolve_params(
-                    step.tool_params, ctx.user_input, ctx.session_context, ctx.step_results,
-                )
+                # 3. 解析参数 —— 区分 Skill 推荐路径 vs 元能力路径
+                if step.tool_name in allowed_tools:
+                    # Skill 推荐路径：有 ParamMapping，走现有逻辑
+                    tool_params = await self._param_extractor.resolve_params(
+                        step.tool_params, ctx.user_input, ctx.session_context, ctx.step_results,
+                    )
+                else:
+                    # 元能力路径：Skill YAML 没定义 ParamMapping，LLM 动态推导
+                    tool_params = await self._llm_resolve_params(step.tool_name, tool, ctx)
 
                 # 4. 注入运行时上下文 + session_scope
                 tool_params["_user_id"] = ctx.user_id
@@ -156,6 +162,38 @@ class SkillExecutor:
                 break
 
         return results
+
+    async def _llm_resolve_params(self, tool_name: str, tool, ctx: SkillExecutionContext) -> dict:
+        """元能力路径：LLM 动态推导工具参数（Skill YAML 未定义 ParamMapping 时使用）。
+
+        从用户输入和 Session 上下文中推导参数，不依赖 ParamMapping。
+        """
+        if ctx.llm_client is None:
+            return {"query": ctx.user_input}
+
+        try:
+            import json
+            prompt = (
+                f"用户请求：「{ctx.user_input}」\n"
+                f"需要调用工具：{tool_name}\n"
+                f"工具描述：{tool.description}\n"
+                f"工具参数定义：{json.dumps(tool.parameters, ensure_ascii=False)}\n"
+                f"Session 上下文：{json.dumps(ctx.session_context, ensure_ascii=False, default=str)}\n"
+                f"\n请从用户消息和 Session 上下文中提取工具参数，只返回 JSON 对象。"
+            )
+            result = await ctx.llm_client.chat_messages([
+                {"role": "user", "content": prompt},
+            ])
+            content = result.get("content", "{}") if isinstance(result, dict) else "{}"
+            # 清理可能的 markdown 代码块包装
+            if content.startswith("```"):
+                content = content.strip("`").strip()
+                if content.startswith("json"):
+                    content = content[4:].strip()
+            return json.loads(content) if content else {}
+        except Exception as e:
+            logger.warning("_llm_resolve_params failed for %s: %s", tool_name, e)
+            return {"query": ctx.user_input}
 
     @staticmethod
     def _build_session_scope(session_context: dict) -> dict:
