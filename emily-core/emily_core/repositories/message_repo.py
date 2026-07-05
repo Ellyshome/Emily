@@ -452,6 +452,43 @@ class MessageRepository:
             }
 
 
+    @staticmethod
+    def get_recent_by_user_id(user_id: str, limit: int = 20) -> list[dict]:
+        """获取用户最近入站消息（跨会话，OpenAI 格式）。
+
+        Args:
+            user_id: 用户 ID
+            limit: 返回条数上限（默认 20）
+
+        Returns:
+            [{role, content, time, sender_name}, ...] 按时间正序
+        """
+        with get_session() as session:
+            rows = (
+                session.query(
+                    Message.content,
+                    Message.created_at,
+                    Message.direction,
+                    Message.sender_name,
+                )
+                .filter(Message.sender_user_id == user_id)
+                .order_by(Message.created_at.desc())
+                .limit(limit)
+                .all()
+            )
+
+            turns = []
+            for row in reversed(rows):  # 正序排列
+                role = "user" if row.direction == "user_to_agent" else "agent"
+                turns.append({
+                    "role": role,
+                    "time": row.created_at or "",
+                    "content": row.content or "",
+                    "sender_name": row.sender_name or "",
+                })
+            return turns
+
+
 def _new_uuid_short() -> str:
     import uuid
     return str(uuid.uuid4())[:12]

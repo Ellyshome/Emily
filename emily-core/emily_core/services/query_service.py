@@ -96,6 +96,7 @@ class QueryService:
         if qt == "event":
             items = self.query_events(
                 project_id=cmd.project_id,
+                project_ids=cmd.project_ids,
                 time_range=cmd.time_range,
                 status=cmd.status_filter,
                 limit=cmd.limit,
@@ -109,6 +110,7 @@ class QueryService:
         elif qt == "task":
             items = self.query_tasks(
                 project_id=cmd.project_id,
+                project_ids=cmd.project_ids,
                 time_range=cmd.time_range,
                 status=cmd.status_filter,
                 assignee=cmd.assignee,
@@ -123,6 +125,7 @@ class QueryService:
         elif qt == "meeting":
             items = self.query_meetings(
                 project_id=cmd.project_id,
+                project_ids=cmd.project_ids,
                 time_range=cmd.time_range,
                 limit=cmd.limit,
             )
@@ -135,6 +138,7 @@ class QueryService:
         elif qt == "file":
             items = self.query_files(
                 project_id=cmd.project_id,
+                project_ids=cmd.project_ids,
                 file_type=cmd.file_type,
                 limit=cmd.limit,
             )
@@ -224,13 +228,15 @@ class QueryService:
     def query_events(
         self,
         project_id: str | None = None,
+        project_ids: list[str] | None = None,
         time_range: str = "all",
         status: str | None = None,
         limit: int = 50,
     ):
-        """查询事件。"""
+        """查询事件。支持 session_scope 的 project_ids 范围过滤。"""
         return self.event_repo.query_events(
             project_id=project_id,
+            project_ids=project_ids,
             time_range=time_range,
             status=status,
             limit=limit,
@@ -239,14 +245,16 @@ class QueryService:
     def query_tasks(
         self,
         project_id: str | None = None,
+        project_ids: list[str] | None = None,
         time_range: str = "all",
         status: str | None = None,
         assignee: str | None = None,
         limit: int = 50,
     ):
-        """查询任务。"""
+        """查询任务。支持 session_scope 的 project_ids 范围过滤。"""
         return self.task_repo.query_tasks(
             project_id=project_id,
+            project_ids=project_ids,
             time_range=time_range,
             status=status,
             assignee=assignee,
@@ -256,12 +264,14 @@ class QueryService:
     def query_meetings(
         self,
         project_id: str | None = None,
+        project_ids: list[str] | None = None,
         time_range: str = "all",
         limit: int = 50,
     ):
-        """查询会议。"""
+        """查询会议。支持 session_scope 的 project_ids 范围过滤。"""
         return self.meeting_repo.query_meetings(
             project_id=project_id,
+            project_ids=project_ids,
             time_range=time_range,
             limit=limit,
         )
@@ -269,12 +279,14 @@ class QueryService:
     def query_files(
         self,
         project_id: str | None = None,
+        project_ids: list[str] | None = None,
         file_type: str | None = None,
         limit: int = 50,
     ):
-        """查询文件。"""
+        """查询文件。支持 session_scope 的 project_ids 范围过滤。"""
         return self.file_repo.query_files(
             project_id=project_id,
+            project_ids=project_ids,
             file_type=file_type,
             limit=limit,
         )

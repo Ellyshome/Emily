@@ -104,6 +104,10 @@ class EmilyCore:
         self._file_app = None
         self._query_service = None
 
+        # Skill 模块
+        self._skill_registry = None
+        self._skill_executor = None
+
     # ────────────────────────────────────────────────────────────────────
     # 延迟初始化
     # ────────────────────────────────────────────────────────────────────
@@ -149,8 +153,11 @@ class EmilyCore:
         #  ── 全景节点图 V2 ──
         self._init_node_module()
 
-        #  ── M8c: 项目日记 + 长期记忆（必须在 Phase C 之后，依赖 Application 实例）──
+        #  ── 项目日记 + 长期记忆（必须在 Phase C 之后，依赖 Application 实例）──
         self._init_m8c_services()
+
+        # ── Skill 模块 ──
+        self._init_skill_module()
 
         # ── 统一工具注册（在全部子系统和 Application 就绪后，一次性注册）──
         if self._business_flow_tools is not None:
@@ -206,6 +213,72 @@ class EmilyCore:
         except Exception as e:
             logger.warning("Email module init failed: %s", e)
             self._email_service = None
+
+    def _init_skill_module(self) -> None:
+        """初始化 Skill 模块：Registry + Executor。fail-open。"""
+        try:
+            from .skill.registry import SkillRegistry
+            from .skill.executor import SkillExecutor
+
+            # 多级 fallback: 容器内 > 环境变量 > 宿主机开发路径
+            skill_dir = "/app/skills"
+            if not Path(skill_dir).exists():
+                skill_dir = getattr(self.config, "skill_directory", "") or ""
+            if not skill_dir or not Path(skill_dir).exists():
+                dev_dir = str(Path(__file__).resolve().parents[2] / "emily-data" / "skills")
+                if Path(dev_dir).exists():
+                    skill_dir = dev_dir
+
+            self._skill_registry = SkillRegistry(skill_directory=skill_dir)
+            status = self._skill_registry.load()
+            self._skill_executor = SkillExecutor()
+            logger.info("Skill module initialized: %s — dir=%s", status, skill_dir)
+
+            # 将 SkillRegistry 注入 PermissionService（使 sop_allow fallback 生效）
+            if self._permission_service is not None:
+                self._permission_service._skill_registry = self._skill_registry
+                logger.info("SkillRegistry injected into PermissionService")
+        except Exception as e:
+            logger.warning("Skill module init failed: %s", e)
+            self._skill_registry = None
+            self._skill_executor = None
+
+    def reload_skills(self) -> dict:
+        """热重载 Skill 注册表（无需重启容器）。
+
+        适用场景：sop_to_skill.py 转换新 Skill 后，调用此方法使运行中的
+        EmilyCore 感知新的 .skill.yaml 文件。也可通过 API 触发：
+          POST /api/v1/skills/reload
+
+        Returns:
+            {"ok": bool, "total": int, "skill_ids": list[str]}
+        """
+        if self._skill_registry is None:
+            return {"ok": False, "total": 0, "skill_ids": [], "error": "SkillRegistry not initialized"}
+
+        try:
+            status = self._skill_registry.reload()
+            skill_ids = self._skill_registry.list_sop_ids()
+
+            # 同步注入 PermissionService
+            if self._permission_service is not None:
+                self._permission_service._skill_registry = self._skill_registry
+
+            logger.info(
+                "SkillRegistry reloaded: %d skills (%d ok, %d failed)",
+                len(skill_ids), status.successfully_parsed, status.failed_parsed,
+            )
+            return {
+                "ok": True,
+                "total": len(skill_ids),
+                "skill_ids": skill_ids,
+                "successfully_parsed": status.successfully_parsed,
+                "failed_parsed": status.failed_parsed,
+                "failed_files": status.failed_files,
+            }
+        except Exception as e:
+            logger.error("SkillRegistry reload failed: %s", e)
+            return {"ok": False, "total": 0, "skill_ids": [], "error": str(e)}
 
     def _init_phase_c_deps(self) -> None:
         """Phase C: 初始化执行引擎 + 守护审核依赖 + Application 层。"""
@@ -272,6 +345,9 @@ class EmilyCore:
             rag_provider=self._rag_provider,
             # 阶段二：三维鉴权引擎
             permission_engine=self._permission_auth_engine,
+            # Skill 模块
+            skill_registry=self._skill_registry,
+            skill_executor=self._skill_executor,
         )
         self._bus = PipelineBUS.build_default(
             node_handlers=self._workitem_agent.node_handlers(),
@@ -715,6 +791,10 @@ class EmilyCore:
         # 邮箱模块：供 LLM Tool 使用
         if self._email_service is not None:
             injected["email_service"] = self._email_service
+
+        # Skill 模块
+        if self._skill_registry is not None:
+            injected["skill_registry"] = self._skill_registry
 
         return injected
 

@@ -80,10 +80,13 @@ class WorkItemAgent:
         config=None,
         # Phase C: 执行和守护依赖
         business_flow_tools=None,
-        sop_intent_registry=None,
+        sop_intent_registry=None,   # 已废弃，保留签名兼容
         rag_provider=None,
         # 阶段二：三维鉴权引擎
         permission_engine=None,
+        # Skill 模块
+        skill_registry=None,
+        skill_executor=None,
     ):
         self.injector = injector or KnowledgeInjector()
         self.config = config
@@ -94,7 +97,7 @@ class WorkItemAgent:
         # Phase C: 执行依赖
         self._business_flow_tools = business_flow_tools
 
-        # Phase C: 鉴权依赖
+        # Phase C: SOP 意图注册（已废弃，保留签名兼容）
         self._sop_intent_registry = sop_intent_registry
 
         # Phase C: RAG 依赖
@@ -102,6 +105,10 @@ class WorkItemAgent:
 
         # 阶段二：三维鉴权引擎
         self._permission_engine = permission_engine
+
+        # Skill 模块
+        self._skill_registry = skill_registry
+        self._skill_executor = skill_executor
 
         # Mock 大脑（Phase C 保留作为 fallback）
         self._planner = MockPlanner()
@@ -131,6 +138,69 @@ class WorkItemAgent:
         return mode
 
     # ── 公共 Pipeline BUS 节点 handler ──
+
+    @staticmethod
+    def _skill_to_execution_plan(skill) -> ExecutionPlan:
+        """将 SkillDefinition 转换为 ExecutionPlan。"""
+        from ..workitem.pipeline.interfaces.planning import PlanStep, ExecutionPlan
+
+        steps = [
+            PlanStep(
+                step_id=s.id,
+                description=s.description,
+                tool_name=s.tool_name,
+                tool_params={},  # 由 SkillExecutor 在执行时从 ParamMapping 解析
+                expected_output="",
+                depends_on=[],
+            )
+            for s in skill.steps
+        ]
+
+        return ExecutionPlan(
+            risk_level="L2",
+            steps=steps,
+            acceptance_criteria=[],
+            estimated_steps=len(steps),
+            _source="skill_definition",
+        )
+
+    async def _execute_skill(self, wi, context: BusContext) -> list[StepResult]:
+        """通过 SkillExecutor 执行 Skill 定义。"""
+        from ..skill.executor import SkillExecutionContext
+
+        skill = self._skill_registry.get_by_sop_id(wi.sop_id)
+        if skill is None:
+            logger.error("Skill not found for sop_id=%s, falling back to _real_execute", wi.sop_id)
+            return await self._real_execute(wi.execution_plan, context)
+
+        # 从 BusContext 获取 session_context
+        session_ctx = context.get_session_context() if context else None
+        session_context_dict = {}
+        if session_ctx:
+            session_context_dict = {
+                "user_id": getattr(session_ctx, "user_id", ""),
+                "user_name": getattr(session_ctx, "user_name", ""),
+                "project_ids": list(getattr(session_ctx, "project_ids", [])),
+                "project_name": getattr(session_ctx, "project_name", ""),
+                "db_perms": dict(getattr(session_ctx, "db_perms", {})),
+                "info_level": getattr(session_ctx, "info_level", "public"),
+                "company_type": getattr(session_ctx, "company_type", ""),
+                "department": list(getattr(session_ctx, "department", [])),
+            }
+
+        skill_ctx = SkillExecutionContext(
+            skill=skill,
+            user_input=wi.user_input,
+            user_id=context.user_id if hasattr(context, "user_id") else "",
+            message_id=context.db_message_id if hasattr(context, "db_message_id") else "",
+            conversation_id=context.message.conversation_id if context.message else "",
+            session_context=session_context_dict,
+            step_results={},
+            business_flow_tools=self._business_flow_tools,
+            llm_client=self._llm,
+        )
+
+        return await self._skill_executor.execute(skill_ctx)
 
     async def node1_intent(self, context: BusContext) -> None:
         """Node 1 [意图验证+注入] —— 路由已在 SessionAgent 完成。"""
@@ -163,9 +233,22 @@ class WorkItemAgent:
                      getattr(wi.route_decision, "_source", ""))
 
     async def node2_plan(self, context: BusContext) -> None:
-        """Node 2 [计划+标准] —— LLM 动态规划 或 MockPlanner fallback。"""
+        """Node 2 [计划+标准] —— Skill 定义优先，否则 LLM 规划 或 MockPlanner fallback。"""
         wi = context.work_item
 
+        # ── Skill 路径优先 ──
+        if self._skill_registry and self._skill_registry.has_skill(wi.sop_id or ""):
+            skill = self._skill_registry.get_by_sop_id(wi.sop_id)
+            plan = self._skill_to_execution_plan(skill)
+            plan._source = "skill_definition"
+            wi.execution_plan = plan
+            wi.risk_level = plan.risk_level
+            wi.acceptance_criteria = list(getattr(plan, "acceptance_criteria", []))
+            wi.llm_call_count += 1
+            logger.info("WI %s node2: using Skill definition (sop=%s)", wi.id, wi.sop_id)
+            return
+
+        # ── 原有 LLM/Mock 规划路径 ──
         planner_mode = self._resolve_mode("planner")
 
         if planner_mode == "real" and self._llm:
@@ -259,17 +342,22 @@ class WorkItemAgent:
     # ── Phase C: Node 3 真实执行引擎 ──
 
     async def node3_execute(self, context: BusContext) -> None:
-        """Node 3 [执行+验收] —— 真实执行引擎 + Guardian 并进审核。"""
+        """Node 3 [执行+验收] —— Skill 路径优先，否则走原有 _real_execute。"""
         wi = context.work_item
         if wi.execution_plan is None:
             return
 
-        executor_mode = self._resolve_mode("executor")
-
-        if executor_mode == "real":
-            step_results = await self._real_execute(wi.execution_plan, context)
+        # ── Skill 路径 ──
+        if getattr(wi.execution_plan, "_source", "") == "skill_definition" and self._skill_executor:
+            step_results = await self._execute_skill(wi, context)
         else:
-            step_results = await self._work_agent.execute(wi.execution_plan, context)
+            # ── 原有路径 ──
+            executor_mode = self._resolve_mode("executor")
+
+            if executor_mode == "real":
+                step_results = await self._real_execute(wi.execution_plan, context)
+            else:
+                step_results = await self._work_agent.execute(wi.execution_plan, context)
 
         # Guardian 并进审核：每个 step 的 review 作为后台 Task，
         # 在全部步骤执行完后 gather() 汇合，不阻塞主链路
@@ -599,8 +687,7 @@ class WorkItemAgent:
         钩子中独立处理。本方法保留用于未来的 pipeline 内联鉴权集成（例如在
         node1_intent 或 node2_plan 中调用）。
 
-        签名从 (user_id, route_decision) 改为 (context: BusContext, route_decision)，
-        从 BusContext 获取权限快照，委托 PermissionAuthEngine 执行三维鉴权。
+        从 BusContext 获取 SessionContext，委托 PermissionAuthEngine 执行三维鉴权。
         mock 模式：始终 ALLOW。
         """
         auth_mode = self._resolve_mode("auth")
@@ -612,19 +699,19 @@ class WorkItemAgent:
         if not sop_id:
             return AuthResult(decision=AuthDecision.ALLOW, _source="real_auth")  # 纯聊天无需鉴权
 
-        # 获取权限快照
-        perms = context.get_permissions()
-        if perms is None:
-            return AuthResult(decision=AuthDecision.DENY, reason="无权限快照",
+        # 获取 SessionContext（扁平化权限字段）
+        session_ctx = context.get_session_context()
+        if session_ctx is None:
+            return AuthResult(decision=AuthDecision.DENY, reason="无会话上下文",
                             _source="real_auth")
 
-        # 委托 PermissionAuthEngine 三维鉴权
+        # 委托 PermissionAuthEngine 三维鉴权（传入 dict 格式）
         engine = getattr(self, "_permission_engine", None)
         if engine is None:
-            # 无引擎时走快照白名单
-            if sop_id in perms.sop_allow:
+            # 无引擎时走 sop_allow 白名单
+            if sop_id in session_ctx.sop_allow:
                 return AuthResult(decision=AuthDecision.ALLOW,
-                                matched_roles=[f"L{perms.permission_level}"],
+                                matched_roles=[f"L{session_ctx.permission_level}"],
                                 _source="real_auth_sop_allow")
             return AuthResult(
                 decision=AuthDecision.DENY,
@@ -632,10 +719,23 @@ class WorkItemAgent:
                 _source="real_auth_sop_allow",
             )
 
-        result = await engine.check_sop_access(perms, sop_id, context)
+        # 构建权限 dict 给 AuthEngine
+        perms_dict = {
+            "permission_level": session_ctx.permission_level,
+            "user_id": session_ctx.user_id,
+            "sop_allow": list(session_ctx.sop_allow),
+            "granted_codes": list(session_ctx.granted_codes),
+            "denied_codes": list(session_ctx.denied_codes),
+            "info_level": session_ctx.info_level,
+            "company_type": session_ctx.company_type,
+            "department": list(session_ctx.department),
+            "authorized_node_ids": list(session_ctx.authorized_node_ids),
+            "supervisor_id": session_ctx.supervisor_id,
+        }
+        result = await engine.check_sop_access(perms_dict, sop_id, context)
         if result.allowed:
             return AuthResult(decision=AuthDecision.ALLOW,
-                            matched_roles=[f"L{perms.permission_level}"],
+                            matched_roles=[f"L{session_ctx.permission_level}"],
                             _source="real_auth_engine")
         return AuthResult(
             decision=AuthDecision.DENY,

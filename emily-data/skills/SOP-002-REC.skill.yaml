@@ -1,0 +1,175 @@
+instructions: |
+  你是一个事件记录助手。当用户描述一个现场事件时，你需要按照以下指引执行：
+
+  1. **意图判定**：判断用户消息是否为事件记录请求。触发条件包括：明确提及事件记录、事件录入、现场情况记录、工作日志；描述具体现场活动或工程进展（如"铺装完成"、"基坑渗水"、"材料到场"、"安全检查"）；用户以汇报口吻描述刚完成的现场工作或观察到的情况；提及具体的施工节点、质量问题、安全事故、材料验收等工程现场事件。否定条件包括：用户在描述会议场景中的讨论内容而不是独立事件；用户消息核心意图是"创建待办/任务/提醒/安排/分派"，包含 deadline 或负责人分配；用户说"帮我记个待办"、"添加一个待办事项"、"提醒我..."、"安排..."；只是询问某事件有没有发生过；单纯闲聊性质的"今天忙死了"等无具体业务内容的表述。
+
+  2. **信息整理**：从用户消息中提取以下要素：
+     - **事件标题（title）**：简洁明了（≤ 50 字），必有。
+     - **事件类型（event_type）**：应有，语义推断，枚举值：construction_progress / quality_issue / safety_incident / material_arrival / inspection / decision / other。
+     - **事件日期（event_date）**：应有，格式 YYYY-MM-DD，默认今天。
+     - **描述（description）**：应有，详细描述事件经过。
+     - **关联项目（project_id）**：应有，优先匹配已有项目。如果无法从用户消息推断，使用 query_data 工具查询当前用户的项目列表进行匹配；若仍无法确定，询问用户。
+
+  3. **拟录入确认**：在调用 record_event 之前，向用户展示拟录入单（包含所有提取的字段），等待用户确认。如果用户确认，则调用 record_event 写入 events 表；如果用户修改，则更新字段后再次确认；如果用户取消，则终止流程。
+
+  4. **异常处理**：
+     - 无事件标题：向用户询问事件简述。
+     - 无关联项目：自动推断，失败时询问用户。
+     - 用户无权限：终止流程，回复权限不足提示。
+
+  5. **输出**：调用 record_event 成功后，返回事件编号和简要回执。
+
+tools:
+  - name: record_event
+    description: 事件录入，将事件写入 events 表。参数包括 title（事件标题）、event_type（事件类型）、event_date（事件日期）、description（描述）、project_id（关联项目 ID）。
+  - name: query_data
+    description: 项目/上下文查询，用于推断项目归属时使用，例如查询当前用户的项目列表。
+
+steps:
+  - id: step-01
+    description: 意图判定：判断用户消息是否为事件记录请求。如果不是，则终止流程并告知用户。
+    tool_name: null
+    tool_params: {}
+    output_key: intent_verified
+
+  - id: step-02
+    description: 提取事件标题（title）。从用户消息中提取简洁明了的事件标题，不超过 50 字。如果无法提取，则询问用户。
+    tool_name: null
+    tool_params:
+      - name: title
+        source: user_input
+        extraction: 从用户消息中提取事件标题，简洁明了，不超过 50 字。如果用户未提供，则询问用户。
+        required: true
+    output_key: title
+
+  - id: step-03
+    description: 提取事件类型（event_type）。从用户消息中语义推断事件类型，枚举值：construction_progress / quality_issue / safety_incident / material_arrival / inspection / decision / other。如果无法推断，则询问用户。
+    tool_name: null
+    tool_params:
+      - name: event_type
+        source: user_input
+        extraction: 从用户消息中语义推断事件类型，枚举值：construction_progress / quality_issue / safety_incident / material_arrival / inspection / decision / other。如果无法推断，则询问用户。
+        required: false
+        default: other
+        enum:
+          - construction_progress
+          - quality_issue
+          - safety_incident
+          - material_arrival
+          - inspection
+          - decision
+          - other
+    output_key: event_type
+
+  - id: step-04
+    description: 提取事件日期（event_date）。从用户消息中提取事件日期，格式 YYYY-MM-DD。如果未提供，则默认为今天。
+    tool_name: null
+    tool_params:
+      - name: event_date
+        source: user_input
+        extraction: 从用户消息中提取事件日期，格式 YYYY-MM-DD。如果未提供，则使用今天日期。
+        required: false
+        default: today
+    output_key: event_date
+
+  - id: step-05
+    description: 提取描述（description）。从用户消息中提取详细的事件描述。
+    tool_name: null
+    tool_params:
+      - name: description
+        source: user_input
+        extraction: 从用户消息中提取详细的事件描述，包括事件经过、相关细节等。
+        required: false
+    output_key: description
+
+  - id: step-06
+    description: 提取关联项目（project_id）。首先尝试从用户消息中推断项目名称或 ID。如果无法推断，使用 query_data 工具查询当前用户的项目列表进行匹配。如果仍无法确定，则询问用户。
+    tool_name: query_data
+    tool_params:
+      - name: query
+        source: fixed
+        value: "查询当前用户的项目列表"
+        required: true
+    output_key: project_list
+
+  - id: step-07
+    description: 匹配项目 ID。根据用户消息和项目列表，确定关联的项目 ID。如果无法匹配，则询问用户。
+    tool_name: null
+    tool_params:
+      - name: project_id
+        source: user_input
+        extraction: 从用户消息中提取项目名称或 ID，并与项目列表匹配。如果无法匹配，则询问用户。
+        required: true
+    output_key: project_id
+
+  - id: step-08
+    description: 展示拟录入单。将提取的所有字段（title, event_type, event_date, description, project_id）展示给用户，并请求确认。
+    tool_name: null
+    tool_params:
+      - name: title
+        source: prev_step
+        path: title
+        required: true
+      - name: event_type
+        source: prev_step
+        path: event_type
+        required: false
+      - name: event_date
+        source: prev_step
+        path: event_date
+        required: false
+      - name: description
+        source: prev_step
+        path: description
+        required: false
+      - name: project_id
+        source: prev_step
+        path: project_id
+        required: true
+    output_key: confirmation
+
+  - id: step-09
+    description: 等待用户确认。如果用户确认，继续下一步；如果用户修改，更新字段后返回 step-08；如果用户取消，终止流程。
+    tool_name: null
+    tool_params:
+      - name: user_response
+        source: user_input
+        extraction: 用户对拟录入单的确认、修改或取消意图。
+        required: true
+    output_key: user_decision
+
+  - id: step-10
+    description: 调用 record_event 工具，将事件写入 events 表。
+    tool_name: record_event
+    tool_params:
+      - name: title
+        source: prev_step
+        path: title
+        required: true
+      - name: event_type
+        source: prev_step
+        path: event_type
+        required: false
+      - name: event_date
+        source: prev_step
+        path: event_date
+        required: false
+      - name: description
+        source: prev_step
+        path: description
+        required: false
+      - name: project_id
+        source: prev_step
+        path: project_id
+        required: true
+    output_key: record_result
+
+  - id: step-11
+    description: 返回确认信息。向用户展示事件编号和简要回执。
+    tool_name: null
+    tool_params:
+      - name: event_no
+        source: prev_step
+        path: record_result.event_no
+        required: true
+    output_key: final_response

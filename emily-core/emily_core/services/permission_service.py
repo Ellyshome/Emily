@@ -27,12 +27,134 @@ from emily_core.infrastructure.database.models import (
     User,
     _utc_now,
 )
-from emily_core.permission.level import can_access, LEVEL_NAME
+from emily_core.permission.level import can_access, LEVEL_NAME, level_label
 from emily_core.repositories.permission_grant_repo import PermissionGrantRepository
 from emily_core.repositories.permission_repo import PermissionRepository
-from emily_core.session.session_context import PermissionSnapshot
 
 logger = logging.getLogger("emily.permission")
+
+
+# ══════════════════════════════════════════════════════════════════════════════
+# 模块级工具函数（function_scope 解析）
+# ══════════════════════════════════════════════════════════════════════════════
+
+def _extract_node_ids(fs) -> list[str]:
+    """从 function_scope 解析出的 JSON 结构提取节点 ID。
+
+    兼容三种格式：
+      1. list: [{"nodeIds": ["design", "construction"]}]
+      2. dict (值是 list): {"design": ["node-001", "node-002"]}
+      3. dict (值是 str): {"design": "design", "construction": "construction"}
+    """
+    nodes: list[str] = []
+
+    if isinstance(fs, list):
+        for item in fs:
+            if isinstance(item, dict):
+                # 格式1: {"nodeIds": [...]}
+                if "nodeIds" in item:
+                    nodes.extend(item["nodeIds"] or [])
+                else:
+                    # 也可能是 [{"design": [...]}]
+                    for v in item.values():
+                        if isinstance(v, list):
+                            nodes.extend(v)
+                        elif isinstance(v, str):
+                            nodes.append(v)
+
+    elif isinstance(fs, dict):
+        for v in fs.values():
+            if isinstance(v, list):
+                nodes.extend(v)
+            elif isinstance(v, str):
+                nodes.append(v)
+
+    return nodes
+
+
+# 中文业务范围 → 英文节点 ID 映射（兜底推导）
+_SCOPE_NODE_MAP: dict[str, str] = {
+    "室内精装": "design",
+    "软装深化": "design",
+    "BIM建模": "design",
+    "幕墙精装": "design",
+    "精装": "design",
+    "设计": "design",
+    "施工": "construction",
+    "工程": "construction",
+    "监理": "supervision",
+    "景观": "landscape",
+    "总包": "construction",
+    "分包": "construction",
+    "采购": "procurement",
+    "供货": "procurement",
+}
+
+
+def _scope_to_node_ids(scopes: list[str]) -> list[str]:
+    """从 company.scope 推导节点 ID（宽松兜底）。
+
+    当 function_scope 为空时，从 scope 的中文关键词推导英文节点 ID。
+    这确保了 scope 非空的公司不会返回零节点——至少有一个合理的节点范围。
+    """
+    node_set: set[str] = set()
+    for scope_text in scopes:
+        for cn_keyword, node_id in _SCOPE_NODE_MAP.items():
+            if cn_keyword in scope_text:
+                node_set.add(node_id)
+    return sorted(node_set) if node_set else []
+
+
+# ══════════════════════════════════════════════════════════════════════════════
+# 二维权限矩阵：level × company_type → db_perms
+# ══════════════════════════════════════════════════════════════════════════════
+#
+# 设计原则：
+#   - 级别（L1-L6）定"你是谁"（组织位置）
+#   - 公司类型定"你能做什么"（职能角色）
+#   - 矩阵 = f(level, company_type)
+#
+# 规则说明：
+#   1. L1 访客：无论公司类型，只有 project:read
+#   2. L2/L3 参建线：event/meeting 所有参建方均可读写
+#      但 task 写权限只给施工相关方（施工单位/总包），其余只读
+#   3. L4 建设主管：同 L2/L3 但加 project:read_write（建设方管理项目）
+#   4. L5+ 管理员：全表读写
+#
+# ┌─────────────────┬──────────┬──────────┬──────────┬──────────┬──────────┐
+# │ company_type    │ project  │ event    │ task     │ meeting  │ financial│
+# ├─────────────────┼──────────┼──────────┼──────────┼──────────┼──────────┤
+# │ L2/L3 施工/总包 │ read     │ rw       │ rw       │ rw       │ —        │
+# │ L2/L3 设计      │ read     │ rw       │ read     │ rw       │ —        │
+# │ L2/L3 监理      │ read     │ rw       │ read     │ rw       │ —        │
+# │ L2/L3 供应商    │ read     │ rw       │ read     │ rw       │ —        │
+# │ L2/L3 其他      │ read     │ rw       │ read     │ rw       │ —        │
+# │ L4 建设单位     │ rw       │ rw       │ rw       │ rw       │ —        │
+# │ L5+ 管理员      │ rw       │ rw       │ rw       │ rw       │ read     │
+# └─────────────────┴──────────┴──────────┴──────────┴──────────┴──────────┘
+#
+# 施工相关方定义：可以创建和修改任务的公司类型
+_CONSTRUCTION_TYPES: frozenset[str] = frozenset({
+    "施工单位", "总包", "总承包", "施工总包",
+})
+
+# L2/L3 参建线：按公司类型差异化（task 表区分读写）
+_PARTICIPANT_DB_PERMS: dict[str, dict[str, str]] = {
+    # 施工相关方：task 可读写
+    "construction": {
+        "project": "read",
+        "event": "read_write",
+        "task": "read_write",
+        "meeting": "read_write",
+    },
+    # 非施工方（设计/监理/供应商等）：task 只读
+    "non_construction": {
+        "project": "read",
+        "event": "read_write",
+        "task": "read",
+        "meeting": "read_write",
+    },
+}
 
 
 class PermissionService:
@@ -53,36 +175,41 @@ class PermissionService:
                  fail_open: bool = True,
                  cache=None,
                  auth_engine=None,
-                 audit_repo=None):
+                 audit_repo=None,
+                 skill_registry=None):
         self._repo = repo or PermissionRepository()
         self._grant_repo = grant_repo or PermissionGrantRepository()
         self._fail_open = fail_open
         self._cache = cache
         self._auth_engine = auth_engine
         self._audit_repo = audit_repo
+        self._skill_registry = skill_registry
 
     # ========================================================================
     #  快照组装（核心）
     # ========================================================================
 
-    def build_permission_snapshot(self, user_id: str) -> PermissionSnapshot:
-        """组装用户权限快照，注入 SessionContext。
+    def build_permission_dict(self, user_id: str) -> dict:
+        """组装用户权限快照（返回 dict），注入 SessionContext。
 
         fail-open：任何异常降级为 L1 访客快照（设计文档 §6.4）。
         """
         try:
             return self._do_build_snapshot(user_id)
         except Exception as e:
-            logger.warning("build_permission_snapshot failed user=%s: %s", user_id, e)
+            logger.warning("build_permission_dict failed user=%s: %s", user_id, e)
             if self._fail_open:
-                return PermissionSnapshot(permission_level=1)  # L1 访客降级
+                return {"permission_level": 1}  # L1 访客降级
             raise
 
-    def _do_build_snapshot(self, user_id: str) -> PermissionSnapshot:
+    # 向后兼容别名
+    build_permission_snapshot = build_permission_dict
+
+    def _do_build_snapshot(self, user_id: str) -> dict:
         user = self._repo.get_user(user_id)
         if user is None:
             logger.warning("user not found, fallback to L1: %s", user_id)
-            return PermissionSnapshot(permission_level=1)
+            return {"permission_level": 1}
 
         company = self._repo.get_company(user.company) if user.company else None
         grants = self._grant_repo.get_active_grants(user_id)
@@ -92,7 +219,7 @@ class PermissionService:
             sop_allow, denied_sop_ids = self._cache.get_user_whitelist(
                 user_id, user.permission_level,
                 company.type if company else "",
-                self._primary_department(company),
+                self._all_departments(company),
             )
         else:
             sop_allow, denied_sop_ids = self._compute_sop_allow(user, company)
@@ -106,26 +233,26 @@ class PermissionService:
         # 权限版本号（来自缓存或默认 0）
         perm_version = self._cache.get_version() if self._cache else 0
 
-        return PermissionSnapshot(
-            permission_level=user.permission_level,
-            company_id=user.company or "",
-            company_type=company.type if company else "",
-            company_name=company.company_name if company else "",
-            department=self._primary_department(company),
-            project_ids=self._derive_project_ids(user, company),
-            partner_ids=self._load_json_list(company.partners) if company else [],
-            scopes=self._load_json_list(company.scope) if company else [],
-            sop_allow=sop_allow,
-            db_perms=self._derive_db_perms(user.permission_level),
-            info_level=self._derive_info_level(user.permission_level),
-            supervisor_id=user.supervisor_id or "",
-            authorized_node_ids=self._derive_authorized_nodes(company),
-            granted_codes=granted_codes,
-            denied_codes=denied_codes,
-            permissions_loaded_at=_utc_now(),
-            permission_version=perm_version,
-            extra_perms={"user_id": user_id},
-        )
+        return {
+            "permission_level": user.permission_level,
+            "user_id": user_id,
+            "company_id": user.company or "",
+            "company_type": company.type if company else "",
+            "company_name": company.company_name if company else "",
+            "department": self._all_departments(company),
+            "project_ids": self._derive_project_ids(user, company),
+            "partner_ids": self._load_json_list(company.partners) if company else [],
+            "scopes": self._load_json_list(company.scope) if company else [],
+            "sop_allow": sop_allow,
+            "db_perms": self._derive_db_perms(user.permission_level, company.type if company else ""),
+            "info_level": self._derive_info_level(user.permission_level),
+            "supervisor_id": user.supervisor_id or "",
+            "authorized_node_ids": self._derive_authorized_nodes(company),
+            "granted_codes": granted_codes,
+            "denied_codes": denied_codes,
+            "permissions_loaded_at": _utc_now(),
+            "permission_version": perm_version,
+        }
 
     # ========================================================================
     #  SOP 白名单计算
@@ -134,53 +261,76 @@ class PermissionService:
     def _compute_sop_allow(self, user: User, company: Optional[CompanyInfo]):
         """计算用户可访问的 SOP 白名单 + 拒绝的 SOP ID 列表。
 
-        阶段一粗筛规则：
-          1. deny 绑定（用户匹配组）→ denied
-          2. is_public=True → allow
-          3. can_access(permission_level, min_permission_level) → allow
-        企业类型/部门细筛在阶段二鉴权引擎 check_sop_access() 实现。
+        策略（agent-sop-skill 架构）：
+          1. 优先查 sop_business_flows DB 表（细粒度权限矩阵）
+          2. 若 DB 表无记录，fallback 到 SkillRegistry（磁盘 .skill.yaml）
+             ——只要 Skill 存在就视为可用，细筛交由 AuthEngine 执行时做
+          3. SkillRegistry 也无记录时返回空列表（退化模式）
         """
         sop_flows = self._repo.list_active_sop_flows()
-        bindings = self._repo.list_sop_bindings()
-        groups = self._repo.list_permission_groups()
 
-        user_company_type = company.type if company else ""
-        user_department = self._primary_department(company)
-        matched_group_ids = {
-            g.id for g in groups
-            if self._group_matches_user(g, user_company_type, user_department)
-        }
+        if sop_flows:
+            # DB 有记录：走传统权限矩阵细筛
+            bindings = self._repo.list_sop_bindings()
+            groups = self._repo.list_permission_groups()
 
-        sop_allow: list[str] = []
-        denied_sop_ids: list[str] = []
-        for flow in sop_flows:
-            flow_bindings = [b for b in bindings if b.sop_business_flow_id == flow.id]
+            user_company_type = company.type if company else ""
+            user_departments = self._all_departments(company)
+            matched_group_ids = {
+                g.id for g in groups
+                if self._group_matches_user(g, user_company_type, user_departments)
+            }
 
-            # 1. deny 绑定优先
-            if any(b.binding_type == "deny" and b.permission_group_id in matched_group_ids
-                   for b in flow_bindings):
-                denied_sop_ids.append(flow.sop_id)
-                continue
+            sop_allow: list[str] = []
+            denied_sop_ids: list[str] = []
+            for flow in sop_flows:
+                flow_bindings = [b for b in bindings if b.sop_business_flow_id == flow.id]
 
-            # 2. 公开 SOP
-            if flow.is_public:
+                # 1. deny 绑定优先
+                if any(b.binding_type == "deny" and b.permission_group_id in matched_group_ids
+                       for b in flow_bindings):
+                    denied_sop_ids.append(flow.sop_id)
+                    continue
+
+                # 2. 公开 SOP
+                if flow.is_public:
+                    sop_allow.append(flow.sop_id)
+                    continue
+
+                # 3. 树形继承级别检查
+                if not can_access(user.permission_level, flow.min_permission_level):
+                    continue
+
                 sop_allow.append(flow.sop_id)
-                continue
 
-            # 3. 树形继承级别检查
-            if not can_access(user.permission_level, flow.min_permission_level):
-                continue
+            return sop_allow, denied_sop_ids
 
-            sop_allow.append(flow.sop_id)
+        # DB 表无记录：fallback 到 SkillRegistry
+        if self._skill_registry is not None:
+            try:
+                skill_ids = self._skill_registry.list_sop_ids()
+                if skill_ids:
+                    logger.info(
+                        "sop_business_flows empty, using SkillRegistry fallback: %d skills for user=%s",
+                        len(skill_ids), user.id,
+                    )
+                    return skill_ids, []
+            except Exception as e:
+                logger.warning("SkillRegistry fallback failed: %s", e)
 
-        return sop_allow, denied_sop_ids
+        return [], []
 
     @staticmethod
-    def _group_matches_user(group: PermissionGroup, user_company_type: str, user_department: str) -> bool:
-        """权限组是否匹配用户的企业类型 + 部门。"""
+    def _group_matches_user(group: PermissionGroup, user_company_type: str,
+                            user_departments: list[str]) -> bool:
+        """权限组是否匹配用户的企业类型 + 部门（交集匹配）。
+
+        多部门用户只要任一部门命中权限组的部门要求即算匹配，
+        避免因只取首部门导致其他部门的 SOP 误拒。
+        """
         if group.company_type and group.company_type != user_company_type:
             return False
-        if group.department and group.department != user_department:
+        if group.department and group.department not in user_departments:
             return False
         return True
 
@@ -189,10 +339,20 @@ class PermissionService:
     # ========================================================================
 
     @staticmethod
-    def _primary_department(company: Optional[CompanyInfo]) -> str:
+    def _all_departments(company: Optional[CompanyInfo]) -> list[str]:
+        """返回公司的全部部门列表（而非仅首个）。
+
+        多部门用户（如精装设计单位含设计部/深化部/软装部/工程部）需完整部门列表，
+        以便 SOP 鉴权做交集匹配。只取首个会导致其他部门的 SOP 被误拒。
+        """
         if not company or not company.department:
-            return ""
-        depts = PermissionService._load_json_list(company.department)
+            return []
+        return PermissionService._load_json_list(company.department)
+
+    # 向后兼容别名（返回首部门 str）
+    @staticmethod
+    def _primary_department(company: Optional[CompanyInfo]) -> str:
+        depts = PermissionService._all_departments(company)
         return depts[0] if depts else ""
 
     @staticmethod
@@ -205,39 +365,89 @@ class PermissionService:
         return "public"
 
     @staticmethod
-    def _derive_db_perms(level: int) -> dict[str, str]:
-        """级别 → 数据库表级权限（粗粒度，细粒度由行级安全拦截器处理）。"""
-        perms: dict[str, str] = {}
-        if level >= 1:
-            perms["project"] = "read"
-        if level >= 2:
-            perms["event"] = "read_write"
-            perms["task"] = "read_write"
-            perms["meeting"] = "read_write"
+    def _derive_db_perms(level: int, company_type: str = "") -> dict[str, str]:
+        """级别 × 公司类型 → 数据库表级权限（二维矩阵）。
+
+        粗粒度表级权限，细粒度由行级安全拦截器处理。
+
+        Args:
+            level: 权限层级 1-6
+            company_type: 企业类型（设计单位/施工单位/监理等）
+
+        映射表定义在模块级 _PARTICIPANT_DB_PERMS / _CONSTRUCTION_TYPES，
+        详见该处注释的完整矩阵图。
+        """
+        # L1 访客：只有项目只读
+        if level < 2:
+            return {"project": "read"} if level >= 1 else {}
+
+        # L5+ 管理员：全表读写
         if level >= 5:
-            perms["project"] = "read_write"
-            perms["financial"] = "read"
-        return perms
+            perms = {
+                "project": "read_write",
+                "event": "read_write",
+                "task": "read_write",
+                "meeting": "read_write",
+            }
+            if level >= 5:
+                perms["financial"] = "read"
+            return perms
+
+        # L4 建设主管：同 L2/L3 施工方权限 + project 读写
+        if level == 4:
+            return {
+                "project": "read_write",
+                "event": "read_write",
+                "task": "read_write",
+                "meeting": "read_write",
+            }
+
+        # L2/L3 参建线：按公司类型差异化
+        key = "construction" if company_type in _CONSTRUCTION_TYPES else "non_construction"
+        return dict(_PARTICIPANT_DB_PERMS[key])
 
     @staticmethod
     def _derive_authorized_nodes(company: Optional[CompanyInfo]) -> list[str]:
-        """从 company.function_scope 推导用户可访问的全景节点 ID（需求 §4.1）。"""
-        if not company or not company.function_scope:
+        """从 company.function_scope 推导用户可访问的全景节点 ID（需求 §4.1）。
+
+        兼容三种 JSON 格式：
+          1. 列表格式（推荐）: [{"nodeIds": ["design", "construction"]}]
+          2. 字典格式（常见）: {"design": ["node-001", "node-002"], "construction": ["node-003"]}
+          3. 扁平字典: {"design": "design", "construction": "construction"}
+        若 function_scope 为空或无法解析，从 company.scope 推导节点关键词作为兜底。
+        """
+        if not company:
             return []
-        try:
-            fs = json.loads(company.function_scope)
-        except (json.JSONDecodeError, TypeError):
-            return []
-        nodes: list[str] = []
-        items = fs if isinstance(fs, list) else []
-        for item in items:
-            if isinstance(item, dict):
-                nodes.extend(item.get("nodeIds", []) or [])
-        return nodes
+
+        # ── 主路径：解析 function_scope ──
+        if company.function_scope and company.function_scope not in ("{}", "[]", ""):
+            try:
+                fs = json.loads(company.function_scope)
+                nodes = _extract_node_ids(fs)
+                if nodes:
+                    return nodes
+            except (json.JSONDecodeError, TypeError):
+                pass
+
+        # ── 兜底：从 company.scope 推导节点关键词 ──
+        # scope 如 ["室内精装", "软装深化", "BIM建模"] → 提取英文前缀作为节点 ID
+        # 这是一个宽松兜底，确保 scope 非空时不会返回零节点
+        scopes = PermissionService._load_json_list(company.scope) if company.scope else []
+        if scopes:
+            return _scope_to_node_ids(scopes)
+
+        return []
 
     @staticmethod
     def _derive_project_ids(user: User, company: Optional[CompanyInfo]) -> list[str]:
-        """用户参与的项目 ID 列表（阶段二关联 projects 表后完善）。"""
+        """用户参与的项目 ID 列表。
+
+        当前阶段：从 user.project_id 取主项目。阶段二需扩展为
+        从 project_members 关联表查询全部参与项目。
+        """
+        pid = getattr(user, "project_id", None)
+        if pid:
+            return [pid]
         return []
 
     @staticmethod
@@ -261,10 +471,10 @@ class PermissionService:
             {"allowed": bool, "reason": str, "suggested_approver": str}
         """
         import asyncio
-        snapshot = await asyncio.to_thread(self.build_permission_snapshot, user_id)
+        perm_dict = await asyncio.to_thread(self.build_permission_dict, user_id)
 
         if self._auth_engine is not None:
-            result = await self._auth_engine.check_sop_access(snapshot, sop_id)
+            result = await self._auth_engine.check_sop_access(perm_dict, sop_id)
             return {
                 "allowed": result.allowed,
                 "reason": result.reason,
@@ -273,11 +483,11 @@ class PermissionService:
             }
 
         # 无引擎时走快照白名单
-        allowed = sop_id in snapshot.sop_allow
+        allowed = sop_id in perm_dict.get("sop_allow", [])
         return {
             "allowed": allowed,
             "reason": "" if allowed else f"SOP {sop_id} 不在用户白名单中",
-            "suggested_approver": snapshot.supervisor_id if not allowed else "",
+            "suggested_approver": perm_dict.get("supervisor_id", "") if not allowed else "",
         }
 
     async def grant(self, *, grantee_id: str, grantor_id: str, perm_code: str,
@@ -424,25 +634,25 @@ class PermissionService:
         import asyncio
 
         try:
-            snapshot = await asyncio.to_thread(self.build_permission_snapshot, user_id)
+            perm_dict = await asyncio.to_thread(self.build_permission_dict, user_id)
             grants = await asyncio.to_thread(self._grant_repo.get_active_grants, user_id)
 
             return {
                 "success": True,
                 "permissions": {
                     "user_id": user_id,
-                    "permission_level": snapshot.permission_level,
-                    "level_name": LEVEL_NAME.get(snapshot.permission_level, f"L{snapshot.permission_level}"),
-                    "company_id": snapshot.company_id,
-                    "company_type": snapshot.company_type,
-                    "company_name": snapshot.company_name,
-                    "department": snapshot.department,
-                    "info_level": snapshot.info_level,
-                    "sop_allow": snapshot.sop_allow,
-                    "db_perms": snapshot.db_perms,
-                    "authorized_node_ids": snapshot.authorized_node_ids,
-                    "granted_codes": snapshot.granted_codes,
-                    "denied_codes": snapshot.denied_codes,
+                    "permission_level": perm_dict["permission_level"],
+                    "level_name": level_label(perm_dict["permission_level"]),
+                    "company_id": perm_dict.get("company_id", ""),
+                    "company_type": perm_dict.get("company_type", ""),
+                    "company_name": perm_dict.get("company_name", ""),
+                    "department": perm_dict.get("department", []),
+                    "info_level": perm_dict.get("info_level", "public"),
+                    "sop_allow": perm_dict.get("sop_allow", []),
+                    "db_perms": perm_dict.get("db_perms", {}),
+                    "authorized_node_ids": perm_dict.get("authorized_node_ids", []),
+                    "granted_codes": perm_dict.get("granted_codes", []),
+                    "denied_codes": perm_dict.get("denied_codes", []),
                     "active_grants": [
                         {
                             "grant_no": g.grant_no,
@@ -454,8 +664,8 @@ class PermissionService:
                         }
                         for g in grants
                     ],
-                    "permission_version": snapshot.permission_version,
-                    "permissions_loaded_at": snapshot.permissions_loaded_at,
+                    "permission_version": perm_dict.get("permission_version", 0),
+                    "permissions_loaded_at": perm_dict.get("permissions_loaded_at", ""),
                 },
             }
         except Exception as e:
@@ -463,11 +673,12 @@ class PermissionService:
             return {"success": False, "reply": f"查询权限失败：{e}"}
 
     @staticmethod
-    def _grantor_has_permission(grantor_snapshot: PermissionSnapshot, perm_code: str) -> bool:
+    def _grantor_has_permission(grantor_snapshot: dict, perm_code: str) -> bool:
         """检查授权人是否持有指定权限编码（粗略检查）。"""
         from emily_core.permission.code_compiler import code_matches_any
-        if perm_code in grantor_snapshot.granted_codes:
+        granted = grantor_snapshot.get("granted_codes", [])
+        if perm_code in granted:
             return True
-        if code_matches_any(perm_code, grantor_snapshot.granted_codes):
+        if code_matches_any(perm_code, granted):
             return True
         return False

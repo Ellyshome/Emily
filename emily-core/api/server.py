@@ -52,13 +52,14 @@ from .middleware.auth import AuthMiddleware  # noqa: E402
 app.add_middleware(AuthMiddleware)
 
 # 注册路由
-from .routes import health, message, session, permission  # noqa: E402
+from .routes import health, message, session, permission, skills  # noqa: E402
 from .sse import outbound  # noqa: E402
 
 app.include_router(health.router, prefix="/api/v1")
 app.include_router(message.router, prefix="/api/v1")
 app.include_router(session.router, prefix="/api/v1")
 app.include_router(permission.router, prefix="/api/v1")
+app.include_router(skills.router, prefix="/api/v1")
 app.include_router(outbound.router, prefix="/api/v1")
 
 # 全景节点图 V2 路由 + SSE 事件端点（Phase 1-3）

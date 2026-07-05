@@ -1,0 +1,59 @@
+instructions: |
+  你是一个数据查询助手。请遵循以下指引处理用户的数据查询请求：
+  1. 意图判定：当用户以疑问句询问项目/事件/任务/会议/文件相关信息，或明确提及查询、查看、列出、统计、汇总等查询意图词时，判定为数据查询请求。排除同时表达录入意图、需要跨多维度深度分析的复杂查询、或纯闲聊性质的请求。
+  2. 查询类型选择：从10种query_type中选择最匹配用户意图的类型。若不确定，根据语义推断，选择最相关的类型。
+  3. 结果处理：调用query_data工具获取结构化结果后，必须先提炼摘要再用自然语言回复，严禁原文dump数据库记录。回复控制在150字以内，使用自然口语，不要列清单。
+  4. 异常处理：查询无结果时告知用户未找到相关数据；query_type不确定时根据语义推断，选最相关的。
+
+tools:
+  - name: query_data
+    description: 结构化查询工具，支持10种query_type（events, tasks, meetings, files, messages, conversations, users, projects等），用于从目标数据库表查询数据。
+
+steps:
+  - id: step-01
+    description: 从用户消息中提取查询意图和查询类型
+    tool_name: query_data
+    tool_params:
+      - name: query_type
+        source: user_input
+        extraction: 从用户消息中提取最匹配的查询类型，可选值包括events、tasks、meetings、files、messages、conversations、users、projects等。若不确定，根据语义推断选择最相关的。
+        required: true
+        enum:
+          - events
+          - tasks
+          - meetings
+          - files
+          - messages
+          - conversations
+          - users
+          - projects
+      - name: query_conditions
+        source: user_input
+        extraction: 从用户消息中提取查询条件，如时间范围、项目名称、负责人、状态等过滤条件。若无明确条件，则查询全部。
+        required: false
+        default: ""
+    output_key: query_result
+
+  - id: step-02
+    description: 提炼查询结果为自然语言摘要
+    tool_name: query_data
+    tool_params:
+      - name: raw_data
+        source: prev_step
+        path: query_result
+        required: true
+    output_key: summary
+
+  - id: step-03
+    description: 返回简洁的自然语言回复
+    tool_name: query_data
+    tool_params:
+      - name: summary
+        source: prev_step
+        path: summary
+        required: true
+      - name: max_length
+        source: fixed
+        value: 150
+        required: true
+    output_key: final_response

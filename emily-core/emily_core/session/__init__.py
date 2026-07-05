@@ -7,6 +7,7 @@ Session 层是每条用户会话的主脑。以 SessionAgent 为核心，负责�
 from .session_agent import SessionAgent
 from .session_state import SessionState, TRANSITIONS, TERMINAL_STATES
 from .session_context import SessionContext
+from .session_data_fetcher import SessionDataFetcher
 from .focus_lock import FocusLock
 from .confirm_queue import ConfirmQueue
 
@@ -16,6 +17,7 @@ __all__ = [
     "TRANSITIONS",
     "TERMINAL_STATES",
     "SessionContext",
+    "SessionDataFetcher",
     "FocusLock",
     "ConfirmQueue",
 ]

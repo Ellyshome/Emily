@@ -91,15 +91,41 @@ _QUERY_TOOL_DESCRIPTION = (
 )
 
 
+_QUERY_TYPE_TO_TABLE = {
+    "event": "events", "task": "tasks", "meeting": "meetings",
+    "file": "files", "message": "messages", "conversation": "conversations",
+    "user": "users", "project": "projects", "journal": "events",
+    "summary": "summary",
+}
+
+
 async def handle_query_data(
     params: dict,
     query_service: QueryService,
 ) -> dict:
-    """处理数据查询（M14 业务流工具 handler）。"""
+    """处理数据查询（M14 业务流工具 handler + session_scope 过滤）。"""
     try:
+        # ── session_scope 数据边界 ──
+        session_scope = params.pop("_session_scope", None) or {}
+
+        # 1. db_perms 检查
+        query_type = params.get("query_type", "event")
+        target_table = _QUERY_TYPE_TO_TABLE.get(query_type, "")
+        db_perms = session_scope.get("db_perms", {})
+        if db_perms and target_table and target_table not in db_perms:
+            logger.info("query_data: db_perms denied table=%s for query_type=%s", target_table, query_type)
+            return {"success": False, "reply": f"无权限查询{target_table}", "total": 0}
+
+        # 2. project_ids 自动注入
+        project_ids = session_scope.get("project_ids", [])
+        if project_ids and not params.get("project_id"):
+            params["project_ids"] = project_ids
+
+        # ── 原有逻辑 ──
         cmd = QueryCommand(
             query_type=params.get("query_type", "event"),
             project_id=params.get("project_id"),
+            project_ids=params.get("project_ids"),
             project_name=params.get("project_name"),
             time_range=params.get("time_range", "all"),
             status_filter=params.get("status_filter"),

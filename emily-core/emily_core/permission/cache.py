@@ -188,7 +188,7 @@ class PermissionCache:
         matrix: PermissionMatrix,
         user_level: int,
         company_type: str,
-        department: str,
+        department: str | list[str],
     ) -> tuple[list[str], list[str]]:
         """基于矩阵 + 用户属性计算白名单（阶段二含企业类型/部门细筛）。
 
@@ -205,7 +205,9 @@ class PermissionCache:
         for g in matrix.groups:
             if g.company_type and g.company_type != company_type:
                 continue
-            if g.department and g.department != department:
+            # 多部门交集匹配：用户任一部门命中权限组的部门要求即可
+            user_depts = department if isinstance(department, list) else [department] if department else []
+            if g.department and g.department not in user_depts:
                 continue
             matched_group_ids.add(g.id)
 

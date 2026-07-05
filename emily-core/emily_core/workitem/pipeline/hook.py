@@ -96,7 +96,7 @@ class AuthHook(Hook):
     检查用户对特定资源的访问权限。
 
     阶段二改造（需求 §4 + §14）：
-    - 接入 PermissionSnapshot 三维鉴权
+    - 接入 SessionContext 三维鉴权（扁平化字段）
     - system.execute 检查 permission_level >= 5
     - 有 SOP 绑定时检查 sop_allow 白名单
     - 密级/企业类型/部门维度校验委托 AuthEngine
@@ -105,10 +105,9 @@ class AuthHook(Hook):
     action: str = ""           # "read" | "create" | "update" | "delete" | "execute"
 
     async def execute(self, context: "PipelineContext") -> HookResult:
-        """执行鉴权检查（阶段二：三维鉴权 + 快照白名单）。"""
+        """执行鉴权检查（阶段二：三维鉴权 + SessionContext 扁平化字段）。"""
         user_id = context.user_id
         if not user_id:
-            # 无用户 ID 时仅允许只读操作
             if self.action and self.action not in ("read",):
                 logger.info(
                     "AuthHook[%s] blocking: no user_id for action=%s res=%s",
@@ -117,40 +116,38 @@ class AuthHook(Hook):
                 return HookResult.block(f"需要登录才能执行 {self.action} 操作")
             return HookResult.allow()
 
+        # 获取 SessionContext
+        session_ctx = context.get_session_context()
+
         # 管理员检查: system.execute 只允许 L5+
         if self.resource_type == "system" and self.action == "execute":
-            perms = context.get_permissions()
-            if perms is None:
-                # 无快照时回退到 is_admin 检查
+            if session_ctx is None:
                 is_admin_flag = getattr(context, "is_admin", False) or context.get("is_admin", False)
                 if not is_admin_flag:
                     logger.info("AuthHook[%s] blocking: user %s is not admin", self.name, user_id)
                     return HookResult.block("仅管理员可执行系统级操作")
             else:
                 from ...permission.level import is_admin as _is_admin
-                if not _is_admin(perms.permission_level):
+                if not _is_admin(session_ctx.permission_level):
                     logger.info(
                         "AuthHook[%s] blocking: user %s level=%d < L5",
-                        self.name, user_id, perms.permission_level,
+                        self.name, user_id, session_ctx.permission_level,
                     )
                     return HookResult.block("仅管理员（L5+）可执行系统级操作")
 
         # SOP 权限检查：有 SOP 绑定时验证白名单
         intent = context.intent
         sop_id = getattr(intent, "sop_id", None) if intent else None
-        if sop_id:
-            perms = context.get_permissions()
-            if perms is not None:
-                # 快照白名单检查
-                if sop_id not in perms.sop_allow and "all" not in perms.sop_allow:
-                    logger.info(
-                        "AuthHook[%s] blocking: user %s no access to SOP %s",
-                        self.name, user_id, sop_id,
-                    )
-                    reason = f"无权访问 {sop_id}"
-                    if perms.supervisor_id:
-                        reason += f"，可联系主管 {perms.supervisor_id} 申请权限"
-                    return HookResult.block(reason)
+        if sop_id and session_ctx is not None:
+            if sop_id not in session_ctx.sop_allow and "all" not in session_ctx.sop_allow:
+                logger.info(
+                    "AuthHook[%s] blocking: user %s no access to SOP %s",
+                    self.name, user_id, sop_id,
+                )
+                reason = f"无权访问 {sop_id}"
+                if session_ctx.supervisor_id:
+                    reason += f"，可联系主管 {session_ctx.supervisor_id} 申请权限"
+                return HookResult.block(reason)
 
         logger.debug("AuthHook[%s] allow: user=%s res=%s action=%s",
                      self.name, user_id, self.resource_type, self.action)
@@ -168,7 +165,6 @@ class AuditHook(Hook):
     async def execute(self, context: "PipelineContext") -> HookResult:
         """异步写审计记录，失败只记日志不抛异常。"""
         try:
-            # 写入 hook_execution_logs 表
             from ...infrastructure.database.session import get_session
             from ...infrastructure.database.models import HookExecutionLog
             from datetime import datetime, timezone
@@ -192,7 +188,7 @@ class AuditHook(Hook):
                 session.commit()
         except Exception as e:
             logger.warning("AuditHook[%s] failed (non-blocking): %s", self.name, e)
-        return HookResult.allow()  # 审计永远不阻断
+        return HookResult.allow()
 
 
 @dataclass
@@ -211,7 +207,6 @@ class TraceHook(Hook):
 
         try:
             if self.name == "trace.reasoning_start":
-                # 创建推理日志
                 reasoning_id = self.agent_trace_service.create_reasoning_log(
                     message_id=context.db_message_id,
                     user_id=context.user_id,
@@ -258,7 +253,6 @@ class ProgressHook(Hook):
         优先从 context.baggage 动态获取 progress_sender（支持每条消息的 event 闭包），
         回退到构建时注入的实例属性。
         """
-        # 动态获取：优先 context.baggage（每条消息注入），回退构建时注入
         sender = context.baggage.get("progress_sender", self.progress_sender)
         if not self.enable_progress or sender is None:
             return HookResult.allow()
@@ -266,11 +260,9 @@ class ProgressHook(Hook):
         template = context.baggage.get("progress_template", self.progress_template)
 
         try:
-            # 从上下文推断操作描述
             intent = context.intent
             action = "处理"
             if intent and getattr(intent, "sop_id", None):
-                # 从 SOP ID 推断操作
                 sop_id = intent.sop_id
                 action_map = {
                     "SOP-001": "整理会议纪要",
@@ -309,7 +301,7 @@ def _build_deliverable_from_params(params: dict, submitted_by: str):
         or params.get("content", "")
     )
     return SubmitDeliverableCommand(
-        instance_id="",  # 由 match_or_create_unscheduled 匹配/创建时填充
+        instance_id="",
         type="TEXT",
         content=content,
         file_url=params.get("file_url", ""),
@@ -353,7 +345,6 @@ class PlanTaskMatchHook(Hook):
                 params = getattr(step, "tool_params", {}) or {}
                 project_id = params.get("project_id", "")
                 project_name = params.get("project_name", "")
-                # 仅对有项目上下文的"成果上传"做匹配
                 if not project_id and not project_name:
                     continue
 
