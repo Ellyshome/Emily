@@ -45,6 +45,15 @@
 ## 可用工具
 {available_tools}
 
+## 可查询的数据库
+{visible_schema}
+
+## 可访问的文件
+{visible_files}
+
+## 知识库
+{rag_info}
+
 ## SOP 参考
 {sop_text}
 

@@ -147,3 +147,32 @@ session需要有个脚本，使用用户ID 来 更新 自身权限范围（更�
 当前开发的模块，尽量独立功能脚本能做成：
    - 可被系统调用
    - 可独立执行，作为运维工具
+---
+查询sops-kill分层
+需要提供基本的文件结构、数据库-schema。
+查询应通过脚本实现，隐藏查询语句，
+---
+提供群id灌注
+---
+Session 原子化能力重构（2026-07-05）
+- 新增 tool_registry 表：统一记录系统 API 元数据（ID/签名/一句话说明/分类/权限）
+- 新增 session_accessible_files 表：用户→文件可见关系（sync_for_user 自动授权）
+- SessionContext 新增 6 个原子化能力字段（available_tools / visible_schema / files / RAG）
+- SkillExecutor 白名单软化：from Skill 声明 → Session 可见 API 集合
+- 元能力独立执行路径：不在 Skill YAML 的工具，只要 Session 可见即可调用（LLM 动态推导参数）
+- 新增 search_files 工具：关键词搜索可见文件（双用途：API + 独立脚本）
+- 新增 register_api.py：API 注册器（代码注册 + DB 录入）
+- Prompt 模板新增"你的元能力"段落，告知 LLM 可用工具、可查数据库、可访问文件
+- 详见 需求文件/重构session工具-技能/实施报告.md
+
+---
+uv run python scripts/collect_session_data.py chenzhe-jyzx-2026-0001
+
+
+# 全量 Session 数据（从项目根目录）
+uv run python scripts\fetch_session_data.py chenzhe-jyzx-2026-0001
+# 子模块独立运行（从 emily-core 目录）
+cd emily-core
+uv run python -m emily_core.session.fetchers.fetch_available_tools --user-id chenzhe-jyzx-2026-0001
+uv run python -m emily_core.session.fetchers.fetch_visible_schema --user-id chenzhe-jyzx-2026-0001
+uv run python -m emily_core.session.fetchers.fetch_rag_info

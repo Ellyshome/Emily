@@ -76,6 +76,17 @@ class SessionContext:
     # ── Skill 预留（最简：可用技能列表）──
     available_skills: list[str] = field(default_factory=list)
 
+    # ── 原子化能力字段（🔥 可热更新）──
+    available_tools: list[dict] = field(default_factory=list)
+    # [{"api_id": "search_files", "display_name": "根据自然语言描述搜索可见文件"}, ...]
+
+    visible_schema_summary: str = ""
+    visible_files_count: int = 0
+    visible_files_summary: str = ""
+
+    rag_available: bool = False
+    rag_collections: list[str] = field(default_factory=list)
+
     # ══════════════════════════════════════════════════════════════════════════
     #  计算属性
     # ══════════════════════════════════════════════════════════════════════════
@@ -165,6 +176,14 @@ class SessionContext:
         else:
             ctx.available_skills = list(ctx.sop_allow)
 
+        # 灌注原子化能力字段
+        ctx.available_tools = list(snapshot.get("available_tools", []))
+        ctx.visible_schema_summary = snapshot.get("visible_schema_summary", "")
+        ctx.visible_files_count = snapshot.get("visible_files_count", 0)
+        ctx.visible_files_summary = snapshot.get("visible_files_summary", "")
+        ctx.rag_available = snapshot.get("rag_available", False)
+        ctx.rag_collections = list(snapshot.get("rag_collections", []))
+
         # 灌注最近对话 → message_history
         recent_turns = runtime.get("recent_turns", [])
         for turn in recent_turns:
@@ -206,6 +225,26 @@ class SessionContext:
                            len(errors), user_id)
 
         return ctx
+
+    # ══════════════════════════════════════════════════════════════════════════
+    #  原子化能力格式化辅助方法
+    # ══════════════════════════════════════════════════════════════════════════
+
+    def _format_tools_summary(self) -> str:
+        """格式化可用工具列表为 prompt 变量。"""
+        if not self.available_tools:
+            return "（无可用工具）"
+        lines = []
+        for t in self.available_tools:
+            lines.append(f"  · {t['api_id']}: {t['display_name']}")
+        return "\n".join(lines)
+
+    def _format_rag_summary(self) -> str:
+        """格式化 RAG 知识库信息为 prompt 变量。"""
+        if not self.rag_available:
+            return "知识库不可用"
+        collections = "、".join(self.rag_collections) if self.rag_collections else "默认知识库"
+        return f"知识库可用（{collections}）"
 
     # ══════════════════════════════════════════════════════════════════════════
     #  权限只读方法
@@ -324,6 +363,10 @@ class SessionContext:
             "{current_datetime}": self.current_datetime,
             "{available_skills}": ", ".join(self.available_skills) or "（无）",
             "{recent_turns}": "",
+            "{available_tools}": self._format_tools_summary(),
+            "{visible_schema}": self.visible_schema_summary,
+            "{visible_files}": self.visible_files_summary,
+            "{rag_info}": self._format_rag_summary(),
         }
 
     async def persist_and_consolidate(self, llm_client=None) -> None:
@@ -472,6 +515,12 @@ class SessionContext:
             "authorized_node_ids": snapshot.get("authorized_node_ids"),
             "permission_version": snapshot.get("permission_version"),
             "permissions_loaded_at": snapshot.get("permissions_loaded_at"),
+            "available_tools": snapshot.get("available_tools"),
+            "visible_schema_summary": snapshot.get("visible_schema_summary"),
+            "visible_files_count": snapshot.get("visible_files_count"),
+            "visible_files_summary": snapshot.get("visible_files_summary"),
+            "rag_available": snapshot.get("rag_available"),
+            "rag_collections": snapshot.get("rag_collections"),
         }
 
         for field, new_val in _hot_fields.items():

@@ -162,6 +162,12 @@ class SessionDataFetcher:
         # ── 步骤 4: 最近对话（调 MessageRepository.get_recent_by_user_id） ──
         recent_turns = _sub_fetch_recent_turns(user_id)
 
+        # ── 步骤 5: 原子化能力（API 工具列表、可见文件、RAG） ──
+        available_tools = _sub_fetch_available_tools(perms)
+        visible_schema = _sub_fetch_visible_schema(perms)
+        visible_files = _sub_fetch_visible_files(user_id)
+        rag_info = _sub_fetch_rag_info(core)
+
         # ── 组装输出 ──
         created_at = datetime.now(timezone.utc).isoformat()
 
@@ -197,6 +203,13 @@ class SessionDataFetcher:
             # 记忆字段 📝
             "long_term_memory": long_term_memory,
             "conversation_summary": conversation_summary,
+            # 原子化能力字段 🔥
+            "available_tools": available_tools,
+            "visible_schema_summary": visible_schema,
+            "visible_files_count": visible_files.get("count", 0),
+            "visible_files_summary": _format_visible_files_summary(visible_files),
+            "rag_available": rag_info.get("available", False),
+            "rag_collections": rag_info.get("collections", []),
         }
 
         session_runtime = {
@@ -284,6 +297,36 @@ def _sub_fetch_recent_turns(user_id: str) -> list[dict]:
         return []
 
 
+def _sub_fetch_available_tools(perms: dict) -> list[dict]:
+    """从 ToolRegistryRepo 获取用户可用 API 列表。委托给 fetchers 子模块。"""
+    from .fetchers.fetch_available_tools import fetch
+    return fetch(perms=perms)
+
+
+def _sub_fetch_visible_schema(perms: dict) -> str:
+    """获取可见 DB Schema 摘要。委托给 fetchers 子模块。"""
+    from .fetchers.fetch_visible_schema import fetch
+    return fetch(perms=perms)
+
+
+def _sub_fetch_visible_files(user_id: str) -> dict:
+    """获取用户可见文件摘要。委托给 fetchers 子模块。"""
+    from .fetchers.fetch_visible_files import fetch
+    return fetch(user_id=user_id)
+
+
+def _sub_fetch_rag_info(core=None) -> dict:
+    """获取 RAG 知识库可用性信息。委托给 fetchers 子模块。"""
+    from .fetchers.fetch_rag_info import fetch
+    return fetch(core=core)
+
+
+def _format_visible_files_summary(visible_files: dict) -> str:
+    """格式化可见文件摘要为文本。委托给 fetchers 子模块。"""
+    from .fetchers.fetch_visible_files import format_summary
+    return format_summary(visible_files)
+
+
 def _empty_result(conversation_id: str, user_id: str, errors: list[str]) -> dict:
     return {
         "session_snapshot": {
@@ -318,6 +361,13 @@ def _empty_result(conversation_id: str, user_id: str, errors: list[str]) -> dict
             # 记忆字段 📝
             "long_term_memory": _SENTINEL,
             "conversation_summary": _SENTINEL,
+            # 原子化能力字段 🔥
+            "available_tools": [],
+            "visible_schema_summary": "",
+            "visible_files_count": 0,
+            "visible_files_summary": "",
+            "rag_available": False,
+            "rag_collections": [],
         },
         "session_runtime": {
             "recent_turns": [],

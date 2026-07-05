@@ -1333,3 +1333,40 @@ class NodeEvent(Base):
         Index("idx_nev_type", "event_type"),
         Index("idx_nev_created", "created_at"),
     )
+
+
+# ══════════════════════════════════════════════════════════════════════════════
+# Session 原子化能力 — 重构新增表
+# ══════════════════════════════════════════════════════════════════════════════
+
+class ToolRegistryModel(Base):
+    """API 注册表 —— 统一记录所有注册到系统的工具 API 元数据。"""
+    __tablename__ = "tool_registry"
+
+    id              = Column(String, primary_key=True)       # API 唯一标识，如 "search_files"
+    signature       = Column(Text, nullable=False, default="{}")   # API 签名（参数+返回值 JSON Schema）
+    display_name    = Column(String(200), nullable=False)          # 功能一句话说明
+    category        = Column(String(20), nullable=False, default="base")  # base / business / project
+    permission_flag = Column(String(50), nullable=False, default="all")
+    handler_module  = Column(String(200), default="")
+    is_active       = Column(Boolean, nullable=False, default=True)
+    registered_at   = Column(String(50), nullable=False)
+    updated_at      = Column(String(50), nullable=False)
+
+
+class SessionAccessibleFile(Base):
+    """Session 可见文件表 —— 记录用户→文件的可见关系。"""
+    __tablename__ = "session_accessible_files"
+
+    id          = Column(String, primary_key=True, default=_new_uuid)
+    user_id     = Column(String, nullable=False, index=True)
+    file_id     = Column(String, nullable=False, index=True)
+    access_type = Column(String(50), nullable=False, default="project_scope")
+        # project_scope / node_linked / explicit
+    granted_by  = Column(String, default="")
+    granted_at  = Column(String(50), nullable=False)
+    expires_at  = Column(String(50), default="")
+
+    __table_args__ = (
+        UniqueConstraint("user_id", "file_id", name="uq_saf_user_file"),
+    )

@@ -176,6 +176,7 @@ class WorkItemAgent:
         # 从 BusContext 获取 session_context
         session_ctx = context.get_session_context() if context else None
         session_context_dict = {}
+        session_available_tools: list[dict] = []
         if session_ctx:
             session_context_dict = {
                 "user_id": getattr(session_ctx, "user_id", ""),
@@ -187,6 +188,7 @@ class WorkItemAgent:
                 "company_type": getattr(session_ctx, "company_type", ""),
                 "department": list(getattr(session_ctx, "department", [])),
             }
+            session_available_tools = list(getattr(session_ctx, "available_tools", []))
 
         skill_ctx = SkillExecutionContext(
             skill=skill,
@@ -198,6 +200,7 @@ class WorkItemAgent:
             step_results={},
             business_flow_tools=self._business_flow_tools,
             llm_client=self._llm,
+            session_available_tools=session_available_tools,
         )
 
         return await self._skill_executor.execute(skill_ctx)

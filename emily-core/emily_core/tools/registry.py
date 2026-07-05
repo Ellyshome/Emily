@@ -43,9 +43,10 @@ def register_all(core: "EmilyCore") -> None:
 _bc, _buc, _pjc = 0, 0, 0
 
 
-def _tool(name: str, desc: str, params: dict, handler):
+def _tool(name: str, desc: str, params: dict, handler, category: str = "base", permission_flag: str = "all"):
     from .business_flow_tools import BusinessFlowTool
-    return BusinessFlowTool(name=name, description=desc, parameters=params, handler=handler)
+    return BusinessFlowTool(name=name, description=desc, parameters=params, handler=handler,
+                            category=category, permission_flag=permission_flag)
 
 
 # ══════════════════════════════════════════════════════════════════════════════
@@ -92,16 +93,16 @@ def _register_business(core, reg):
     # 5 个核心 CRUD
     _buc += _reg_biz(reg, "record_event", "记录项目事件",
                      partial(_h("event_tool", "handle_record_event"),
-                             event_app=core._event_app))
+                             event_app=core._event_app), "business", "write")
     _buc += _reg_biz(reg, "record_task", "创建任务",
                      partial(_h("task_tool", "handle_record_task"),
-                             task_app=core._task_app))
+                             task_app=core._task_app), "business", "write")
     _buc += _reg_biz(reg, "record_meeting", "归档会议纪要",
                      partial(_h("meeting_tool", "handle_record_meeting"),
-                             meeting_app=core._meeting_app))
+                             meeting_app=core._meeting_app), "business", "write")
     _buc += _reg_biz(reg, "record_file", "记录文件元数据",
                      partial(_h("file_tool", "handle_record_file"),
-                             file_app=core._file_app))
+                             file_app=core._file_app), "business", "write")
 
     # 计划任务 (4 tools)
     app = getattr(core, "_plan_task_app", None)
@@ -143,10 +144,11 @@ def _register_business(core, reg):
         _buc += 1
 
 
-def _reg_biz(reg, name, desc, handler):
+def _reg_biz(reg, name, desc, handler, category="business", permission_flag="write"):
     """注册一个业务工具（fail-safe）。"""
     try:
-        reg.register(_tool(name, desc, {"type": "object", "properties": {}}, handler))
+        reg.register(_tool(name, desc, {"type": "object", "properties": {}}, handler,
+                          category=category, permission_flag=permission_flag))
         return 1
     except Exception as e:
         logger.warning("tool '%s' registration failed: %s", name, e)
@@ -196,7 +198,8 @@ def _register_project(core, reg):
                 ("discard_nodes", _DISCARD_NODES_DESCRIPTION, _DISCARD_NODES_SCHEMA, handle_discard_nodes),
             ]:
                 if not reg.has(name):
-                    reg.register(_tool(name, desc, schema, handler))
+                    reg.register(_tool(name, desc, schema, handler,
+                                      category="project", permission_flag="admin"))
                     _pjc += 1
         except Exception as e:
             logger.warning("node tools registration failed: %s", e)
