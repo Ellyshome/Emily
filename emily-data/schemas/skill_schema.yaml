@@ -1,0 +1,84 @@
+# Skill 定义文件 schema —— 三段结构（instructions / tools / steps）
+# 用于文档参考和未来 JSON Schema 校验
+
+skill_id:
+  type: string
+  required: true
+  description: "Skill 唯一标识，如 SOP-002-REC-event-record"
+
+sop_id:
+  type: string
+  required: true
+  description: "关联的 SOP 编号，如 SOP-002-REC"
+
+version:
+  type: string
+  required: true
+  description: "Skill 定义版本，如 1.0"
+
+display_name:
+  type: string
+  required: true
+  description: "显示名称，如 事件记录"
+
+instructions:
+  type: string
+  required: true
+  description: "给 AI 的说明（注入 LLM prompt）"
+
+tools:
+  type: list
+  required: true
+  items:
+    name:
+      type: string
+      required: true
+    description:
+      type: string
+      required: false
+
+steps:
+  type: list
+  required: true
+  items:
+    id:
+      type: string
+      required: true
+    description:
+      type: string
+      required: true
+    tool_name:
+      type: string
+      required: true
+    tool_params:
+      type: dict
+      required: false
+      items:
+        source:
+          type: enum
+          values: [user_input, prev_step, fixed, context]
+          required: true
+        path:
+          type: string
+          required: conditional  # prev_step / context 时必填
+        value:
+          type: any
+          required: conditional  # fixed 时必填
+        extraction:
+          type: string
+          required: conditional  # user_input 时必填
+        required:
+          type: bool
+          default: false
+        default:
+          type: any
+          required: false
+        enum:
+          type: list
+          required: false
+        max_length:
+          type: int
+          required: false
+    output_key:
+      type: string
+      required: false

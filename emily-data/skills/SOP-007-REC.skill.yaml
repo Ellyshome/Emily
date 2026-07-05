@@ -1,0 +1,62 @@
+instructions: |
+  你是一个长期记忆管理助手。当用户表达长期、持续性要求或设定行为偏好时，你需要：
+  1. 检测触发条件：用户消息是否包含长期意图关键词（如“随时跟踪”、“每天检查”、“以后”、“今后”、“每周”、“定期”、“每次”、“一直”、“用XX风格回答”、“叫我XX”、“你是我的XX”等）。
+  2. 排除否定条件：一次性对话、临时查询、简单确认、“以后再说”等不触发。
+  3. 提炼核心需求：提取一个2-5字的简短标题（title）和一段核心需求描述（content）。
+  4. 调用 write_user_memory 工具写入长期记忆文件。
+  5. 严禁只口头确认而不实际调用工具。
+  6. 若内容提炼困难，诚实说明，不强行记录；若写入失败，告知用户并记录日志。
+
+tools:
+  - name: write_user_memory
+    description: 写入用户长期记忆文件，用于存储用户的长期/持续性要求或行为偏好。
+
+steps:
+  - id: step-01
+    description: 检测用户消息是否触发长期记忆管理业务流
+    tool_name: null
+    tool_params: {}
+    output_key: trigger_detected
+
+  - id: step-02
+    description: 从用户消息中提炼核心需求，提取 title（2-5字）和 content
+    tool_name: null
+    tool_params:
+      - name: title
+        source: user_input
+        extraction: 从用户消息中提取一个2-5字的简短标题，概括长期记忆主题
+        required: true
+      - name: content
+        source: user_input
+        extraction: 从用户消息中提炼核心需求描述，清晰表达用户的长期要求或偏好
+        required: true
+    output_key: memory_content
+
+  - id: step-03
+    description: 调用 write_user_memory 工具写入长期记忆
+    tool_name: write_user_memory
+    tool_params:
+      - name: title
+        source: prev_step
+        path: memory_content.title
+        required: true
+      - name: content
+        source: prev_step
+        path: memory_content.content
+        required: true
+      - name: user_id
+        source: context
+        path: user_id
+        required: true
+      - name: project_name
+        source: context
+        path: project_name
+        required: false
+        default: null
+    output_key: write_result
+
+  - id: step-04
+    description: 确认写入结果并告知用户
+    tool_name: null
+    tool_params: {}
+    output_key: confirmation

@@ -1,0 +1,134 @@
+instructions: |
+  你是一个任务管理助手。请严格按照以下指引处理用户的任务管理请求：
+
+  1. **意图判定**：当用户消息明确提及任务分派、工作安排、待办事项、任务创建，或包含"安排XX做YY"、"让XX负责YY"、"指派XX去YY"、"帮我记个待办"、"添加一个待办事项"、"提醒我..."、"设置提醒..."等语句时，判定为任务管理请求。注意排除：会议纪要中顺带提到的待办事项（优先会议纪要）、仅询问任务状态或进度、没有明确责任人或截止时间的笼统想法。
+
+  2. **信息整理**：从用户消息中提取以下要素：
+     - 任务标题（title）：必有，≤100字
+     - 责任人（owner）：应有，从语义提取姓名
+     - 截止日期（due_date）：如有，格式YYYY-MM-DD
+     - 描述（description）：如有，详细说明
+     - 优先级（priority）：可选
+     - 关联项目（project_id）：应有，自动匹配
+
+  3. **拟录入确认**：在调用工具前，向用户展示拟录入单，确认信息无误。
+
+  4. **调用工具**：确认后调用 record_task 工具写入 tasks 表。
+
+  5. **返回确认信息**：向用户返回任务编号和简要回执。
+
+  6. **异常处理**：
+     - 无标题：询问任务简述
+     - 无责任人：询问或留空
+     - 重复任务检测：提示已有类似任务
+
+tools:
+  - name: record_task
+    description: 任务创建工具，用于将任务写入 tasks 表
+  - name: query_data
+    description: 查询现有任务或项目数据，用于检查重复或推断项目
+
+steps:
+  - id: step-01
+    description: 从用户消息中提取任务标题（title）
+    tool_name: null
+    tool_params: {}
+    output_key: title
+
+  - id: step-02
+    description: 从用户消息中提取责任人（owner）
+    tool_name: null
+    tool_params: {}
+    output_key: owner
+
+  - id: step-03
+    description: 从用户消息中提取截止日期（due_date），格式YYYY-MM-DD
+    tool_name: null
+    tool_params: {}
+    output_key: due_date
+
+  - id: step-04
+    description: 从用户消息中提取任务描述（description）
+    tool_name: null
+    tool_params: {}
+    output_key: description
+
+  - id: step-05
+    description: 从用户消息中提取优先级（priority）
+    tool_name: null
+    tool_params: {}
+    output_key: priority
+
+  - id: step-06
+    description: 查询现有项目数据，自动匹配关联项目（project_id）
+    tool_name: query_data
+    tool_params:
+      - name: query
+        source: fixed
+        value: "SELECT id, name FROM projects WHERE name LIKE '%{project_name}%'"
+        required: true
+      - name: project_name
+        source: user_input
+        extraction: 从用户消息中提取关联项目名称
+        required: false
+    output_key: project_id
+
+  - id: step-07
+    description: 检查是否存在重复任务
+    tool_name: query_data
+    tool_params:
+      - name: query
+        source: fixed
+        value: "SELECT task_no, title FROM tasks WHERE title = '{title}' AND owner_id = '{owner}' AND status != 'completed'"
+        required: true
+      - name: title
+        source: prev_step
+        path: title
+        required: true
+      - name: owner
+        source: prev_step
+        path: owner
+        required: false
+    output_key: duplicate_check
+
+  - id: step-08
+    description: 向用户展示拟录入单，确认信息无误
+    tool_name: null
+    tool_params: {}
+    output_key: confirmation
+
+  - id: step-09
+    description: 调用 record_task 工具写入 tasks 表
+    tool_name: record_task
+    tool_params:
+      - name: title
+        source: prev_step
+        path: title
+        required: true
+      - name: owner
+        source: prev_step
+        path: owner
+        required: false
+      - name: due_date
+        source: prev_step
+        path: due_date
+        required: false
+      - name: description
+        source: prev_step
+        path: description
+        required: false
+      - name: priority
+        source: prev_step
+        path: priority
+        required: false
+      - name: project_id
+        source: prev_step
+        path: project_id
+        required: false
+    output_key: task_result
+
+  - id: step-10
+    description: 返回确认信息，包括任务编号和简要回执
+    tool_name: null
+    tool_params: {}
+    output_key: response

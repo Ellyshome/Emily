@@ -29,7 +29,6 @@ from .level import can_access, is_admin, LEVEL_NAME
 from .code_compiler import compile_code, code_matches_any, can_view_security_level
 
 if TYPE_CHECKING:
-    from ..session.session_context import PermissionSnapshot
     from ..workitem.pipeline.context import BusContext
 
 logger = logging.getLogger("emily.permission.auth_engine")
@@ -95,7 +94,7 @@ class PermissionAuthEngine:
 
     async def check_sop_access(
         self,
-        perms: "PermissionSnapshot",
+        perms: dict,
         sop_id: str,
         context: Optional["BusContext"] = None,
     ) -> AccessCheckResult:
@@ -133,25 +132,25 @@ class PermissionAuthEngine:
     #  Step 1: DENY 编码检查
     # ========================================================================
 
-    def _check_deny_codes(self, perms: "PermissionSnapshot",
+    def _check_deny_codes(self, perms: dict,
                           sop_id: str) -> Optional[AccessCheckResult]:
         """检查 denied_codes 是否包含此 SOP 的编码。
 
         denied_codes 优先级最高，任何级别用户命中即 DENY。
         使用 code_matches_any 进行通配符匹配。
         """
-        if not perms.denied_codes:
+        denied_codes = perms.get("denied_codes", [])
+        if not denied_codes:
             return None
 
-        # 构建此 SOP 的各密级权限编码，检查是否匹配任一 denied_code
         for security_level in ["PUBLIC", "INTERNAL", "PRIVATE", "CONFIDENTIAL"]:
             sop_code = _build_sop_code(sop_id, security_level)
-            if code_matches_any(sop_code, perms.denied_codes):
+            if code_matches_any(sop_code, denied_codes):
                 return AccessCheckResult(
                     allowed=False,
                     reason=f"权限显式拒绝（SOP {sop_id} 在拒绝列表中）",
                     matched_details={"denied_sop_id": sop_id, "sop_code": sop_code},
-                    suggested_approver=perms.supervisor_id,
+                    suggested_approver=perms.get("supervisor_id", ""),
                 )
         return None
 
@@ -159,19 +158,19 @@ class PermissionAuthEngine:
     #  Step 2: 单独授权检查
     # ========================================================================
 
-    def _check_granted_codes(self, perms: "PermissionSnapshot",
+    def _check_granted_codes(self, perms: dict,
                              sop_id: str) -> Optional[AccessCheckResult]:
         """检查 granted_codes 是否包含此 SOP 的编码。
 
         granted_codes 包含 TEMP/PERMANENT 授权，优先级高于角色继承。
         """
-        if not perms.granted_codes:
+        granted_codes = perms.get("granted_codes", [])
+        if not granted_codes:
             return None
 
-        # 构建此 SOP 的权限编码并匹配
         for security_level in ["PUBLIC", "INTERNAL", "PRIVATE", "CONFIDENTIAL"]:
             sop_code = _build_sop_code(sop_id, security_level)
-            if code_matches_any(sop_code, perms.granted_codes):
+            if code_matches_any(sop_code, granted_codes):
                 return AccessCheckResult(
                     allowed=True,
                     matched_details={
@@ -186,17 +185,22 @@ class PermissionAuthEngine:
     #  Step 3: SOP 权限矩阵检查（三维）
     # ========================================================================
 
-    async def _check_sop_matrix(self, perms: "PermissionSnapshot",
+    async def _check_sop_matrix(self, perms: dict,
                                 sop_id: str) -> Optional[AccessCheckResult]:
         """三维矩阵检查：level × security_level × company_type × department × node_ids。
 
         从 L1 缓存获取 SOP 流定义，逐维度检查。
         """
-        # 从缓存获取 SOP 流定义
         sop_flow = self._get_sop_flow(sop_id)
         if sop_flow is None:
-            # 未找到 SOP 定义 → 放行（可能是不受权限管控的 SOP）
             return None
+
+        perm_level = perms.get("permission_level", 1)
+        info_level = perms.get("info_level", "public")
+        company_type = perms.get("company_type", "")
+        department = perms.get("department", [])
+        authorized_node_ids = perms.get("authorized_node_ids", [])
+        supervisor_id = perms.get("supervisor_id", "")
 
         # 3.1 公开 SOP
         if sop_flow.is_public:
@@ -206,84 +210,83 @@ class PermissionAuthEngine:
             )
 
         # 3.2 树形继承级别检查
-        if not can_access(perms.permission_level, sop_flow.min_permission_level):
-            user_level_name = LEVEL_NAME.get(perms.permission_level, f"L{perms.permission_level}")
+        if not can_access(perm_level, sop_flow.min_permission_level):
+            user_level_name = LEVEL_NAME.get(perm_level, f"L{perm_level}")
             required_name = LEVEL_NAME.get(sop_flow.min_permission_level, f"L{sop_flow.min_permission_level}")
             return AccessCheckResult(
                 allowed=False,
                 reason=f"权限层级不足（当前 {user_level_name}，需 {required_name}）",
                 matched_details={
                     "check": "level",
-                    "user_level": perms.permission_level,
+                    "user_level": perm_level,
                     "required_level": sop_flow.min_permission_level,
                 },
-                suggested_approver=perms.supervisor_id,
+                suggested_approver=supervisor_id,
             )
 
         # 3.3 密级校验
         sop_security = sop_flow.security_level or "PUBLIC"
-        if not can_view_security_level(perms.permission_level, sop_security):
+        if not can_view_security_level(perm_level, sop_security):
             return AccessCheckResult(
                 allowed=False,
-                reason=f"密级不足（SOP 密级 {sop_security}，用户可见 {perms.info_level}）",
+                reason=f"密级不足（SOP 密级 {sop_security}，用户可见 {info_level}）",
                 matched_details={
                     "check": "security_level",
                     "sop_level": sop_security,
-                    "user_max_level": perms.info_level,
+                    "user_max_level": info_level,
                 },
-                suggested_approver=perms.supervisor_id,
+                suggested_approver=supervisor_id,
             )
 
         # 3.4 企业类型匹配
         if sop_flow.require_company_match:
             allowed_types = json.loads(sop_flow.allowed_company_types) \
                 if sop_flow.allowed_company_types else []
-            if allowed_types and perms.company_type not in allowed_types:
+            if allowed_types and company_type not in allowed_types:
                 return AccessCheckResult(
                     allowed=False,
-                    reason=f"企业类型不匹配（SOP 要求 {allowed_types}，用户 {perms.company_type}）",
+                    reason=f"企业类型不匹配（SOP 要求 {allowed_types}，用户 {company_type}）",
                     matched_details={
                         "check": "company_type",
                         "allowed_types": allowed_types,
-                        "user_type": perms.company_type,
+                        "user_type": company_type,
                     },
-                    suggested_approver=perms.supervisor_id,
+                    suggested_approver=supervisor_id,
                 )
 
-        # 3.5 部门匹配
+        # 3.5 部门匹配（交集匹配：用户任一部门命中 SOP 允许部门即可）
         if sop_flow.require_department_match:
             allowed_depts = json.loads(sop_flow.allowed_departments) \
                 if sop_flow.allowed_departments else []
-            if allowed_depts and perms.department not in allowed_depts:
+            user_departments = department if isinstance(department, list) else [department] if department else []
+            if allowed_depts and not (set(user_departments) & set(allowed_depts)):
                 return AccessCheckResult(
                     allowed=False,
-                    reason=f"部门不匹配（SOP 要求 {allowed_depts}，用户 {perms.department}）",
+                    reason=f"部门不匹配（SOP 要求 {allowed_depts}，用户 {user_departments}）",
                     matched_details={
                         "check": "department",
                         "allowed_depts": allowed_depts,
-                        "user_dept": perms.department,
+                        "user_dept": user_departments,
                     },
-                    suggested_approver=perms.supervisor_id,
+                    suggested_approver=supervisor_id,
                 )
 
         # 3.6 节点范围
         required_nodes = json.loads(sop_flow.required_node_ids) \
             if sop_flow.required_node_ids else []
         if required_nodes:
-            # 用户节点范围需与 SOP 要求的节点有交集，或用户持有通配
-            if not perms.authorized_node_ids and "*" not in required_nodes:
+            if not authorized_node_ids and "*" not in required_nodes:
                 return AccessCheckResult(
                     allowed=False,
                     reason="无可访问的全景节点权限",
                     matched_details={
                         "check": "node_scope",
                         "required_nodes": required_nodes,
-                        "user_nodes": perms.authorized_node_ids,
+                        "user_nodes": authorized_node_ids,
                     },
-                    suggested_approver=perms.supervisor_id,
+                    suggested_approver=supervisor_id,
                 )
-            # 有交集或通配
-            user_set = set(perms.authorized_node_ids)
+            user_set = set(authorized_node_ids)
             req_set = set(required_nodes)
             if "*" not in user_set and not (user_set & req_set):
                 return AccessCheckResult(
@@ -292,12 +295,11 @@ class PermissionAuthEngine:
                     matched_details={
                         "check": "node_scope",
                         "required_nodes": required_nodes,
-                        "user_nodes": perms.authorized_node_ids,
+                        "user_nodes": authorized_node_ids,
                     },
-                    suggested_approver=perms.supervisor_id,
+                    suggested_approver=supervisor_id,
                 )
 
-        # 全部通过
         return AccessCheckResult(
             allowed=True,
             matched_details={"source": "matrix_check_passed"},
@@ -317,18 +319,19 @@ class PermissionAuthEngine:
     #  审计日志
     # ========================================================================
 
-    async def _log_access_denied(self, perms: "PermissionSnapshot",
+    async def _log_access_denied(self, perms: dict,
                                  sop_id: str, reason: str) -> None:
         """鉴权失败时写审计日志（需求 §8.1）。"""
+        audit_user_id = perms.get("user_id", "")
         if self._audit_repo is None:
             logger.info("ACCESS_DENIED user=%s sop=%s reason=%s (no audit repo)",
-                        perms.extra_perms.get("user_id", "?"), sop_id, reason)
+                        audit_user_id or "?", sop_id, reason)
             return
         try:
             import asyncio
             await asyncio.to_thread(
                 self._audit_repo.log_access_denied,
-                grantee_id=perms.extra_perms.get("user_id", ""),
+                grantee_id=audit_user_id,
                 perm_code=f"SOP-INTERNAL-*-*-{sop_id}-*",
                 reason=reason,
             )
@@ -341,7 +344,7 @@ class PermissionAuthEngine:
 
     async def check_access(
         self,
-        perms: "PermissionSnapshot",
+        perms: dict,
         resource_type: str,
         resource_id: str,
         operation: str = "read",
@@ -349,34 +352,39 @@ class PermissionAuthEngine:
         """通用资源访问检查（非 SOP 类资源）。
 
         Args:
-            perms: 权限快照
+            perms: 权限 dict
             resource_type: DOC/DB/SOP/MSG/SYS
             resource_id: 资源标识
             operation: read/write/delete/execute
         """
+        denied_codes = perms.get("denied_codes", [])
+        granted_codes = perms.get("granted_codes", [])
+        perm_level = perms.get("permission_level", 1)
+        supervisor_id = perms.get("supervisor_id", "")
+
         # DENY 编码优先
-        if perms.denied_codes:
+        if denied_codes:
             code = f"{resource_type}-*-*-*-{resource_id}"
-            if code_matches_any(code, perms.denied_codes):
+            if code_matches_any(code, denied_codes):
                 return AccessCheckResult(
                     allowed=False,
                     reason=f"权限显式拒绝（资源 {resource_id}）",
-                    suggested_approver=perms.supervisor_id,
+                    suggested_approver=supervisor_id,
                 )
 
         # 单独授权
-        if perms.granted_codes:
+        if granted_codes:
             code = f"{resource_type}-*-*-*-{resource_id}"
-            if code_matches_any(code, perms.granted_codes):
+            if code_matches_any(code, granted_codes):
                 return AccessCheckResult(allowed=True)
 
         # 管理员放行
-        if is_admin(perms.permission_level):
+        if is_admin(perm_level):
             return AccessCheckResult(allowed=True)
 
         # 默认拒绝
         return AccessCheckResult(
             allowed=False,
             reason=f"无权访问资源 {resource_type}:{resource_id}",
-            suggested_approver=perms.supervisor_id,
+            suggested_approver=supervisor_id,
         )

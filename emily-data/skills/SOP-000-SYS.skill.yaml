@@ -1,0 +1,371 @@
+instructions: |
+  你是一个 AI Agent，负责按照本 SOP 文档起草新的业务流 SOP 文档。
+  请严格遵循以下执行要点：
+
+  1.  **权限前置检查**：在处理任何请求前，必须首先检查当前用户角色是否在 SOP 第1章的“权限控制”字段允许的列表中。如果权限不足，立即终止流程并回复权限提示话术，不进入后续任何步骤。
+  2.  **数据库表存在性优先检查**：在起草第3.1节“目标数据库表”时，必须按以下顺序操作：
+      - 首先调用 `inspect_existing_tables` 工具获取当前所有数据库表的全景信息。
+      - 逐张评估现有表是否能承载本业务的数据需求（优先复用字段覆盖率达70%以上的表）。
+      - 如果无法复用，考虑扩展现有表或使用扩展字段。
+      - 只有在确实无法复用且扩展成本过高时，才调用 `generate_table_schema` 工具生成新表结构建议。
+      - 最终在第3.1节中明确写出决策结论（复用/扩展/新建）及理由。
+  3.  **文档结构完整性**：起草的 SOP 文档必须严格遵循“7 + 2 固定模板”组织章节顺序与编号，不得缺省必需章节（第6章除外）。
+  4.  **字段分级与约束**：第4.1节必须包含“必有🔴/应有🟡/如有🟢”三级字段定义，每级至少1个字段，必有字段不超过3个。
+  5.  **自检不可跳过**：起草完成后，必须对照第3.3节流程中的“自检”清单逐条核对，特别是数据库表映射和工具映射的正确性。自检不通过则返回修改。
+  6.  **异常处理原则**：遵循“宁慢不错”、“有据可查”、“不替用户做判断”的原则。信息不完整或有歧义时，优先向用户确认。
+  7.  **对话风格**：与用户沟通时简洁直接，使用业务语言，避免技术术语。展示信息时使用表格或编号列表。
+
+tools:
+  - name: 文件写入
+    description: 系统基础能力，将起草完成的Markdown文档保存到`SOPrepository/`目录。
+  - name: IntentRegistry 加载
+    description: 系统启动组件，扫描SOPrepository目录，解析意图判定章节并注入路由Agent。
+  - name: 内容自检
+    description: 按章节模板和质量清单逐条核对起草质量。
+  - name: inspect_existing_tables
+    description: 数据库表结构检查工具，读取 `emily_core/infrastructure/database/models.py`，列出所有已定义的表名、字段名、字段类型、主键/外键信息。
+  - name: generate_table_schema
+    description: 表结构建议生成工具，根据业务需求描述生成建议的表结构（表名、字段名、字段类型、主键/外键设计、索引建议）。
+
+steps:
+  - id: step-01
+    description: 权限检查。读取本SOP第1章的"权限控制"字段，校验当前用户角色是否在允许列表中。
+    tool_name: 内容自检
+    tool_params:
+      - name: user_role
+        source: context
+        path: user.role
+        required: true
+      - name: allowed_roles
+        source: context
+        path: sop_document.allowed_roles
+        required: true
+    output_key: permission_check_result
+
+  - id: step-02
+    description: 业务范围确认。向用户确认业务名称、业务类型(REC/FILE/FLOW/QRY/SYS)和业务核心目的。
+    tool_name: null
+    tool_params:
+      - name: business_name
+        source: user_input
+        extraction: 提取用户想要起草SOP的具体业务名称，例如“会议纪要录入”、“事件记录”。
+        required: true
+      - name: business_type
+        source: user_input
+        extraction: 根据业务类型缩写表(REC/FILE/FLOW/QRY/SYS)，确认用户业务属于哪一类。
+        required: true
+        enum:
+          - REC
+          - FILE
+          - FLOW
+          - QRY
+          - SYS
+      - name: business_purpose
+        source: user_input
+        extraction: 提取该业务的核心目的，一句话描述。
+        required: true
+    output_key: business_scope
+
+  - id: step-03
+    description: 分配编号。在SOPrepository目录中查找当前最大序号，分配新的三位数序号。
+    tool_name: 文件写入
+    tool_params:
+      - name: action
+        source: fixed
+        value: find_max_sequence
+        required: true
+    output_key: new_sequence_number
+
+  - id: step-04
+    description: 确定文件名。按格式`SOP-[新序号]-[业务类型缩写]-[业务名称蛇形].md`生成文件名。
+    tool_name: null
+    tool_params:
+      - name: sequence_number
+        source: prev_step
+        path: new_sequence_number
+        required: true
+      - name: business_type
+        source: prev_step
+        path: business_scope.business_type
+        required: true
+      - name: business_name_snake
+        source: prev_step
+        path: business_scope.business_name
+        required: true
+    output_key: file_name
+
+  - id: step-05
+    description: 起草：固定头部。复制粘贴固定头部模板，替换业务名称、适用对象、业务目的等变量。
+    tool_name: null
+    tool_params:
+      - name: business_name
+        source: prev_step
+        path: business_scope.business_name
+        required: true
+      - name: allowed_roles
+        source: context
+        path: sop_document.allowed_roles
+        required: true
+      - name: business_purpose
+        source: prev_step
+        path: business_scope.business_purpose
+        required: true
+    output_key: draft_header
+
+  - id: step-06
+    description: 起草：第1章 · 业务流版本信息。填写业务流编号、版本v1.0、参与编辑人、最后编辑人、最后编辑时间、关联系统模块。
+    tool_name: null
+    tool_params:
+      - name: business_flow_id
+        source: prev_step
+        path: new_sequence_number
+        required: true
+      - name: business_type
+        source: prev_step
+        path: business_scope.business_type
+        required: true
+      - name: today
+        source: fixed
+        value: today
+        required: true
+    output_key: draft_chapter_1
+
+  - id: step-07
+    description: 起草：第2章 · 意图识别标准。定义触发关键词、否定条件和示例对话。
+    tool_name: null
+    tool_params:
+      - name: trigger_keywords
+        source: user_input
+        extraction: 向用户询问：“用户说什么样的话时，应该走这个业务流？请提供3-5个关键词或表达方式。”
+        required: true
+      - name: negative_conditions
+        source: user_input
+        extraction: 向用户询问：“哪些情况虽然看起来像，但不应该走这个业务流？请提供2-3个反例，并说明应该走什么流程。”
+        required: true
+      - name: positive_examples
+        source: user_input
+        extraction: 向用户询问：“请提供2个以上应该触发此业务流的对话示例。”
+        required: true
+      - name: negative_examples
+        source: user_input
+        extraction: 向用户询问：“请提供2个以上不应触发此业务流的对话示例，并说明原因。”
+        required: true
+    output_key: draft_chapter_2
+
+  - id: step-08
+    description: 起草：第3章 · 业务流描述。包括目标数据库表、使用的系统工具/API和处理流程。
+    tool_name: inspect_existing_tables
+    tool_params:
+      - name: action
+        source: fixed
+        value: get_all_tables
+        required: true
+    output_key: existing_tables_info
+
+  - id: step-09
+    description: 评估现有表。根据`existing_tables_info`，逐张评估现有表是否能承载本业务的数据需求。
+    tool_name: null
+    tool_params:
+      - name: existing_tables
+        source: prev_step
+        path: existing_tables_info
+        required: true
+      - name: business_data_requirements
+        source: user_input
+        extraction: 向用户确认：“这个业务需要记录哪些关键数据字段？”
+        required: true
+    output_key: table_evaluation_result
+
+  - id: step-10
+    description: 确定目标数据库表。根据评估结果，决定复用、扩展或新建表。如需新建，调用`generate_table_schema`。
+    tool_name: generate_table_schema
+    tool_params:
+      - name: decision
+        source: prev_step
+        path: table_evaluation_result.decision
+        required: true
+        enum:
+          - reuse
+          - extend
+          - create_new
+      - name: business_data_requirements
+        source: prev_step
+        path: table_evaluation_result.business_data_requirements
+        required: true
+      - name: table_to_extend
+        source: prev_step
+        path: table_evaluation_result.table_to_extend
+        required: false
+    output_key: table_decision
+
+  - id: step-11
+    description: 起草第3.1节。将`table_decision`写入SOP文档。
+    tool_name: null
+    tool_params:
+      - name: table_decision_content
+        source: prev_step
+        path: table_decision
+        required: true
+    output_key: draft_chapter_3_1
+
+  - id: step-12
+    description: 起草第3.2节和第3.3节。列出使用的系统工具和定义处理流程。
+    tool_name: null
+    tool_params:
+      - name: tools_used
+        source: user_input
+        extraction: 向用户确认：“这个业务会用到哪些系统工具或API？”
+        required: true
+      - name: process_flow
+        source: user_input
+        extraction: 向用户确认：“这个业务的处理流程是怎样的？请描述从开始到结束的步骤。”
+        required: true
+    output_key: draft_chapter_3_2_3
+
+  - id: step-13
+    description: 起草：第4章 · 输出成果要求。定义字段分级与约束、格式要求和回执格式。
+    tool_name: null
+    tool_params:
+      - name: required_fields
+        source: user_input
+        extraction: 向用户确认：“这个业务产出物中，哪些字段是必须有的（🔴）？哪些是应该有的（🟡）？哪些是可选的（🟢）？注意必有字段不超过3个。”
+        required: true
+      - name: format_requirements
+        source: user_input
+        extraction: 向用户确认：“这个文档的格式有什么特殊要求吗？”
+        required: true
+      - name: receipt_format
+        source: user_input
+        extraction: 向用户确认：“业务完成后，返回给用户的确认信息格式是怎样的？”
+        required: true
+    output_key: draft_chapter_4
+
+  - id: step-14
+    description: 起草：第5章 · 异常处理原则。覆盖信息缺失类、信息质量类和系统异常类。
+    tool_name: null
+    tool_params:
+      - name: missing_info_scenarios
+        source: user_input
+        extraction: 向用户确认：“当用户提供的信息不完整时，可能有哪些场景？如何处理？”
+        required: true
+      - name: quality_issue_scenarios
+        source: user_input
+        extraction: 向用户确认：“当用户提供的信息质量有问题时（如格式不对、逻辑矛盾），可能有哪些场景？如何处理？”
+        required: true
+      - name: system_error_scenarios
+        source: user_input
+        extraction: 向用户确认：“系统层面可能出现哪些异常？如何处理？”
+        required: true
+    output_key: draft_chapter_5
+
+  - id: step-15
+    description: 起草：第6章 · 建议补充内容（可选）。如有系统增强建议则编写；无则整章省略。
+    tool_name: null
+    tool_params:
+      - name: has_enhancement_suggestions
+        source: user_input
+        extraction: 向用户确认：“是否有对系统的增强建议需要记录？如果没有，此章节可以省略。”
+        required: true
+      - name: enhancement_content
+        source: user_input
+        extraction: 如果有增强建议，请详细描述。
+        required: false
+    output_key: draft_chapter_6
+
+  - id: step-16
+    description: 起草：第7章 · 业务流变更记录。写入初版记录。
+    tool_name: null
+    tool_params:
+      - name: today
+        source: fixed
+        value: today
+        required: true
+      - name: editor
+        source: context
+        path: user.name
+        required: true
+      - name: business_scope_description
+        source: prev_step
+        path: business_scope.business_purpose
+        required: true
+    output_key: draft_chapter_7
+
+  - id: step-17
+    description: 自检。对照自检清单逐条核对起草质量。
+    tool_name: 内容自检
+    tool_params:
+      - name: full_draft
+        source: context
+        path: current_draft
+        required: true
+      - name: checklist
+        source: fixed
+        value:
+          - 结构完整性：是否包含全部必需章节（至少6章，第6章可省略）
+          - 意图判定明确：能否用一句话回答"什么样的消息走这个业务流"
+          - 字段分级合理：必有/应有/如有三级是否清晰，每级至少1个字段
+          - 数据库表映射正确：是否调用过`inspect_existing_tables`工具？是否评估过现有表的复用可能性？表名和字段名是否与`models.py`一致？
+          - 工具映射正确：工具名是否与tools/目录下定义一致
+          - 异常覆盖全面：关键异常场景是否都有处理建议（至少4+）
+          - 语言简洁明确：是否有冗余描述、口语化表达
+          - 版本记录完整：第1章版本信息 + 第7章变更记录是否完整
+        required: true
+    output_key: self_check_result
+
+  - id: step-18
+    description: 确认与写入。自检通过后，将文档保存至 SOPrepository/ 目录；若自检不通过，返回修改对应章节。
+    tool_name: 文件写入
+    tool_params:
+      - name: file_path
+        source: prev_step
+        path: file_name
+        required: true
+      - name: content
+        source: context
+        path: current_draft
+        required: true
+      - name: action
+        source: fixed
+        value: write
+        required: true
+    output_key: write_result
+
+  - id: step-19
+    description: 通知系统加载。提示新SOP已起草完成，系统重启或IntentRegistry动态加载后生效。
+    tool_name: IntentRegistry 加载
+    tool_params:
+      - name: sop_file_path
+        source: prev_step
+        path: file_name
+        required: true
+    output_key: load_notification
+
+  - id: step-20
+    description: 返回确认信息。向用户返回SOP编号、文件路径和业务范围说明。
+    tool_name: null
+    tool_params:
+      - name: business_flow_id
+        source: prev_step
+        path: new_sequence_number
+        required: true
+      - name: file_path
+        source: prev_step
+        path: file_name
+        required: true
+      - name: business_type
+        source: prev_step
+        path: business_scope.business_type
+        required: true
+      - name: business_name
+        source: prev_step
+        path: business_scope.business_name
+        required: true
+      - name: version
+        source: fixed
+        value: v1.0
+        required: true
+      - name: business_purpose
+        source: prev_step
+        path: business_scope.business_purpose
+        required: true
+    output_key: final_confirmation

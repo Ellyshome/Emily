@@ -1,19 +1,12 @@
-"""SessionFactory —— Session 创建 + 最小化知识灌注（蓝图 §3.4 / §4.3.1）。
+"""SessionFactory —— Session 创建 + 全量知识灌注（重构后）。
 
-未命中 Session 时，由工厂创建新 Session：
-  ├── 灌入 Session-Agent（最小化知识灌注）
-  ├── 创建 Session 状态机
-  └── 绑定公共 Pipeline BUS
-
-Phase B 升级（蓝图 §12.2）：
-  · 传递 LLM 客户端 + SOPIntentRegistry 给 SessionAgent（意图识别）
-  · 填充上下文摘要字段（SOP 目录、工具目录）
+委托 SessionContext.create() 完成全量数据灌注。
+SessionFactory 本身仅负责组装依赖并创建 SessionAgent。
 """
 
 from __future__ import annotations
 
 import logging
-from datetime import datetime, timezone
 from typing import TYPE_CHECKING
 
 from ...session.session_agent import SessionAgent
@@ -27,19 +20,19 @@ logger = logging.getLogger("emily.session_factory")
 
 
 class SessionFactory:
-    """Session 工厂 —— 创建 + 最小化知识灌注。"""
+    """Session 工厂 —— 创建 + 全量知识灌注。"""
 
     def __init__(self, bus: "PipelineBUS", core=None):
         """
         Args:
             bus: 全局公共 Pipeline BUS（所有 Session 共享）。
-            core: EmilyCore 实例（懒加载用户记忆/SOP 目录等服务），可为 None。
+            core: EmilyCore 实例。
         """
         self._bus = bus
         self._core = core
 
     def create(self, message: "StandardMessage", user_id: str = "") -> SessionAgent:
-        """创建一个新的 SessionAgent（含最小化知识灌注 + Phase B 意图识别依赖）。
+        """创建一个新的 SessionAgent（含全量知识灌注 + 意图识别依赖）。
 
         Args:
             message: 触发创建的入站消息。
@@ -51,81 +44,33 @@ class SessionFactory:
         conv_id = message.conversation_id
         context = self._build_context(message, user_id)
 
-        # Phase B: 从 EmilyCore 获取意图识别依赖
+        # 从 EmilyCore 获取依赖
         llm = None
-        sop_registry = None
+        skill_registry = None
         if self._core is not None:
             llm = getattr(self._core, "_llm_client", None)
-            sop_registry = getattr(self._core, "_sop_intent_registry", None)
+            skill_registry = getattr(self._core, "_skill_registry", None)
 
         agent = SessionAgent(
             conversation_id=conv_id,
             context=context,
             bus=self._bus,
-            # Phase B: 意图识别依赖
             llm_client=llm,
-            sop_intent_registry=sop_registry,
+            skill_registry=skill_registry,
         )
         logger.info(
-            "SessionFactory created session: conv=%s user=%s llm=%s sop_registry=%s",
+            "SessionFactory created session: conv=%s user=%s llm=%s skill_registry=%s",
             conv_id, user_id or "?",
             "yes" if llm else "no",
-            "yes" if sop_registry else "no",
+            "yes" if skill_registry else "no",
         )
         return agent
 
     def _build_context(self, message: "StandardMessage", user_id: str) -> SessionContext:
-        """组装最小化灌注上下文（蓝图 §4.3.1 + Phase B 摘要字段填充）。"""
-        ctx = SessionContext(
-            conversation_id=message.conversation_id,
+        """委托 SessionContext.create() 完成全量数据灌注。"""
+        return SessionContext.create(
             user_id=user_id,
-            user_name=message.sender_name or "",
-            current_datetime=datetime.now(timezone.utc).isoformat(),
+            conversation_id=message.conversation_id,
+            sender_name=message.sender_name or "",
+            core=self._core,
         )
-
-        core = self._core
-        if core is None:
-            return ctx
-
-        # Phase B: 填充 SOP 目录摘要
-        sop_registry = getattr(core, "_sop_intent_registry", None)
-        if sop_registry is not None:
-            try:
-                sops = sop_registry.list_loaded_sops()
-                if sops:
-                    ctx.sop_catalog_summary = (
-                        f"可用业务流程 ({len(sops)}): {', '.join(sops[:15])}"
-                    )
-            except Exception:
-                pass
-
-        # v2.0 权限系统：灌注权限快照（需求-完整版 §6.3）
-        # PermissionService.build_permission_snapshot() 查 User+Company+权限矩阵，
-        # 组装 PermissionSnapshot 注入 ctx.permissions。fail-open：失败降级 L1 访客。
-        if user_id:
-            perm_service = getattr(core, "_permission_service", None)
-            if perm_service is not None:
-                try:
-                    ctx.permissions = perm_service.build_permission_snapshot(user_id)
-                except Exception as e:
-                    logger.warning(
-                        "load permission snapshot failed user=%s: %s", user_id, e
-                    )
-                    # 保持默认空快照（L1 访客），fail-open 不阻塞 Session 创建
-
-        # M8c: 灌装用户长期记忆到 SessionContext
-        memory_service = getattr(core, "_user_memory_service", None)
-        if memory_service is not None and user_id:
-            try:
-                # 尝试通过 user_id 获取用户显示名
-                user_name = ctx.user_name or ""
-                if user_name:
-                    memory_text = memory_service.load_memory_context(user_name)
-                    if memory_text:
-                        ctx.history_summary = memory_text
-                        logger.debug("M8c: user memory loaded for %s — %d chars",
-                                     user_name, len(memory_text))
-            except Exception as e:
-                logger.debug("M8c: user memory load skipped: %s", e)
-
-        return ctx

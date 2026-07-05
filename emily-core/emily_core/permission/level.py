@@ -90,3 +90,8 @@ def is_admin(user_level: int) -> bool:
 def is_sys_admin(user_level: int) -> bool:
     """是否系统管理员（L6）。用于系统配置、权限规则定义等最高权限判定。"""
     return user_level >= PermissionLevel.SYS_ADMIN.value
+
+
+def level_label(level: int) -> str:
+    """权限层级可读标签，如 '管理员(L5)'。"""
+    return f"{LEVEL_NAME.get(level, '未知')}(L{level})"

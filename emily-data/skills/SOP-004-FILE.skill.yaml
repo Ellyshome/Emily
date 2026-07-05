@@ -1,0 +1,109 @@
+instructions: |
+  你是一个文件归档助手。当用户发送文件并表达归档意图时，你需要执行以下操作：
+  1. 确认用户意图为文件归档（而非查询或其他）。
+  2. 从用户消息和附件中提取归档所需信息：文件名（必有）、文件类型（从扩展名推断）、关联项目（应有）、文件描述（可选）。
+  3. 如果缺少必要信息（如无附件），请提示用户补充。
+  4. 在调用归档工具前，向用户展示拟录入的信息摘要，获得确认后再执行。
+  5. 调用 record_file 工具完成归档，并向用户返回文件编号和简要回执。
+  6. 如果用户未明确指定项目，尝试从上下文或用户消息中推断项目归属（可使用 query_data 工具查询项目信息）。
+  7. 对于不支持的文件类型或过大的文件，给出友好提示。
+
+tools:
+  - name: record_file
+    description: 文件归档核心工具，将文件信息写入 files 表，返回文件编号。
+  - name: query_data
+    description: 项目查询工具，用于根据项目名称或关键词查询项目ID等信息。
+
+steps:
+  - id: step-01
+    description: 确认用户意图为文件归档，并检查是否包含附件。
+    tool_name: null
+    tool_params: {}
+    output_key: intent_confirmed
+
+  - id: step-02
+    description: 从用户消息和附件中提取文件名（filename）。
+    tool_name: null
+    tool_params:
+      - name: filename
+        source: user_input
+        extraction: 从用户消息或附件中提取原始文件名，包括扩展名。
+        required: true
+    output_key: filename
+
+  - id: step-03
+    description: 从文件扩展名推断文件类型（file_type）。
+    tool_name: null
+    tool_params:
+      - name: file_type
+        source: user_input
+        extraction: 根据文件扩展名（如 .pdf, .dwg, .docx）推断文件类型，如“图纸”、“报告”、“文档”等。
+        required: false
+        default: 文档
+    output_key: file_type
+
+  - id: step-04
+    description: 提取或推断关联项目（project_id）。
+    tool_name: query_data
+    tool_params:
+      - name: project_name
+        source: user_input
+        extraction: 从用户消息中提取项目名称，如“科技城3号楼”、“科技城项目”等。
+        required: false
+      - name: project_id
+        source: context
+        path: project_id
+        required: false
+    output_key: project_id
+
+  - id: step-05
+    description: 提取文件描述（description，可选）。
+    tool_name: null
+    tool_params:
+      - name: description
+        source: user_input
+        extraction: 从用户消息中提取对文件的描述信息，如“上周的安全检查报告”。
+        required: false
+    output_key: description
+
+  - id: step-06
+    description: 向用户展示拟录入的信息摘要，请求确认。
+    tool_name: null
+    tool_params:
+      - name: summary
+        source: fixed
+        value: "请确认以下归档信息：\n文件名：{filename}\n文件类型：{file_type}\n关联项目：{project_id}\n描述：{description}"
+        required: true
+    output_key: confirmation
+
+  - id: step-07
+    description: 调用 record_file 工具执行文件归档。
+    tool_name: record_file
+    tool_params:
+      - name: filename
+        source: prev_step
+        path: filename
+        required: true
+      - name: file_type
+        source: prev_step
+        path: file_type
+        required: false
+      - name: project_id
+        source: prev_step
+        path: project_id
+        required: false
+      - name: description
+        source: prev_step
+        path: description
+        required: false
+    output_key: file_record
+
+  - id: step-08
+    description: 返回归档确认信息，包括文件编号和简要回执。
+    tool_name: null
+    tool_params:
+      - name: file_no
+        source: prev_step
+        path: file_no
+        required: true
+    output_key: final_response

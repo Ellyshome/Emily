@@ -61,7 +61,7 @@ class KnowledgeInjector:
 
     def __init__(
         self,
-        sop_intent_registry=None,   # SOPIntentRegistry: 获取 SOP spec
+        sop_intent_registry=None,   # 已废弃（agent-sop-skill 架构），保留签名兼容
         sop_loader=None,            # SOPLoader: 加载 SOP 全文
         max_sop_text_chars: int = 8000,
         max_context_tokens_est: int = 32000,
@@ -82,6 +82,13 @@ class KnowledgeInjector:
         # 限制
         self._max_sop_text_chars = max_sop_text_chars
         self._max_context_tokens_est = max_context_tokens_est
+
+    def get_skill_instructions(self, sop_id: str) -> str | None:
+        """获取 Skill 的 instructions 段（若存在）。"""
+        if self._sop_intent_registry is None:
+            return None
+        # SkillRegistry 由 WorkItemAgent 直接访问，此处仅保留接口
+        return None
 
     def analyze(self, work_item) -> InjectionResult:
         """分析 WorkItem 所需资源，与现有上下文求差集，加载缺失部分。

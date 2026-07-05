@@ -1,0 +1,278 @@
+instructions: |
+  你是一个计划任务管理助手，负责处理计划任务的创建、成果提交和查询。
+
+  核心原则：
+  1. 成果必有其主：任何工作成果必须对应一个已分配的计划任务。
+  2. 任务必有其源：任何已分配的计划任务，必须挂载于一个正在执行中的全景节点（状态为 IN_PROGRESS）。
+  3. 节点必已启用：全景节点必须已通过审批、处于启用/执行中状态。
+
+  处理流程：
+  - 当用户请求创建任务时，判断是一次性任务还是循环任务，调用 record_plan_task 工具。
+  - 当用户请求提交成果时，调用 submit_plan_task 工具。
+  - 当用户请求查询任务时，调用 query_plan_tasks 工具。
+
+  必填字段：任务标题（title）、截止时间（deadline_at）或循环规则（deadline_rule）。
+  应有字段：执行人姓名（executor_name）、任务详细描述（description）、项目名称（project_name）。
+  如有字段：成果核验标准（verification_standard，JSON格式）、关联项目阶段（phase_code）。
+
+  异常处理：
+  - 缺少截止时间：询问用户补充截止日期或循环规则。
+  - 截止时间已过期：提醒用户确认，记录过期任务。
+  - 反向下达（执行者向主管下达任务）：标记 ANOMALY_PENDING_REVIEW，通知上级复核。
+  - 数据库写入失败：重试一次，仍失败则告知用户。
+
+  合规校验：
+  - 成果提交时（submit_plan_task）：校验任务实例是否存在 → 校验任务是否关联有效节点 → 校验节点是否处于执行中状态。
+  - 任务创建时（record_plan_task）：校验是否指定了关联的全景节点 → 校验节点是否已启用。
+  - 任一环节缺失，系统均应阻断操作并输出引导信息。
+
+  完工确认报告三场景处理策略：
+  - 场景A（有挂载节点+有任务归属）：正常入库，成果标记 is_acceptance_check=true，节点管理员负责验收。
+  - 场景B（有任务归属但无对应节点）：引导用户提醒所属建设单位对应的部门负责人建立全景节点。
+  - 场景C（节点尚在定制申报中）：统一归入虚拟节点（VIRTUAL-NODE），等待节点建立后二次分配。
+
+tools:
+  - name: record_plan_task
+    description: 创建计划任务（一次性或循环模板）。用于下达任务、布置工作、创建周期性任务。
+  - name: submit_plan_task
+    description: 提交计划任务成果。用于上传任务完成报告、提交成果。
+  - name: query_plan_tasks
+    description: 查询计划任务列表。用于查看待办任务、查询任务状态。
+
+steps:
+  - id: step-01
+    description: 识别用户意图，判断是创建任务、提交成果还是查询任务
+    tool_name: null
+    tool_params: {}
+    output_key: user_intent
+
+  - id: step-02
+    description: 如果用户意图是创建任务，提取任务信息（标题、截止时间、执行人、项目名称等）
+    tool_name: null
+    tool_params:
+      - name: title
+        source: user_input
+        extraction: 从用户消息中提取任务标题
+        required: true
+      - name: deadline_at
+        source: user_input
+        extraction: 从用户消息中提取截止时间（日期格式）
+        required: false
+      - name: deadline_rule
+        source: user_input
+        extraction: 从用户消息中提取循环规则（如每周五17:00）
+        required: false
+      - name: executor_name
+        source: user_input
+        extraction: 从用户消息中提取执行人姓名
+        required: false
+      - name: description
+        source: user_input
+        extraction: 从用户消息中提取任务详细描述
+        required: false
+      - name: project_name
+        source: user_input
+        extraction: 从用户消息中提取项目名称
+        required: false
+      - name: is_recurring
+        source: user_input
+        extraction: 判断任务是否为循环任务（true/false）
+        required: true
+        default: false
+        enum: [true, false]
+      - name: verification_standard
+        source: user_input
+        extraction: 从用户消息中提取成果核验标准（JSON格式）
+        required: false
+      - name: phase_code
+        source: user_input
+        extraction: 从用户消息中提取关联项目阶段代码
+        required: false
+    output_key: task_info
+
+  - id: step-03
+    description: 校验任务信息完整性，特别是截止时间或循环规则
+    tool_name: null
+    tool_params:
+      - name: deadline_at
+        source: prev_step
+        path: task_info.deadline_at
+        required: false
+      - name: deadline_rule
+        source: prev_step
+        path: task_info.deadline_rule
+        required: false
+    output_key: validation_result
+
+  - id: step-04
+    description: 如果缺少截止时间且不是循环任务，询问用户补充
+    tool_name: null
+    tool_params:
+      - name: missing_field
+        source: fixed
+        value: deadline_at
+        required: true
+    output_key: missing_info_prompt
+
+  - id: step-05
+    description: 调用 record_plan_task 创建任务
+    tool_name: record_plan_task
+    tool_params:
+      - name: title
+        source: prev_step
+        path: task_info.title
+        required: true
+      - name: deadline_at
+        source: prev_step
+        path: task_info.deadline_at
+        required: false
+      - name: deadline_rule
+        source: prev_step
+        path: task_info.deadline_rule
+        required: false
+      - name: executor_name
+        source: prev_step
+        path: task_info.executor_name
+        required: false
+      - name: description
+        source: prev_step
+        path: task_info.description
+        required: false
+      - name: project_name
+        source: prev_step
+        path: task_info.project_name
+        required: false
+      - name: is_recurring
+        source: prev_step
+        path: task_info.is_recurring
+        required: true
+        default: false
+      - name: verification_standard
+        source: prev_step
+        path: task_info.verification_standard
+        required: false
+      - name: phase_code
+        source: prev_step
+        path: task_info.phase_code
+        required: false
+    output_key: create_result
+
+  - id: step-06
+    description: 如果用户意图是提交成果，提取成果信息（任务ID、成果内容等）
+    tool_name: null
+    tool_params:
+      - name: task_id
+        source: user_input
+        extraction: 从用户消息中提取要提交成果的任务ID
+        required: true
+      - name: deliverable_content
+        source: user_input
+        extraction: 从用户消息中提取成果内容或附件信息
+        required: true
+      - name: is_acceptance_check
+        source: user_input
+        extraction: 判断是否为完工确认报告（true/false）
+        required: false
+        default: false
+        enum: [true, false]
+    output_key: submission_info
+
+  - id: step-07
+    description: 校验任务是否存在、是否关联有效节点、节点是否处于执行中状态
+    tool_name: null
+    tool_params:
+      - name: task_id
+        source: prev_step
+        path: submission_info.task_id
+        required: true
+    output_key: compliance_check_result
+
+  - id: step-08
+    description: 根据合规校验结果和成果类型，执行对应处理策略
+    tool_name: null
+    tool_params:
+      - name: compliance_status
+        source: prev_step
+        path: compliance_check_result.status
+        required: true
+        enum: [valid, no_task, no_node, node_not_active, node_in_customization]
+      - name: is_acceptance_check
+        source: prev_step
+        path: submission_info.is_acceptance_check
+        required: false
+        default: false
+    output_key: routing_decision
+
+  - id: step-09
+    description: 调用 submit_plan_task 提交成果
+    tool_name: submit_plan_task
+    tool_params:
+      - name: task_id
+        source: prev_step
+        path: submission_info.task_id
+        required: true
+      - name: deliverable_content
+        source: prev_step
+        path: submission_info.deliverable_content
+        required: true
+      - name: is_acceptance_check
+        source: prev_step
+        path: submission_info.is_acceptance_check
+        required: false
+        default: false
+    output_key: submit_result
+
+  - id: step-10
+    description: 如果用户意图是查询任务，提取查询条件
+    tool_name: null
+    tool_params:
+      - name: query_type
+        source: user_input
+        extraction: 从用户消息中提取查询类型（待办、已完成、全部等）
+        required: false
+        default: all
+        enum: [pending, completed, all]
+      - name: project_name
+        source: user_input
+        extraction: 从用户消息中提取项目名称（用于筛选）
+        required: false
+      - name: executor_name
+        source: user_input
+        extraction: 从用户消息中提取执行人姓名（用于筛选）
+        required: false
+    output_key: query_criteria
+
+  - id: step-11
+    description: 调用 query_plan_tasks 查询任务列表
+    tool_name: query_plan_tasks
+    tool_params:
+      - name: query_type
+        source: prev_step
+        path: query_criteria.query_type
+        required: false
+        default: all
+      - name: project_name
+        source: prev_step
+        path: query_criteria.project_name
+        required: false
+      - name: executor_name
+        source: prev_step
+        path: query_criteria.executor_name
+        required: false
+    output_key: task_list
+
+  - id: step-12
+    description: 处理异常情况（反向下达、过期任务等）
+    tool_name: null
+    tool_params:
+      - name: is_reverse_assignment
+        source: user_input
+        extraction: 判断是否为执行者向主管下达任务（true/false）
+        required: false
+        default: false
+      - name: is_overdue
+        source: user_input
+        extraction: 判断截止时间是否已过期（true/false）
+        required: false
+        default: false
+    output_key: exception_handling_result

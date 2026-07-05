@@ -7,7 +7,7 @@ Hook 通过本对象读取：user_id / is_admin / message / intent / verified_re
 agent_reply / baggage / current_stage / pipeline_run_id，以及 get()/set()/add_warning()。
 
 **权限架构 v1.2 调整**：
-  - WorkItemAgent 通过本对象以只读方式访问 SessionContext 中的权限快照
+  - WorkItemAgent 通过本对象以只读方式访问 SessionContext 中的权限信息
   - 不直接将权限信息注入到 WorkItemAgent 内部，避免上下文污染
   - 通过 session_context 属性访问，仅允许读取，不允许修改
 
@@ -23,7 +23,7 @@ from typing import Any, TYPE_CHECKING, Optional
 if TYPE_CHECKING:
     from ..workitem import WorkItem
     from ...adapters.standard.message import StandardMessage
-    from ...session.session_context import SessionContext, PermissionSnapshot
+    from ...session.session_context import SessionContext
 
 
 def _new_run_id() -> str:
@@ -45,12 +45,11 @@ class BusContext:
     work_item: "WorkItem" = None  # type: ignore[assignment]
 
     # ── SessionContext（私有，只读访问）──
-    # 注意：仅在 BusContext 创建时注入，后续不可修改
-    _session_context: Optional["SessionContext"] = None  # 私有字段，不直接访问
+    _session_context: Optional["SessionContext"] = None
 
     # ── 运行标识 ──
     pipeline_run_id: str = field(default_factory=_new_run_id)
-    current_stage: str = ""               # 当前节点名（hook 日志用）
+    current_stage: str = ""
 
     # ── 入站消息（Session 层注入，供 hook 读取 message.content）──
     message: "StandardMessage" = None     # type: ignore[assignment]
@@ -91,21 +90,9 @@ class BusContext:
     def get_session_context(self) -> Optional["SessionContext"]:
         """获取 SessionContext（只读）。
 
-        WorkItemAgent 通过此方法获取会话状态信息与权限列表。
-        返回的 SessionContext 中的权限快照是只读的 dataclass，
-        但调用方仍需注意不要修改其内容。
+        WorkItemAgent / AuthHook 通过此方法获取会话状态信息与权限列表。
         """
         return self._session_context
-
-    def get_permissions(self) -> Optional["PermissionSnapshot"]:
-        """获取权限快照（只读）。
-
-        便捷方法：直接获取 PermissionSnapshot，无需先拿 SessionContext。
-        WorkItemAgent 在鉴权时调用此方法检查 SOP 权限、DB 权限等。
-        """
-        if self._session_context is None:
-            return None
-        return self._session_context.get_permission_snapshot()
 
     def has_sop_permission(self, sop_id: str) -> bool:
         """检查是否有权限使用指定 SOP（便捷方法）。"""

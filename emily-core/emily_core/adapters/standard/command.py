@@ -69,6 +69,7 @@ class QueryCommand:
     """结构化查询命令。"""
     query_type: str = "event"          # event|task|meeting|file|message|conversation|user|project|summary
     project_id: str | None = None
+    project_ids: list[str] | None = None   # session_scope 注入的项目范围
     project_name: str | None = None
     time_range: str = "all"            # today|this_week|this_month|all
     status_filter: str | None = None   # pending|confirmed|todo|done|active 等
