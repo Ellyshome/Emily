@@ -176,3 +176,10 @@ cd emily-core
 uv run python -m emily_core.session.fetchers.fetch_available_tools --user-id chenzhe-jyzx-2026-0001
 uv run python -m emily_core.session.fetchers.fetch_visible_schema --user-id chenzhe-jyzx-2026-0001
 uv run python -m emily_core.session.fetchers.fetch_rag_info
+
+# available_tools 
+docker exec emily-core python -m emily_core.session.fetchers.fetch_available_tools --user-id chenzhe-jyzx-2026-0001
+# visible_schema
+docker exec emily-core python -m emily_core.session.fetchers.fetch_visible_schema --user-id chenzhe-jyzx-2026-0001
+# fetch_rag_info
+docker exec emily-core python -m emily_core.session.fetchers.fetch_rag_info --user-id chenzhe-jyzx-2026-0001
