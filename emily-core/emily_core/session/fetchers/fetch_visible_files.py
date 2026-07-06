@@ -14,7 +14,11 @@ import argparse
 
 logger = logging.getLogger("emily.session.fetchers.fetch_visible_files")
 
-DB_URL_DEFAULT = "postgresql://emily:emily_secret_2026@localhost:25432/emily"
+import os
+DB_URL_DEFAULT = os.getenv(
+    "EMILY_DATABASE_URL",
+    "postgresql://emily:emily_secret_2026@localhost:25432/emily"
+)
 
 
 def fetch(user_id: str) -> dict:
