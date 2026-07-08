@@ -84,14 +84,13 @@ class User(Base):
     """users 表 ORM 映射 — 与实际数据库列对齐（非 models.py 完整定义）。
 
     注意：实际 DB 与 models.py 有差异：
-      - DB 有 real_name（models.py 已移除）
+      - DB 无 real_name（models.py 有但未迁移）
       - DB 无 project_id / long_term_memory / conversation_summary（models.py 有但未迁移）
     此映射以实际 DB 列为准，避免 UndefinedColumn 报错。
     """
     __tablename__ = "users"
     id = Column(String, primary_key=True, default=lambda: str(uuid.uuid4()))
     username = Column(String(100))
-    real_name = Column(String(100))
     phone = Column(String(50))
     email = Column(String(200))
     status = Column(String(50), default="active")
@@ -293,7 +292,6 @@ def _sub_ensure_admin(session: Session, dry_run: bool = False) -> Tuple[dict, Op
         admin_user = User(
             id=new_id,
             username=DEFAULT_ADMIN["username"],
-            real_name="系统管理员",
             qq=DEFAULT_ADMIN["qq"],
             email=DEFAULT_ADMIN["email"],
             permission_level=DEFAULT_ADMIN["permission_level"],

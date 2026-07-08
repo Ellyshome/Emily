@@ -183,3 +183,34 @@ docker exec emily-core python -m emily_core.session.fetchers.fetch_available_too
 docker exec emily-core python -m emily_core.session.fetchers.fetch_visible_schema --user-id chenzhe-jyzx-2026-0001
 # fetch_rag_info
 docker exec emily-core python -m emily_core.session.fetchers.fetch_rag_info --user-id chenzhe-jyzx-2026-0001
+---
+资料分黑白名单双轨制
+非建设单位人员实行白名单制，根据参与节点划定可见范围，
+建设单位人员实行黑名单制，划定范围，对非管理员级别隐藏，主要是方便以后财务预算介入。当前黑名单为空，需要有财务再生效
+
+---
+# 冷启动自检，都检查什么：
+是否可启动：
+是否有项目：表projects中是否存在一条字段is_main值为true的数据。
+是否有主管理员：表users是否存在一条字段level的值为‘系统管理员’
+是否有参见单位：表company_info中是否存在一条字段 is_admin 的值为真。
+是否有全景计划节点：节点数大于3
+是否有项目编号：
+
+# 是否有基本项目文件：
+土地出让合同 = 拿地约定（债权）
+不动产权证 = 地块权属（物权）
+规划两证（用地 + 工程）= 允许开发楼盘
+立项备案 = 官方登记有这个开发项目
+
+
+
+
+冷启动，拉起项目自我认知，一个类project_context包含：
+项目编号
+项目名称
+项目地址
+项目描述
+
+---
+session拉起时。判断，若用户所在公司is_admin为真，则可见所有文件，所有文件，
