@@ -61,7 +61,6 @@ class KnowledgeInjector:
 
     def __init__(
         self,
-        sop_intent_registry=None,   # 已废弃（agent-sop-skill 架构），保留签名兼容
         sop_loader=None,            # SOPLoader: 加载 SOP 全文
         max_sop_text_chars: int = 8000,
         max_context_tokens_est: int = 32000,
@@ -76,7 +75,6 @@ class KnowledgeInjector:
         self._table_schemas: dict[str, str] = {}    # table_name → schema 摘要
 
         # 依赖
-        self._sop_intent_registry = sop_intent_registry
         self._sop_loader = sop_loader
 
         # 限制
@@ -85,8 +83,6 @@ class KnowledgeInjector:
 
     def get_skill_instructions(self, sop_id: str) -> str | None:
         """获取 Skill 的 instructions 段（若存在）。"""
-        if self._sop_intent_registry is None:
-            return None
         # SkillRegistry 由 WorkItemAgent 直接访问，此处仅保留接口
         return None
 

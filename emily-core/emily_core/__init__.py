@@ -67,16 +67,17 @@ class EmilyCore:
         self._session_pool = None
 
         # Phase B/C: 共享基础设施
-        self._sop_intent_registry = None
+        # SOPIntentRegistry 已废弃（由 SkillRegistry 替代），不再初始化
+        # self._sop_intent_registry = None
 
         # Phase C: 执行依赖
         self._business_flow_tools = None
 
-        # 计划任务系统（Scheduled Task Module）
-        self._plan_task_service = None
-        self._plan_task_scheduler = None
-        self._plan_task_app = None
-        self._workflow_integrator = None
+        # 计划任务系统已废弃（由 scheduler/ + Node Task 体系替代）
+        # self._plan_task_service = None
+        # self._plan_task_scheduler = None
+        # self._plan_task_app = None
+        # self._workflow_integrator = None
 
         # 系统调度器（Scheduler Module，M4-M5 新增）
         self._scheduler_service = None
@@ -135,6 +136,13 @@ class EmilyCore:
                     temperature=self.config.llm_temperature,
                     max_tokens=self.config.llm_max_tokens,
                 )
+                # ── 进化日志：接入 LLM trace callback ──
+                try:
+                    from .infrastructure.logging.llm_logger import LLMInteractionLogger
+                    self._llm_client.set_trace_callback(LLMInteractionLogger.make_callback())
+                    logger.info("LLM trace callback connected to LLMInteractionLogger")
+                except Exception as cb_err:
+                    logger.warning("Failed to connect LLM trace callback: %s", cb_err)
                 logger.info("LLM client initialized: model=%s", self.config.llm_model)
             except Exception as e:
                 logger.error("LLM client init failed: %s", e)
@@ -151,8 +159,8 @@ class EmilyCore:
         #  ── Phase C: 执行 + 守护依赖 ──
         self._init_phase_c_deps()
 
-        #  ── 计划任务系统 ──
-        self._init_plan_task_module()
+        #  ── 计划任务系统（已废弃，由 scheduler/ + Node Task 体系替代）──
+        # self._init_plan_task_module()
 
         #  ── 系统调度器 ──
         self._init_scheduler_module()
@@ -187,27 +195,9 @@ class EmilyCore:
         )
 
     def _init_phase_b_deps(self) -> None:
-        """Phase B: 初始化 SOP 意图注册表。"""
-        # 1. SOP 意图注册表
-        try:
-            from .agent.intent_registry import SOPIntentRegistry
-            # 多级 fallback: 容器内默认 > 环境变量 > 宿主机开发路径
-            sop_dir = "/app/sops"                             # 容器内默认（最高优先级）
-            if not Path(sop_dir).exists():
-                sop_dir = self.config.sop_repository_dir or ""  # 环境变量
-            if not sop_dir or not Path(sop_dir).exists():
-                # 开发环境 fallback
-                dev_dir = str(Path(__file__).resolve().parents[2] / "emily-data" / "sops")
-                if Path(dev_dir).exists():
-                    sop_dir = dev_dir
-            self._sop_intent_registry = SOPIntentRegistry(sop_directory=sop_dir)
-            status = self._sop_intent_registry.load()
-            logger.info("Phase B: SOPIntentRegistry loaded from %s — %s", sop_dir, status)
-        except Exception as e:
-            logger.warning("Phase B: SOPIntentRegistry init failed: %s", e)
-            self._sop_intent_registry = None
-
-        # 2. ToolRegistry 已移除（M14 重构后走 BusinessFlowToolRegistry 直调）
+        """Phase B: 初始化共享基础设施。"""
+        # SOPIntentRegistry 已废弃（由 SkillRegistry 替代），不再初始化
+        # SkillRegistry 在 _init_skill_module() 中单独初始化
 
     def _init_email_module(self) -> None:
         """初始化邮箱模块：Provider + Service。fail-open，不阻塞 Core。"""
@@ -342,7 +332,6 @@ class EmilyCore:
         from .workitem import WorkItemAgent, PipelineBUS, KnowledgeInjector
 
         injector = KnowledgeInjector(
-            sop_intent_registry=self._sop_intent_registry,
             sop_loader=None,
         )
         self._workitem_agent = WorkItemAgent(
@@ -351,7 +340,6 @@ class EmilyCore:
             config=self.config,
             # Phase C: 执行依赖
             business_flow_tools=self._business_flow_tools,
-            sop_intent_registry=self._sop_intent_registry,
             rag_provider=self._rag_provider,
             # 阶段二：三维鉴权引擎
             permission_engine=self._permission_auth_engine,
@@ -384,118 +372,10 @@ class EmilyCore:
         )
 
     # ────────────────────────────────────────────────────────────────────
-    # 计划任务系统（Scheduled Task Module）
+    # 计划任务系统（Scheduled Task Module）— 已废弃
+    # 替代者：scheduler/ + Node Task 体系（create_task_node / submit_node_deliverable）
+    # _register_plan_task_tools() 和 _init_plan_task_module() 已删除
     # ────────────────────────────────────────────────────────────────────
-
-    def _register_plan_task_tools(self) -> None:
-        """将 plan_task 工具注册到 BusinessFlowToolRegistry。"""
-        try:
-            from .tools.plan_task_tool import (
-                handle_record_plan_task,
-                handle_submit_plan_task,
-                handle_review_plan_task,
-                handle_query_plan_tasks,
-                _RECORD_PLAN_TASK_SCHEMA,
-                _SUBMIT_PLAN_TASK_SCHEMA,
-                _REVIEW_PLAN_TASK_SCHEMA,
-                _QUERY_PLAN_TASKS_SCHEMA,
-            )
-            from .tools.business_flow_tools import BusinessFlowTool
-
-            app = self._plan_task_app
-            cfg = self.config
-
-            def _make_handler(fn, **extra):
-                async def _handler(params, user_id="", message_id="", **kw):
-                    return await fn(params, **extra, user_id=user_id, message_id=message_id)
-                return _handler
-
-            self._business_flow_tools.register(BusinessFlowTool(
-                name="record_plan_task",
-                description="创建计划任务（一次性或循环）。用于下达工作任务、布置周期性任务（日报/周报/月报等）。",
-                parameters=_RECORD_PLAN_TASK_SCHEMA,
-                handler=_make_handler(handle_record_plan_task,
-                    plan_task_app=app, pending_issues=None, config=cfg),
-            ))
-            self._business_flow_tools.register(BusinessFlowTool(
-                name="submit_plan_task",
-                description="提交计划任务成果。执行者在完成任务后提交成果。",
-                parameters=_SUBMIT_PLAN_TASK_SCHEMA,
-                handler=_make_handler(handle_submit_plan_task, plan_task_app=app),
-            ))
-            self._business_flow_tools.register(BusinessFlowTool(
-                name="review_plan_task",
-                description="审核计划任务成果（确认完成或退回修改）。",
-                parameters=_REVIEW_PLAN_TASK_SCHEMA,
-                handler=_make_handler(handle_review_plan_task, plan_task_app=app),
-            ))
-            self._business_flow_tools.register(BusinessFlowTool(
-                name="query_plan_tasks",
-                description="查询计划任务列表（按执行人或发起人、按状态过滤）。",
-                parameters=_QUERY_PLAN_TASKS_SCHEMA,
-                handler=_make_handler(handle_query_plan_tasks, plan_task_app=app),
-            ))
-            logger.info("PlanTask tools registered to BusinessFlowToolRegistry: 4 tools")
-        except Exception as e:
-            logger.warning("PlanTask tool registration failed: %s", e)
-
-    def _init_plan_task_module(self) -> None:
-        """初始化计划任务系统：Service + Scheduler + Application + WorkflowIntegrator。"""
-        try:
-            from .repositories.plan_task_repo import (
-                PlanTaskTemplateRepo,
-                PlanTaskInstanceRepo,
-                PlanTaskLogRepo,
-                PlanTaskDeliverableRepo,
-            )
-            from .repositories.user_repo import UserRepository
-            from .services.plan_task_service import PlanTaskService
-            from .services.plan_task_scheduler import PlanTaskScheduler
-            from .services.workflow_integrator import WorkflowIntegrator
-            from .application.plan_task_app import PlanTaskApplication
-
-            # 创建 Service
-            self._plan_task_service = PlanTaskService(
-                template_repo=PlanTaskTemplateRepo(),
-                instance_repo=PlanTaskInstanceRepo(),
-                log_repo=PlanTaskLogRepo(),
-                deliverable_repo=PlanTaskDeliverableRepo(),
-                user_repo=UserRepository(),
-            )
-
-            # 创建 WorkflowIntegrator（workflow_client 待工作流系统就绪后注入）
-            self._workflow_integrator = WorkflowIntegrator(
-                workflow_client=None,
-                plan_task_service=self._plan_task_service,
-            )
-
-            # 创建 Application（注入 workflow_integrator，确认后触发工作流）
-            self._plan_task_app = PlanTaskApplication(
-                self._plan_task_service, workflow_integrator=self._workflow_integrator
-            )
-
-            # 创建并启动调度引擎（注入 workflow_integrator，tick 内重试启动工作流）
-            self._plan_task_scheduler = PlanTaskScheduler(
-                service=self._plan_task_service,
-                config=self.config,
-                outbound_bus=self.outbound_bus,
-                llm_client=self._llm_client,
-                workflow_integrator=self._workflow_integrator,
-            )
-
-            # 启动后台调度循环
-            import asyncio
-            asyncio.ensure_future(self._plan_task_scheduler.start())
-
-            logger.info(
-                "PlanTask module initialized: service + scheduler + app + workflow_integrator ready"
-            )
-        except Exception as e:
-            logger.warning("PlanTask module init failed: %s", e)
-            self._plan_task_service = None
-            self._plan_task_scheduler = None
-            self._plan_task_app = None
-            self._workflow_integrator = None
 
     def _init_scheduler_module(self) -> None:
         """初始化系统调度器模块：Service + Engine + Handler + Application。"""
@@ -873,13 +753,9 @@ class EmilyCore:
             self.config, "progress_message_template", "收到，正在为你{action}，请稍候..."
         )
 
-        # Phase B: 鉴权依赖
-        if self._sop_intent_registry is not None:
-            injected["sop_intent_registry"] = self._sop_intent_registry
+        # SOPIntentRegistry 已废弃，不再注入
 
-        # 计划任务系统：注入到 PlanTaskMatchHook（§2.5 计划外事件匹配）
-        if self._plan_task_service is not None:
-            injected["plan_task_service"] = self._plan_task_service
+        # 计划任务系统已废弃，不再注入 plan_task_service
 
         # 邮箱模块：供 LLM Tool 使用
         if self._email_service is not None:

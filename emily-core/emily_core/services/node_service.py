@@ -7,7 +7,7 @@
   - 父子进度重算（递归 ≤3 层）
   - 事件记录（状态流转、操作审计）
 
-基于需求文档 §4.1–§4.5。参照模式：plan_task_service.py。
+基于需求文档 §4.1–§4.5。
 """
 
 from __future__ import annotations
