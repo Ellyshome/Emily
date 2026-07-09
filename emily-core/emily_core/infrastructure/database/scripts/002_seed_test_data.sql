@@ -1,4 +1,4 @@
--- ============================================================
+﻿-- ============================================================
 -- 插入测试数据 - CompanyInfo 和 Users
 -- 用于 emy-test 技能的下拉选择和权限测试
 -- ============================================================
@@ -124,11 +124,11 @@ SELECT id, company_name, type FROM company_info WHERE is_deleted = false;
 --     'designer_zhao', 'worker_sun', 'guest_zhou'
 -- );
 
--- 系统管理员 (permission_level = 6)
+-- 系统管理员 (level = 6)
 INSERT INTO users (
     id, username, real_name, phone, email, status, is_admin,
     gender, id_card, qq, wechat, remark, creator_id, is_deleted,
-    perm_list, org_category, permission_level, supervisor_id, company, position,
+    perm_list, org_category, level, supervisor_id, company, position,
     created_at, updated_at
 ) VALUES (
     uuid_generate_v4()::text,
@@ -155,11 +155,11 @@ INSERT INTO users (
     NOW()::text
 );
 
--- 建设主管 (permission_level = 4) - 甲方工程部经理
+-- 建设主管 (level = 4) - 甲方工程部经理
 INSERT INTO users (
     id, username, real_name, phone, email, status, is_admin,
     gender, id_card, qq, wechat, remark, creator_id, is_deleted,
-    perm_list, org_category, permission_level, supervisor_id, company, position,
+    perm_list, org_category, level, supervisor_id, company, position,
     created_at, updated_at
 ) VALUES (
     uuid_generate_v4()::text,
@@ -186,11 +186,11 @@ INSERT INTO users (
     NOW()::text
 );
 
--- 参建管理 (permission_level = 3) - 总包项目经理
+-- 参建管理 (level = 3) - 总包项目经理
 INSERT INTO users (
     id, username, real_name, phone, email, status, is_admin,
     gender, id_card, qq, wechat, remark, creator_id, is_deleted,
-    perm_list, org_category, permission_level, supervisor_id, company, position,
+    perm_list, org_category, level, supervisor_id, company, position,
     created_at, updated_at
 ) VALUES (
     uuid_generate_v4()::text,
@@ -217,11 +217,11 @@ INSERT INTO users (
     NOW()::text
 );
 
--- 监理工程师 (permission_level = 3)
+-- 监理工程师 (level = 3)
 INSERT INTO users (
     id, username, real_name, phone, email, status, is_admin,
     gender, id_card, qq, wechat, remark, creator_id, is_deleted,
-    perm_list, org_category, permission_level, supervisor_id, company, position,
+    perm_list, org_category, level, supervisor_id, company, position,
     created_at, updated_at
 ) VALUES (
     uuid_generate_v4()::text,
@@ -248,11 +248,11 @@ INSERT INTO users (
     NOW()::text
 );
 
--- 设计师 (permission_level = 3)
+-- 设计师 (level = 3)
 INSERT INTO users (
     id, username, real_name, phone, email, status, is_admin,
     gender, id_card, qq, wechat, remark, creator_id, is_deleted,
-    perm_list, org_category, permission_level, supervisor_id, company, position,
+    perm_list, org_category, level, supervisor_id, company, position,
     created_at, updated_at
 ) VALUES (
     uuid_generate_v4()::text,
@@ -279,11 +279,11 @@ INSERT INTO users (
     NOW()::text
 );
 
--- 参建执行 (permission_level = 2) - 施工员
+-- 参建执行 (level = 2) - 施工员
 INSERT INTO users (
     id, username, real_name, phone, email, status, is_admin,
     gender, id_card, qq, wechat, remark, creator_id, is_deleted,
-    perm_list, org_category, permission_level, supervisor_id, company, position,
+    perm_list, org_category, level, supervisor_id, company, position,
     created_at, updated_at
 ) VALUES (
     uuid_generate_v4()::text,
@@ -310,11 +310,11 @@ INSERT INTO users (
     NOW()::text
 );
 
--- 访客 (permission_level = 1) - 供应商联系人
+-- 访客 (level = 1) - 供应商联系人
 INSERT INTO users (
     id, username, real_name, phone, email, status, is_admin,
     gender, id_card, qq, wechat, remark, creator_id, is_deleted,
-    perm_list, org_category, permission_level, supervisor_id, company, position,
+    perm_list, org_category, level, supervisor_id, company, position,
     created_at, updated_at
 ) VALUES (
     uuid_generate_v4()::text,
@@ -376,8 +376,8 @@ WHERE u.username IN (
 SELECT 
     u.real_name as "姓名",
     u.username as "用户名",
-    u.permission_level as "权限级别",
-    CASE u.permission_level
+    u.level as "权限级别",
+    CASE u.level
         WHEN 1 THEN '访客'
         WHEN 2 THEN '参建执行'
         WHEN 3 THEN '参建管理'
@@ -395,12 +395,12 @@ WHERE u.username IN (
     'admin_wang', 'pm_li', 'engineer_zhang', 'supervisor_chen',
     'designer_zhao', 'worker_sun', 'guest_zhou'
 )
-ORDER BY u.permission_level DESC;
+ORDER BY u.level DESC;
 
 -- 统计各权限级别人数
 SELECT 
-    permission_level,
-    CASE permission_level
+    level,
+    CASE level
         WHEN 1 THEN '访客'
         WHEN 2 THEN '参建执行'
         WHEN 3 THEN '参建管理'
@@ -412,8 +412,8 @@ SELECT
     COUNT(*) as "人数"
 FROM users
 WHERE is_deleted = false
-GROUP BY permission_level
-ORDER BY permission_level DESC;
+GROUP BY level
+ORDER BY level DESC;
 
 -- 清理临时表
 DROP TABLE temp_company_ids;

@@ -1,4 +1,4 @@
-"""PermissionGrantRepository — 授权记录 CRUD（需求 §5）。
+﻿"""PermissionGrantRepository — 授权记录 CRUD（需求 §5）。
 
 遵循项目约定：纯 @staticmethod，可选 session 参数。
 """
@@ -139,13 +139,13 @@ class PermissionGrantRepository:
     @staticmethod
     def cascade_revoke_above_level(user_id: str, new_level: int, *,
                                    session: Optional[Session] = None) -> int:
-        """级联撤销：用户 permission_level 降级后，撤销超出新级别的 TEMP/PERMANENT 授权。
+        """级联撤销：用户 level 降级后，撤销超出新级别的 TEMP/PERMANENT 授权。
 
         需求 §5.2 级联撤销。AUTO 授权随单位归属变更处理，此处仅处理 TEMP/PERMANENT。
         返回撤销条数。
         """
         def _impl(sess: Session) -> int:
-            # 通过权限码的 min_permission_level 判断是否超出新级别
+            # 通过权限码的 min_level 判断是否超出新级别
             # 简化：撤销所有 TEMP/PERMANENT 的 ACTIVE 授权中，关联 SOP 要求级别 > new_level 的
             # 阶段三鉴权引擎落地后可精确判断；阶段一先提供基础能力
             rows = sess.query(PermissionGrant).filter(

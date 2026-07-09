@@ -78,7 +78,7 @@ class User(Base):
     is_deleted = Column(Boolean, default=False)                  # 逻辑删除标记
     perm_list = Column(String, default="[]")                 # 权限集（JSON数组）
     org_category = Column(Integer, default=0)                # 组织类型标签（原 grouping，v2.0 改名只读不参与鉴权）：0=临时组 1=访客组 2=工程组 3=供货商 4=管理组
-    permission_level = Column(Integer, default=1)            # 权限层级（v2.0 6级树形）：1=访客 2=参建执行 3=参建管理 4=建设主管 5=管理员 6=系统管理员
+    level = Column(Integer, default=1)                       # 权限层级（6级树形）：1=访客 2=参建执行 3=参建管理 4=建设主管 5=管理员 6=系统管理员
     supervisor_id = Column(String, nullable=True)            # 直接上级 ID（执行人升级/异常复核）
     company = Column(String, ForeignKey("company_info.id"), nullable=True)  # 隶属公司 FK→company_info.id（v2.0 改单 FK）
     project_id = Column(String, ForeignKey("projects.id"), nullable=True)  # 所属项目 FK→projects.id
@@ -279,6 +279,48 @@ class Meeting(Base):
     is_deleted = Column(Boolean, default=False)
 
 
+class FileCategory:
+    """文件业务分类枚举（应用层约束，无 DB CHECK）。
+
+    7 类分类覆盖建筑工程项目全周期文档。
+    枚举值为 Python 类属性，与 WorkItemState 模式一致。
+    """
+    PROJECT_LICENSE = "PROJECT_LICENSE"      # 项目证照
+    CONTRACT = "CONTRACT"                    # 承包合同
+    WORK_RECORD = "WORK_RECORD"              # 工作记录
+    PHASE_DELIVERABLE = "PHASE_DELIVERABLE"  # 阶段成果
+    PROCESS_DOC = "PROCESS_DOC"              # 过程文件
+    MANAGEMENT_SPEC = "MANAGEMENT_SPEC"      # 管理规程
+    OTHER = "OTHER"                          # 其他文件
+
+    ALL = [
+        PROJECT_LICENSE, CONTRACT, WORK_RECORD,
+        PHASE_DELIVERABLE, PROCESS_DOC, MANAGEMENT_SPEC, OTHER,
+    ]
+
+    DISPLAY_NAMES = {
+        PROJECT_LICENSE: "项目证照",
+        CONTRACT: "承包合同",
+        WORK_RECORD: "工作记录",
+        PHASE_DELIVERABLE: "阶段成果",
+        PROCESS_DOC: "过程文件",
+        MANAGEMENT_SPEC: "管理规程",
+        OTHER: "其他文件",
+    }
+
+    @classmethod
+    def validate(cls, value: str) -> str:
+        """校验并返回合法枚举值，非法值回退 OTHER。"""
+        if value in cls.ALL:
+            return value
+        return cls.OTHER
+
+    @classmethod
+    def display(cls, value: str) -> str:
+        """返回中文显示名。"""
+        return cls.DISPLAY_NAMES.get(value, "其他文件")
+
+
 class File(Base):
     """文件存储表 —— 对应需求文档 file_storage。
 
@@ -325,6 +367,7 @@ class File(Base):
     # 全景节点图 V2 —— 文件溯源字段（需求文档 §6.1）
     source_module_id = Column(String(100), default="", comment="来源模块ID（节点ID/其他业务对象ID）")
     source_module_type = Column(String(50), default="", comment="来源模块类型：NODE_STARTUP_DOC/NODE_WORKLOAD_DOC/NODE_DELIVERABLE_DOC/NODE_ATTACHMENT")
+    file_category = Column(String(50), default="OTHER", comment="文件业务分类：PROJECT_LICENSE/CONTRACT/WORK_RECORD/PHASE_DELIVERABLE/PROCESS_DOC/MANAGEMENT_SPEC/OTHER")
 
 
 # ══════════════════════════════════════════════════════════════════════════════
@@ -730,7 +773,7 @@ class PermissionGroup(Base):
 
     # ── 权限配置 ──
     allowed_sop_types = Column(String, default="[]")  # 允许的 SOP 类型（JSON数组）
-    min_permission_level = Column(Integer, default=1)  # 最低权限层级要求（6级树形继承，1-6）
+    min_level = Column(Integer, default=1)              # 最低权限层级要求（6级树形继承，1-6）
 
     # ── 状态与审计 ──
     status = Column(String(50), default="active")
@@ -770,7 +813,7 @@ class SOPBusinessFlow(Base):
     default_permission_group_id = Column(String, ForeignKey("permission_groups.id"), nullable=True)
 
     # ── 权限要求 ──
-    min_permission_level = Column(Integer, default=1)  # 最低权限层级（6级树形继承，1-6）
+    min_level = Column(Integer, default=1)              # 最低权限层级（6级树形继承，1-6）
     require_company_match = Column(Boolean, default=True)   # 是否需要企业类型匹配
     require_department_match = Column(Boolean, default=False)  # 是否需要部门匹配
 
@@ -1150,13 +1193,13 @@ class PendingData(Base):
 
 
 class DataMaskingRule(Base):
-    """脱敏规则表（需求 §10.1）—— 敏感字段按 permission_level 脱敏。"""
+    """脱敏规则表（需求 §10.1）—— 敏感字段按 level 脱敏。"""
     __tablename__ = "data_masking_rules"
     id = Column(String, primary_key=True, default=_new_uuid)
     rule_code = Column(String(50), unique=True, nullable=False)    # PHONE/ID_CARD/AMOUNT/CONTACT
     field_pattern = Column(String(200), nullable=False)            # 匹配字段名正则
     mask_type = Column(String(50), nullable=False)                 # MIDDLE_4/MIDDLE_10/RANGE/NAME
-    min_level_to_view = Column(Integer, default=5)                 # 可见明文的最低 permission_level
+    min_level_to_view = Column(Integer, default=5)                 # 可见明文的最低 level
     params = Column(Text, default="{}")                            # JSON 参数（如金额范围）
     created_at = Column(String, default=_utc_now)
     updated_at = Column(String, default=_utc_now, onupdate=_utc_now)
@@ -1221,6 +1264,8 @@ class ProjectNode(Base):
     progress = Column(String, default="0.00", comment="整体进度（百分比 0.00-100.00，存为字符串避免精度问题）")
     status = Column(String(20), default="NOT_ACTIVATED", comment="当前状态：NOT_ACTIVATED / CONDITIONS_NOT_MET / IN_PROGRESS / COMPLETED")
     sort_order = Column(Integer, default=0, comment="排序序号")
+    responsible_user_id = Column(String(100), nullable=False, default="", comment="责任人（FK→users.id，创建时默认取 creator_id）")
+    node_type = Column(String(20), nullable=False, default="WORK_PACKAGE", comment="节点类型：MILESTONE / WORK_PACKAGE / TASK")
     updated_at = Column(String(50), nullable=False, default=_utc_now, onupdate=_utc_now, comment="最后更新时间（ISO8601）")
 
     # ── 主键 ──
@@ -1279,6 +1324,13 @@ class NodeDeliverable(Base):
     file_id = Column(String(100), default="", comment="关联文件ID（FK→files.id）")
     completed_at = Column(String(50), default="", comment="完成时间（ISO8601）")
     created_at = Column(String(50), nullable=False, default=_utc_now, comment="创建时间（ISO8601）")
+    submission_status = Column(String(20), nullable=False, default="PENDING", comment="提交状态：PENDING / SUBMITTED / CONFIRMED / RETURNED")
+    submitted_by = Column(String(100), default="", comment="提交人（FK→users.id）")
+    submitted_at = Column(String(50), default="", comment="提交时间（ISO8601）")
+    confirmed_by = Column(String(100), default="", comment="确认人（FK→users.id）")
+    confirmed_at = Column(String(50), default="", comment="确认时间（ISO8601）")
+    return_reason = Column(String(500), default="", comment="退回原因")
+    attachment_file_id = Column(String(100), default="", comment="提交附件（FK→files.id）")
 
     id = Column(String, primary_key=True, default=_new_uuid)
 
@@ -1369,4 +1421,72 @@ class SessionAccessibleFile(Base):
 
     __table_args__ = (
         UniqueConstraint("user_id", "file_id", name="uq_saf_user_file"),
+    )
+
+
+# ══════════════════════════════════════════════════════════════════════════════
+# 系统调度器 — 2 张表（替代 plan_task_templates / plan_task_instances / plan_task_logs）
+# ══════════════════════════════════════════════════════════════════════════════
+
+
+class SchedulerJob(Base):
+    """系统调度作业表 —— 替代 plan_task_templates。"""
+    __tablename__ = "scheduler_jobs"
+
+    id = Column(String, primary_key=True, default=_new_uuid)
+    job_no = Column(String(50), unique=True, nullable=False, comment="作业编号 JOB-YYYYMMDD-NNNN")
+    name = Column(String(200), nullable=False, comment="作业名称")
+    description = Column(String, default="", comment="作业描述")
+
+    # ── 调度规则 ──
+    job_type = Column(String(20), nullable=False, default="ONCE", comment="调度类型：ONCE / CRON / INTERVAL")
+    cron_expression = Column(String(100), default="", comment="cron 表达式（CRON 模式）")
+    interval_seconds = Column(Integer, default=0, comment="间隔秒数（INTERVAL 模式）")
+    deadline_rule = Column(String(500), default="", comment="自然语言描述（LLM 推算，CRON 补充）")
+
+    # ── 动作定义 ──
+    action_type = Column(String(50), nullable=False, comment="动作类型（对应 JobHandler.action_type）")
+    handler_module = Column(String(200), nullable=False, comment="Handler 模块路径（如 scheduler.jobs.morning_report）")
+    action_params = Column(Text, default="{}", comment="JSON 参数")
+
+    # ── 状态 ──
+    status = Column(String(20), nullable=False, default="DRAFT", comment="DRAFT / ACTIVE / INACTIVE")
+    last_executed_at = Column(String(50), default="", comment="上次执行时间")
+    next_execution_at = Column(String(50), default="", comment="下次执行时间")
+
+    # ── 审计 ──
+    creator_id = Column(String, nullable=True, comment="创建人ID")
+    created_at = Column(String, nullable=False, default=_utc_now, comment="创建时间")
+    updated_at = Column(String, nullable=False, default=_utc_now, onupdate=_utc_now, comment="更新时间")
+
+    __table_args__ = (
+        Index("idx_sj_status", "status"),
+        Index("idx_sj_next_execution", "next_execution_at"),
+        Index("idx_sj_action_type", "action_type"),
+    )
+
+
+class SchedulerExecution(Base):
+    """系统调度执行记录表 —— 替代 plan_task_instances + plan_task_logs。"""
+    __tablename__ = "scheduler_executions"
+
+    id = Column(String, primary_key=True, default=_new_uuid)
+    job_id = Column(String, ForeignKey("scheduler_jobs.id"), nullable=False, comment="关联作业ID")
+    execution_no = Column(String(50), unique=True, nullable=False, comment="执行编号 SE-YYYYMMDD-NNNN")
+    period_key = Column(String(100), default="", comment="周期标识（如 2024-W25），用于幂等和追溯")
+
+    # ── 执行状态 ──
+    status = Column(String(20), nullable=False, default="PENDING", comment="PENDING / RUNNING / SUCCESS / FAILED")
+    started_at = Column(String(50), default="", comment="开始时间")
+    finished_at = Column(String(50), default="", comment="结束时间")
+    error_message = Column(Text, default="", comment="错误信息")
+    result_summary = Column(Text, default="", comment="执行结果摘要")
+
+    # ── 审计 ──
+    created_at = Column(String, nullable=False, default=_utc_now, comment="创建时间")
+
+    __table_args__ = (
+        Index("idx_se_job_status", "job_id", "status"),
+        Index("idx_se_created_at", "created_at"),
+        Index("idx_se_period", "job_id", "period_key"),
     )

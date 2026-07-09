@@ -1,4 +1,4 @@
-"""ToolRegistryRepo —— API 注册表持久化操作。
+﻿"""ToolRegistryRepo —— API 注册表持久化操作。
 
 提供 tool_registry 表的 CRUD 与查询能力。
 """
@@ -64,7 +64,7 @@ class ToolRegistryRepo:
 
     @staticmethod
     def get_available(
-        permission_level: int = 0,
+        level: int = 0,
         sop_allow: Optional[list[str]] = None,
     ) -> list[dict]:
         """查询当前用户可用的 API 列表。
@@ -90,16 +90,16 @@ class ToolRegistryRepo:
 
                     # project 类别仅管理员
                     if row.category == "project":
-                        if permission_level >= 5:
+                        if level >= 5:
                             available.append(_row_to_dict(row))
                         continue
 
                     # business 类别按权限过滤
                     if row.permission_flag == "all":
                         available.append(_row_to_dict(row))
-                    elif row.permission_flag == "admin" and permission_level >= 5:
+                    elif row.permission_flag == "admin" and level >= 5:
                         available.append(_row_to_dict(row))
-                    elif row.permission_flag == "write" and permission_level >= 3:
+                    elif row.permission_flag == "write" and level >= 3:
                         available.append(_row_to_dict(row))
                     # 其余保持不变（包括 readable 等自定义权限）
 

@@ -197,13 +197,13 @@ def get_active_users() -> list[dict]:
         query = text("""
             SELECT 
                 u.id,
-                u.real_name,
+                COALESCE(u.username, '') as real_name,
                 u.username,
-                u.permission_level,
+                u.level as permission_level,
                 u.phone,
                 u.email,
-                c.company_name,
-                CASE u.permission_level
+                COALESCE(c.company_name, '') as company_name,
+                CASE u.level
                     WHEN 1 THEN '访客'
                     WHEN 2 THEN '参建执行'
                     WHEN 3 THEN '参建管理'
@@ -216,7 +216,7 @@ def get_active_users() -> list[dict]:
             LEFT JOIN company_info c ON u.company = c.id
             WHERE u.is_deleted = false
               AND u.status = 'active'
-            ORDER BY u.permission_level DESC, u.real_name
+            ORDER BY u.level DESC, u.username
         """)
         
         with engine.connect() as conn:

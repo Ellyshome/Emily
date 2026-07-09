@@ -1,4 +1,4 @@
-"""PermissionService — 权限快照组装 + 校验/授权/查询（阶段一+二）。
+﻿"""PermissionService — 权限快照组装 + 校验/授权/查询（阶段一+二）。
 
 build_permission_snapshot() 在 SessionFactory._build_context() 中被调用，
 查询 User + CompanyInfo + 权限矩阵 + 授权记录，组装 PermissionSnapshot 注入 SessionContext。
@@ -199,7 +199,7 @@ class PermissionService:
         except Exception as e:
             logger.warning("build_permission_dict failed user=%s: %s", user_id, e)
             if self._fail_open:
-                return {"permission_level": 1}  # L1 访客降级
+                return {"level": 1}  # L1 访客降级
             raise
 
     # 向后兼容别名
@@ -209,7 +209,7 @@ class PermissionService:
         user = self._repo.get_user(user_id)
         if user is None:
             logger.warning("user not found, fallback to L1: %s", user_id)
-            return {"permission_level": 1}
+            return {"level": 1}
 
         company = self._repo.get_company(user.company) if user.company else None
         grants = self._grant_repo.get_active_grants(user_id)
@@ -217,7 +217,7 @@ class PermissionService:
         # SOP 白名单 + 拒绝列表（优先使用 L2 缓存）
         if self._cache is not None:
             sop_allow, denied_sop_ids = self._cache.get_user_whitelist(
-                user_id, user.permission_level,
+                user_id, user.level,
                 company.type if company else "",
                 self._all_departments(company),
             )
@@ -234,7 +234,7 @@ class PermissionService:
         perm_version = self._cache.get_version() if self._cache else 0
 
         return {
-            "permission_level": user.permission_level,
+            "level": user.level,
             "user_id": user_id,
             "company_id": user.company or "",
             "company_type": company.type if company else "",
@@ -244,8 +244,8 @@ class PermissionService:
             "partner_ids": self._load_json_list(company.partners) if company else [],
             "scopes": self._load_json_list(company.scope) if company else [],
             "sop_allow": sop_allow,
-            "db_perms": self._derive_db_perms(user.permission_level, company.type if company else ""),
-            "info_level": self._derive_info_level(user.permission_level),
+            "db_perms": self._derive_db_perms(user.level, company.type if company else ""),
+            "info_level": self._derive_info_level(user.level),
             "supervisor_id": user.supervisor_id or "",
             "authorized_node_ids": self._derive_authorized_nodes(company),
             "granted_codes": granted_codes,
@@ -298,7 +298,7 @@ class PermissionService:
                     continue
 
                 # 3. 树形继承级别检查
-                if not can_access(user.permission_level, flow.min_permission_level):
+                if not can_access(user.level, flow.min_level):
                     continue
 
                 sop_allow.append(flow.sop_id)
@@ -357,7 +357,7 @@ class PermissionService:
 
     @staticmethod
     def _derive_info_level(level: int) -> str:
-        """permission_level → 可见最大密级（需求 §3.1）。"""
+        """level → 可见最大密级（需求 §3.1）。"""
         if level >= 5:
             return "confidential"
         if level >= 2:
@@ -524,7 +524,7 @@ class PermissionService:
             return {"success": False, "reply": f"授权人 {grantor_id} 不存在"}
 
         from emily_core.permission.level import is_admin as _is_admin
-        if not _is_admin(grantor.permission_level):
+        if not _is_admin(grantor.level):
             # 非管理员需要自身持有该权限才能授权
             grantor_snapshot = await asyncio.to_thread(self.build_permission_snapshot, grantor_id)
             if not self._grantor_has_permission(grantor_snapshot, perm_code):
@@ -596,7 +596,7 @@ class PermissionService:
             operator = await asyncio.to_thread(self._repo.get_user, operator_id)
             if operator is not None:
                 from emily_core.permission.level import is_admin as _is_admin
-                is_force = _is_admin(operator.permission_level) and operator_id != grant.grantor_id
+                is_force = _is_admin(operator.level) and operator_id != grant.grantor_id
                 if operator_id != grant.grantor_id and not is_force:
                     return {"success": False, "reply": "仅授权人或管理员可撤销授权"}
             else:
@@ -641,8 +641,8 @@ class PermissionService:
                 "success": True,
                 "permissions": {
                     "user_id": user_id,
-                    "permission_level": perm_dict["permission_level"],
-                    "level_name": level_label(perm_dict["permission_level"]),
+                    "level": perm_dict["level"],
+                    "level_name": level_label(perm_dict["level"]),
                     "company_id": perm_dict.get("company_id", ""),
                     "company_type": perm_dict.get("company_type", ""),
                     "company_name": perm_dict.get("company_name", ""),

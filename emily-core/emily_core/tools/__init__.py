@@ -1,4 +1,4 @@
-"""工具注册中心 —— 统一入口，按 category 组织所有基座工具。
+﻿"""工具注册中心 —— 统一入口，按 category 组织所有基座工具。
 
 目录结构（按工具的可见范围和使用权限分层）：
   base/         基座能力 — 对所有 SOP 开放，无需权限审核（knowledge_search / query_data）
@@ -9,7 +9,7 @@
 权限模型：
   - base tools: 所有 SOP 可调用（需在 SOP §3.2 声明）
   - business tools: SOP 白名单约束（SOPIntentRegistry + AuthHook 前置拦截）
-  - project tools: 仅管理员（permission_level ≥ 5）或 ProjectAgent 可调用
+  - project tools: 仅管理员（level ≥ 5）或 ProjectAgent 可调用
 
 M14 架构：工具通过 BusinessFlowToolRegistry 注册，框架在 LLM 结构化输出后直接调用 handler。
 不再经过旧 ToolRegistry（Agent function-calling 模式）。

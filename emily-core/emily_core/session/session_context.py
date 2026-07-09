@@ -1,4 +1,4 @@
-"""SessionContext —— Session 操作台（聚合根）。
+﻿"""SessionContext —— Session 操作台（聚合根）。
 
 重构要点：
   - PermissionSnapshot 移除，所有字段扁平化为 SessionContext 直接字段
@@ -46,7 +46,7 @@ class SessionContext:
     conversation_summary: str = ""
 
     # ── 权限字段（🔥 可热更新）──
-    permission_level: int = 1
+    level: int = 1
     company_id: str = ""
     company_type: str = ""
     company_name: str = ""
@@ -144,7 +144,7 @@ class SessionContext:
         ctx.conversation_summary = snapshot.get("conversation_summary", "")
 
         # 灌注权限（扁平化 snapshot，直接从顶层取值）
-        ctx.permission_level = snapshot.get("permission_level", 1)
+        ctx.level = snapshot.get("level", 1)
         ctx.company_id = snapshot.get("company_id", "")
         ctx.company_type = snapshot.get("company_type", "")
         ctx.company_name = snapshot.get("company_name", "")
@@ -268,7 +268,7 @@ class SessionContext:
     def meets_level_requirement(self, required_level: int) -> bool:
         """检查是否满足权限层级要求（6 级树形继承）。"""
         from ..permission.level import can_access
-        return can_access(self.permission_level, required_level)
+        return can_access(self.level, required_level)
 
     def meets_grouping_requirement(self, required_grouping: int) -> bool:
         """【已废弃 v2.0】保留向后兼容。"""
@@ -355,7 +355,7 @@ class SessionContext:
             "{user_company}": self.company_name,
             "{user_company_type}": self.company_type,
             "{user_department}": "、".join(self.department) if self.department else "",
-            "{user_permission_level}": _level_label(self.permission_level),
+            "{user_level}": _level_label(self.level),
             "{current_node_ids}": "、".join(self.authorized_node_ids),
             "{conversation_summary}": self.conversation_summary,
             "{user_memory}": self.long_term_memory,
@@ -390,7 +390,7 @@ class SessionContext:
             context_snapshot = json.dumps({
                 "user_name": self.user_name,
                 "sop_catalog_summary": self.sop_catalog_summary,
-                "permission_level": self.permission_level,
+                "level": self.level,
                 "company_name": self.company_name,
             }, ensure_ascii=False)
 
@@ -498,7 +498,7 @@ class SessionContext:
 
         # 🔥 可热更新字段（扁平化 snapshot，直接从顶层取值）
         _hot_fields = {
-            "permission_level": snapshot.get("permission_level"),
+            "level": snapshot.get("level"),
             "company_id": snapshot.get("company_id"),
             "company_type": snapshot.get("company_type"),
             "company_name": snapshot.get("company_name"),

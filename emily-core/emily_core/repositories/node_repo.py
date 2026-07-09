@@ -299,6 +299,87 @@ class ProjectNodeRepo:
             current_id = parent.node_id
         return ancestors
 
+    @staticmethod
+    def find_by_responsible_user(
+        responsible_user_id: str,
+        project_id: str | None = None,
+        node_type: str | None = None,
+        status: str | None = None,
+        limit: int = 100,
+    ) -> list[ProjectNode]:
+        """按责任人查询节点。"""
+        with get_session() as session:
+            q = (
+                session.query(ProjectNode)
+                .filter(
+                    ProjectNode.responsible_user_id == responsible_user_id,
+                    ProjectNode.is_discarded == False,
+                )
+            )
+            if project_id:
+                q = q.filter(ProjectNode.project_id == project_id)
+            if node_type:
+                q = q.filter(ProjectNode.node_type == node_type)
+            if status:
+                q = q.filter(ProjectNode.status == status)
+            return q.order_by(ProjectNode.deadline.asc()).limit(limit).all()
+
+    @staticmethod
+    def find_by_node_type(
+        node_type: str,
+        project_id: str | None = None,
+        limit: int = 200,
+    ) -> list[ProjectNode]:
+        """按节点类型查询。"""
+        with get_session() as session:
+            q = (
+                session.query(ProjectNode)
+                .filter(ProjectNode.node_type == node_type, ProjectNode.is_discarded == False)
+            )
+            if project_id:
+                q = q.filter(ProjectNode.project_id == project_id)
+            return q.order_by(ProjectNode.created_at.desc()).limit(limit).all()
+
+    @staticmethod
+    def find_near_deadline(before_minutes: int = 60, limit: int = 100) -> list[ProjectNode]:
+        """查询即将到期的节点（deadline 在 now + before_minutes 内，非 COMPLETED）。"""
+        now = datetime.now(timezone.utc)
+        window_end = (now + timedelta(minutes=before_minutes)).isoformat()
+        with get_session() as session:
+            return (
+                session.query(ProjectNode)
+                .filter(
+                    ProjectNode.deadline != "",
+                    ProjectNode.deadline.isnot(None),
+                    ProjectNode.deadline <= window_end,
+                    ProjectNode.deadline > now.isoformat(),
+                    ProjectNode.status != "COMPLETED",
+                    ProjectNode.is_discarded == False,
+                )
+                .order_by(ProjectNode.deadline.asc())
+                .limit(limit)
+                .all()
+            )
+
+    @staticmethod
+    def find_overdue(limit: int = 100) -> list[ProjectNode]:
+        """查询已超期的节点（deadline < now 且 status 非 COMPLETED）。"""
+        now_iso = datetime.now(timezone.utc).isoformat()
+        with get_session() as session:
+            return (
+                session.query(ProjectNode)
+                .filter(
+                    ProjectNode.deadline != "",
+                    ProjectNode.deadline.isnot(None),
+                    ProjectNode.deadline < now_iso,
+                    ProjectNode.status != "COMPLETED",
+                    ProjectNode.is_discarded == False,
+                )
+                .order_by(ProjectNode.deadline.asc())
+                .limit(limit)
+                .all()
+            )
+
 
 # ══════════════════════════════════════════════════════════════════════════════
 # NodeDependencyRepo
@@ -493,6 +574,140 @@ class NodeDeliverableRepo:
             session.commit()
             logger.info("NodeDeliverable file_id updated: %s → %s", deliverable_id, file_id or "(cleared)")
             return deliv
+
+    @staticmethod
+    def update_submission_status(
+        deliverable_id: str,
+        submission_status: str,
+        submitted_by: str = "",
+        confirmed_by: str = "",
+        return_reason: str = "",
+        attachment_file_id: str = "",
+    ) -> NodeDeliverable | None:
+        """更新成果提交状态。"""
+        with get_session() as session:
+            deliv = (
+                session.query(NodeDeliverable)
+                .filter(NodeDeliverable.deliverable_id == deliverable_id)
+                .first()
+            )
+            if deliv is None:
+                return None
+            deliv.submission_status = submission_status
+            if submitted_by:
+                deliv.submitted_by = submitted_by
+                deliv.submitted_at = datetime.now(timezone.utc).isoformat()
+            if confirmed_by:
+                deliv.confirmed_by = confirmed_by
+                deliv.confirmed_at = datetime.now(timezone.utc).isoformat()
+            if return_reason:
+                deliv.return_reason = return_reason
+            if attachment_file_id:
+                deliv.attachment_file_id = attachment_file_id
+            session.commit()
+            logger.info("NodeDeliverable submission: %s -> %s", deliverable_id, submission_status)
+            return deliv
+
+    @staticmethod
+    def find_by_submission_status(
+        node_id: str,
+        submission_status: str,
+    ) -> list[NodeDeliverable]:
+        """按提交状态查询节点的成果。"""
+        with get_session() as session:
+            return (
+                session.query(NodeDeliverable)
+                .filter(
+                    NodeDeliverable.node_id == node_id,
+                    NodeDeliverable.submission_status == submission_status,
+                )
+                .all()
+            )
+
+    @staticmethod
+    def get_by_node_and_name(
+        node_id: str,
+        deliverable_name: str,
+    ) -> NodeDeliverable | None:
+        """按节点ID+成果名称查找。"""
+        with get_session() as session:
+            return (
+                session.query(NodeDeliverable)
+                .filter(
+                    NodeDeliverable.node_id == node_id,
+                    NodeDeliverable.deliverable_name == deliverable_name,
+                )
+                .first()
+            )
+
+    @staticmethod
+    def find_pending_by_responsible_user(
+        responsible_user_id: str,
+        project_id: str | None = None,
+        submission_status: str = "",
+        node_status: str = "IN_PROGRESS",
+        limit: int = 20,
+        offset: int = 0,
+    ) -> list[tuple]:
+        """查询责任人名下节点的待办成果（JOIN project_nodes）。
+
+        Args:
+            node_status: 节点状态过滤，默认 "IN_PROGRESS"。传 "" 则不过滤。
+
+        Returns:
+            list of (NodeDeliverable, ProjectNode) tuples
+        """
+        with get_session() as session:
+            q = (
+                session.query(NodeDeliverable, ProjectNode)
+                .join(ProjectNode, NodeDeliverable.node_id == ProjectNode.node_id)
+                .filter(
+                    ProjectNode.responsible_user_id == responsible_user_id,
+                    ProjectNode.is_discarded == False,
+                )
+            )
+            if node_status:
+                q = q.filter(ProjectNode.status == node_status)
+            if project_id:
+                q = q.filter(ProjectNode.project_id == project_id)
+            if submission_status:
+                q = q.filter(NodeDeliverable.submission_status == submission_status)
+            return (
+                q.order_by(ProjectNode.deadline.asc())
+                .offset(offset)
+                .limit(limit)
+                .all()
+            )
+
+    @staticmethod
+    def count_pending_by_responsible_user(
+        responsible_user_id: str,
+        project_id: str | None = None,
+        submission_status: str = "",
+        node_status: str = "IN_PROGRESS",
+    ) -> int:
+        """统计责任人名下的待办成果数。
+
+        Args:
+            node_status: 节点状态过滤，默认 "IN_PROGRESS"。传 "" 则不过滤。
+        """
+        with get_session() as session:
+            from sqlalchemy import func
+            q = (
+                session.query(func.count(NodeDeliverable.id))
+                .join(ProjectNode, NodeDeliverable.node_id == ProjectNode.node_id)
+                .filter(
+                    ProjectNode.responsible_user_id == responsible_user_id,
+                    ProjectNode.is_discarded == False,
+                )
+            )
+            if node_status:
+                q = q.filter(ProjectNode.status == node_status)
+            if project_id:
+                q = q.filter(ProjectNode.project_id == project_id)
+            if submission_status:
+                q = q.filter(NodeDeliverable.submission_status == submission_status)
+            return q.scalar() or 0
 
 
 # ══════════════════════════════════════════════════════════════════════════════

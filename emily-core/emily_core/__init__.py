@@ -78,6 +78,13 @@ class EmilyCore:
         self._plan_task_app = None
         self._workflow_integrator = None
 
+        # 系统调度器（Scheduler Module，M4-M5 新增）
+        self._scheduler_service = None
+        self._scheduler_engine = None
+        self._scheduler_app = None
+        self._scheduler_handler_registry = None
+        self._scheduler_hook_registry = None
+
         # 权限管理模块（Permission Module，v2.0）
         self._permission_repo = None
         self._permission_grant_repo = None
@@ -146,6 +153,9 @@ class EmilyCore:
 
         #  ── 计划任务系统 ──
         self._init_plan_task_module()
+
+        #  ── 系统调度器 ──
+        self._init_scheduler_module()
 
         #  ── 权限管理模块（v2.0：快照灌注）──
         self._init_permission_module()
@@ -486,6 +496,89 @@ class EmilyCore:
             self._plan_task_scheduler = None
             self._plan_task_app = None
             self._workflow_integrator = None
+
+    def _init_scheduler_module(self) -> None:
+        """初始化系统调度器模块：Service + Engine + Handler + Application。"""
+        try:
+            import asyncio
+            from .scheduler.service import SchedulerService
+            from .scheduler.engine import SchedulerEngine
+            from .scheduler.handler_registry import JobHandlerRegistry
+            from .scheduler.hook_registry import SchedulerHookRegistry
+            from .scheduler.application import SchedulerApplication
+
+            # 注册表
+            self._scheduler_handler_registry = JobHandlerRegistry()
+            self._scheduler_hook_registry = SchedulerHookRegistry()
+
+            # Service
+            self._scheduler_service = SchedulerService()
+
+            # 注册内置 Handler
+            from .scheduler.jobs.morning_report import MorningReportHandler
+            from .scheduler.jobs.node_deadlines import NodeDeadlineHandler
+            from .scheduler.jobs.periodic_node import PeriodicNodeHandler
+            from .scheduler.jobs.session_cleanup import SessionCleanupHandler
+            from .scheduler.jobs.health_check import HealthCheckHandler
+            from .scheduler.jobs.data_sync import DataSyncHandler
+            from .scheduler.jobs.webhook import WebhookHandler
+
+            self._scheduler_handler_registry.register(
+                MorningReportHandler(
+                    outbound_bus=self.outbound_bus,
+                    llm_client=self._llm_client,
+                )
+            )
+            self._scheduler_handler_registry.register(
+                NodeDeadlineHandler(
+                    node_service=self._node_service,
+                    outbound_bus=self.outbound_bus,
+                )
+            )
+            self._scheduler_handler_registry.register(
+                PeriodicNodeHandler(
+                    node_service=self._node_service,
+                )
+            )
+            self._scheduler_handler_registry.register(
+                SessionCleanupHandler(
+                    session_pool=self._session_pool,
+                    outbound_bus=self.outbound_bus,
+                )
+            )
+            self._scheduler_handler_registry.register(
+                HealthCheckHandler(
+                    outbound_bus=self.outbound_bus,
+                )
+            )
+            self._scheduler_handler_registry.register(DataSyncHandler())
+            self._scheduler_handler_registry.register(WebhookHandler())
+
+            # Engine
+            self._scheduler_engine = SchedulerEngine(
+                service=self._scheduler_service,
+                handler_registry=self._scheduler_handler_registry,
+                hook_registry=self._scheduler_hook_registry,
+                config=self.config,
+                outbound_bus=self.outbound_bus,
+            )
+
+            # Application
+            self._scheduler_app = SchedulerApplication(
+                service=self._scheduler_service,
+                engine=self._scheduler_engine,
+            )
+
+            # 启动引擎 tick 循环
+            asyncio.ensure_future(self._scheduler_engine.start())
+
+            logger.info("Scheduler module initialized: %d handlers, %d hooks",
+                         len(self._scheduler_handler_registry),
+                         self._scheduler_hook_registry.hook_count())
+        except Exception as e:
+            logger.warning("Scheduler module init failed: %s", e)
+            self._scheduler_engine = None
+            self._scheduler_app = None
 
     def _init_permission_module(self) -> None:
         """初始化权限管理模块（阶段二：三维鉴权 + 校验接口）。

@@ -43,6 +43,8 @@ class CreateNodeRequest(BaseModel):
     sort_order: int = Field(default=0, description="排序序号")
     creator_id: str = Field(default="", description="创建人ID")
     startup_doc_id: str = Field(default="", description="启动文档ID")
+    responsible_user_id: str = Field(default="", description="责任人ID（为空时取creator_id）")
+    node_type: str = Field(default="WORK_PACKAGE", description="节点类型：MILESTONE / WORK_PACKAGE / TASK")
 
 
 class UpdateNodeRequest(BaseModel):
@@ -105,3 +107,45 @@ class MountChildRequest(BaseModel):
     child_node_id: str = Field(..., description="子节点编号")
     child_weight: float = Field(default=1.0, description="子节点权重")
     operator_id: str = Field(default="", description="操作人ID")
+
+
+# ══════════════════════════════════════════════════════════════════════════════
+# 节点责任人 + 任务成果提交确认
+# ══════════════════════════════════════════════════════════════════════════════
+
+
+class AssignNodeRequest(BaseModel):
+    responsible_user_id: str = Field(..., description="新责任人ID（users.id）")
+    operator_id: str = Field(default="", description="操作人ID")
+
+
+class SubmitDeliverableRequest(BaseModel):
+    content: str = Field(default="", description="提交内容")
+    file_url: str = Field(default="", description="文件URL")
+    file_name: str = Field(default="", description="文件名")
+    attachment_file_id: str = Field(default="", description="附件文件ID")
+    is_acceptance_check: bool = Field(default=False, description="是否为完工确认报告")
+
+
+class ConfirmDeliverableRequest(BaseModel):
+    reason: str = Field(default="", description="确认说明")
+    operator_id: str = Field(default="", description="确认人ID")
+
+
+class ReturnDeliverableRequest(BaseModel):
+    reason: str = Field(..., description="退回原因（必填）")
+    operator_id: str = Field(default="", description="退回人ID")
+
+
+class ResubmitDeliverableRequest(BaseModel):
+    content: str = Field(default="", description="重新提交内容")
+    file_url: str = Field(default="", description="文件URL")
+    file_name: str = Field(default="", description="文件名")
+    attachment_file_id: str = Field(default="", description="附件文件ID")
+
+
+class MyTasksRequest(BaseModel):
+    project_id: str = Field(default="", description="项目ID（可选）")
+    submission_status: str = Field(default="", description="提交状态过滤")
+    page: int = Field(default=1, description="页码")
+    page_size: int = Field(default=20, description="每页数量")

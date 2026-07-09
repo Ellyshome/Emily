@@ -1,4 +1,4 @@
-"""计划任务 Service 层 —— 核心业务逻辑。
+﻿"""计划任务 Service 层 —— 核心业务逻辑。
 
 职责：
   - 任务模板管理（创建、激活）
@@ -172,8 +172,8 @@ class PlanTaskService:
         """创建任务实例，含鉴权检查和幂等检查。
 
         鉴权逻辑：
-          - 正常：发起人 permission_level >= 执行人 → 状态 = WAITING
-          - 异常：发起人 permission_level < 执行人 → 状态 = ANOMALY_PENDING_REVIEW
+          - 正常：发起人 level >= 执行人 → 状态 = WAITING
+          - 异常：发起人 level < 执行人 → 状态 = ANOMALY_PENDING_REVIEW
             （如业务执行者向主管下达任务，需上级复核）
 
         合规链校验（SOP-009 §0）：
@@ -753,8 +753,8 @@ class PlanTaskService:
     ) -> AuthCheckResult:
         """检查发起人是否有权限向执行人下达任务。
 
-        正常流程：发起人 permission_level >= 执行人 permission_level → WAITING
-        异常场景：发起人 permission_level < 执行人 permission_level
+        正常流程：发起人 level >= 执行人 level → WAITING
+        异常场景：发起人 level < 执行人 level
           → ANOMALY_PENDING_REVIEW（如业务执行者向主管下达任务，需上级复核）
         """
         if not initiator_id or not executor_id:
@@ -767,8 +767,8 @@ class PlanTaskService:
         if initiator is None or executor is None:
             return AuthCheckResult(allowed=True, anomaly=False, target_status="WAITING")
 
-        initiator_level = getattr(initiator, "permission_level", 0) or 0
-        executor_level = getattr(executor, "permission_level", 0) or 0
+        initiator_level = getattr(initiator, "level", 0) or 0
+        executor_level = getattr(executor, "level", 0) or 0
 
         if initiator_level < executor_level:
             supervisor_id = getattr(initiator, "supervisor_id", "") if hasattr(initiator, "supervisor_id") else ""

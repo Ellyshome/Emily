@@ -30,6 +30,11 @@ from .node_schemas import (
     UpdateDeliverableProgressRequest,
     AddDependencyRequest,
     MountChildRequest,
+    AssignNodeRequest,
+    SubmitDeliverableRequest,
+    ConfirmDeliverableRequest,
+    ReturnDeliverableRequest,
+    ResubmitDeliverableRequest,
     ApiResponse,
 )
 
@@ -92,11 +97,50 @@ async def create_node(body: CreateNodeRequest):
         land_parcel_id=body.land_parcel_id,
         startup_doc_id=body.startup_doc_id,
         sort_order=body.sort_order,
+        responsible_user_id=getattr(body, 'responsible_user_id', ''),
+        node_type=getattr(body, 'node_type', 'WORK_PACKAGE'),
     )
     result = await svc.create_node(cmd)
     if not result.success:
         raise HTTPException(status_code=400, detail=result.message)
     return ApiResponse(message=result.message, data={"node_id": result.node_id, "status": result.status})
+
+
+@router.get("/my-tasks")
+async def my_tasks(user_id: str = Query(..., description="当前用户ID"),
+                    project_id: str = Query(default=""),
+                    submission_status: str = Query(default=""),
+                    page: int = Query(default=1),
+                    page_size: int = Query(default=20)):
+    """查询我负责的待办任务。"""
+    import asyncio
+    from emily_core.repositories.node_repo import NodeDeliverableRepo
+
+    rows = await asyncio.to_thread(
+        NodeDeliverableRepo.find_pending_by_responsible_user,
+        user_id, project_id or None, submission_status or "", "IN_PROGRESS", page_size, (page - 1) * page_size,
+    )
+    total = await asyncio.to_thread(
+        NodeDeliverableRepo.count_pending_by_responsible_user,
+        user_id, project_id or None, submission_status or "", "IN_PROGRESS",
+    )
+    items = []
+    for deliv, node in rows:
+        items.append({
+            "node_id": node.node_id,
+            "node_name": node.node_name,
+            "project_id": node.project_id,
+            "deadline": node.deadline,
+            "node_type": getattr(node, "node_type", ""),
+            "submission_status": deliv.submission_status,
+            "parent_node_name": "",
+            "deliverables": [{
+                "deliverable_name": deliv.deliverable_name,
+                "target_amount": deliv.target_amount,
+                "current_amount": deliv.current_amount,
+            }],
+        })
+    return ApiResponse(data={"items": items, "total": total, "page": page, "page_size": page_size})
 
 
 @router.get("/{node_id}")
@@ -132,6 +176,107 @@ async def update_node(node_id: str, body: UpdateNodeRequest):
         startup_doc_id=body.startup_doc_id,
     )
     result = await svc.update_node(cmd)
+    if not result.success:
+        raise HTTPException(status_code=400, detail=result.message)
+    return ApiResponse(message=result.message)
+
+
+# ══════════════════════════════════════════════════════════════════════════════
+# 节点责任人 + 任务成果提交确认
+# ══════════════════════════════════════════════════════════════════════════════
+
+
+@router.patch("/{node_id}/assign")
+async def assign_node(node_id: str, body: AssignNodeRequest):
+    """变更节点责任人。"""
+    from emily_core.services.node_commands import AssignNodeCommand
+
+    svc = _get_service()
+    cmd = AssignNodeCommand(
+        node_id=node_id,
+        responsible_user_id=body.responsible_user_id,
+        operator_id=body.operator_id,
+    )
+    result = await svc.assign_node(cmd)
+    if not result.success:
+        status_code = 403 if result.error_code == "40302" else 400
+        raise HTTPException(status_code=status_code, detail=result.message)
+    return ApiResponse(message=result.message)
+
+
+@cross_router.post("/node-deliverables/{deliverable_id}/submit")
+async def submit_deliverable(deliverable_id: str, body: SubmitDeliverableRequest,
+                              user_id: str = Query(default="")):
+    """提交节点成果（PENDING → SUBMITTED）。"""
+    from emily_core.services.node_commands import SubmitNodeDeliverableCommand
+
+    svc = _get_service()
+    cmd = SubmitNodeDeliverableCommand(
+        deliverable_id=deliverable_id,
+        content=body.content,
+        file_url=body.file_url,
+        file_name=body.file_name,
+        attachment_file_id=body.attachment_file_id,
+        submitted_by=user_id,
+        is_acceptance_check=body.is_acceptance_check,
+    )
+    result = await svc.submit_deliverable(cmd)
+    if not result.success:
+        raise HTTPException(status_code=400, detail=result.message)
+    return ApiResponse(message=result.message)
+
+
+@cross_router.post("/node-deliverables/{deliverable_id}/confirm")
+async def confirm_deliverable(deliverable_id: str, body: ConfirmDeliverableRequest,
+                               user_id: str = Query(default="")):
+    """确认节点成果（SUBMITTED → CONFIRMED）。"""
+    from emily_core.services.node_commands import ConfirmNodeDeliverableCommand
+
+    svc = _get_service()
+    cmd = ConfirmNodeDeliverableCommand(
+        deliverable_id=deliverable_id,
+        confirmed_by=user_id,
+    )
+    result = await svc.confirm_deliverable(cmd)
+    if not result.success:
+        raise HTTPException(status_code=400, detail=result.message)
+    return ApiResponse(message=result.message)
+
+
+@cross_router.post("/node-deliverables/{deliverable_id}/return")
+async def return_deliverable(deliverable_id: str, body: ReturnDeliverableRequest,
+                              user_id: str = Query(default="")):
+    """退回节点成果（SUBMITTED → RETURNED）。"""
+    from emily_core.services.node_commands import ReturnNodeDeliverableCommand
+
+    svc = _get_service()
+    cmd = ReturnNodeDeliverableCommand(
+        deliverable_id=deliverable_id,
+        returned_by=user_id,
+        reason=body.reason,
+    )
+    result = await svc.return_deliverable(cmd)
+    if not result.success:
+        raise HTTPException(status_code=400, detail=result.message)
+    return ApiResponse(message=result.message)
+
+
+@cross_router.post("/node-deliverables/{deliverable_id}/resubmit")
+async def resubmit_deliverable(deliverable_id: str, body: ResubmitDeliverableRequest,
+                                user_id: str = Query(default="")):
+    """重新提交节点成果（RETURNED → SUBMITTED）。"""
+    from emily_core.services.node_commands import ResubmitNodeDeliverableCommand
+
+    svc = _get_service()
+    cmd = ResubmitNodeDeliverableCommand(
+        deliverable_id=deliverable_id,
+        content=body.content,
+        file_url=body.file_url,
+        file_name=body.file_name,
+        attachment_file_id=body.attachment_file_id,
+        submitted_by=user_id,
+    )
+    result = await svc.resubmit_deliverable(cmd)
     if not result.success:
         raise HTTPException(status_code=400, detail=result.message)
     return ApiResponse(message=result.message)

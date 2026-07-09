@@ -111,7 +111,7 @@ class SessionAccessibleFileRepo:
 
                 file_ids = [r.file_id for r in rows]
                 if not file_ids:
-                    return {"count": 0, "by_type": {}, "files": []}
+                    return {"count": 0, "by_type": {}, "by_category": {}, "files": []}
 
                 files = session.query(File).filter(
                     File.id.in_(file_ids),
@@ -119,21 +119,25 @@ class SessionAccessibleFileRepo:
                 ).all()
 
                 by_type: dict[str, int] = {}
+                by_category: dict[str, int] = {}
                 files_list: list[dict] = []
                 for f in files:
                     ft = f.file_type or "其他"
                     by_type[ft] = by_type.get(ft, 0) + 1
+                    cat = getattr(f, 'file_category', 'OTHER') or 'OTHER'
+                    by_category[cat] = by_category.get(cat, 0) + 1
                     files_list.append({
                         "file_id": f.id,
                         "filename": f.filename,
                         "file_type": f.file_type or "",
                         "project_id": f.project_id or "",
+                        "file_category": getattr(f, 'file_category', 'OTHER') or 'OTHER',
                     })
 
-                return {"count": len(files), "by_type": by_type, "files": files_list}
+                return {"count": len(files), "by_type": by_type, "by_category": by_category, "files": files_list}
         except Exception as e:
             logger.error("get_file_summary(%s) failed: %s", user_id, e)
-            return {"count": 0, "by_type": {}, "files": []}
+            return {"count": 0, "by_type": {}, "by_category": {}, "files": []}
 
     @staticmethod
     def search(user_id: str, keyword: str, top_k: int = 5) -> list[dict]:

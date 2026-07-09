@@ -27,6 +27,8 @@ class CreateNodeCommand:
     land_parcel_id: str = ""
     startup_doc_id: str = ""
     sort_order: int = 0
+    responsible_user_id: str = ""   # 责任人（为空时自动取 creator_id），需求 §3.1.2
+    node_type: str = "WORK_PACKAGE" # 节点类型：MILESTONE / WORK_PACKAGE / TASK，需求 §3.1.1
 
 
 @dataclass
@@ -166,3 +168,77 @@ class StateTransitionResult:
     should_transition: bool = False
     reason: str = ""
     affected_ancestors: list[str] = field(default_factory=list)
+
+
+# ══════════════════════════════════════════════════════════════════════════════
+# 节点责任人 + 任务成果提交确认 Commands
+# ══════════════════════════════════════════════════════════════════════════════
+
+
+@dataclass
+class AssignNodeCommand:
+    """变更节点责任人命令。"""
+    node_id: str
+    responsible_user_id: str
+    operator_id: str = ""
+
+
+@dataclass
+class SubmitNodeDeliverableCommand:
+    """提交节点成果（PENDING → SUBMITTED）。content/file_url/file_name 为 API 日志预留。"""
+    deliverable_id: str
+    content: str = ""           # API 日志预留
+    file_url: str = ""          # API 日志预留
+    file_name: str = ""         # API 日志预留
+    attachment_file_id: str = ""
+    submitted_by: str = ""
+    is_acceptance_check: bool = False
+
+
+@dataclass
+class ConfirmNodeDeliverableCommand:
+    """确认节点成果（SUBMITTED → CONFIRMED）。"""
+    deliverable_id: str
+    confirmed_by: str = ""
+
+
+@dataclass
+class ReturnNodeDeliverableCommand:
+    """退回节点成果（SUBMITTED → RETURNED）。"""
+    deliverable_id: str
+    returned_by: str = ""
+    reason: str = ""
+
+
+@dataclass
+class ResubmitNodeDeliverableCommand:
+    """重新提交节点成果（RETURNED → SUBMITTED）。content/file_url/file_name 为 API 日志预留。"""
+    deliverable_id: str
+    content: str = ""           # API 日志预留
+    file_url: str = ""          # API 日志预留
+    file_name: str = ""         # API 日志预留
+    attachment_file_id: str = ""
+    submitted_by: str = ""
+
+
+@dataclass
+class CreateTaskNodeCommand:
+    """创建 TASK 类型叶子节点命令（替代 record_plan_task）。"""
+    project_id: str
+    node_name: str
+    responsible_user_id: str = ""       # 为空时取 creator_id
+    deadline: str = ""
+    parent_node_id: str = ""
+    owner_dept_id: str = "项目总"
+    description: str = ""
+    creator_id: str = ""
+
+
+@dataclass
+class MyTasksQuery:
+    """我的任务查询参数。"""
+    user_id: str
+    project_id: str = ""
+    submission_status: str = ""         # PENDING / SUBMITTED / RETURNED
+    page: int = 1
+    page_size: int = 20

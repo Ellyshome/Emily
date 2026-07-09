@@ -1,4 +1,4 @@
-"""
+﻿"""
 填充 users 表必填字段的 Python 脚本
 运行方式：python -m emily_core.infrastructure.database.scripts.fill_users_required_fields
 """
@@ -47,7 +47,7 @@ def get_or_create_system_user(session) -> str:
             is_deleted=False,
             perm_list='["*"]',
             org_category=4,  # 管理组
-            permission_level=6,  # 系统管理员
+            level=6,  # 系统管理员
             created_at=now,
             updated_at=now,
         )
