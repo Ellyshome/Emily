@@ -89,12 +89,12 @@ QQ → NapCat → AstrBot → emily_agent 薄插件
 |----|------|------|
 | 1 | **业务内核独立** | `emily_core` 不 import 任何 `astrbot.*` 包 |
 | 2 | **分层不可跳** | `API → EmilyCore → Session → WorkItem → Application → Service → Repository → DB` |
-| 3 | **SOP 即路由** | 新增 SOP = 放 `.md` 到 `emily-data/sops/` → 重启生效。SOPIntentRegistry 只做索引，不做匹配（LLM 做） |
-| 4 | **Hook 声明式 JSON** | 新增 Hook 编辑 `hook_config.json` 注册 → 改 `pipeline/hook.py` 实现类 → 重启生效。不改核心编排代码 |
-| 5 | **M14 结构化输出优先** | 命中 SOP → LLM chat_json → `{tool, params}` → 框架直调 `BusinessFlowTool.handler(params)`。不暴露为 LLM function-calling。Unmatched → ToolRegistry function-calling 兜底 |
+| 3 | **SOP 即路由** | 新增 SOP = 放 `.md` 到 `emily-data/sops/` → 重启生效。SkillRegistry 管理目录索引，LLM 做语义匹配 |
+| 4 | **Hook 声明式 JSON** | 新增 Hook 编辑 `hook_config.json` 注册 → 改 `pipeline/hook.py` 实现类 → 重启生效。当前 4 种 Hook：Auth/Audit/Trace/Progress |
+| 5 | **M14 结构化输出优先** | 命中 SOP → LLM chat_json → `{tool, params}` → 框架直调 `BusinessFlowTool.handler(params)`。不暴露为 LLM function-calling。Unmatched → SkillExecutor 兜底 |
 | 6 | **Sync repo + `asyncio.to_thread`** | Repository 全 sync，async Service 用 `asyncio.to_thread()` 包裹 |
 | 7 | **Hook 三态 deny-wins** | ALLOW/WARN/BLOCK。before 异常=BLOCK；after 异常不阻断 |
-| 8 | **`agent/` 仅保留工具类** | 原 MasterAgent/BusinessFlowAgent 等 Agent 逻辑已提取到 SessionAgent/WorkItemAgent。当前 `agent/` 保留 SOPIntentRegistry / ToolRegistry / sop_parser 等工具模块，仍被热路径 import |
+| 8 | **`agent/` 仅保留 sop_parser** | 原 MasterAgent/BusinessFlowAgent 等已提取到 SessionAgent/WorkItemAgent。SOPIntentRegistry 和 ToolRegistry 已废弃删除，`agent/` 仅保留 sop_parser 工具模块 |
 | 9 | **M15 WorkOrder 已弃用** | 旧 M15 8 阶段 WorkOrder 管道已完全移除，当前唯一路径是 `WorkItem` + `BusContext` + 4 节点 `PipelineBUS` |
 
 ---
@@ -129,17 +129,18 @@ QQ → NapCat → AstrBot → emily_agent 薄插件
 | `emily-core/emily_core/workitem/workitem.py` | `WorkItem`：单任务全息记录 + 6 态状态机 |
 | `emily-core/emily_core/workitem/workitem_agent.py` | `WorkItemAgent`：4 节点 handler + Mock/Real 模式切换 + auth/risk |
 | `emily-core/emily_core/workitem/pipeline/bus.py` | `PipelineBUS`：4 节点执行总线 + Hook 触发 |
-| `emily-core/emily_core/workitem/pipeline/hook.py` | Hook 基类 + 7 种具体 Hook 子类 |
-| `emily-core/emily_core/services/plan_task_service.py` | `PlanTaskService`：计划任务模板/实例生命周期 |
-| `emily-core/emily_core/services/plan_task_scheduler.py` | `PlanTaskScheduler`：后台调度循环（advisory lock/提醒/周期生成/升级） |
+| `emily-core/emily_core/workitem/pipeline/hook.py` | Hook 基类 + 4 种具体 Hook 子类（Auth/Audit/Trace/Progress） |
 | `emily-core/emily_core/services/node_batch.py` | `create_node_tree`：全景节点批量创建核心（CLI 和系统工具共享） |
 | `emily-core/emily_core/services/node_batch_update.py` | 批量更新/激活/废弃/进度更新核心（CLI 和系统工具共享） |
+| `emily-core/emily_core/scheduler/engine.py` | `SchedulerEngine`：系统调度引擎（tick 循环 + Advisory Lock + Hook + JobHandlerRegistry） |
+| `emily-core/emily_core/scheduler/service.py` | `SchedulerService`：调度作业 CRUD + 执行记录 |
+| `emily-core/emily_core/scheduler/jobs/periodic_node.py` | `PeriodicNodeHandler`：定期创建 TASK 节点（替代旧 PlanTask 循环模板） |
 | `scripts/manage_nodes.py` | 全景节点管理 CLI 脚本（create/update/activate/discard/progress/query） |
-| `emily-core/emily_core/infrastructure/database/models.py` | ORM 模型——**29 张表** |
+| `emily-core/emily_core/infrastructure/database/models.py` | ORM 模型——**24 张表**（PlanTask 4 表 + SOPCheckpoint 已废弃删除） |
 | `data/plugins/emily_agent/main.py` | AstrBot 薄插件入口（~100 行，无业务逻辑） |
 | `emily-data/config/core_config.json` | 非机密运行时配置 |
 | `emily-data/config/hook_config.json` | Hook 声明式挂载配置 |
-| `emily-data/sops/` | SOP 业务流手册仓库（10 份 .md） |
+| `emily-data/sops/` | SOP 业务流手册仓库（8 份 .md，SOP-009/010 已废弃删除） |
 | `emily-data/prompts/` | Agent system prompt 模板（session/workitem/guardian_step/guardian_reply/project .md） |
 
 ---

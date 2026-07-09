@@ -155,33 +155,6 @@ class EventRepository:
             )
 
     @staticmethod
-    def find_pending_by_message_conversation(conversation_id: str) -> Optional[Event]:
-        """查找指定会话中最近一条 pending 事件。
-
-        通过 messages 表关联 conversation_id 再查找对应 pending 事件。
-
-        ⚠️ DEPRECATED: 依赖 messages 表中转，当系统不创建 Message 记录时
-        此方法始终返回 None。请改用 find_pending_by_conversation_id()。
-        """
-        from ..infrastructure.database.models import Message
-        with get_session() as session:
-            # 找到该会话最近的消息关联的 pending 事件
-            msg_ids = (
-                session.query(Message.id)
-                .filter(Message.conversation_id == conversation_id)
-                .subquery()
-            )
-            return (
-                session.query(Event)
-                .filter(
-                    Event.message_id.in_(msg_ids),
-                    Event.status == "pending",
-                )
-                .order_by(Event.created_at.desc())
-                .first()
-            )
-
-    @staticmethod
     def find_pending_by_conversation_id(conversation_id: str) -> Optional[Event]:
         """BUG-005: 通过 conversation_id 直查最近的 pending 事件。
 

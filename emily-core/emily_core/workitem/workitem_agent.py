@@ -80,7 +80,6 @@ class WorkItemAgent:
         config=None,
         # Phase C: 执行和守护依赖
         business_flow_tools=None,
-        sop_intent_registry=None,   # 已废弃，保留签名兼容
         rag_provider=None,
         # 阶段二：三维鉴权引擎
         permission_engine=None,
@@ -96,9 +95,6 @@ class WorkItemAgent:
 
         # Phase C: 执行依赖
         self._business_flow_tools = business_flow_tools
-
-        # Phase C: SOP 意图注册（已废弃，保留签名兼容）
-        self._sop_intent_registry = sop_intent_registry
 
         # Phase C: RAG 依赖
         self._rag_provider = rag_provider

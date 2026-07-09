@@ -5,7 +5,7 @@
 - 标记问题为已处理（需要管理员权限）
 """
 
-from ..agent.tool_registry import ToolDefinition
+from .definitions import ToolDefinition
 from ..services.pending_issues import PendingIssuesService
 
 

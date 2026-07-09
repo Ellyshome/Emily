@@ -14,7 +14,7 @@ users 表已合并原 employee 的人事档案字段（gender/id_card/qq/wechat/
 from datetime import datetime, timezone, timedelta
 import uuid
 
-from sqlalchemy import Column, String, Integer, BigInteger, ForeignKey, UniqueConstraint, Boolean, Text, Index, text
+from sqlalchemy import Column, String, Integer, BigInteger, Float, ForeignKey, UniqueConstraint, Boolean, Text, Index, text
 from sqlalchemy.orm import DeclarativeBase, relationship
 
 
@@ -684,55 +684,18 @@ class HookExecutionLog(Base):
     message = Column(String, default="")
     duration_ms = Column(Integer, default=0)
     metadata_json = Column(Text, default="{}")
+    # ── 进化日志增强字段（需求：日志系统收束）──
+    user_id = Column(String, default="")                 # 操作用户 ID
+    sop_id = Column(String, default="")                  # 相关 SOP ID
+    block_reason = Column(String(500), default="")       # BLOCK 原因
+    session_level = Column(Integer, nullable=True)       # 用户权限层级
     created_at = Column(String, nullable=False)
 
 
 # ══════════════════════════════════════════════════════════════════════════════
-# M12b: SOP 执行状态检查点表
+# M12b: SOP 执行状态检查点表 — 已废弃
+#   CheckpointService 无调用方，ORM 已删除
 # ══════════════════════════════════════════════════════════════════════════════
-
-
-class SOPCheckpoint(Base):
-    """SOP 执行状态快照（M12b）。
-
-    在 user_interaction 节点执行前自动创建，
-    用户确认/取消/超时后更新状态。
-
-    借鉴 LangGraph checkpoint-per-superstep 模式：
-    - 容器重启后待确认项不丢失
-    - 超时后保留快照，支持"刚才的还有吗"恢复
-    """
-    __tablename__ = "sop_checkpoints"
-
-    id = Column(String, primary_key=True, default=lambda: _new_id("chk"))
-    thread_id = Column(String, nullable=False, index=True)       # conversation_id
-    message_id = Column(String, nullable=True)                   # 触发确认的消息 ID
-    sop_id = Column(String, nullable=False, index=True)           # SOP-002-REC
-    node_name = Column(String, nullable=False)                   # wait_confirm
-    pipeline_run_id = Column(String, nullable=True, index=True)  # M12a pipeline run ID
-
-    # 完整状态快照（JSON）：PipelineContext 中与此确认相关的所有字段
-    state_json = Column(Text, default="{}")
-
-    # 状态生命周期
-    status = Column(String, default="pending")  # pending | confirmed | cancelled | expired | resumed
-    created_at = Column(String, nullable=False)
-    confirmed_at = Column(String, nullable=True)
-    cancelled_at = Column(String, nullable=True)
-    resumed_at = Column(String, nullable=True)
-    expires_at = Column(String, nullable=False, index=True)
-
-    # 展示给用户的信息
-    prompt_text = Column(String, default="")        # "请确认以下事件录入：..."
-    confirm_keywords = Column(String, default="")   # JSON array: ["确认","对","ok"]
-    cancel_keywords = Column(String, default="")    # JSON array: ["取消","不对"]
-
-    # 确认后继续执行所需的上下文
-    resume_context = Column(Text, default="{}")     # 恢复执行所需的上下文数据
-
-    # 审计
-    created_by = Column(String, nullable=True)       # user_id
-    metadata_json = Column(Text, default="{}")
 
 
 # ══════════════════════════════════════════════════════════════════════════════
@@ -865,190 +828,10 @@ class SOPPermissionBinding(Base):
 
 
 # ══════════════════════════════════════════════════════════════════════════════
-# 计划任务系统 (Scheduled Task Module)
-#   四张新表：plan_task_templates / plan_task_instances / plan_task_logs / plan_task_deliverables
-#   v2.1: 含异常复核状态、执行人升级、LLM 推算失败标记
+# 计划任务系统 (Scheduled Task Module) — 已废弃
+#   替代者：scheduler_jobs / scheduler_executions + Node Task 体系
+#   ORM 类已删除（PlanTaskTemplate/PlanTaskInstance/PlanTaskLog/PlanTaskDeliverable）
 # ══════════════════════════════════════════════════════════════════════════════
-
-
-class PlanTaskTemplate(Base):
-    """计划任务模板表 —— 定义循环或一次性任务的模板。
-
-    模板由发起人创建，激活后由调度机根据 deadline_rule 自动生成实例。
-    """
-    __tablename__ = "plan_task_templates"
-
-    __table_args__ = (
-        # 支持调度机 get_active_cycle_templates 查询（status + task_type 过滤）
-        Index("idx_ptt_status_type", "status", "task_type"),
-    )
-
-    id = Column(String, primary_key=True, default=_new_uuid)
-    template_no = Column(String(50), unique=True, nullable=False)   # 模板编号 TPL-YYYYMMDD-NNNN
-    name = Column(String(200), nullable=False)                      # 模板名称
-    description = Column(String, default="")                        # 模板描述
-
-    # ── 任务定义 ──
-    initiator_id = Column(String, ForeignKey("users.id"), nullable=False)  # 发起人
-    executor_id = Column(String, ForeignKey("users.id"), nullable=True)    # 执行人（可为空=待指派）
-    project_id = Column(String, ForeignKey("projects.id"), nullable=True)  # 关联项目
-
-    # ── 调度规则 ──
-    task_type = Column(String(20), nullable=False, default="ONCE")  # ONCE / WEEKLY / MONTHLY
-    deadline_rule = Column(String(500), default="")                 # 自然语言截止描述，如"每周五17:00"、"每月20日"
-
-    # ── 验收标准 ──
-    verification_standard = Column(String, default="{}")            # JSON 核验规则
-
-    # ── 工作流关联 ──
-    workflow_definition_key = Column(String(100), default="")       # 关联工作流定义键
-
-    # ── 状态与审计 ──
-    status = Column(String(20), default="DRAFT")                    # DRAFT / ACTIVE / INACTIVE
-    creator_id = Column(String, ForeignKey("users.id"), nullable=True)
-    created_at = Column(String, default=_utc_now)
-    updated_at = Column(String, default=_utc_now, onupdate=_utc_now)
-    is_deleted = Column(Boolean, default=False)
-
-    # ── LLM 推算失败标记（v1.5-fix: 模板级别）──
-    llm_calculation_failed = Column(Boolean, default=False)  # LLM 推算截止时间是否失败
-    llm_failure_notified = Column(Boolean, default=False)    # 是否已通知发起人人工处理
-
-
-class PlanTaskInstance(Base):
-    """计划任务实例表 —— 每个具体的任务实例。
-
-    五态状态机（+ 异常复核）：WAITING / SUBMITTED / RETURNED /
-    CONFIRMED / ARCHIVED / CANCELLED / ANOMALY_PENDING_REVIEW
-    """
-    __tablename__ = "plan_task_instances"
-
-    __table_args__ = (
-        # 幂等唯一约束：同一模板同一周期只能有一个非取消实例（计划 §3.6）
-        Index(
-            "uq_pti_period", "template_id", "period_key",
-            unique=True, postgresql_where=text("status != 'CANCELLED'"),
-        ),
-        # 调度机核心查询：按状态+截止时间
-        Index("idx_pti_status_deadline", "status", "deadline_at"),
-        # 按执行人/项目查询
-        Index("idx_pti_executor_status", "executor_id", "status"),
-        Index("idx_pti_project", "project_id", "status"),
-        # 计划外事件查询
-        Index("idx_pti_unscheduled", "is_unscheduled", "created_at"),
-        # LLM 失败待处理查询
-        Index("idx_pti_llm_failed", "llm_calculation_failed", "llm_failure_notified"),
-    )
-
-    id = Column(String, primary_key=True, default=_new_uuid)
-    instance_no = Column(String(50), unique=True, nullable=False)   # 实例编号 PTI-YYYYMMDD-NNNN
-    template_id = Column(String, ForeignKey("plan_task_templates.id"), nullable=True)
-
-    # ── 幂等键 ──
-    period_key = Column(String(100), default="")                    # "2024-W25", "2024-M06", "2024-07-15"
-
-    # ── 任务核心字段 ──
-    title = Column(String(500), nullable=False)
-    description = Column(String, default="")
-    initiator_id = Column(String, ForeignKey("users.id"), nullable=False)   # 发起人
-    executor_id = Column(String, ForeignKey("users.id"), nullable=True)     # 执行人
-    project_id = Column(String, ForeignKey("projects.id"), nullable=True)
-    phase_code = Column(String(100), nullable=True)                         # 关联项目阶段编码
-    node_id = Column(String(100), default="")                               # 关联全景节点编号（FK→project_nodes.node_id），合规链校验用
-
-    # ── 时间字段 ──
-    deadline_at = Column(String, nullable=True)           # 截止时间（ISO8601）
-    reminded_at = Column(String, nullable=True)           # 最后提醒时间
-    escalated_at = Column(String, nullable=True)          # 升级给上级的时间（P2）
-
-    # ── 执行人升级（P2）──
-    original_executor_id = Column(String, ForeignKey("users.id"), nullable=True)  # 原执行人
-    escalation_reason = Column(String, default="")       # 升级原因（离职/失能等）
-
-    # ── 验收标准 ──
-    verification_standard = Column(String, default="{}")  # JSON 核验规则
-
-    # ── 状态机 ──
-    # WAITING / SUBMITTED / RETURNED / CONFIRMED / ARCHIVED / CANCELLED / ANOMALY_PENDING_REVIEW
-    status = Column(String(30), default="WAITING")
-
-    # ── 时间戳 ──
-    submitted_at = Column(String, nullable=True)          # 提交时间
-    confirmed_at = Column(String, nullable=True)          # 确认时间
-    archived_at = Column(String, nullable=True)           # 归档时间
-
-    # ── 工作流关联 ──
-    workflow_instance_id = Column(String, nullable=True)  # 关联工作流实例ID
-
-    # ── 异常标记 ──
-    is_unscheduled = Column(Boolean, default=False)       # 是否计划外事件
-    anomaly_reason = Column(String(500), default="")           # 异常原因
-
-    # ── LLM 推算失败标记 ──
-    llm_calculation_failed = Column(Boolean, default=False)  # LLM 推算截止时间是否失败
-    llm_failure_notified = Column(Boolean, default=False)    # 是否已通知发起人人工处理
-
-    # ── 审计 ──
-    created_at = Column(String, default=_utc_now)
-    updated_at = Column(String, default=_utc_now, onupdate=_utc_now)
-    is_deleted = Column(Boolean, default=False)
-
-    # ── 关联 ──
-    template = relationship("PlanTaskTemplate", foreign_keys=[template_id])
-
-
-class PlanTaskLog(Base):
-    """计划任务状态变更日志表 —— 记录全生命周期每次状态变更的快照。"""
-    __tablename__ = "plan_task_logs"
-
-    __table_args__ = (
-        # 按实例查日志（instance_id 单列已有 index=True，此处补复合索引支持时间范围查）
-        Index("idx_ptl_instance", "instance_id", "created_at"),
-    )
-
-    id = Column(String, primary_key=True, default=_new_uuid)
-    instance_id = Column(String, ForeignKey("plan_task_instances.id"), nullable=False, index=True)
-
-    # ── 状态变更 ──
-    from_status = Column(String(20), nullable=True)       # 变更前状态
-    to_status = Column(String(20), nullable=False)        # 变更后状态
-    operator_id = Column(String, ForeignKey("users.id"), nullable=True)  # 操作人
-    reason = Column(String, default="")                   # 变更原因
-
-    # ── 快照 ──
-    snapshot = Column(Text, default="{}")                 # JSON 全量快照（实例关键字段）
-
-    # ── 审计 ──
-    created_at = Column(String, default=_utc_now)
-
-
-class PlanTaskDeliverable(Base):
-    """计划任务成果表 —— 执行者提交的任务成果。"""
-    __tablename__ = "plan_task_deliverables"
-
-    __table_args__ = (
-        # 按提交者查询成果
-        Index("idx_ptd_submitted", "submitted_by", "submitted_at"),
-    )
-
-    id = Column(String, primary_key=True, default=_new_uuid)
-    instance_id = Column(String, ForeignKey("plan_task_instances.id"), nullable=False, index=True)
-
-    # ── 成果内容 ──
-    type = Column(String(20), nullable=False, default="TEXT")  # FILE / TEXT / JSON
-    content = Column(Text, default="")                         # 文本内容
-    file_url = Column(String(1000), default="")                # 文件URL
-    file_name = Column(String(500), default="")                # 文件名
-
-    # ── 提交信息 ──
-    submitted_by = Column(String, ForeignKey("users.id"), nullable=False)
-    submitted_at = Column(String, default=_utc_now)
-
-    # ── 完工确认标记 ──
-    is_acceptance_check = Column(Boolean, default=False)           # 是否为完工确认报告
-
-    # ── 审计 ──
-    created_at = Column(String, default=_utc_now)
 
 
 # ══════════════════════════════════════════════════════════════════════════════
@@ -1489,4 +1272,188 @@ class SchedulerExecution(Base):
         Index("idx_se_job_status", "job_id", "status"),
         Index("idx_se_created_at", "created_at"),
         Index("idx_se_period", "job_id", "period_key"),
+    )
+
+
+# ══════════════════════════════════════════════════════════════════════════════
+# 进化日志表（需求：日志系统收束）
+# ══════════════════════════════════════════════════════════════════════════════
+
+
+class PipelineExecutionLog(Base):
+    """Pipeline 执行日志 —— WorkItem 完成后写入完整执行记录。"""
+    __tablename__ = "pipeline_execution_logs"
+    id = Column(String, primary_key=True, default=_new_uuid)
+    pipeline_run_id = Column(String, index=True)
+    conversation_id = Column(String, index=True)
+    user_id = Column(String, index=True)
+    user_name = Column(String(200), default="")
+    user_level = Column(Integer, default=1)
+    # ── 意图识别 ──
+    matched_sop_id = Column(String, default="")
+    match_confidence = Column(String(20), default="")
+    is_compound = Column(Boolean, default=False)
+    is_fallback = Column(Boolean, default=False)
+    intent_reasoning = Column(String, default="")
+    # ── 执行结果 ──
+    final_status = Column(String(20), default="")
+    abort_reason = Column(String(500), default="")
+    result_text = Column(Text, default="")
+    tool_calls_json = Column(Text, default="")
+    step_results_json = Column(Text, default="")
+    # ── Hook 影响 ──
+    hook_decisions_json = Column(Text, default="")
+    was_blocked = Column(Boolean, default=False)
+    block_hook_name = Column(String(200), default="")
+    # ── 时间与性能 ──
+    started_at = Column(String, default="")
+    completed_at = Column(String, default="")
+    elapsed_ms = Column(Integer, default=0)
+    node1_ms = Column(Integer, default=0)
+    node2_ms = Column(Integer, default=0)
+    node3_ms = Column(Integer, default=0)
+    node4_ms = Column(Integer, default=0)
+    # ── 元数据 ──
+    created_at = Column(String, default=_utc_now)
+
+    __table_args__ = (
+        Index("idx_pel_run_id", "pipeline_run_id"),
+        Index("idx_pel_user_created", "user_id", "created_at"),
+    )
+
+
+class EvolutionLLMInteractionLog(Base):
+    """进化版 LLM 交互日志 —— 每次 LLM 调用的 token/latency/质量记录。
+
+    注：与 M11 的 LLMInteractionLog（表 llm_interaction_logs）区分，
+    此表用于进化日志系统，通过 pipeline_run_id 串联 Emily 请求链路。
+    """
+    __tablename__ = "evolution_llm_interaction_logs"
+    id = Column(String, primary_key=True, default=_new_uuid)
+    pipeline_run_id = Column(String, index=True)
+    conversation_id = Column(String, index=True)
+    user_id = Column(String, default="")
+    call_category = Column(String(30), default="")       # intent/planning/execution/guardian/compression/consolidation/param_extract
+    call_sequence = Column(Integer, default=0)
+    model = Column(String(100), default="")
+    message_count = Column(Integer, default=0)
+    tool_count = Column(Integer, default=0)
+    json_mode = Column(Boolean, default=False)
+    response_type = Column(String(20), default="")       # text/json/tool_call
+    response_summary = Column(String(500), default="")
+    finish_reason = Column(String(50), default="")
+    prompt_tokens = Column(Integer, default=0)
+    completion_tokens = Column(Integer, default=0)
+    total_tokens = Column(Integer, default=0)
+    latency_ms = Column(Integer, default=0)
+    is_error = Column(Boolean, default=False)
+    error_summary = Column(String(500), default="")
+    created_at = Column(String, default=_utc_now)
+
+    __table_args__ = (
+        Index("idx_elil_run_id", "pipeline_run_id"),
+        Index("idx_elil_category_created", "call_category", "created_at"),
+    )
+
+
+class RAGRetrievalLog(Base):
+    """RAG 检索日志 —— 知识库命中率和质量追踪。"""
+    __tablename__ = "rag_retrieval_logs"
+    id = Column(String, primary_key=True, default=_new_uuid)
+    pipeline_run_id = Column(String, index=True)
+    conversation_id = Column(String, default="")
+    user_id = Column(String, default="")
+    query_text = Column(String(500), default="")
+    provider = Column(String(30), default="")             # maxkb/local_fallback/unavailable
+    hit_count = Column(Integer, default=0)
+    top_score = Column(Float, default=0.0)
+    avg_score = Column(Float, default=0.0)
+    results_summary = Column(Text, default="")
+    was_used_by_llm = Column(Boolean, default=True)
+    latency_ms = Column(Integer, default=0)
+    error_summary = Column(String(500), default="")
+    created_at = Column(String, default=_utc_now)
+
+    __table_args__ = (
+        Index("idx_rrl_run_id", "pipeline_run_id"),
+        Index("idx_rrl_provider_created", "provider", "created_at"),
+    )
+
+
+class SessionLifecycleLog(Base):
+    """Session 生命周期日志 —— 创建/刷新/压缩/归档事件追踪。"""
+    __tablename__ = "session_lifecycle_logs"
+    id = Column(String, primary_key=True, default=_new_uuid)
+    conversation_id = Column(String, index=True)
+    user_id = Column(String, index=True)
+    event_type = Column(String(20), default="")           # created/refreshed/compressed/archived/terminated
+    detail_json = Column(Text, default="")
+    message_count = Column(Integer, default=0)
+    duration_ms = Column(Integer, default=0)
+    created_at = Column(String, default=_utc_now)
+
+    __table_args__ = (
+        Index("idx_sll_conv_created", "conversation_id", "created_at"),
+    )
+
+
+class SchedulerJobLog(Base):
+    """调度器作业日志 —— 定时任务执行结果追踪。"""
+    __tablename__ = "scheduler_job_logs"
+    id = Column(String, primary_key=True, default=_new_uuid)
+    job_id = Column(String, index=True)
+    action_type = Column(String(100), default="")
+    params_json = Column(Text, default="")
+    success = Column(Boolean, default=True)
+    summary = Column(String(500), default="")
+    elapsed_ms = Column(Integer, default=0)
+    error_detail = Column(Text, default="")
+    started_at = Column(String, default="")
+    completed_at = Column(String, default="")
+    created_at = Column(String, default=_utc_now)
+
+    __table_args__ = (
+        Index("idx_sjl_action_created", "action_type", "created_at"),
+    )
+
+
+class UserFeedbackSignal(Base):
+    """用户反馈信号日志 —— 从交互模式提取的隐式满意度信号。"""
+    __tablename__ = "user_feedback_signals"
+    id = Column(String, primary_key=True, default=_new_uuid)
+    pipeline_run_id = Column(String, index=True)
+    conversation_id = Column(String, default="")
+    user_id = Column(String, default="")
+    signal_type = Column(String(30), default="")          # repeat_request/explicit_correction/truncation_followup/positive/abandonment
+    signal_strength = Column(Float, default=0.0)
+    trigger_message = Column(String(500), default="")
+    context_summary = Column(String(500), default="")
+    created_at = Column(String, default=_utc_now)
+
+    __table_args__ = (
+        Index("idx_ufs_type_created", "signal_type", "created_at"),
+        Index("idx_ufs_user_created", "user_id", "created_at"),
+    )
+
+
+class BusinessEventLog(Base):
+    """业务事件日志 —— 结构化替代文件级 EventJournal。"""
+    __tablename__ = "business_event_logs"
+    id = Column(String, primary_key=True, default=_new_uuid)
+    project_id = Column(String, index=True)
+    user_id = Column(String, index=True)
+    user_name = Column(String(200), default="")
+    event_category = Column(String(30), default="")       # event/task/meeting/file/permission/system
+    event_action = Column(String(30), default="")          # created/confirmed/blocked/submitted/archived
+    target_type = Column(String(50), default="")
+    target_id = Column(String, default="")
+    target_no = Column(String(50), default="")
+    summary = Column(String(500), default="")
+    detail_json = Column(Text, default="")
+    pipeline_run_id = Column(String, default="")
+    created_at = Column(String, default=_utc_now)
+
+    __table_args__ = (
+        Index("idx_bel_category_created", "event_category", "created_at"),
+        Index("idx_bel_project_created", "project_id", "created_at"),
     )

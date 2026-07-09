@@ -1,14 +1,14 @@
-﻿"""工具注册中心 —— 统一入口，按 category 组织所有基座工具。
+"""工具注册中心 —— 统一入口，按 category 组织所有基座工具。
 
 目录结构（按工具的可见范围和使用权限分层）：
   base/         基座能力 — 对所有 SOP 开放，无需权限审核（knowledge_search / query_data）
-  business/     业务工具 — 受 SOP 约束，按 SOP §3.2 白名单调用（record_event / task / meeting / file / plan_task / memory）
+  business/     业务工具 — 受 SOP 约束，按 SOP §3.2 白名单调用（record_event / task / meeting / file / memory）
   project/      项目级工具 — 管理员或 ProjectAgent 专用（node / voice_entry / email / pending_issue / chat_archive）
   registry.py   统一注册入口 register_all(core) → 一站式填充 BusinessFlowToolRegistry
 
 权限模型：
   - base tools: 所有 SOP 可调用（需在 SOP §3.2 声明）
-  - business tools: SOP 白名单约束（SOPIntentRegistry + AuthHook 前置拦截）
+  - business tools: SOP 白名单约束（SkillRegistry + AuthHook 前置拦截）
   - project tools: 仅管理员（level ≥ 5）或 ProjectAgent 可调用
 
 M14 架构：工具通过 BusinessFlowToolRegistry 注册，框架在 LLM 结构化输出后直接调用 handler。
@@ -22,13 +22,7 @@ from .base import _KNOWLEDGE_SEARCH_SCHEMA, _KNOWLEDGE_SEARCH_DESCRIPTION
 # 业务工具 ──
 from .business import (
     handle_record_event, handle_record_task, handle_record_meeting, handle_record_file,
-    handle_record_plan_task, handle_submit_plan_task,
-    handle_review_plan_task, handle_query_plan_tasks,
     handle_write_user_memory,
-)
-from .business import (
-    _RECORD_PLAN_TASK_SCHEMA, _SUBMIT_PLAN_TASK_SCHEMA,
-    _REVIEW_PLAN_TASK_SCHEMA, _QUERY_PLAN_TASKS_SCHEMA,
 )
 
 # ── 项目级工具 ──
@@ -63,10 +57,6 @@ __all__ = [
     "handle_record_task",
     "handle_record_meeting",
     "handle_record_file",
-    "handle_record_plan_task",
-    "handle_submit_plan_task",
-    "handle_review_plan_task",
-    "handle_query_plan_tasks",
     "handle_write_user_memory",
     "handle_create_node",
     "handle_query_node",
