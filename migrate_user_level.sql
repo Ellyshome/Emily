@@ -1,33 +1,27 @@
 -- ========================================
--- 迁移 users.is_admin 到 users.level 枚举字段
+-- 迁移 users.permission_level 到 users.level 字段
+-- 说明：字段名统一，类型保持 INTEGER (1-6)
 -- ========================================
 
--- Step 1: 创建枚举类型
-DO $$
-BEGIN
-    IF NOT EXISTS (SELECT 1 FROM pg_type WHERE typname = 'user_level_enum') THEN
-        CREATE TYPE user_level_enum AS ENUM (
-            '系统管理员',
-            '管理员',
-            '建设主管',
-            '参建主管',
-            '参建人员',
-            '访客'
-        );
-    END IF;
-END
-$$;
+BEGIN;
 
--- Step 2: 添加 level 字段
-ALTER TABLE users ADD COLUMN IF NOT EXISTS level user_level_enum;
+-- Step 1: 新增 level 字段（若不存在）
+ALTER TABLE users ADD COLUMN IF NOT EXISTS level INTEGER DEFAULT 1;
 
--- Step 3: 数据迁移
--- is_admin = TRUE -> 管理员
-UPDATE users SET level = '管理员' WHERE is_admin = TRUE;
+-- Step 2: 数据迁移（从 permission_level 复制到 level）
+UPDATE users 
+SET level = permission_level 
+WHERE permission_level IS NOT NULL AND level IS NULL;
 
--- is_admin = FALSE 或 NULL -> 访客（默认）
-UPDATE users SET level = '访客' 
-WHERE (is_admin = FALSE OR is_admin IS NULL) AND level IS NULL;
+-- Step 3: 兼容处理（若 permission_level 不存在，则设置默认值）
+UPDATE users 
+SET level = 1 
+WHERE level IS NULL;
+
+-- Step 4: 添加注释
+COMMENT ON COLUMN users.level IS '权限层级（6级树形）：1=访客 2=参建执行 3=参建管理 4=建设主管 5=管理员 6=系统管理员';
+
+COMMIT;
 
 -- ========================================
 -- 验证结果
@@ -40,7 +34,7 @@ GROUP BY level
 ORDER BY level;
 
 -- 查看前5条示例
-SELECT id, username, is_admin, level 
+SELECT id, username, level
 FROM users 
 ORDER BY id 
 LIMIT 5;

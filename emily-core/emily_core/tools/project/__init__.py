@@ -1,4 +1,4 @@
-"""项目级工具 —— 仅管理员（permission_level ≥ 5）或 ProjectAgent 可调用。"""
+"""项目级工具 —— 仅管理员（level ≥ 5）或 ProjectAgent 可调用。"""
 
 from ..node_tool import (
     handle_create_node, handle_query_node, handle_update_node_progress,

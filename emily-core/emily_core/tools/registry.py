@@ -104,6 +104,14 @@ def _register_business(core, reg):
                      partial(_h("file_tool", "handle_record_file"),
                              file_app=core._file_app), "business", "write")
 
+    # 文件查询 + 分类修改 (2 tools)
+    _buc += _reg_biz(reg, "query_files", "按分类或关键词查询项目文件",
+                     partial(_h("file_tool", "handle_query_files"),
+                             file_app=core._file_app), "business", "all")
+    _buc += _reg_biz(reg, "update_file_category", "修改文件分类归属",
+                     partial(_h("file_tool", "handle_update_file_category"),
+                             file_app=core._file_app), "business", "write")
+
     # 计划任务 (4 tools)
     app = getattr(core, "_plan_task_app", None)
     if app is not None:
@@ -203,6 +211,34 @@ def _register_project(core, reg):
                     _pjc += 1
         except Exception as e:
             logger.warning("node tools registration failed: %s", e)
+
+        # 节点任务工具（替代 record_plan_task / submit_plan_task / review_plan_task / query_plan_tasks）
+        ns = getattr(core, "_node_service", None)
+        if ns is not None:
+            try:
+                from .node_task_tool import (
+                    handle_create_task_node, handle_submit_node_deliverable,
+                    handle_confirm_node_deliverable, handle_return_node_deliverable,
+                    handle_query_my_nodes,
+                )
+                for name, desc, handler in [
+                    ("create_task_node", "创建TASK类型叶子节点（替代record_plan_task）",
+                     partial(handle_create_task_node, node_service=ns)),
+                    ("submit_node_deliverable", "提交节点成果（替代submit_plan_task）",
+                     partial(handle_submit_node_deliverable, node_service=ns)),
+                    ("confirm_node_deliverable", "确认节点成果",
+                     partial(handle_confirm_node_deliverable, node_service=ns)),
+                    ("return_node_deliverable", "退回节点成果",
+                     partial(handle_return_node_deliverable, node_service=ns)),
+                    ("query_my_nodes", "查询我负责的节点（替代query_plan_tasks）",
+                     partial(handle_query_my_nodes, node_service=ns)),
+                ]:
+                    if not reg.has(name):
+                        reg.register(_tool(name, desc, {"type": "object", "properties": {}}, handler,
+                                          category="business", permission_flag="write"))
+                        _pjc += 1
+            except Exception as e:
+                logger.warning("node task tools registration failed: %s", e)
 
     # 邮箱 (2 tools)
     es = getattr(core, "_email_service", None)

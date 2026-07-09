@@ -1,4 +1,4 @@
-"""PermissionCache —— 权限矩阵两级缓存（设计文档 §六-B）。
+﻿"""PermissionCache —— 权限矩阵两级缓存（设计文档 §六-B）。
 
 层级：
   L1 矩阵: PermissionGroup × SOPBusinessFlow × SOPPermissionBinding 全量结果集
@@ -195,7 +195,7 @@ class PermissionCache:
         规则：
           1. deny 绑定（用户匹配组）→ denied
           2. is_public=True → allow
-          3. can_access(permission_level, min_permission_level) → level check
+          3. can_access(level, min_level) → level check
           4. 企业类型/部门细筛（阶段二新增）
         """
         from .level import can_access
@@ -230,7 +230,7 @@ class PermissionCache:
                 continue
 
             # 3. 树形继承级别检查
-            if not can_access(user_level, flow.min_permission_level):
+            if not can_access(user_level, flow.min_level):
                 continue
 
             # 4. 企业类型匹配（阶段二新增）

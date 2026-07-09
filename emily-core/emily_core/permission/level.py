@@ -18,7 +18,7 @@ from enum import Enum
 
 
 class PermissionLevel(Enum):
-    """6 级权限分组（需求 §2.1）。值域 1-6，User.permission_level 字段直接存数值。"""
+    """6 级权限分组（需求 §2.1）。值域 1-6，User.level 字段直接存数值。"""
 
     GUEST = 1              # L1 访客：所有接入用户自动获得
     PARTICIPANT_EXEC = 2   # L2 参建执行：非建设单位人员基础权限
@@ -63,8 +63,8 @@ def can_access(user_level: int, required_level: int) -> bool:
     """树形继承鉴权：所需级别在用户继承链内即放行。
 
     Args:
-        user_level: 用户当前 permission_level（1-6）
-        required_level: 资源/SOP 要求的最低 permission_level（1-6）
+        user_level: 用户当前 level（1-6）
+        required_level: 资源/SOP 要求的最低 level（1-6）
 
     Returns:
         True 若用户经继承持有 required_level 权限

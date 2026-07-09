@@ -41,6 +41,11 @@ _FILE_TOOL_SCHEMA = {
                     "type": "string",
                     "description": "文件类型（如 pdf、docx、图纸）",
                 },
+                "file_category": {
+                    "type": "string",
+                    "description": "文件业务分类：PROJECT_LICENSE(项目证照)/CONTRACT(承包合同)/WORK_RECORD(工作记录)/PHASE_DELIVERABLE(阶段成果)/PROCESS_DOC(过程文件)/MANAGEMENT_SPEC(管理规程)/OTHER(其他文件)",
+                    "default": "OTHER",
+                },
             },
             "required": ["filename"],
         },
@@ -100,6 +105,7 @@ async def handle_record_file(
         data={
             "filename": source_filename or "未命名文件",
             "file_type": data.get("file_type", ""),
+            "file_category": data.get("file_category", "OTHER"),
         },
     )
     result = await file_app.handle_file(
@@ -131,4 +137,128 @@ async def handle_record_file(
         "reply": reply_text,
         "error_code": result.error_code,
         "needs_review": False,
+    }
+
+
+# ══════════════════════════════════════════════════════════════════════════════
+# 文件查询工具 — query_files
+# ══════════════════════════════════════════════════════════════════════════════
+
+_QUERY_FILES_SCHEMA = {
+    "type": "object",
+    "properties": {
+        "file_category": {
+            "type": "string",
+            "description": "按分类过滤：PROJECT_LICENSE/CONTRACT/WORK_RECORD/PHASE_DELIVERABLE/PROCESS_DOC/MANAGEMENT_SPEC/OTHER",
+        },
+        "keyword": {
+            "type": "string",
+            "description": "按文件名关键词搜索（模糊匹配）",
+        },
+        "project_id": {
+            "type": "string",
+            "description": "项目 UUID（可选，默认取当前用户项目）",
+        },
+        "limit": {
+            "type": "integer",
+            "description": "返回数量上限，默认 10",
+            "default": 10,
+        },
+    },
+}
+
+_QUERY_FILES_DESCRIPTION = (
+    "按分类或关键词查询项目文件列表。\n"
+    "\n"
+    "字段分级：\n"
+    "  [应有] file_category — 按业务分类过滤（如 CONTRACT 查承包合同类）\n"
+    "  [应有] keyword — 按文件名关键词模糊搜索\n"
+    "  [可选] project_id — 指定项目范围\n"
+    "  [可选] limit — 返回数量上限"
+)
+
+
+async def handle_query_files(
+    params: dict,
+    file_app: FileApplication,
+    user_id: str = "",
+    message_id: str = "",
+    project_ids: list[str] | None = None,
+    **kwargs,
+) -> dict:
+    """处理文件分类查询。"""
+    file_category = params.get("file_category")
+    keyword = params.get("keyword", "")
+    project_id = params.get("project_id")
+    limit = params.get("limit", 10)
+
+    result = await file_app.handle_list_by_category(
+        file_category=file_category,
+        project_id=project_id,
+        project_ids=project_ids,
+        keyword=keyword,
+        limit=limit,
+    )
+
+    return {
+        "success": result.success,
+        "reply": result.reply,
+        "data": getattr(result, 'data', {}),
+        "error_code": result.error_code,
+    }
+
+
+# ══════════════════════════════════════════════════════════════════════════════
+# 文件分类修改工具 — update_file_category
+# ══════════════════════════════════════════════════════════════════════════════
+
+_UPDATE_CATEGORY_SCHEMA = {
+    "type": "object",
+    "properties": {
+        "file_no": {
+            "type": "string",
+            "description": "文件编号（如 FIL-20260709-0001）",
+        },
+        "file_category": {
+            "type": "string",
+            "description": "目标分类：PROJECT_LICENSE/CONTRACT/WORK_RECORD/PHASE_DELIVERABLE/PROCESS_DOC/MANAGEMENT_SPEC/OTHER",
+        },
+    },
+    "required": ["file_no", "file_category"],
+}
+
+_UPDATE_CATEGORY_DESCRIPTION = (
+    "修改文件的分类归属。\n"
+    "\n"
+    "必填字段：\n"
+    "  file_no — 文件编号\n"
+    "  file_category — 目标分类枚举值"
+)
+
+
+async def handle_update_file_category(
+    params: dict,
+    file_app: FileApplication,
+    user_id: str = "",
+    message_id: str = "",
+    **kwargs,
+) -> dict:
+    """处理文件分类修改。"""
+    file_no = params.get("file_no", "")
+    file_category = params.get("file_category", "OTHER")
+
+    if not file_no:
+        return {"success": False, "reply": "请提供文件编号", "error_code": "missing_file_no"}
+
+    result = await file_app.handle_update_category(
+        file_no=file_no,
+        file_category=file_category,
+        user_id=user_id,
+    )
+
+    return {
+        "success": result.success,
+        "reply": result.reply,
+        "data": getattr(result, 'data', {}),
+        "error_code": result.error_code,
     }

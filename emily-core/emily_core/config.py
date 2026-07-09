@@ -1,4 +1,4 @@
-"""配置模块 —— Emily Core 运行时配置。"""
+﻿"""配置模块 —— Emily Core 运行时配置。"""
 
 from dataclasses import dataclass, field
 
@@ -233,7 +233,7 @@ class Config:
     """权限矩阵缓存 TTL（秒），默认 5 分钟"""
 
     permission_super_admin_level: int = 6
-    """系统管理员 permission_level 阈值（L6）"""
+    """系统管理员 level 阈值（L6）"""
 
     permission_session_max_ttl_hours: int = 24
     """Session 权限快照最大存活时间（小时），超时自动刷新"""

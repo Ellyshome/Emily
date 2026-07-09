@@ -48,6 +48,7 @@ class FileRepository:
         file_size: int = 0,
         uploaded_by: Optional[str] = None,
         parse_status: str = "pending",
+        file_category: str = "OTHER",
     ) -> File:
         with get_session() as session:
             f = File(
@@ -62,10 +63,11 @@ class FileRepository:
                 file_size=file_size,
                 uploaded_by=uploaded_by,
                 parse_status=parse_status,
+                file_category=file_category,
             )
             session.add(f)
             session.flush()
-            logger.info("File created: no=%s, filename=%s", file_no, filename)
+            logger.info("File created: no=%s, filename=%s, category=%s", file_no, filename, file_category)
             return f
 
     @staticmethod
@@ -99,3 +101,57 @@ class FileRepository:
 
             q = q.order_by(File.created_at.desc()).limit(limit)
             return q.all()
+
+    @staticmethod
+    def query_by_category(
+        *,
+        project_id: str | None = None,
+        project_ids: list[str] | None = None,
+        file_category: str | None = None,
+        limit: int = 50,
+    ) -> list[File]:
+        """按分类查询文件记录（按创建时间倒序）。
+
+        Args:
+            project_id: 单项目过滤
+            project_ids: 多项目范围过滤
+            file_category: 文件分类枚举值
+            limit: 返回数量上限
+        """
+        with get_session() as session:
+            q = session.query(File).filter(File.is_deleted == False)
+
+            if project_id:
+                q = q.filter(File.project_id == project_id)
+            if project_ids:
+                q = q.filter(File.project_id.in_(project_ids))
+            if file_category:
+                q = q.filter(File.file_category == file_category)
+
+            return q.order_by(File.created_at.desc()).limit(limit).all()
+
+    @staticmethod
+    def update_category(file_id: str, file_category: str) -> File | None:
+        """更新文件分类。"""
+        with get_session() as session:
+            f = session.query(File).filter(File.id == file_id, File.is_deleted == False).first()
+            if f is None:
+                return None
+            f.file_category = file_category
+            session.commit()
+            logger.info("File %s category updated: %s", f.file_no, file_category)
+            return f
+
+    @staticmethod
+    def count_by_category(project_id: str | None = None) -> dict[str, int]:
+        """按分类统计文件数量。"""
+        with get_session() as session:
+            q = session.query(File).filter(File.is_deleted == False)
+            if project_id:
+                q = q.filter(File.project_id == project_id)
+            files = q.all()
+            counts: dict[str, int] = {}
+            for f in files:
+                cat = f.file_category or "OTHER"
+                counts[cat] = counts.get(cat, 0) + 1
+            return counts

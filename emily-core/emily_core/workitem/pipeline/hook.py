@@ -1,4 +1,4 @@
-"""Hook 基类 + 三态返回值 + 5 个具体 Hook 子类 — M12a 管道总线架构。
+﻿"""Hook 基类 + 三态返回值 + 5 个具体 Hook 子类 — M12a 管道总线架构。
 
 借鉴 Claude Code Harness 的 exit code 语义：
   - ALLOW (exit 0): 放行
@@ -97,7 +97,7 @@ class AuthHook(Hook):
 
     阶段二改造（需求 §4 + §14）：
     - 接入 SessionContext 三维鉴权（扁平化字段）
-    - system.execute 检查 permission_level >= 5
+    - system.execute 检查 level >= 5
     - 有 SOP 绑定时检查 sop_allow 白名单
     - 密级/企业类型/部门维度校验委托 AuthEngine
     """
@@ -128,10 +128,10 @@ class AuthHook(Hook):
                     return HookResult.block("仅管理员可执行系统级操作")
             else:
                 from ...permission.level import is_admin as _is_admin
-                if not _is_admin(session_ctx.permission_level):
+                if not _is_admin(session_ctx.level):
                     logger.info(
                         "AuthHook[%s] blocking: user %s level=%d < L5",
-                        self.name, user_id, session_ctx.permission_level,
+                        self.name, user_id, session_ctx.level,
                     )
                     return HookResult.block("仅管理员（L5+）可执行系统级操作")
 

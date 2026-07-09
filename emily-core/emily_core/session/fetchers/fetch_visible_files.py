@@ -49,7 +49,14 @@ def format_summary(visible_files: dict) -> str:
     for ft, cnt in sorted(by_type.items(), key=lambda x: x[1], reverse=True):
         type_parts.append(f"{ft}({cnt}个)")
 
-    return f"共 {count} 个文件（{', '.join(type_parts)}）" if type_parts else f"共 {count} 个文件"
+    by_category = visible_files.get("by_category", {})
+    cat_parts = []
+    from ...infrastructure.database.models import FileCategory
+    for cat, cnt in sorted(by_category.items(), key=lambda x: x[1], reverse=True):
+        cat_parts.append(f"{FileCategory.display(cat)}({cnt}个)")
+
+    cat_str = f"，分类：{', '.join(cat_parts)}" if cat_parts else ""
+    return f"共 {count} 个文件（{', '.join(type_parts)}）{cat_str}" if type_parts else f"共 {count} 个文件{cat_str}"
 
 
 def main():

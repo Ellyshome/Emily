@@ -1,4 +1,4 @@
-"""行级安全拦截器 —— SQLAlchemy before_execute 事件监听（设计文档 §5.3）。
+﻿"""行级安全拦截器 —— SQLAlchemy before_execute 事件监听（设计文档 §5.3）。
 
 自动注入 company_id 过滤条件，实现行级数据隔离：
   - 用户只能查询自身公司 + partner 公司的数据
@@ -131,7 +131,7 @@ def _build_allowed_company_ids(perms) -> list[str]:
 
     # L5+ 管理员可看所有公司数据（不注入过滤）
     from .level import is_admin
-    if is_admin(perms.permission_level):
+    if is_admin(perms.level):
         return []
 
     return ids

@@ -29,6 +29,11 @@ from .node_commands import (
     RemoveDependencyCommand,
     MountChildCommand,
     UnmountChildCommand,
+    AssignNodeCommand,
+    SubmitNodeDeliverableCommand,
+    ConfirmNodeDeliverableCommand,
+    ReturnNodeDeliverableCommand,
+    ResubmitNodeDeliverableCommand,
     NodeOperationResult,
     CycleCheckResult,
     StateTransitionResult,
@@ -128,15 +133,36 @@ class NodeService:
         """创建节点。
 
         权限要求：仅建设单位（company_type == "建设单位"）人员可创建。
-        管理员快捷通道：创建人 permission_level >= 5 时自动激活，跳过审批。
+        管理员快捷通道：创建人 level >= 5 时自动激活，跳过审批。
         """
+        # ── 责任人默认值 + FK 校验 ──
+        responsible_user_id = getattr(cmd, 'responsible_user_id', '') or cmd.creator_id
+        if self._user_repo:
+            user = await asyncio.to_thread(self._user_repo.get_user, responsible_user_id)
+            if user is None:
+                return NodeOperationResult(
+                    success=False, node_id=cmd.node_id,
+                    message=f"责任人 {responsible_user_id} 不存在于用户表中",
+                    error_code="40002",
+                )
+
+        # ── TASK 父节点校验：TASK 不可作为父节点 ──
+        if cmd.parent_node_id:
+            parent = await asyncio.to_thread(self._node_repo.get_by_node_id, cmd.parent_node_id)
+            if parent and getattr(parent, 'node_type', '') == "TASK":
+                return NodeOperationResult(
+                    success=False, node_id=cmd.node_id,
+                    message="TASK 类型节点不允许挂载子节点",
+                    error_code="40003",
+                )
+
         # 权限校验 + 管理员级别检测
         is_admin = False
         if cmd.creator_id and self._user_repo:
             user = await asyncio.to_thread(self._user_repo.get_user, cmd.creator_id)
             if user:
                 # 管理员（Level 5/6）跳过审批
-                is_admin = getattr(user, "permission_level", 0) >= 5
+                is_admin = getattr(user, "level", 0) >= 5
                 # 非管理员：仅建设单位人员可创建节点
                 if not is_admin:
                     company_type = await asyncio.to_thread(
@@ -171,6 +197,8 @@ class NodeService:
             startup_doc_id=cmd.startup_doc_id,
             sort_order=cmd.sort_order,
             status=initial_status,
+            responsible_user_id=responsible_user_id,
+            node_type=getattr(cmd, 'node_type', 'WORK_PACKAGE'),
         )
 
         now_iso = self._now_iso()
@@ -448,7 +476,7 @@ class NodeService:
             return False
 
         # L5+ 管理员：可审批任何部门
-        if user.permission_level >= 5:
+        if user.level >= 5:
             return True
 
         # 部门负责人：user.department 包含 owner_dept_id
@@ -463,6 +491,39 @@ class NodeService:
             # 直接字符串匹配作为兜底
             if user.department == owner_dept_id:
                 return True
+
+        return False
+
+    def _check_submission_permission(self, submitter_id: str, node) -> bool:
+        """检查提交人是否有权提交节点成果。
+
+        规则：提交人必须是节点责任人或同部门（owner_dept_id）人员。
+        """
+        if not submitter_id:
+            return True  # 无提交人信息时放行（由 API 层把关）
+        if self._user_repo is None:
+            return True
+
+        # 节点责任人可直接提交
+        resp_id = getattr(node, 'responsible_user_id', '')
+        if resp_id and submitter_id == resp_id:
+            return True
+
+        # 同部门人员可提交
+        user = self._user_repo.get_user(submitter_id)
+        if user is None:
+            return False
+        owner_dept = getattr(node, 'owner_dept_id', '')
+        if user.department and owner_dept:
+            if user.department == owner_dept:
+                return True
+            import json as _json
+            try:
+                depts = _json.loads(user.department) if isinstance(user.department, str) else user.department
+                if isinstance(depts, list) and owner_dept in depts:
+                    return True
+            except (_json.JSONDecodeError, TypeError):
+                pass
 
         return False
 
@@ -752,6 +813,216 @@ class NodeService:
         return NodeOperationResult(
             success=True, node_id=cmd.child_node_id, message="子节点已移除",
         )
+
+    # ── 责任人管理 ──
+
+    async def assign_node(self, cmd: AssignNodeCommand) -> NodeOperationResult:
+        """变更节点责任人。需权限校验。"""
+        node = await asyncio.to_thread(self._node_repo.get_by_node_id, cmd.node_id)
+        if node is None:
+            return NodeOperationResult(success=False, node_id=cmd.node_id, message="节点不存在")
+
+        # FK 校验
+        if self._user_repo:
+            user = await asyncio.to_thread(self._user_repo.get_user, cmd.responsible_user_id)
+            if user is None:
+                return NodeOperationResult(
+                    success=False, node_id=cmd.node_id,
+                    message=f"目标责任人 {cmd.responsible_user_id} 不存在于用户表中",
+                    error_code="40002",
+                )
+
+        # 权限校验：部门负责人或 L5+
+        if cmd.operator_id and self._user_repo:
+            is_authorized = await asyncio.to_thread(
+                self._check_approver_permission, cmd.operator_id, node.owner_dept_id,
+            )
+            if not is_authorized:
+                return NodeOperationResult(
+                    success=False, node_id=cmd.node_id,
+                    message=f"仅「{node.owner_dept_id}」部门负责人或管理员（L5+）可变更责任人",
+                    error_code="40302",
+                )
+
+        await asyncio.to_thread(
+            self._node_repo.update_fields, cmd.node_id,
+            responsible_user_id=cmd.responsible_user_id,
+        )
+
+        self._record_event(
+            node_id=cmd.node_id,
+            event_type="responsible_user_changed",
+            new_value=json.dumps({"responsible_user_id": cmd.responsible_user_id}),
+            operator_id=cmd.operator_id,
+            remark=f"责任人变更",
+        )
+
+        return NodeOperationResult(success=True, node_id=cmd.node_id, message="责任人变更成功")
+
+    # ── 成果提交确认工作流 ──
+
+    async def submit_deliverable(self, cmd: SubmitNodeDeliverableCommand) -> NodeOperationResult:
+        """提交节点成果（PENDING → SUBMITTED）。"""
+        deliv = await asyncio.to_thread(self._deliv_repo.get_by_deliverable_id, cmd.deliverable_id)
+        if deliv is None:
+            return NodeOperationResult(success=False, node_id="", message=f"成果 {cmd.deliverable_id} 不存在")
+
+        if deliv.submission_status not in ("PENDING", "RETURNED"):
+            return NodeOperationResult(
+                success=False, node_id=deliv.node_id,
+                message=f"成果当前状态为「{deliv.submission_status}」，无法提交",
+            )
+
+        # 节点必须 IN_PROGRESS
+        node = await asyncio.to_thread(self._node_repo.get_by_node_id, deliv.node_id)
+        if node is None or node.status != "IN_PROGRESS":
+            return NodeOperationResult(
+                success=False, node_id=deliv.node_id,
+                message=f"节点状态为「{getattr(node, 'status', '未知')}」，非「IN_PROGRESS」",
+            )
+
+        # 权限校验：提交人必须是节点责任人或同部门人员
+        if not self._check_submission_permission(cmd.submitted_by, node):
+            return NodeOperationResult(
+                success=False, node_id=deliv.node_id,
+                message="仅节点责任人或同部门人员可提交成果",
+                error_code="40303",
+            )
+
+        await asyncio.to_thread(
+            self._deliv_repo.update_submission_status,
+            cmd.deliverable_id,
+            "SUBMITTED",
+            submitted_by=cmd.submitted_by,
+            attachment_file_id=cmd.attachment_file_id,
+        )
+
+        self._record_event(
+            node_id=deliv.node_id,
+            event_type="deliverable_submitted",
+            new_value=json.dumps({"deliverable_id": cmd.deliverable_id}),
+            operator_id=cmd.submitted_by,
+            remark="成果提交",
+        )
+
+        return NodeOperationResult(success=True, node_id=deliv.node_id, message="成果提交成功")
+
+    async def confirm_deliverable(self, cmd: ConfirmNodeDeliverableCommand) -> NodeOperationResult:
+        """确认节点成果（SUBMITTED → CONFIRMED）。触发进度重算。"""
+        deliv = await asyncio.to_thread(self._deliv_repo.get_by_deliverable_id, cmd.deliverable_id)
+        if deliv is None:
+            return NodeOperationResult(success=False, node_id="", message=f"成果 {cmd.deliverable_id} 不存在")
+
+        if deliv.submission_status != "SUBMITTED":
+            return NodeOperationResult(
+                success=False, node_id=deliv.node_id,
+                message=f"成果当前状态为「{deliv.submission_status}」，非「SUBMITTED」",
+            )
+
+        await asyncio.to_thread(
+            self._deliv_repo.update_submission_status,
+            cmd.deliverable_id,
+            "CONFIRMED",
+            confirmed_by=cmd.confirmed_by,
+        )
+
+        # 确认驱动：CONFIRMED 时自动将 current_amount 设为 target_amount
+        await asyncio.to_thread(
+            self._deliv_repo.update_progress,
+            cmd.deliverable_id,
+            deliv.target_amount,
+            file_id=getattr(deliv, 'attachment_file_id', ''),
+        )
+
+        self._record_event(
+            node_id=deliv.node_id,
+            event_type="deliverable_confirmed",
+            new_value=json.dumps({"deliverable_id": cmd.deliverable_id}),
+            operator_id=cmd.confirmed_by,
+            remark="成果确认",
+        )
+
+        # 触发进度重算
+        await self._recalc_node_status(deliv.node_id)
+
+        return NodeOperationResult(success=True, node_id=deliv.node_id, message="成果确认成功")
+
+    async def return_deliverable(self, cmd: ReturnNodeDeliverableCommand) -> NodeOperationResult:
+        """退回节点成果（SUBMITTED → RETURNED）。"""
+        deliv = await asyncio.to_thread(self._deliv_repo.get_by_deliverable_id, cmd.deliverable_id)
+        if deliv is None:
+            return NodeOperationResult(success=False, node_id="", message=f"成果 {cmd.deliverable_id} 不存在")
+
+        if deliv.submission_status != "SUBMITTED":
+            return NodeOperationResult(
+                success=False, node_id=deliv.node_id,
+                message=f"成果当前状态为「{deliv.submission_status}」，非「SUBMITTED」",
+            )
+
+        if not cmd.reason:
+            return NodeOperationResult(
+                success=False, node_id=deliv.node_id,
+                message="退回必须填写原因",
+            )
+
+        await asyncio.to_thread(
+            self._deliv_repo.update_submission_status,
+            cmd.deliverable_id,
+            "RETURNED",
+            return_reason=cmd.reason,
+        )
+
+        self._record_event(
+            node_id=deliv.node_id,
+            event_type="deliverable_returned",
+            new_value=json.dumps({"deliverable_id": cmd.deliverable_id, "reason": cmd.reason}),
+            operator_id=cmd.returned_by,
+            remark=f"成果退回：{cmd.reason}",
+        )
+
+        return NodeOperationResult(success=True, node_id=deliv.node_id, message="成果已退回")
+
+    async def resubmit_deliverable(self, cmd: ResubmitNodeDeliverableCommand) -> NodeOperationResult:
+        """重新提交节点成果（RETURNED → SUBMITTED）。"""
+        deliv = await asyncio.to_thread(self._deliv_repo.get_by_deliverable_id, cmd.deliverable_id)
+        if deliv is None:
+            return NodeOperationResult(success=False, node_id="", message=f"成果 {cmd.deliverable_id} 不存在")
+
+        if deliv.submission_status != "RETURNED":
+            return NodeOperationResult(
+                success=False, node_id=deliv.node_id,
+                message=f"成果当前状态为「{deliv.submission_status}」，非「RETURNED」",
+            )
+
+        await asyncio.to_thread(
+            self._deliv_repo.update_submission_status,
+            cmd.deliverable_id,
+            "SUBMITTED",
+            submitted_by=cmd.submitted_by,
+            attachment_file_id=cmd.attachment_file_id,
+        )
+
+        self._record_event(
+            node_id=deliv.node_id,
+            event_type="deliverable_resubmitted",
+            new_value=json.dumps({"deliverable_id": cmd.deliverable_id}),
+            operator_id=cmd.submitted_by,
+            remark="成果重新提交",
+        )
+
+        return NodeOperationResult(success=True, node_id=deliv.node_id, message="成果重新提交成功")
+
+    # ── 截止时间查询（供调度器 handler 调用）──
+
+    async def find_near_deadline(self, before_minutes: int = 60, limit: int = 100) -> list:
+        """查询即将到期的节点。"""
+        return await asyncio.to_thread(
+            self._node_repo.find_near_deadline, before_minutes, limit,
+        )
+
+    async def find_overdue(self, limit: int = 100) -> list:
+        """查询已超期的节点。"""
+        return await asyncio.to_thread(self._node_repo.find_overdue, limit)
 
     # ── 查询方法 ──
 

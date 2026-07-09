@@ -57,6 +57,7 @@ class FileCommand:
     file_type: str = ""
     file_size: int = 0
     storage_path: str = ""
+    file_category: str = "OTHER"
     uploaded_by: str = ""
     source_message_id: str = ""
 

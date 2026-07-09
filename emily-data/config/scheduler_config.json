@@ -1,0 +1,41 @@
+{
+  "tick_seconds": 60,
+  "jobs": [
+    {
+      "name": "晨报推送",
+      "action_type": "generate_morning_report",
+      "handler_module": "scheduler.jobs.morning_report",
+      "job_type": "CRON",
+      "cron_expression": "0 7 * * *",
+      "params": {"push_to_group": "项目群"},
+      "enabled": false
+    },
+    {
+      "name": "节点截止提醒",
+      "action_type": "check_node_deadlines",
+      "handler_module": "scheduler.jobs.node_deadlines",
+      "job_type": "INTERVAL",
+      "interval_seconds": 300,
+      "params": {"before_minutes": 60, "overdue_check": true},
+      "enabled": true
+    },
+    {
+      "name": "Session 超时清理",
+      "action_type": "cleanup_stale_sessions",
+      "handler_module": "scheduler.jobs.session_cleanup",
+      "job_type": "INTERVAL",
+      "interval_seconds": 600,
+      "params": {"timeout_minutes": 30},
+      "enabled": true
+    },
+    {
+      "name": "系统健康检查",
+      "action_type": "system_health_check",
+      "handler_module": "scheduler.jobs.health_check",
+      "job_type": "INTERVAL",
+      "interval_seconds": 3600,
+      "params": {},
+      "enabled": true
+    }
+  ]
+}

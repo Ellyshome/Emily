@@ -1,12 +1,12 @@
-"""fetch_available_tools —— 获取用户可用的 API 工具列表。
+﻿"""fetch_available_tools —— 获取用户可用的 API 工具列表。
 
 被 SessionDataFetcher._sub_fetch_available_tools() 调用。
 也可独立运行：python -m emily_core.session.fetchers.fetch_available_tools --user-id <UUID>
 
 权限过滤规则：
   - category=base → 全部可用
-  - category=business → 检查 sop_allow 或 permission_level >= 3
-  - category=project → permission_level >= 5
+  - category=business → 检查 sop_allow 或 level >= 3
+  - category=project → level >= 5
 """
 
 from __future__ import annotations
@@ -28,17 +28,17 @@ def fetch(perms: dict) -> list[dict]:
     """获取用户可用的 API 工具列表。
 
     Args:
-        perms: 权限字典，含 permission_level / sop_allow 等
+        perms: 权限字典，含 level / sop_allow 等
 
     Returns:
         [{"api_id": "search_files", "display_name": "根据自然语言描述搜索可见文件"}, ...]
     """
     try:
         from ...repositories.tool_registry_repo import ToolRegistryRepo
-        permission_level = perms.get("permission_level", 1)
+        level = perms.get("level", 1)
         sop_allow = perms.get("sop_allow", [])
         return ToolRegistryRepo.get_available(
-            permission_level=permission_level,
+            level=level,
             sop_allow=sop_allow,
         )
     except Exception as e:

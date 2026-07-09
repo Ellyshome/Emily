@@ -1,4 +1,4 @@
-"""SessionDataFetcher —— Session 聚合根全量数据采集器。
+﻿"""SessionDataFetcher —— Session 聚合根全量数据采集器。
 
 替代旧的 collect_session_data.py 脚本逻辑，作为生产路径统一入口。
 一次调用 `fetch()` 返回 session_snapshot / session_runtime / errors。
@@ -183,7 +183,7 @@ class SessionDataFetcher:
             "project_type": project["project_type"],
             "project_status": project["project_status"],
             # 权限字段 🔥（扁平化，不嵌套 permissions dict）
-            "permission_level": perms.get("permission_level", 1),
+            "level": perms.get("level", 1),
             "company_id": perms.get("company_id", ""),
             "company_type": perms.get("company_type", ""),
             "company_name": perms.get("company_name", ""),
@@ -219,7 +219,7 @@ class SessionDataFetcher:
         # 记录错误
         for key in ["user_name", "user_position"]:
             _record(session_snapshot[key], key)
-        for key in ["permission_level", "company_id", "company_type", "company_name",
+        for key in ["level", "company_id", "company_type", "company_name",
                      "supervisor_id", "info_level"]:
             _record(session_snapshot[key], key)
         for key in ["project_name", "project_type", "project_status"]:
@@ -255,7 +255,7 @@ def _sub_fetch_permissions(user_id: str, core=None) -> dict:
         return perm_dict
     except Exception as e:
         logger.error("_sub_fetch_permissions failed user=%s: %s", user_id, e)
-        return {"permission_level": 1}
+        return {"level": 1}
 
 
 def _sub_fetch_project(project_id: Optional[str]) -> dict:
@@ -341,7 +341,7 @@ def _empty_result(conversation_id: str, user_id: str, errors: list[str]) -> dict
             "project_type": _SENTINEL,
             "project_status": _SENTINEL,
             # 权限字段 🔥（扁平化）
-            "permission_level": 1,
+            "level": 1,
             "company_id": "",
             "company_type": "",
             "company_name": "",

@@ -1,4 +1,4 @@
-"""PermissionAuthEngine —— 三维树形鉴权引擎（需求 §4 + §14）。
+﻿"""PermissionAuthEngine —— 三维树形鉴权引擎（需求 §4 + §14）。
 
 三维鉴权 = 主体属性(权限层级) × 资源属性(密级/企业类型/部门/节点) × 授权形式(临时/永久/deny)
 
@@ -8,9 +8,9 @@
 check_sop_access() 流程：
   1. 查 DENY：sop_id 相关编码 in perms.denied_codes → DENY（优先级最高）
   2. 查单独授权：sop_id 相关编码 in perms.granted_codes → ALLOW
-  3. 查 SOPBusinessFlow 表（min_permission_level / security_level / required_node_ids）
+  3. 查 SOPBusinessFlow 表（min_level / security_level / required_node_ids）
      3.1 is_public=True → ALLOW
-     3.2 树形继承：can_access(perms.permission_level, sop_flow.min_permission_level)
+     3.2 树形继承：can_access(perms.level, sop_flow.min_level)
      3.3 密级校验：sop_flow.security_level 可见性 ⊆ perms.info_level
      3.4 企业类型匹配：require_company_match 且 perms.company_type 不在 allowed → DENY
      3.5 部门匹配：require_department_match 且 perms.department 不在 allowed → DENY
@@ -195,7 +195,7 @@ class PermissionAuthEngine:
         if sop_flow is None:
             return None
 
-        perm_level = perms.get("permission_level", 1)
+        perm_level = perms.get("level", 1)
         info_level = perms.get("info_level", "public")
         company_type = perms.get("company_type", "")
         department = perms.get("department", [])
@@ -210,16 +210,16 @@ class PermissionAuthEngine:
             )
 
         # 3.2 树形继承级别检查
-        if not can_access(perm_level, sop_flow.min_permission_level):
+        if not can_access(perm_level, sop_flow.min_level):
             user_level_name = LEVEL_NAME.get(perm_level, f"L{perm_level}")
-            required_name = LEVEL_NAME.get(sop_flow.min_permission_level, f"L{sop_flow.min_permission_level}")
+            required_name = LEVEL_NAME.get(sop_flow.min_level, f"L{sop_flow.min_level}")
             return AccessCheckResult(
                 allowed=False,
                 reason=f"权限层级不足（当前 {user_level_name}，需 {required_name}）",
                 matched_details={
                     "check": "level",
                     "user_level": perm_level,
-                    "required_level": sop_flow.min_permission_level,
+                    "required_level": sop_flow.min_level,
                 },
                 suggested_approver=supervisor_id,
             )
@@ -359,7 +359,7 @@ class PermissionAuthEngine:
         """
         denied_codes = perms.get("denied_codes", [])
         granted_codes = perms.get("granted_codes", [])
-        perm_level = perms.get("permission_level", 1)
+        perm_level = perms.get("level", 1)
         supervisor_id = perms.get("supervisor_id", "")
 
         # DENY 编码优先

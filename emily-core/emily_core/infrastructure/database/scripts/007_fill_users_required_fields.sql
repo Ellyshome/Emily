@@ -1,4 +1,4 @@
--- ============================================================
+﻿-- ============================================================
 -- 填充 users 表必填字段（username、creator_id、created_at、updated_at）
 -- 针对现有数据中字段为空的记录进行逻辑自洽的填充
 -- ============================================================
@@ -21,7 +21,7 @@ BEGIN
         INSERT INTO users (
             id, username, phone, email, status, is_admin,
             gender, id_card, qq, wechat, remark, creator_id, is_deleted,
-            perm_list, org_category, permission_level,
+            perm_list, org_category, level,
             created_at, updated_at
         ) VALUES (
             v_system_user_id,

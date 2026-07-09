@@ -1,4 +1,4 @@
-"""WorkItemAgent —— 全局单例，异步处理所有 WorkItem（蓝图 §5.3）。
+﻿"""WorkItemAgent —— 全局单例，异步处理所有 WorkItem（蓝图 §5.3）。
 
 核心设计：不是每个 WorkItem 创建独立 Agent，而是全局唯一 Agent 实例，
 异步处理所有 WorkItem。新 WorkItem 进来时，KnowledgeInjector 增量注入
@@ -714,7 +714,7 @@ class WorkItemAgent:
             # 无引擎时走 sop_allow 白名单
             if sop_id in session_ctx.sop_allow:
                 return AuthResult(decision=AuthDecision.ALLOW,
-                                matched_roles=[f"L{session_ctx.permission_level}"],
+                                matched_roles=[f"L{session_ctx.level}"],
                                 _source="real_auth_sop_allow")
             return AuthResult(
                 decision=AuthDecision.DENY,
@@ -724,7 +724,7 @@ class WorkItemAgent:
 
         # 构建权限 dict 给 AuthEngine
         perms_dict = {
-            "permission_level": session_ctx.permission_level,
+            "level": session_ctx.level,
             "user_id": session_ctx.user_id,
             "sop_allow": list(session_ctx.sop_allow),
             "granted_codes": list(session_ctx.granted_codes),
@@ -738,7 +738,7 @@ class WorkItemAgent:
         result = await engine.check_sop_access(perms_dict, sop_id, context)
         if result.allowed:
             return AuthResult(decision=AuthDecision.ALLOW,
-                            matched_roles=[f"L{session_ctx.permission_level}"],
+                            matched_roles=[f"L{session_ctx.level}"],
                             _source="real_auth_engine")
         return AuthResult(
             decision=AuthDecision.DENY,

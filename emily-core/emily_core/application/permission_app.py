@@ -1,4 +1,4 @@
-"""PermissionApplication — 权限管理编排层（阶段二）。
+﻿"""PermissionApplication — 权限管理编排层（阶段二）。
 
 遵循 plan_task_app.py 模式：
   - 接收 PermissionService 实例
@@ -107,7 +107,7 @@ class PermissionApplication:
 
                 reply_parts = [
                     f"📋 权限清单",
-                    f"  权限层级: L{perms.get('permission_level', 1)} {level_name}",
+                    f"  权限层级: L{perms.get('level', 1)} {level_name}",
                     f"  所属单位: {perms.get('company_name', '-')}",
                     f"  企业类型: {perms.get('company_type', '-')}",
                     f"  部门: {perms.get('department', '-')}",
