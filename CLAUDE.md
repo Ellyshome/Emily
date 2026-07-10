@@ -2,13 +2,13 @@
 
 > **本文档作用**：AI 辅助开发工具的统一入口。Claude Code 启动时自动加载本文档。概述项目全局 + 后续关键文档导引，便于 AI 工具快速理解当前真实架构。
 >
-> **⚠ 注意**：本项目经历过主逻辑重构（EmyBot/teambrain_core → Emily/emily_core）。`看板内容/CLAUDE.md` 描述的是**旧架构**（EmyBot M15 八阶段 WorkOrder + AstrBot 内嵌插件），**已不准确**。本文档为 **当前真实架构**（Emily v0.6.0：双容器 + Session 主线 + WorkItem 4 节点 BUS）。旧架构已完全移除，当前唯一路径是 `WorkItem` + `BusContext` + 4 节点 `PipelineBUS`。
+> **⚠ 注意**：本项目经历过主逻辑重构（EmyBot/teambrain_core → Emily/emily_core）。`看板内容/CLAUDE.md` 描述的是**旧架构**（EmyBot M15 八阶段 WorkOrder + AstrBot 内嵌插件），**已不准确**。本文档为 **当前真实架构**（Emily v0.7.0：双容器 + Session 主线 + WorkItem 4 节点 BUS）。旧架构已完全移除，当前唯一路径是 `WorkItem` + `BusContext` + 4 节点 `PipelineBUS`。
 
 ---
 
 ## 1. 项目定位
 
-Emily v0.6.0 是面向企业的 AI Agent 工具，通过 IM（QQ）与员工交互，实现：
+Emily v0.7.0 是面向企业的 AI Agent 工具，通过 IM（QQ）与员工交互，实现：
 
 - 团队工作流记录与留痕（事件/任务/会议/文件）
 - 业务 SOP 数字化与 LLM 引导
@@ -207,7 +207,9 @@ docker exec emily-core find /app/emily_core -name '__pycache__' -type d -exec rm
 - **Mock 是默认模式**：`EMILY_PLANNER_MODE=mock` 等。`real` 需有 LLM client 才生效
 - **expire_on_commit=False**：避免 ORM 对象在 session 外访问报 `DetachedInstanceError`
 - **Windows PowerShell GBK 乱码**：预先 `$env:PYTHONIOENCODING="utf-8"`
-- **emy-test 禁用假 sender-id**：随便造一个 `--sender-id`（如 `zhang_gong`、`alice`）不在 users 表中，会导致系统自动创建用户（permission_level=1）污染 DB，且权限降级使测试结果完全不可信。必须先查 users 表取真实 UUID 再测试
+- **emy-test 禁用假 sender-id**：随便造一个 `--sender-id`（如 `zhang_gong`、`alice`）不在 users 表中，会导致系统自动创建用户（permission_level=1）污染 DB，且权限降级使测试结果完全不可信。推荐用 `--sender "用户名"`（自动从 users 表 + user_im_bindings 解析 QQ 号），或先查 users 表取真实 UUID 再用 `--sender-id`
+- **Repo 层签名需与 Service 透传同步**：新增 `project_ids` 等参数时，Service 和 Repo 签名必须同步更新，否则 `TypeError`
+- **`create_all()` 不 ALTER 已有表**：`init_db()` 现已内置 `_ensure_columns()` 自动补齐缺失列（检查 information_schema），但新列仅对已在 `_PENDING_COLUMNS` 映射中注册的表生效
 
 > 完整踩坑清单见 [docs/技术踩坑备忘录.md](docs/技术踩坑备忘录.md)
 
