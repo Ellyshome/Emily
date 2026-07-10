@@ -75,7 +75,7 @@ def create_send_email_tool(email_service: "EmailService", config: "Config" = Non
     Returns:
         ToolDefinition
     """
-    from emily_core.agent.tool_registry import ToolDefinition
+    from emily_core.tools.definitions import ToolDefinition
 
     async def execute(args: dict) -> dict:
         to = (args.get("to", "") or "").strip()
@@ -138,7 +138,7 @@ def create_fetch_inbox_tool(email_service: "EmailService", config: "Config" = No
     Returns:
         ToolDefinition
     """
-    from emily_core.agent.tool_registry import ToolDefinition
+    from emily_core.tools.definitions import ToolDefinition
 
     async def execute(args: dict) -> dict:
         credential_source = args.get("credential_source", "env") or "env"

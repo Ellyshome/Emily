@@ -3,8 +3,8 @@
 每个 mock 返回确定性结果，标注 _source: "mock"。
 总线跑通后，替换为真实实现只需改 __init__.py 中的一行 import。
 
-已移除: MockAuthEngine（EmilyCore.auth 模块直接放行）, MockRouter（SessionAgent 意图识别替代）,
-MockRiskGrader（workitem_agent.grade_risk 直接返回 L2）, MockGuardian（RealGuardian 已实现）
+已废弃并移除: MockAuthEngine, MockRouter, MockRiskGrader, MockGuardian
+当前保留: MockPlanner, MockWorkAgent（仍在 mock 模式中使用）
 """
 
 from .mock_planning import MockPlanner

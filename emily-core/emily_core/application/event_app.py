@@ -6,6 +6,7 @@
 - 处理用户确认/取消操作
 """
 
+import asyncio
 import json
 import logging
 from typing import Optional
@@ -16,6 +17,15 @@ from ..services.event_service import EventService
 from ..infrastructure.database.models import Event
 
 logger = logging.getLogger("emily.app.event")
+
+
+async def _log_business_event(**kwargs) -> None:
+    """非阻断写入业务事件日志。"""
+    try:
+        from ..infrastructure.logging.business_event_logger import BusinessEventLogger
+        await BusinessEventLogger.log(**kwargs)
+    except Exception:
+        pass
 
 
 class EventApplication:
@@ -61,6 +71,18 @@ class EventApplication:
             project_name = route_result.project_name
             reply = EventService.format_confirmation_reply(event, project_name)
 
+            # ── 进化日志：业务事件日志 ──
+            asyncio.ensure_future(_log_business_event(
+                event_category="event",
+                event_action="created",
+                target_type="event",
+                target_id=event.id,
+                target_no=getattr(event, "event_no", "") or "",
+                summary=f"创建事件：{event.title[:100]}",
+                user_id=user_id,
+                project_id=route_result.project_id or "",
+            ))
+
             return HandlerResult(
                 success=True,
                 object_type="event",
@@ -102,6 +124,17 @@ class EventApplication:
                         name=user_name or "用户",
                         summary=f"确认录入事件：{event.title}（{event.event_no}）",
                     )
+                # ── 进化日志：业务事件日志 ──
+                asyncio.ensure_future(_log_business_event(
+                    event_category="event",
+                    event_action="confirmed",
+                    target_type="event",
+                    target_id=event.id,
+                    target_no=getattr(event, "event_no", "") or "",
+                    summary=f"确认事件：{event.title[:100]}",
+                    user_id=event.user_id or "",
+                    project_id=getattr(event, "project_id", "") or "",
+                ))
                 return HandlerResult(
                     success=True,
                     object_type="event",

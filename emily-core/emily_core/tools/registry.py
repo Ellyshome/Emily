@@ -112,35 +112,7 @@ def _register_business(core, reg):
                      partial(_h("file_tool", "handle_update_file_category"),
                              file_app=core._file_app), "business", "write")
 
-    # 计划任务 (4 tools)
-    app = getattr(core, "_plan_task_app", None)
-    if app is not None:
-        try:
-            from .plan_task_tool import (
-                handle_record_plan_task, handle_submit_plan_task,
-                handle_review_plan_task, handle_query_plan_tasks,
-                _RECORD_PLAN_TASK_SCHEMA, _SUBMIT_PLAN_TASK_SCHEMA,
-                _REVIEW_PLAN_TASK_SCHEMA, _QUERY_PLAN_TASKS_SCHEMA,
-            )
-            def _mh(fn, **x):
-                async def h(params, **kw):
-                    return await fn(params, **x, **kw)
-                return h
-            reg.register(_tool("record_plan_task", "创建计划任务",
-                               _RECORD_PLAN_TASK_SCHEMA,
-                               _mh(handle_record_plan_task, plan_task_app=app, pending_issues=None, config=cfg)))
-            reg.register(_tool("submit_plan_task", "提交计划任务成果",
-                               _SUBMIT_PLAN_TASK_SCHEMA,
-                               _mh(handle_submit_plan_task, plan_task_app=app)))
-            reg.register(_tool("review_plan_task", "审核计划任务成果",
-                               _REVIEW_PLAN_TASK_SCHEMA,
-                               _mh(handle_review_plan_task, plan_task_app=app)))
-            reg.register(_tool("query_plan_tasks", "查询计划任务列表",
-                               _QUERY_PLAN_TASKS_SCHEMA,
-                               _mh(handle_query_plan_tasks, plan_task_app=app)))
-            _buc += 4
-        except Exception as e:
-            logger.warning("plan_task tools registration failed: %s", e)
+    # 计划任务工具已废弃（由 node_task_tool 替代），不再注册
 
     # write_user_memory
     mem = getattr(core, "_user_memory_service", None)

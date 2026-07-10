@@ -17,6 +17,8 @@ from __future__ import annotations
 
 import json
 import logging
+import time
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import TYPE_CHECKING
 
@@ -112,8 +114,8 @@ class PipelineBUS:
                     kwargs["progress_template"] = injected_services["progress_template"]
                 kwargs["enable_progress"] = spec.get("enabled", True)
             elif hook_type == "plan_task_match":
-                if "plan_task_service" in injected_services:
-                    kwargs["plan_task_service"] = injected_services["plan_task_service"]
+                # PlanTaskMatchHook 已废弃，跳过
+                pass
             kwargs["name"] = hook_name
             kwargs["priority"] = spec.get("priority", 10)
             kwargs["enabled"] = spec.get("enabled", True)
@@ -129,15 +131,11 @@ class PipelineBUS:
     # ── 执行 ──
 
     async def run(self, context: "BusContext") -> "BusContext":
-        """在公共总线上执行一个 WorkItem（顺序经过 4 节点）。
-
-        Args:
-            context: BUS 上下文（已绑定 work_item）。
-
-        Returns:
-            BusContext: 执行完毕的上下文（work_item 已写入各节点产出）。
-        """
+        """在公共总线上执行一个 WorkItem（顺序经过 4 节点）。"""
         wi = context.work_item
+        started_at = datetime.now(timezone.utc).isoformat()
+        node_timings: dict[str, int] = {}
+
         logger.info(
             "BUS[%s] running WorkItem %s: %d nodes",
             self.name, wi.id if wi else "?", len(self._nodes),
@@ -145,11 +143,15 @@ class PipelineBUS:
 
         for node in self._nodes:
             context.current_stage = node.name
+            t_node = time.monotonic()
 
             # ① before hook（可阻断）
             if not await self._fire_before_hooks(node.name, context):
                 logger.warning("BUS blocked at node %s: %s", node.name, context.abort_reason)
                 context.should_abort = True
+                node_timings[node.name] = int((time.monotonic() - t_node) * 1000)
+                # 阻断也写日志
+                await self._log_execution(context, started_at, node_timings)
                 return context
 
             # ② 执行节点 handler
@@ -158,20 +160,35 @@ class PipelineBUS:
             except Exception as e:
                 logger.error("BUS node [%s] failed: %s", node.name, e, exc_info=True)
                 await self._fire_error_hooks(node.name, context, e)
+                node_timings[node.name] = int((time.monotonic() - t_node) * 1000)
                 if node.required:
                     context.should_abort = True
                     context.abort_reason = str(e)
                     if wi is not None:
                         wi.error_message = str(e)
+                    # 失败也写日志
+                    await self._log_execution(context, started_at, node_timings)
                     return context
                 # 非必经节点：记录后继续
                 continue
 
             # ③ after hook（fire-and-forget）
             await self._fire_after_hooks(node.name, context)
+            node_timings[node.name] = int((time.monotonic() - t_node) * 1000)
 
         logger.info("BUS[%s] completed WorkItem %s", self.name, wi.id if wi else "?")
+        # 正常完成写日志
+        await self._log_execution(context, started_at, node_timings)
         return context
+
+    async def _log_execution(self, context: "BusContext",
+                              started_at: str, node_timings: dict) -> None:
+        """非阻断写入 Pipeline 执行日志。"""
+        try:
+            from ...infrastructure.logging.pipeline_logger import PipelineExecutionLogger
+            await PipelineExecutionLogger.log(context, started_at, node_timings)
+        except Exception as e:
+            logger.warning("Pipeline execution log write failed: %s", e)
 
     # ── Hook 触发（复用 M15 语义）──
 

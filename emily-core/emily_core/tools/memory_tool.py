@@ -12,7 +12,7 @@ M8c: 当 Agent 识别到用户表达了长期工作需求时，
 import logging
 from typing import Optional
 
-from ..agent.tool_registry import ToolDefinition
+from .definitions import ToolDefinition
 
 logger = logging.getLogger("emily.tool.memory")
 

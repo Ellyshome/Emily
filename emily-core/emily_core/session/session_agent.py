@@ -25,10 +25,11 @@ from .confirm_queue import ConfirmQueue
 from ..adapters.standard.reply import ReplyMessage
 from ..services.event_journal import EventJournal
 
+from ..workitem import WorkItem
+
 if TYPE_CHECKING:
     from ..adapters.standard.message import StandardMessage
     from ..workitem.pipeline.bus import PipelineBUS
-    from ..workitem import WorkItem
 
 logger = logging.getLogger("emily.session_agent")
 
@@ -77,7 +78,6 @@ class SessionAgent:
         bus: "PipelineBUS",
         llm_client=None,
         skill_registry=None,
-        sop_intent_registry=None,  # 已废弃，保留签名兼容
     ):
         self.conversation_id = conversation_id
         self.context = context
@@ -91,12 +91,14 @@ class SessionAgent:
 
         self._llm = llm_client
         self._skill_registry = skill_registry
-        self._sop_intent_registry = sop_intent_registry  # 已废弃，保留签名兼容
 
         from datetime import datetime, timezone
         self._created_at = datetime.now(timezone.utc).isoformat()
 
         self.state = SessionState.ACTIVE
+
+        # ── 进化日志：Session 创建 ──
+        _log_session_lifecycle(self.conversation_id, self.context.user_id, "created")
 
     async def handle(self, message: "StandardMessage") -> ReplyMessage | None:
         """处理一条入站消息（蓝图 §4.3.2）。"""
@@ -106,6 +108,9 @@ class SessionAgent:
             # 溢出压缩由 record_turn 内部检测触发
             if len(self.context.message_history) > 40 and self._llm:
                 asyncio.ensure_future(self.context.compress_overflow(self._llm))
+            # ── 进化日志：反馈信号检测 ──
+            _detect_feedback(message.content or "", reply.content or "",
+                             self.conversation_id, self.context.user_id)
         return reply
 
     async def _handle_impl(self, message: "StandardMessage") -> ReplyMessage | None:
@@ -165,8 +170,8 @@ class SessionAgent:
         """LLM 意图识别。"""
         content = message.content or ""
 
-        # 优先使用 SkillRegistry，回退到 SOPIntentRegistry（已废弃但保留兼容）
-        catalog_source = self._skill_registry or self._sop_intent_registry
+        # 使用 SkillRegistry 作为意图识别目录源
+        catalog_source = self._skill_registry
         if not self._llm or not catalog_source:
             return {"sop_id": None, "confidence": "none", "reasoning": "",
                     "is_compound": False, "sub_tasks": [], "fallback": True}
@@ -182,10 +187,9 @@ class SessionAgent:
             return {"sop_id": None, "confidence": "none", "reasoning": f"SOP目录加载失败: {e}",
                     "is_compound": False, "sub_tasks": [], "fallback": True}
 
-        system_prompt = _SESSION_SYSTEM_PROMPT.format(
-            sop_catalog=sop_catalog,
-            current_datetime=_beijing_now_str(),
-        )
+        system_prompt = (_SESSION_SYSTEM_PROMPT
+            .replace("{sop_catalog}", sop_catalog)
+            .replace("{current_datetime}", _beijing_now_str()))
 
         # 注入 Session 级变量（D5：两阶段 format）
         prompt_vars = self.context.get_prompt_variables()
@@ -397,6 +401,8 @@ class SessionAgent:
             await self.context.persist_and_consolidate(llm_client=self._llm)
 
             logger.info("Session[%s] archived successfully", self.conversation_id)
+            # ── 进化日志：Session 归档 ──
+            _log_session_lifecycle(self.conversation_id, self.context.user_id, "archived")
         except Exception as e:
             logger.warning("Session[%s] archive warning: %s", self.conversation_id, e)
         finally:
@@ -466,3 +472,44 @@ class SessionAgent:
             return ("我是 Emily，你的工程项目管理助手。可以帮你记录事件、管理任务、"
                     "归档会议、查询项目数据，随时吩咐！")
         return None
+
+
+# ══════════════════════════════════════════════════════════════════════════════
+# 进化日志辅助函数（模块级，避免循环 import）
+# ══════════════════════════════════════════════════════════════════════════════
+
+def _log_session_lifecycle(conversation_id: str, user_id: str, event_type: str) -> None:
+    """非阻断写入 Session 生命周期日志。"""
+    try:
+        from ..infrastructure.logging.session_lifecycle_logger import SessionLifecycleLogger
+        asyncio.ensure_future(SessionLifecycleLogger.log(
+            conversation_id=conversation_id,
+            user_id=user_id or "",
+            event_type=event_type,
+            message_count=0,
+            duration_ms=0,
+        ))
+    except Exception:
+        pass
+
+
+def _detect_feedback(user_message: str, assistant_reply: str,
+                     conversation_id: str, user_id: str) -> None:
+    """非阻断检测反馈信号并写入。"""
+    try:
+        from ..infrastructure.logging.feedback_detector import FeedbackSignalDetector
+        signals = FeedbackSignalDetector.detect(
+            user_message,
+            conversation_id=conversation_id,
+            user_id=user_id or "",
+            assistant_reply=assistant_reply,
+        )
+        if signals:
+            asyncio.ensure_future(FeedbackSignalDetector.log_signals(
+                signals,
+                pipeline_run_id="",
+                conversation_id=conversation_id,
+                user_id=user_id or "",
+            ))
+    except Exception:
+        pass
