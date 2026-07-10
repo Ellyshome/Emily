@@ -44,6 +44,74 @@ def _create_pg_engine(
     )
 
 
+def _ensure_columns(engine) -> None:
+    """检查已有表是否缺少 ORM 定义的列，自动 ALTER TABLE 补齐。
+
+    create_all() 只创建不存在的表，不会为已有表添加新列。
+    此函数遍历已知需要补齐的表，检查 information_schema.columns，
+    缺失的列自动 ALTER TABLE ADD COLUMN。
+
+    每次启动执行一次，幂等（已有列跳过）。
+    """
+    # 已知需要补齐的表→列映射（表名: [(列名, SQL类型, 默认值), ...]）
+    _PENDING_COLUMNS = {
+        "hook_execution_logs": [
+            ("user_id", "VARCHAR", "''"),
+            ("sop_id", "VARCHAR", "''"),
+            ("block_reason", "VARCHAR(500)", "''"),
+            ("session_level", "INTEGER", "NULL"),
+        ],
+    }
+
+    from sqlalchemy import text as sa_text
+
+    with engine.connect() as conn:
+        for table_name, columns in _PENDING_COLUMNS.items():
+            # 检查表是否存在
+            table_exists = conn.execute(
+                sa_text(
+                    "SELECT EXISTS ("
+                    "  SELECT 1 FROM information_schema.tables"
+                    "  WHERE table_name = :tbl"
+                    ")"
+                ),
+                {"tbl": table_name},
+            ).scalar()
+
+            if not table_exists:
+                continue
+
+            # 获取已有列名
+            existing_rows = conn.execute(
+                sa_text(
+                    "SELECT column_name FROM information_schema.columns"
+                    "  WHERE table_name = :tbl"
+                ),
+                {"tbl": table_name},
+            ).fetchall()
+            existing = {r[0] for r in existing_rows}
+
+            for col_name, col_type, col_default in columns:
+                if col_name in existing:
+                    continue
+                default_clause = ""
+                if col_default != "NULL":
+                    default_clause = f" DEFAULT {col_default}"
+                else:
+                    default_clause = ""
+                conn.execute(
+                    sa_text(
+                        f"ALTER TABLE {table_name} "
+                        f"ADD COLUMN {col_name} {col_type}{default_clause}"
+                    )
+                )
+                conn.commit()
+                logger.info(
+                    "Schema migration: added column %s to %s",
+                    col_name, table_name,
+                )
+
+
 def init_db(
     db_url: str | None = None,
     *,
@@ -92,6 +160,9 @@ def init_db(
 
     # 建表（幂等，已存在的表不会重建）
     Base.metadata.create_all(bind=_engine)
+
+    # 补齐已有表的新增列（create_all 不 ALTER 已有表）
+    _ensure_columns(_engine)
 
     logger.info(
         "Database initialized (PostgreSQL): %d tables",

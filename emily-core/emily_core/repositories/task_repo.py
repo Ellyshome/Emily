@@ -84,16 +84,19 @@ class TaskRepository:
     def query_tasks(
         *,
         project_id: str | None = None,
+        project_ids: list[str] | None = None,
         time_range: str = "all",
         status: str | None = None,
         assignee: str | None = None,
         limit: int = 50,
     ) -> list[Task]:
-        """按条件查询任务（按创建时间倒序）。"""
+        """按条件查询任务（按创建时间倒序）。支持 project_ids 多项目范围过滤。"""
         with get_session() as session:
             q = session.query(Task)
 
-            if project_id:
+            if project_ids:
+                q = q.filter(Task.project_id.in_(project_ids))
+            elif project_id:
                 q = q.filter(Task.project_id == project_id)
             if status:
                 q = q.filter(Task.status == status)

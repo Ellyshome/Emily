@@ -1578,3 +1578,32 @@ class ProjectWorldBook(Base):
     __table_args__ = (
         Index("idx_wb_project", "project_id"),
     )
+
+
+# ══════════════════════════════════════════════════════════════════════════════
+# 元认知模块 — 系统自我描述表（SD1 数据模型）
+# ══════════════════════════════════════════════════════════════════════════════
+
+
+class SystemDescription(Base):
+    """系统自我描述表 —— 元认知模块第三类知识（与规则书/世界书并列）。
+
+    全局唯一，存储系统自身结构与能力描述（代码驱动的自我认知）。
+    三域：数据库认知(D1) / 文件认知(D2) / 权限认知(D3)。
+    偏差检测方式：比对 ORM 元数据 hash vs 存储的描述 hash。
+    """
+    __tablename__ = "system_descriptions"
+
+    id = Column(String, primary_key=True, default=_new_uuid)
+    version = Column(Integer, default=1, comment="整体版本号（递增）")
+    content_json = Column(Text, default="{}", comment="三域结构化 JSON（机器可解析）")
+    content_text = Column(Text, default="", comment="纯文本摘要（直接注入 prompt，~400 tokens）")
+    domain_versions = Column(Text, default="{}", comment='JSON: 每域独立版本号 {"database":1,"file":1,"permission":1}')
+    schema_hash = Column(String(64), default="", comment="Base.metadata 的 SHA-256 hash")
+    permission_hash = Column(String(64), default="", comment="PermissionLevel + INHERITANCE_CHAIN 的 SHA-256 hash")
+    file_model_hash = Column(String(64), default="", comment="FileCategory 枚举 + File 模型的 SHA-256 hash")
+    token_count = Column(Integer, default=0, comment="估算 token 数")
+    generated_at = Column(String, default=_utc_now, comment="最近生成时间")
+    generated_by = Column(String(50), default="manual", comment="生成来源：startup / scheduler / manual")
+    created_at = Column(String, default=_utc_now, comment="首次创建时间")
+    updated_at = Column(String, default=_utc_now, onupdate=_utc_now, comment="最近更新时间")

@@ -74,3 +74,8 @@ app.include_router(node_events.router, prefix="/api/v1")
 from .routes import evolution  # noqa: E402
 
 app.include_router(evolution.router)
+
+# 元认知管理 API
+from .routes import meta_cognition  # noqa: E402
+
+app.include_router(meta_cognition.router)

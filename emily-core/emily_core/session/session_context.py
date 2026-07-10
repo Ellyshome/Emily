@@ -91,6 +91,7 @@ class SessionContext:
     # ── 元认知模块字段（🔥 可热更新）──
     project_world_book: str = ""        # 项目世界书纯文本摘要（注入 prompt）
     rule_book: str = ""                 # 规则书全文（注入 prompt）
+    system_description: str = ""        # 系统自我描述文本（注入 prompt）
 
     # ══════════════════════════════════════════════════════════════════════════
     #  计算属性
@@ -193,6 +194,7 @@ class SessionContext:
         # 灌注元认知字段
         ctx.project_world_book = snapshot.get("project_world_book", "")
         ctx.rule_book = snapshot.get("rule_book", "")
+        ctx.system_description = snapshot.get("system_description", "")
 
         # 灌注最近对话 → message_history
         recent_turns = runtime.get("recent_turns", [])
@@ -367,6 +369,7 @@ class SessionContext:
             "{rag_info}": self._format_rag_summary(),
             "{project_world_book}": self.project_world_book,
             "{rule_book}": self.rule_book,
+            "{system_description}": self.system_description,
         }
 
     async def persist_and_consolidate(self, llm_client=None) -> None:
@@ -524,6 +527,7 @@ class SessionContext:
             "rag_collections": snapshot.get("rag_collections"),
             "project_world_book": snapshot.get("project_world_book"),
             "rule_book": snapshot.get("rule_book"),
+            "system_description": snapshot.get("system_description"),
         }
 
         for field, new_val in _hot_fields.items():

@@ -87,14 +87,17 @@ class FileRepository:
     def query_files(
         *,
         project_id: str | None = None,
+        project_ids: list[str] | None = None,
         file_type: str | None = None,
         limit: int = 50,
     ) -> list[File]:
-        """按条件查询文件记录（按创建时间倒序）。"""
+        """按条件查询文件记录（按创建时间倒序）。支持 project_ids 多项目范围过滤。"""
         with get_session() as session:
             q = session.query(File)
 
-            if project_id:
+            if project_ids:
+                q = q.filter(File.project_id.in_(project_ids))
+            elif project_id:
                 q = q.filter(File.project_id == project_id)
             if file_type:
                 q = q.filter(File.file_type == file_type)
