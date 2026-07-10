@@ -24,6 +24,8 @@ from typing import TYPE_CHECKING
 
 from .hook_registry import HookRegistry
 from .hook import HookDecision, HOOK_TYPE_MAP
+from ...infrastructure.logging.llm_logger import LLMInteractionLogger
+from ...infrastructure.logging.business_event_logger import BusinessEventLogger
 
 if TYPE_CHECKING:
     from .node import PipelineNode
@@ -136,50 +138,65 @@ class PipelineBUS:
         started_at = datetime.now(timezone.utc).isoformat()
         node_timings: dict[str, int] = {}
 
+        # 注入日志上下文，让 LLM callback 和业务事件日志可获取 pipeline_run_id
+        LLMInteractionLogger.set_context(
+            pipeline_run_id=context.pipeline_run_id,
+            conversation_id=context.message.conversation_id if context.message else "",
+            user_id=context.user_id,
+        )
+        BusinessEventLogger.set_context(
+            pipeline_run_id=context.pipeline_run_id,
+            conversation_id=context.message.conversation_id if context.message else "",
+        )
+
         logger.info(
             "BUS[%s] running WorkItem %s: %d nodes",
             self.name, wi.id if wi else "?", len(self._nodes),
         )
 
-        for node in self._nodes:
-            context.current_stage = node.name
-            t_node = time.monotonic()
+        try:
+            for node in self._nodes:
+                context.current_stage = node.name
+                t_node = time.monotonic()
 
-            # ① before hook（可阻断）
-            if not await self._fire_before_hooks(node.name, context):
-                logger.warning("BUS blocked at node %s: %s", node.name, context.abort_reason)
-                context.should_abort = True
-                node_timings[node.name] = int((time.monotonic() - t_node) * 1000)
-                # 阻断也写日志
-                await self._log_execution(context, started_at, node_timings)
-                return context
-
-            # ② 执行节点 handler
-            try:
-                await node.handler(context)
-            except Exception as e:
-                logger.error("BUS node [%s] failed: %s", node.name, e, exc_info=True)
-                await self._fire_error_hooks(node.name, context, e)
-                node_timings[node.name] = int((time.monotonic() - t_node) * 1000)
-                if node.required:
+                # ① before hook（可阻断）
+                if not await self._fire_before_hooks(node.name, context):
+                    logger.warning("BUS blocked at node %s: %s", node.name, context.abort_reason)
                     context.should_abort = True
-                    context.abort_reason = str(e)
-                    if wi is not None:
-                        wi.error_message = str(e)
-                    # 失败也写日志
+                    node_timings[node.name] = int((time.monotonic() - t_node) * 1000)
+                    # 阻断也写日志
                     await self._log_execution(context, started_at, node_timings)
                     return context
-                # 非必经节点：记录后继续
-                continue
 
-            # ③ after hook（fire-and-forget）
-            await self._fire_after_hooks(node.name, context)
-            node_timings[node.name] = int((time.monotonic() - t_node) * 1000)
+                # ② 执行节点 handler
+                try:
+                    await node.handler(context)
+                except Exception as e:
+                    logger.error("BUS node [%s] failed: %s", node.name, e, exc_info=True)
+                    await self._fire_error_hooks(node.name, context, e)
+                    node_timings[node.name] = int((time.monotonic() - t_node) * 1000)
+                    if node.required:
+                        context.should_abort = True
+                        context.abort_reason = str(e)
+                        if wi is not None:
+                            wi.error_message = str(e)
+                        # 失败也写日志
+                        await self._log_execution(context, started_at, node_timings)
+                        return context
+                    # 非必经节点：记录后继续
+                    continue
 
-        logger.info("BUS[%s] completed WorkItem %s", self.name, wi.id if wi else "?")
-        # 正常完成写日志
-        await self._log_execution(context, started_at, node_timings)
-        return context
+                # ③ after hook（fire-and-forget）
+                await self._fire_after_hooks(node.name, context)
+                node_timings[node.name] = int((time.monotonic() - t_node) * 1000)
+
+            logger.info("BUS[%s] completed WorkItem %s", self.name, wi.id if wi else "?")
+            # 正常完成写日志
+            await self._log_execution(context, started_at, node_timings)
+            return context
+        finally:
+            LLMInteractionLogger.clear_context()
+            BusinessEventLogger.clear_context()
 
     async def _log_execution(self, context: "BusContext",
                               started_at: str, node_timings: dict) -> None:

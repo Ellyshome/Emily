@@ -396,6 +396,8 @@ class CompanyInfo(Base):
     parent_id = Column(String, ForeignKey("company_info.id"), nullable=True)  # 上级公司（分包→总包）
     department = Column(String, default="[]")                # 部门 JSON ["设计部","工程部"]
     function_scope = Column(Text, default="{}")              # 职能-全景节点映射 JSON（需求 §4.1.1）
+    # ── v2.0 权限系统扩展：管理单位标识 ──
+    is_admin = Column(Boolean, default=False, comment="是否管理单位（建设单位/代建单位）")
     created_at = Column(String, default=_utc_now)
     updated_at = Column(String, default=_utc_now, onupdate=_utc_now)
     is_deleted = Column(Boolean, default=False)
@@ -1049,6 +1051,10 @@ class ProjectNode(Base):
     sort_order = Column(Integer, default=0, comment="排序序号")
     responsible_user_id = Column(String(100), nullable=False, default="", comment="责任人（FK→users.id，创建时默认取 creator_id）")
     node_type = Column(String(20), nullable=False, default="WORK_PACKAGE", comment="节点类型：MILESTONE / WORK_PACKAGE / TASK")
+    visibility_mode = Column(
+        String(30), nullable=False, default="specific",
+        comment="文件可见模式：specific（按 node_accessible_files 绑定）/ all_project_files（全项目文件默认可见）"
+    )
     updated_at = Column(String(50), nullable=False, default=_utc_now, onupdate=_utc_now, comment="最后更新时间（ISO8601）")
 
     # ── 主键 ──
@@ -1456,4 +1462,119 @@ class BusinessEventLog(Base):
     __table_args__ = (
         Index("idx_bel_category_created", "event_category", "created_at"),
         Index("idx_bel_project_created", "project_id", "created_at"),
+    )
+
+
+# ══════════════════════════════════════════════════════════════════════════════
+# 进化闭环模块 — 3 张新表
+# ══════════════════════════════════════════════════════════════════════════════
+
+
+class EvolutionDailyInsight(Base):
+    """洞察表 —— 周期性复盘生成（默认日复盘，支持多天）。"""
+    __tablename__ = "evolution_daily_insights"
+
+    id = Column(String, primary_key=True, default=_new_uuid)
+    insight_date = Column(String, unique=True, nullable=False, comment="1天=YYYY-MM-DD, 多天=YYYY-MM-DD~YYYY-MM-DD")
+    analysis_days = Column(Integer, default=1, comment="复盘天数（默认1，最小1）")
+    total_messages = Column(Integer, default=0, comment="本周期消息数")
+    total_pipeline_runs = Column(Integer, default=0, comment="本周期 Pipeline 执行数")
+    sop_hit_rate = Column(Float, default=0.0, comment="SOP 命中率 0-1")
+    fallback_rate = Column(Float, default=0.0, comment="Fallback 率 0-1")
+    top_sop_ids = Column(Text, default="[]", comment="JSON: [{sop_id, count}] Top 5")
+    feedback_summary = Column(Text, default="", comment="用户反馈信号汇总文本")
+    anomaly_flags = Column(Text, default="[]", comment='JSON: ["high_fallback","low_rag_hit"]')
+    insight_text = Column(Text, default="", comment="LLM 生成的完整 JSON 洞察")
+    metrics_json = Column(Text, default="{}", comment="完整指标快照 JSON")
+    health_score = Column(Integer, default=0, comment="健康评分 0-100")
+    created_at = Column(String, default=_utc_now)
+
+    __table_args__ = (
+        Index("idx_edi_date", "insight_date"),
+    )
+
+
+class EvolutionRule(Base):
+    """进化规则表 —— 从多日洞察中归纳的可复用规则。"""
+    __tablename__ = "evolution_rules"
+
+    id = Column(String, primary_key=True, default=_new_uuid)
+    rule_no = Column(String(20), unique=True, nullable=False, comment="规则编号 R-001")
+    title = Column(String(200), nullable=False, comment="规则标题")
+    description = Column(Text, default="", comment="规则详细描述")
+    evidence_insight_ids = Column(Text, default="[]", comment="JSON: 支撑此规则的 Insight ID 列表")
+    category = Column(String(30), default="", comment="routing/prompt/sop/hook/user_memory")
+    confidence = Column(Float, default=0.0, comment="置信度 0-1")
+    status = Column(String(20), nullable=False, default="DRAFT", comment="DRAFT/CONFIRMED/SUPERSEDED/DISCARDED")
+    superseded_by = Column(String(20), default="", comment="被哪条规则替代")
+    suggested_action = Column(Text, default="", comment="建议的具体改进动作")
+    impact_estimate = Column(String(500), default="", comment="预计改进后的指标变化")
+    created_at = Column(String, default=_utc_now)
+    confirmed_at = Column(String, default="", comment="确认时间")
+
+    __table_args__ = (
+        Index("idx_er_status", "status"),
+        Index("idx_er_category", "category"),
+    )
+
+
+class EvolutionPatch(Base):
+    """进化补丁表 —— 从确认规则生成的配置文件变更。"""
+    __tablename__ = "evolution_patches"
+
+    id = Column(String, primary_key=True, default=_new_uuid)
+    patch_no = Column(String(20), unique=True, nullable=False, comment="补丁编号 EP-001")
+    rule_no = Column(String(20), default="", comment="来源规则编号")
+    target_type = Column(String(30), default="", comment="prompt/sop/skill/hook/user_memory")
+    target_path = Column(String(500), default="", comment="目标文件路径（相对 emily-data/）")
+    patch_content = Column(Text, default="", comment="变更内容")
+    patch_type = Column(String(30), default="", comment="append/replace_section/insert_after")
+    search_anchor = Column(String(500), default="", comment="定位锚点")
+    risk_level = Column(String(10), default="", comment="low/medium/high")
+    risk_reasoning = Column(String(500), default="", comment="风险等级判定理由")
+    validation_criteria = Column(Text, default="", comment="验证标准")
+    expected_effect = Column(String(500), default="", comment="预期效果")
+    status = Column(String(20), nullable=False, default="DRAFT", comment="DRAFT/APPLIED/CONFIRMED/ROLLED_BACK/REJECTED")
+    applied_at = Column(String, default="")
+    validated_at = Column(String, default="")
+    validation_result = Column(Text, default="", comment="验证结果 JSON")
+    rollback_snapshot = Column(Text, default="", comment="应用前原始内容（用于回滚）")
+    created_at = Column(String, default=_utc_now)
+
+    __table_args__ = (
+        Index("idx_ep_status", "status"),
+        Index("idx_ep_rule", "rule_no"),
+    )
+
+
+# ══════════════════════════════════════════════════════════════════════════════
+# 元认知模块 — 项目世界书表（M1 数据模型）
+# ══════════════════════════════════════════════════════════════════════════════
+
+
+class ProjectWorldBook(Base):
+    """项目世界书表 —— 元认知模块七层认知持久化。
+
+    每个项目一份世界书，存储七层结构化 JSON + 纯文本摘要（直接注入 prompt）。
+    支持增量更新：每层独立版本号，偏差检测驱动单层更新。
+    """
+    __tablename__ = "project_world_books"
+
+    id = Column(String, primary_key=True, default=_new_uuid)
+    project_id = Column(String, ForeignKey("projects.id"), nullable=False, unique=True, comment="项目归属（FK→projects.id，每项目唯一）")
+    version = Column(Integer, default=1, comment="整体版本号（递增）")
+    content_json = Column(Text, default="{}", comment="七层结构化 JSON（机器可解析）")
+    content_text = Column(Text, default="", comment="纯文本摘要（直接注入 prompt，~400 tokens）")
+    layer_versions = Column(Text, default="{}", comment='JSON: 每层独立版本号 {"ontology":1,"personnel":1,...}')
+    initialization_tier = Column(Integer, default=0, comment="当前初始化层级 0-4（0=未开始，4=充分运转）")
+    initialization_status = Column(Text, default="{}", comment="JSON: 各必备项完成情况")
+    is_activated = Column(Boolean, default=False, comment="是否达到 T3 可运转级")
+    token_count = Column(Integer, default=0, comment="估算 token 数")
+    generated_at = Column(String, default=_utc_now, comment="最近生成时间")
+    generated_by = Column(String(50), default="manual", comment="生成来源：startup / scheduler_data / scheduler_llm / manual")
+    created_at = Column(String, default=_utc_now, comment="首次创建时间")
+    updated_at = Column(String, default=_utc_now, onupdate=_utc_now, comment="最近更新时间")
+
+    __table_args__ = (
+        Index("idx_wb_project", "project_id"),
     )

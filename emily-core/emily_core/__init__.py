@@ -116,6 +116,10 @@ class EmilyCore:
         self._skill_registry = None
         self._skill_executor = None
 
+        # 元认知模块
+        self._rule_book_loader = None
+        self._world_book_service = None
+
     # ────────────────────────────────────────────────────────────────────
     # 延迟初始化
     # ────────────────────────────────────────────────────────────────────
@@ -176,6 +180,9 @@ class EmilyCore:
 
         # ── Skill 模块 ──
         self._init_skill_module()
+
+        # ── 元认知模块 ──
+        self._init_meta_cognition()
 
         # ── 统一工具注册（在全部子系统和 Application 就绪后，一次性注册）──
         if self._business_flow_tools is not None:
@@ -279,6 +286,36 @@ class EmilyCore:
         except Exception as e:
             logger.error("SkillRegistry reload failed: %s", e)
             return {"ok": False, "total": 0, "skill_ids": [], "error": str(e)}
+
+    def _init_meta_cognition(self) -> None:
+        """初始化元认知模块：规则书加载 + 世界书服务。fail-open。"""
+        try:
+            from .services.rule_book_loader import RuleBookLoader
+            from .services.world_book_service import ProjectWorldBookService
+
+            # 规则书加载
+            self._rule_book_loader = RuleBookLoader()
+            self._rule_book_loader.load()
+
+            # 世界书服务
+            self._world_book_service = ProjectWorldBookService(llm_client=self._llm_client)
+
+            logger.info("Meta-cognition module initialized: rule_book=%s, world_book_service ready",
+                         "loaded" if self._rule_book_loader.is_loaded else "empty")
+        except Exception as e:
+            logger.warning("Meta-cognition module init failed: %s", e)
+            self._rule_book_loader = None
+            self._world_book_service = None
+
+    def reload_rule_book(self) -> dict:
+        """热重载规则书（无需重启容器）。
+
+        Returns:
+            {"ok": bool, "content_length": int, "changed": bool}
+        """
+        if self._rule_book_loader is None:
+            return {"ok": False, "error": "RuleBookLoader not initialized"}
+        return self._rule_book_loader.reload()
 
     def _init_phase_c_deps(self) -> None:
         """Phase C: 初始化执行引擎 + 守护审核依赖 + Application 层。"""
@@ -433,6 +470,27 @@ class EmilyCore:
             )
             self._scheduler_handler_registry.register(DataSyncHandler())
             self._scheduler_handler_registry.register(WebhookHandler())
+
+            # 元认知 Handler
+            from .scheduler.jobs.world_book_update import WorldBookUpdateHandler
+            self._scheduler_handler_registry.register(
+                WorldBookUpdateHandler(world_book_service=self._world_book_service)
+            )
+
+            # 进化闭环 Handler
+            from .scheduler.jobs.daily_insight import DailyInsightHandler
+            from .scheduler.jobs.rule_induction import RuleInductionHandler
+            from .scheduler.jobs.patch_validator import PatchValidationHandler
+
+            self._scheduler_handler_registry.register(
+                DailyInsightHandler(llm_client=self._llm_client)
+            )
+            self._scheduler_handler_registry.register(
+                RuleInductionHandler(llm_client=self._llm_client)
+            )
+            self._scheduler_handler_registry.register(
+                PatchValidationHandler(llm_client=self._llm_client)
+            )
 
             # Engine
             self._scheduler_engine = SchedulerEngine(

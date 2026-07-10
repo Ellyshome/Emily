@@ -10,11 +10,15 @@ from ..services.task_service import TaskService
 logger = logging.getLogger("emily.app.task")
 
 
-async def _log_business_event(**kwargs) -> None:
-    """非阻断写入业务事件日志。"""
+def _log_business_event(**kwargs) -> None:
+    """非阻断写入业务事件日志。在调用时立即捕获 Pipeline 上下文。"""
     try:
         from ..infrastructure.logging.business_event_logger import BusinessEventLogger
-        await BusinessEventLogger.log(**kwargs)
+        # ensure_future 延迟执行，此时 Pipeline 上下文可能已清理，因此在此立即捕获
+        ctx = BusinessEventLogger._current_context
+        kwargs.setdefault("pipeline_run_id", ctx.get("pipeline_run_id", ""))
+        kwargs.setdefault("conversation_id", ctx.get("conversation_id", ""))
+        asyncio.ensure_future(BusinessEventLogger.log(**kwargs))
     except Exception:
         pass
 
@@ -57,7 +61,7 @@ class TaskApplication:
             # ── 进化日志：业务事件日志 ──
             from ._user_utils import resolve_user_name
             _uname = resolve_user_name(cmd.creator_id) or ""
-            asyncio.ensure_future(_log_business_event(
+            _log_business_event(
                 event_category="task",
                 event_action="created",
                 target_type="task",
@@ -67,7 +71,7 @@ class TaskApplication:
                 user_id=user_id,
                 user_name=_uname,
                 project_id=route_result.project_id or "",
-            ))
+            )
             reply = f"✅ 已创建任务（{task.task_no}）\n──────────────\n标题：{task.title}"
             if task.owner_text:
                 reply += f"\n负责人：{task.owner_text}"

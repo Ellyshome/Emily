@@ -2,10 +2,12 @@
 
 M2 规则：
 - 已绑定 → 直接返回已有用户
+- UUID 直查 → sender_id 为 UUID 格式时先查 users 表（避免重复创建）
 - 未绑定 → 根据 auto_create_user 配置决定是否自动创建
 - 用户名先用 IM 昵称填充，后续可人工补全
 
 BUG-002 修复：增加准入门禁，可通过配置关闭自动创建。
+BUG-003 修复：增加 UUID 格式检测，emy-test 等工具传入 UUID 时走直查路径。
 """
 
 import logging
@@ -30,6 +32,25 @@ class UserBindingService:
         self._auto_create = auto_create
         self._whitelist = whitelist or []
 
+    # ── UUID 格式检测 ──
+
+    @staticmethod
+    def _looks_like_uuid(value: str) -> bool:
+        """判断 sender_id 是否看起来像 UUID（emy-test 等工具使用 UUID 作为 sender_id）。
+
+        支持格式：
+        - 标准 UUID: xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx（36 字符）
+        - 无连字符 UUID: 32 字符十六进制
+        """
+        if not value:
+            return False
+        parts = value.split("-")
+        if len(parts) == 5 and all(p.isalnum() for p in parts):
+            return True
+        if len(value) == 32 and value.isalnum():
+            return True
+        return False
+
     def get_or_create_user(
         self,
         im_platform: str,
@@ -38,9 +59,14 @@ class UserBindingService:
     ) -> Tuple[User, bool]:
         """获取或创建用户（自动绑定）。
 
+        查找优先级（BUG-003）：
+        1. IM 绑定表查找（im_platform + im_user_id）
+        2. UUID 直查：若 sender_id 为 UUID 格式，查 users 表（避免重复创建）
+        3. 自动创建新用户
+
         Args:
             im_platform: IM 平台，如 "napcat"
-            im_user_id: IM 用户 ID（QQ 号）
+            im_user_id: IM 用户 ID（QQ 号或 UUID）
             im_display_name: IM 昵称
 
         Returns:
@@ -49,6 +75,7 @@ class UserBindingService:
         Raises:
             UserNotAllowedError: 未知用户且 auto_create=False + 不在白名单时
         """
+        # ① IM 绑定表查找
         existing = self.repo.get_by_im(im_platform, im_user_id)
         if existing:
             logger.debug(
@@ -56,6 +83,16 @@ class UserBindingService:
                 im_user_id, existing.id, existing.username,
             )
             return existing, False
+
+        # ② UUID 直查（BUG-003: emy-test 传 UUID 时不创建重复用户）
+        if self._looks_like_uuid(im_user_id):
+            direct_user = self.repo.get_by_id(im_user_id)
+            if direct_user:
+                logger.debug(
+                    "User resolved by UUID: %s -> %s (%s)",
+                    im_user_id, direct_user.id, direct_user.username,
+                )
+                return direct_user, False
 
         # BUG-002: 准入门禁 — 检查是否允许自动创建
         if not self._allow_auto_create(im_platform, im_user_id):

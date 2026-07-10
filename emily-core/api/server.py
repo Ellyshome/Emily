@@ -69,3 +69,8 @@ from .sse import node_events  # noqa: E402
 app.include_router(node_routes.router, prefix="/api/v1")
 app.include_router(node_routes.cross_router, prefix="/api/v1")
 app.include_router(node_events.router, prefix="/api/v1")
+
+# 进化管理 API
+from .routes import evolution  # noqa: E402
+
+app.include_router(evolution.router)

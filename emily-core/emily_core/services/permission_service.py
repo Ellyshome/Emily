@@ -1,4 +1,4 @@
-﻿"""PermissionService — 权限快照组装 + 校验/授权/查询（阶段一+二）。
+"""PermissionService — 权限快照组装 + 校验/授权/查询（阶段一+二）。
 
 build_permission_snapshot() 在 SessionFactory._build_context() 中被调用，
 查询 User + CompanyInfo + 权限矩阵 + 授权记录，组装 PermissionSnapshot 注入 SessionContext。
@@ -245,7 +245,11 @@ class PermissionService:
             "scopes": self._load_json_list(company.scope) if company else [],
             "sop_allow": sop_allow,
             "db_perms": self._derive_db_perms(user.level, company.type if company else ""),
-            "info_level": self._derive_info_level(user.level),
+            "is_management_unit": bool(company and getattr(company, 'is_admin', False)),
+            "info_level": self._derive_info_level(
+                user.level,
+                is_management_unit=bool(company and getattr(company, 'is_admin', False)),
+            ),
             "supervisor_id": user.supervisor_id or "",
             "authorized_node_ids": self._derive_authorized_nodes(company),
             "granted_codes": granted_codes,
@@ -356,9 +360,15 @@ class PermissionService:
         return depts[0] if depts else ""
 
     @staticmethod
-    def _derive_info_level(level: int) -> str:
-        """level → 可见最大密级（需求 §3.1）。"""
+    def _derive_info_level(level: int, is_management_unit: bool = False) -> str:
+        """level → 可见最大密级（需求 §3.1）。
+
+        管理单位 L4 可见 confidential（与 L5+ 同级），
+        非管理单位 L4 仍走原 internal 密级。
+        """
         if level >= 5:
+            return "confidential"
+        if is_management_unit:
             return "confidential"
         if level >= 2:
             return "internal"
@@ -647,6 +657,7 @@ class PermissionService:
                     "company_type": perm_dict.get("company_type", ""),
                     "company_name": perm_dict.get("company_name", ""),
                     "department": perm_dict.get("department", []),
+                    "is_management_unit": perm_dict.get("is_management_unit", False),
                     "info_level": perm_dict.get("info_level", "public"),
                     "sop_allow": perm_dict.get("sop_allow", []),
                     "db_perms": perm_dict.get("db_perms", {}),
