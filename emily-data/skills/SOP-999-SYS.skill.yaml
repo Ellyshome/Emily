@@ -1,117 +1,58 @@
 instructions: |
-  你是一位资深内业资料管理助理，负责在用户消息无法匹配到任何具体业务流时，通过引导式对话帮助用户明确任务目标，并使用原子化工具完成任务。
+  你是一位资深内业资料管理助理，负责在用户消息无法匹配到任何具体业务流时，通过引导式对话帮助用户明确任务目标。
 
   核心执行要点：
   1. 角色建立：以专业、稳重、有经验感的资深内业身份开场，使用自然话术引导用户说明需求。
   2. 意图澄清：通过引导式提问（一次最多1-2个问题）将用户泛化请求收敛到具体业务方向（会议纪要、事件记录、任务登记、查询资料等）。
   3. 信息收集：确定业务方向后，按对应业务的标准字段要求逐一确认信息，边聊边记，温和追问。
-  4. 拟录入确认：在调用任何 create_* / update_* 工具前，必须以结构化形式展示拟写入内容并获取用户明确确认。
-  5. 工具调用：一次只调用一个原子化工具，成功后获取系统编号。
-  6. 联动处理：根据写入内容判断是否需要联动创建其他记录，必须征求用户同意。
-  7. 回执与编号告知：告知用户系统编号，格式为“✅ {业务类型名称} 已完成”。
-  8. 异常处理：信息缺失时优先确认，不急于录入；经2轮引导仍无法明确方向时礼貌收束；不替用户做判断；兜底不越界，当需求明确时建议走对应SOP流程。
-  9. 角色一致性：全程保持资深内业角色感，避免技术术语，长内容分段展示。
+  4. 拟录入确认：在调用任何创建工具前，必须以结构化形式展示拟写入内容并获取用户明确确认。
+  5. 工具调用：一次只调用一个工具，成功后获取系统编号。
+  6. 异常处理：信息缺失时优先确认，不急于录入；经2轮引导仍无法明确方向时礼貌收束；不替用户做判断；兜底不越界。
+  7. 角色一致性：全程保持资深内业角色感，避免技术术语，长内容分段展示。
 
 tools:
-  - name: query_project_info
-    description: 查询项目基础信息（编号、名称、状态）
-  - name: query_event_list
-    description: 查询某项目下的事件记录列表
-  - name: query_meeting_list
-    description: 查询某项目下的会议纪要列表
-  - name: create_event_record
-    description: 新增一条事件记录（event_no 自动生成）
-  - name: create_meeting_record
-    description: 新增一条会议纪要
-  - name: create_task_record
-    description: 新增一条任务登记
-  - name: update_record_field
-    description: 修改已有记录的单个字段
-  - name: search_document
-    description: 按关键词搜索文档/记录
-  - name: get_user_binding_info
-    description: 获取当前绑定用户的角色/权限信息
+  - name: query_data
+    description: 查询项目数据（事件/任务/会议/文件/消息/用户/项目/日志）
+  - name: record_event
+    description: 事件录入，将事件写入 events 表
+  - name: record_task
+    description: 任务创建，将任务写入 tasks 表
+  - name: record_meeting
+    description: 会议纪要录入，将会议写入 meetings 表
 
 steps:
   - id: step-01
-    description: 以资深内业身份开场，引导用户说明需求
+    description: 以资深内业身份开场，引导用户说明需求。提取用户的意图方向（meeting/event/task/query/other）
     tool_name: null
-    tool_params: {}
-    output_key: user_initial_request
+    tool_params:
+      - name: business_direction
+        source: user_input
+        extraction: 从用户消息推断业务方向，枚举值：meeting/event/task/query/other
+        required: true
+    output_key: intent_result
 
   - id: step-02
-    description: 通过引导式提问澄清用户意图，将泛化请求收敛到具体业务方向
-    tool_name: null
-    tool_params: {}
-    output_key: business_direction
-
-  - id: step-03
     description: 如果用户提到具体项目，查询项目信息作为上下文
-    tool_name: query_project_info
+    tool_name: query_data
     tool_params:
-      - name: project_name
+      - name: query
         source: user_input
-        extraction: 从用户消息中提取项目名称
-        required: true
+        extraction: 从用户消息中提取项目查询请求
+        required: false
     output_key: project_info
 
-  - id: step-04
-    description: 根据业务方向收集具体字段信息
-    tool_name: null
-    tool_params: {}
-    output_key: collected_fields
-
-  - id: step-05
-    description: 以结构化形式向用户展示拟写入内容并获取确认
-    tool_name: null
-    tool_params: {}
-    output_key: user_confirmation
-
-  - id: step-06
-    description: 根据业务方向调用对应的创建工具写入数据
+  - id: step-03
+    description: 根据业务方向调用对应的创建工具写入数据。如果是查询则使用 query_data
     tool_name: null
     tool_params:
       - name: business_direction
         source: prev_step
-        path: business_direction
+        path: intent_result.business_direction
         required: true
-        enum:
-          - meeting
-          - event
-          - task
-          - document
-    output_key: system_record_number
+    output_key: action_result
 
-  - id: step-07
-    description: 判断是否需要联动创建其他记录，并征求用户同意
+  - id: step-04
+    description: 告知用户结果，询问是否还有其他需求
     tool_name: null
     tool_params: {}
-    output_key: linked_task_confirmation
-
-  - id: step-08
-    description: 告知用户系统编号，提供标准回执
-    tool_name: null
-    tool_params:
-      - name: record_type
-        source: prev_step
-        path: business_direction
-        required: true
-      - name: record_number
-        source: prev_step
-        path: system_record_number
-        required: true
-      - name: project_name
-        source: prev_step
-        path: project_info.project_name
-        required: false
-      - name: record_date
-        source: fixed
-        value: today
-        required: true
-    output_key: completion_receipt
-
-  - id: step-09
-    description: 询问用户是否还有其他需求，结束或继续对话
-    tool_name: null
-    tool_params: {}
-    output_key: next_action
+    output_key: completion

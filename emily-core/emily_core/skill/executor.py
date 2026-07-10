@@ -55,14 +55,26 @@ class SkillExecutor:
         for step in ctx.skill.steps:
             t_start = _time.monotonic()
 
-            # 0. 跳过纯逻辑步骤（tool_name 为空/None）
+            # 0. 处理纯逻辑步骤（tool_name 为空/None）
             if not step.tool_name:
-                logger.debug("Step %s: pure logic step, skipping tool call", step.id)
-                results.append(StepResult(
-                    step_id=step.id,
-                    success=True,
-                    output=step.description,
-                ))
+                # 即使无工具，若有 tool_params 且含 source:user_input，仍需 LLM 提取数据
+                if step.tool_params:
+                    extracted = await self._extract_null_step_data(step, ctx)
+                    if step.output_key and extracted:
+                        ctx.step_results[step.output_key] = extracted
+                    results.append(StepResult(
+                        step_id=step.id,
+                        success=True,
+                        output=str(extracted) if extracted else step.description,
+                        business_data=extracted,
+                    ))
+                else:
+                    logger.debug("Step %s: pure logic step, no extraction needed", step.id)
+                    results.append(StepResult(
+                        step_id=step.id,
+                        success=True,
+                        output=step.description,
+                    ))
                 continue
 
             # 1. 检查工具是否在 Session 可见 API 中
@@ -162,6 +174,39 @@ class SkillExecutor:
                 break
 
         return results
+
+    async def _extract_null_step_data(
+        self, step, ctx: SkillExecutionContext,
+    ) -> dict:
+        """对 tool_name=null 但含 tool_params 的步骤，用 LLM 提取数据。
+
+        这是 Bug #1-5 的根因修复：旧逻辑直接跳过 null-tool 步骤，
+        导致 step_results 为空，后续 prev_step 引用全部失败。
+
+        策略：遍历 step.tool_params，对 source=user_input 的参数调 LLM 提取，
+        对 source=prev_step/context/fixed 的参数走原有逻辑，
+        将提取结果合并为 dict 存入 step_results[output_key]。
+        """
+        if self._param_extractor is None:
+            self._param_extractor = ParamExtractor(llm_client=ctx.llm_client)
+
+        try:
+            extracted = await self._param_extractor.resolve_params(
+                step.tool_params, ctx.user_input, ctx.session_context, ctx.step_results,
+            )
+            if extracted:
+                logger.info(
+                    "Step %s: null-tool extraction produced %d fields: %s",
+                    step.id, len(extracted), list(extracted.keys()),
+                )
+            return extracted
+        except ValueError as e:
+            # 必填参数提取失败——记录但不中断（空步骤不应因参数缺失阻断管道）
+            logger.warning("Step %s: null-tool extraction failed: %s", step.id, e)
+            return {}
+        except Exception as e:
+            logger.warning("Step %s: null-tool extraction error: %s", step.id, e)
+            return {}
 
     async def _llm_resolve_params(self, tool_name: str, tool, ctx: SkillExecutionContext) -> dict:
         """元能力路径：LLM 动态推导工具参数（Skill YAML 未定义 ParamMapping 时使用）。

@@ -200,12 +200,19 @@ class PipelineBUS:
 
     async def _log_execution(self, context: "BusContext",
                               started_at: str, node_timings: dict) -> None:
-        """非阻断写入 Pipeline 执行日志。"""
+        """非阻断写入 Pipeline 执行日志（含 M11 旧表回填）。"""
         try:
             from ...infrastructure.logging.pipeline_logger import PipelineExecutionLogger
             await PipelineExecutionLogger.log(context, started_at, node_timings)
         except Exception as e:
             logger.warning("Pipeline execution log write failed: %s", e)
+
+        # Bug #6 修复：回填 M11 时代 4 张旧日志表
+        try:
+            from ...infrastructure.logging.legacy_log_bridge import write_legacy_logs
+            await write_legacy_logs(context, started_at)
+        except Exception as e:
+            logger.warning("Legacy log bridge write failed: %s", e)
 
     # ── Hook 触发（复用 M15 语义）──
 

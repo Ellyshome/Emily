@@ -88,7 +88,12 @@ async def handle_record_file(
 
     M13 (TC-A01): 从 params 提取附件 URL 信息并传递给 FileApplication。
     """
-    data = params.get("data", {})
+    # Skill 路径传平铺参数，LLM 规划路径传嵌套 data；二者兼容
+    data = params.get("data") or {}
+    if not data:
+        data = {k: v for k, v in params.items()
+                if not k.startswith("_") and k not in ("data", "force", "guardian_notes",
+                                                        "project_name", "project_id")}
     force = params.get("force", False)
     guardian_notes = params.get("guardian_notes", "")
 
