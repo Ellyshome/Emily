@@ -90,7 +90,12 @@ async def handle_record_task(
     config=None,
 ) -> dict:
     """处理任务录入（M14 业务流工具 handler）。"""
-    data = params.get("data", {})
+    # Skill 路径传平铺参数，LLM 规划路径传嵌套 data；二者兼容
+    data = params.get("data") or {}
+    if not data:
+        data = {k: v for k, v in params.items()
+                if not k.startswith("_") and k not in ("data", "force", "guardian_notes",
+                                                        "project_name", "project_id")}
     force = params.get("force", False)
     guardian_notes = params.get("guardian_notes", "")
 
@@ -102,7 +107,7 @@ async def handle_record_task(
         data={
             "title": data.get("title", "未命名任务"),
             "description": data.get("description", ""),
-            "assignee": data.get("assignee", ""),
+            "assignee": data.get("assignee") or data.get("owner", ""),
             "due_date": data.get("due_date"),
             "due_text": data.get("due_text", ""),
         },
