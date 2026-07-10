@@ -77,17 +77,20 @@ class MeetingRepository:
     def query_meetings(
         *,
         project_id: str | None = None,
+        project_ids: list[str] | None = None,
         time_range: str = "all",
         limit: int = 50,
     ) -> list[Meeting]:
-        """按条件查询会议记录（按创建时间倒序）。"""
+        """按条件查询会议记录（按创建时间倒序）。支持 project_ids 多项目范围过滤。"""
         from datetime import datetime, timezone
         from ..repositories.task_repo import _resolve_time_start
 
         with get_session() as session:
             q = session.query(Meeting)
 
-            if project_id:
+            if project_ids:
+                q = q.filter(Meeting.project_id.in_(project_ids))
+            elif project_id:
                 q = q.filter(Meeting.project_id == project_id)
 
             if time_range != "all":

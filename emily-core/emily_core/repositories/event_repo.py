@@ -178,18 +178,21 @@ class EventRepository:
     def query_events(
         *,
         project_id: str | None = None,
+        project_ids: list[str] | None = None,
         time_range: str = "all",
         status: str | None = None,
         limit: int = 50,
     ) -> list[Event]:
-        """按条件查询事件（按创建时间倒序）。"""
+        """按条件查询事件（按创建时间倒序）。支持 project_ids 多项目范围过滤。"""
         from datetime import datetime, timezone, timedelta
         from ..infrastructure.database.models import Message
 
         with get_session() as session:
             q = session.query(Event)
 
-            if project_id:
+            if project_ids:
+                q = q.filter(Event.project_id.in_(project_ids))
+            elif project_id:
                 q = q.filter(Event.project_id == project_id)
             if status:
                 q = q.filter(Event.status == status)

@@ -168,6 +168,9 @@ class SessionDataFetcher:
         visible_files = _sub_fetch_visible_files(user_id)
         rag_info = _sub_fetch_rag_info(core)
 
+        # ── 步骤 5b: 系统自我描述 ──
+        system_description = _sub_fetch_system_description(perms)
+
         # ── 组装输出 ──
         created_at = datetime.now(timezone.utc).isoformat()
 
@@ -213,6 +216,7 @@ class SessionDataFetcher:
             # 元认知字段
             "project_world_book": _sub_fetch_world_book(project_id),
             "rule_book": _sub_fetch_rule_book(),
+            "system_description": system_description,
         }
 
         session_runtime = {
@@ -374,12 +378,19 @@ def _empty_result(conversation_id: str, user_id: str, errors: list[str]) -> dict
             # 元认知字段
             "project_world_book": "",
             "rule_book": "",
+            "system_description": "",
         },
         "session_runtime": {
             "recent_turns": [],
         },
         "errors": errors,
     }
+
+
+def _sub_fetch_system_description(perms: dict) -> str:
+    """获取系统自我描述文本（按用户权限裁剪）。委托给 fetchers 子模块。"""
+    from .fetchers.fetch_system_description import fetch
+    return fetch(perms=perms)
 
 
 def _sub_fetch_world_book(project_id: Optional[str]) -> str:

@@ -119,6 +119,7 @@ class EmilyCore:
         # 元认知模块
         self._rule_book_loader = None
         self._world_book_service = None
+        self._system_description_service = None
 
     # ────────────────────────────────────────────────────────────────────
     # 延迟初始化
@@ -288,10 +289,11 @@ class EmilyCore:
             return {"ok": False, "total": 0, "skill_ids": [], "error": str(e)}
 
     def _init_meta_cognition(self) -> None:
-        """初始化元认知模块：规则书加载 + 世界书服务。fail-open。"""
+        """初始化元认知模块：规则书 + 世界书 + 系统描述。fail-open。"""
         try:
             from .services.rule_book_loader import RuleBookLoader
             from .services.world_book_service import ProjectWorldBookService
+            from .services.system_description_service import SystemDescriptionService
 
             # 规则书加载
             self._rule_book_loader = RuleBookLoader()
@@ -300,12 +302,27 @@ class EmilyCore:
             # 世界书服务
             self._world_book_service = ProjectWorldBookService(llm_client=self._llm_client)
 
-            logger.info("Meta-cognition module initialized: rule_book=%s, world_book_service ready",
+            # 系统描述服务（启动时自动检测偏差并重建）
+            self._system_description_service = SystemDescriptionService(llm_client=self._llm_client)
+            import asyncio
+            try:
+                loop = asyncio.get_event_loop()
+                if loop.is_running():
+                    # 在已有事件循环中，调度异步任务
+                    asyncio.ensure_future(self._system_description_service.check_and_update())
+                else:
+                    loop.run_until_complete(self._system_description_service.check_and_update())
+            except RuntimeError:
+                # 无事件循环，同步调用
+                asyncio.run(self._system_description_service.check_and_update())
+
+            logger.info("Meta-cognition module initialized: rule_book=%s, world_book=ready, system_description=ready",
                          "loaded" if self._rule_book_loader.is_loaded else "empty")
         except Exception as e:
             logger.warning("Meta-cognition module init failed: %s", e)
             self._rule_book_loader = None
             self._world_book_service = None
+            self._system_description_service = None
 
     def reload_rule_book(self) -> dict:
         """热重载规则书（无需重启容器）。
@@ -475,6 +492,12 @@ class EmilyCore:
             from .scheduler.jobs.world_book_update import WorldBookUpdateHandler
             self._scheduler_handler_registry.register(
                 WorldBookUpdateHandler(world_book_service=self._world_book_service)
+            )
+
+            # 系统描述更新 Handler（周级）
+            from .scheduler.jobs.system_description_update import SystemDescriptionUpdateHandler
+            self._scheduler_handler_registry.register(
+                SystemDescriptionUpdateHandler()
             )
 
             # 进化闭环 Handler
