@@ -19,11 +19,15 @@ from ..infrastructure.database.models import Event
 logger = logging.getLogger("emily.app.event")
 
 
-async def _log_business_event(**kwargs) -> None:
-    """非阻断写入业务事件日志。"""
+def _log_business_event(**kwargs) -> None:
+    """非阻断写入业务事件日志。在调用时立即捕获 Pipeline 上下文。"""
     try:
         from ..infrastructure.logging.business_event_logger import BusinessEventLogger
-        await BusinessEventLogger.log(**kwargs)
+        # ensure_future 延迟执行，此时 Pipeline 上下文可能已清理，因此在此立即捕获
+        ctx = BusinessEventLogger._current_context
+        kwargs.setdefault("pipeline_run_id", ctx.get("pipeline_run_id", ""))
+        kwargs.setdefault("conversation_id", ctx.get("conversation_id", ""))
+        asyncio.ensure_future(BusinessEventLogger.log(**kwargs))
     except Exception:
         pass
 
@@ -72,7 +76,7 @@ class EventApplication:
             reply = EventService.format_confirmation_reply(event, project_name)
 
             # ── 进化日志：业务事件日志 ──
-            asyncio.ensure_future(_log_business_event(
+            _log_business_event(
                 event_category="event",
                 event_action="created",
                 target_type="event",
@@ -81,7 +85,7 @@ class EventApplication:
                 summary=f"创建事件：{event.title[:100]}",
                 user_id=user_id,
                 project_id=route_result.project_id or "",
-            ))
+            )
 
             return HandlerResult(
                 success=True,
@@ -125,7 +129,7 @@ class EventApplication:
                         summary=f"确认录入事件：{event.title}（{event.event_no}）",
                     )
                 # ── 进化日志：业务事件日志 ──
-                asyncio.ensure_future(_log_business_event(
+                _log_business_event(
                     event_category="event",
                     event_action="confirmed",
                     target_type="event",
@@ -134,7 +138,7 @@ class EventApplication:
                     summary=f"确认事件：{event.title[:100]}",
                     user_id=event.user_id or "",
                     project_id=getattr(event, "project_id", "") or "",
-                ))
+                )
                 return HandlerResult(
                     success=True,
                     object_type="event",

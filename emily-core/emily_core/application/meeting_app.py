@@ -10,11 +10,15 @@ from ..services.meeting_service import MeetingService
 logger = logging.getLogger("emily.app.meeting")
 
 
-async def _log_business_event(**kwargs) -> None:
-    """非阻断写入业务事件日志。"""
+def _log_business_event(**kwargs) -> None:
+    """非阻断写入业务事件日志。在调用时立即捕获 Pipeline 上下文。"""
     try:
         from ..infrastructure.logging.business_event_logger import BusinessEventLogger
-        await BusinessEventLogger.log(**kwargs)
+        # ensure_future 延迟执行，此时 Pipeline 上下文可能已清理，因此在此立即捕获
+        ctx = BusinessEventLogger._current_context
+        kwargs.setdefault("pipeline_run_id", ctx.get("pipeline_run_id", ""))
+        kwargs.setdefault("conversation_id", ctx.get("conversation_id", ""))
+        asyncio.ensure_future(BusinessEventLogger.log(**kwargs))
     except Exception:
         pass
 
@@ -54,7 +58,7 @@ class MeetingApplication:
             # ── 进化日志：业务事件日志 ──
             from ._user_utils import resolve_user_name
             _uname = resolve_user_name(cmd.creator_id) or ""
-            asyncio.ensure_future(_log_business_event(
+            _log_business_event(
                 event_category="meeting",
                 event_action="created",
                 target_type="meeting",
@@ -64,7 +68,7 @@ class MeetingApplication:
                 user_id=user_id,
                 user_name=_uname,
                 project_id=route_result.project_id or "",
-            ))
+            )
             reply = MeetingService.format_reply(meeting)
             return HandlerResult(
                 success=True, object_type="meeting", object_id=meeting.id, reply=reply,

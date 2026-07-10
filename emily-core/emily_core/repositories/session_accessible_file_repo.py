@@ -67,29 +67,61 @@ class SessionAccessibleFileRepo:
                         session.add(saf)
                         total += 1
 
-                # 3. node_linked upsert
+                # 3. node_linked 处理
                 if authorized_node_ids:
-                    node_file_links = session.query(NodeAccessibleFile).filter(
-                        NodeAccessibleFile.node_id.in_(authorized_node_ids)
+                    # 3a. 查询这些节点的 visibility_mode
+                    nodes = session.query(ProjectNode).filter(
+                        ProjectNode.node_id.in_(authorized_node_ids)
                     ).all()
+                    all_project_nodes = [n for n in nodes if n.visibility_mode == "all_project_files"]
+                    specific_nodes = [n for n in nodes if n.visibility_mode != "all_project_files"]
 
-                    for link in node_file_links:
-                        # 检查是否已由 project_scope 覆盖
-                        existing = session.query(SessionAccessibleFile).filter(
-                            SessionAccessibleFile.user_id == user_id,
-                            SessionAccessibleFile.file_id == link.file_id,
-                        ).first()
+                    # 3b. all_project_files 节点：加载全项目文件（补充 project_scope 未覆盖的文件）
+                    if all_project_nodes:
+                        all_project_project_ids = list({n.project_id for n in all_project_nodes if n.project_id})
+                        if all_project_project_ids:
+                            already_visible = session.query(SessionAccessibleFile.file_id).filter(
+                                SessionAccessibleFile.user_id == user_id,
+                            ).subquery()
+                            extra_files = session.query(File).filter(
+                                File.project_id.in_(all_project_project_ids),
+                                File.is_deleted == False,
+                                ~File.id.in_(already_visible),
+                            ).all()
+                            for f in extra_files:
+                                saf = SessionAccessibleFile(
+                                    user_id=user_id,
+                                    file_id=f.id,
+                                    access_type="node_linked",
+                                    granted_by="system",
+                                    granted_at=now,
+                                )
+                                session.add(saf)
+                                total += 1
 
-                        if not existing:
-                            saf = SessionAccessibleFile(
-                                user_id=user_id,
-                                file_id=link.file_id,
-                                access_type="node_linked",
-                                granted_by=link.added_by or "system",
-                                granted_at=link.added_at or now,
-                            )
-                            session.add(saf)
-                            total += 1
+                    # 3c. specific 节点：原有逻辑（查 node_accessible_files）
+                    if specific_nodes:
+                        specific_node_ids = [n.node_id for n in specific_nodes]
+                        node_file_links = session.query(NodeAccessibleFile).filter(
+                            NodeAccessibleFile.node_id.in_(specific_node_ids)
+                        ).all()
+
+                        for link in node_file_links:
+                            existing = session.query(SessionAccessibleFile).filter(
+                                SessionAccessibleFile.user_id == user_id,
+                                SessionAccessibleFile.file_id == link.file_id,
+                            ).first()
+
+                            if not existing:
+                                saf = SessionAccessibleFile(
+                                    user_id=user_id,
+                                    file_id=link.file_id,
+                                    access_type="node_linked",
+                                    granted_by=link.added_by or "system",
+                                    granted_at=link.added_at or now,
+                                )
+                                session.add(saf)
+                                total += 1
 
                 session.commit()
                 logger.info("sync_for_user(%s): %d files synced", user_id, total)

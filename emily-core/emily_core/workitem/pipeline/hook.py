@@ -105,7 +105,10 @@ class AuthHook(Hook):
     action: str = ""           # "read" | "create" | "update" | "delete" | "execute"
 
     async def execute(self, context: "PipelineContext") -> HookResult:
-        """执行鉴权检查（阶段二：三维鉴权 + SessionContext 扁平化字段）。"""
+        """执行鉴权检查（阶段二：三维鉴权 + SessionContext 扁平化字段）。
+
+        阻断时自动写入审计日志（permission_audit_log 表）。
+        """
         user_id = context.user_id
         if not user_id:
             if self.action and self.action not in ("read",):
@@ -125,7 +128,9 @@ class AuthHook(Hook):
                 is_admin_flag = getattr(context, "is_admin", False) or context.get("is_admin", False)
                 if not is_admin_flag:
                     logger.info("AuthHook[%s] blocking: user %s is not admin", self.name, user_id)
-                    return HookResult.block("仅管理员可执行系统级操作")
+                    result = HookResult.block("仅管理员可执行系统级操作")
+                    await _log_auth_block(user_id, self.resource_type, result.message)
+                    return result
             else:
                 from ...permission.level import is_admin as _is_admin
                 if not _is_admin(session_ctx.level):
@@ -133,7 +138,9 @@ class AuthHook(Hook):
                         "AuthHook[%s] blocking: user %s level=%d < L5",
                         self.name, user_id, session_ctx.level,
                     )
-                    return HookResult.block("仅管理员（L5+）可执行系统级操作")
+                    result = HookResult.block("仅管理员（L5+）可执行系统级操作")
+                    await _log_auth_block(user_id, self.resource_type, result.message)
+                    return result
 
         # SOP 权限检查：有 SOP 绑定时验证白名单
         intent = context.intent
@@ -147,11 +154,27 @@ class AuthHook(Hook):
                 reason = f"无权访问 {sop_id}"
                 if session_ctx.supervisor_id:
                     reason += f"，可联系主管 {session_ctx.supervisor_id} 申请权限"
-                return HookResult.block(reason)
+                result = HookResult.block(reason)
+                await _log_auth_block(user_id, sop_id, reason)
+                return result
 
         logger.debug("AuthHook[%s] allow: user=%s res=%s action=%s",
                      self.name, user_id, self.resource_type, self.action)
         return HookResult.allow()
+
+
+async def _log_auth_block(user_id: str, resource: str, reason: str) -> None:
+    """非阻塞写入 ACCESS_DENIED 审计日志。"""
+    try:
+        from ...permission.row_security import PermissionAuditLogRepository
+        repo = PermissionAuditLogRepository()
+        repo.log_access_denied(
+            grantee_id=user_id,
+            perm_code=f"AUTH-{resource}",
+            reason=reason,
+        )
+    except Exception as e:
+        logger.warning("Auth audit log write failed (non-blocking): %s", e)
 
 
 @dataclass
@@ -280,7 +303,12 @@ class ProgressHook(Hook):
         if not self.enable_progress or sender is None:
             return HookResult.allow()
 
-        template = context.baggage.get("progress_template", self.progress_template)
+        # 二次校验 sender 是否可调用（防止注入的 closure 内部引用已失效）
+        if not callable(sender):
+            logger.debug("ProgressHook[%s] sender is not callable, skip", self.name)
+            return HookResult.allow()
+
+        template = context.baggage.get("progress_template", self.progress_template) or self.progress_template
 
         try:
             intent = context.intent
@@ -298,9 +326,15 @@ class ProgressHook(Hook):
                     "SOP-008": "处理待办问题",
                 }
                 action = action_map.get(sop_id, "处理")
-            progress_text = template.format(action=action)
-            await sender(progress_text)
+            progress_text = str(template).format(action=action)
+            result = sender(progress_text)
+            # 支持 async 和 sync sender
+            if result is not None and hasattr(result, "__await__"):
+                await result
             logger.info("ProgressHook[%s] sent: %s", self.name, progress_text)
+        except (TypeError, AttributeError) as e:
+            logger.warning(
+                "ProgressHook[%s] sender call failed (non-blocking): %s", self.name, e)
         except Exception as e:
             logger.warning("ProgressHook[%s] failed (non-blocking): %s", self.name, e)
         return HookResult.allow()

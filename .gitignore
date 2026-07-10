@@ -13,6 +13,9 @@ dist/
 .vscode/
 .idea/
 
+# 历史开发文档（审计发现，旧架构描述，非当前版本内容）
+tem/
+
 # 运行时数据
 pgdata/
 emily-data/db_seeds/

@@ -25,6 +25,30 @@ class MorningReportHandler(SchedulerJobHandler):
         # TODO: 接入 OpsMonitor 的晨报组装逻辑
         report_text = f"🌅 {push_group} 晨报（待接入完整逻辑）"
 
+        # 追加进化信息（管理员专属）
+        try:
+            from datetime import datetime, timezone, timedelta
+            beijing_tz = timezone(timedelta(hours=8))
+            yesterday = (datetime.now(beijing_tz) - timedelta(days=1)).strftime("%Y-%m-%d")
+
+            from emily_core.repositories.evolution_repo import EvolutionRepo
+
+            insight = EvolutionRepo.get_insight_by_date(yesterday)
+            draft_patches = EvolutionRepo.get_patches_by_status("DRAFT")
+
+            if insight or draft_patches:
+                evolution_section = "\n\n📊 系统进化摘要（昨日）\n"
+                if insight:
+                    evolution_section += f"健康评分: {insight.health_score}/100\n"
+                    evolution_section += f"SOP 命中率: {insight.sop_hit_rate:.1%}\n"
+                if draft_patches:
+                    evolution_section += "\n🔧 待审批补丁\n"
+                    for p in draft_patches:
+                        evolution_section += f"  {p.patch_no}: {p.rule_no} [{p.risk_level}] — {p.target_path}\n"
+                report_text += evolution_section
+        except Exception as e:
+            logger.warning("晨报进化信息追加失败: %s", e)
+
         if self._outbound_bus:
             try:
                 self._outbound_bus.publish("reply", {

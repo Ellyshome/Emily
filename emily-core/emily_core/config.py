@@ -181,10 +181,10 @@ class Config:
     executor_mode: str = "real"
     """执行大脑模式: mock | real（需 EMILY_LLM_API_KEY + BusinessFlowToolRegistry）"""
 
-    auth_mode: str = "mock"
+    auth_mode: str = "real"
     """鉴权引擎模式: mock | real（需 SOPIntentRegistry）"""
 
-    risk_mode: str = "mock"
+    risk_mode: str = "real"
     """风险评估模式: mock | real"""
 
     # ── M12b: Checkpoint 持久化 ──

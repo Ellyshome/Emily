@@ -21,6 +21,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import re
 import time as _time
 
 from .injector import KnowledgeInjector
@@ -549,11 +550,12 @@ class WorkItemAgent:
         executor_mode = self._resolve_mode("executor")
         mock_prefix = "" if executor_mode == "real" else "[Mock 模式] "
 
-        # ---- LLM 回复合成（传入对话历史）----
+        # ---- LLM 回复合成（传入对话历史 + SessionContext）----
         session_ctx = context.get_session_context() if context else None
         message_history = getattr(session_ctx, 'message_history', []) if session_ctx else []
         draft = await self._llm_synthesize_reply(wi, mock_prefix,
-                                                   message_history=message_history if message_history else None)
+                                                   message_history=message_history if message_history else None,
+                                                   session_ctx=session_ctx)
 
         # Guardian 出站审核 —— 只标记不拦截
         if self._guardian:
@@ -585,7 +587,8 @@ class WorkItemAgent:
         )
 
     async def _llm_synthesize_reply(self, wi, mock_prefix: str = "",
-                                      message_history: list[dict] | None = None) -> str:
+                                      message_history: list[dict] | None = None,
+                                      session_ctx=None) -> str:
         """用 LLM 根据 workitem.md prompt + 步骤结果 + 对话历史合成自然语言回复。
 
         使用 chat_messages() 传入完整 message_history，利用 KV cache 复用。
@@ -595,6 +598,7 @@ class WorkItemAgent:
             wi: WorkItem 实例
             mock_prefix: Mock 模式下的前缀
             message_history: 对话历史，由 node4_summary 从 BusContext 提取后传入
+            session_ctx: SessionContext 实例，用于填充 prompt 中的用户/项目变量
         """
         # 组装步骤结果摘要
         steps_text = ""
@@ -610,13 +614,33 @@ class WorkItemAgent:
         # 尝试 LLM 合成
         if self._llm:
             try:
-                system_prompt = _load_workitem_prompt().format(
-                    available_tools=self._build_tools_text(),
-                    sop_text=self.injector.get_context_text()[:3000] if self.injector else f"SOP: {wi.sop_id or '未知'}",
-                    user_input=(getattr(wi, "user_input", "") or "")[:1000],
-                    step_results=steps_text[:2000],
-                    warnings=warnings_text,
-                )
+                # ── 两阶段 prompt 变量替换（D5 设计）──
+                # 阶段 1: WorkItem 级变量 — str.replace() 逐项替换
+                # 阶段 2: Session 级变量 — 复用 SessionContext.get_prompt_variables()
+                prompt_template = _load_workitem_prompt()
+
+                # WorkItem 级变量
+                wi_vars = {
+                    "{available_tools}": self._build_tools_text(),
+                    "{sop_text}": self.injector.get_context_text()[:3000] if self.injector else f"SOP: {wi.sop_id or '未知'}",
+                    "{user_input}": (getattr(wi, "user_input", "") or "")[:1000],
+                    "{step_results}": steps_text[:2000],
+                    "{warnings}": warnings_text,
+                }
+
+                system_prompt = prompt_template
+                for key, value in wi_vars.items():
+                    system_prompt = system_prompt.replace(key, str(value))
+
+                # Session 级变量 — 复用 get_prompt_variables()，无 session_ctx 时清空占位符
+                if session_ctx is not None:
+                    session_vars = session_ctx.get_prompt_variables()
+                    for key, value in session_vars.items():
+                        if value:
+                            system_prompt = system_prompt.replace(key, str(value))
+
+                # 清除未替换的 {xxx} 占位符（防止残留模板语法泄露到 LLM）
+                system_prompt = re.sub(r'\{[a-z_]+\}', '', system_prompt)
 
                 full_messages = [{"role": "system", "content": system_prompt}]
                 if message_history:

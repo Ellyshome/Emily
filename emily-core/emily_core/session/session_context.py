@@ -1,4 +1,4 @@
-﻿"""SessionContext —— Session 操作台（聚合根）。
+"""SessionContext —— Session 操作台（聚合根）。
 
 重构要点：
   - PermissionSnapshot 移除，所有字段扁平化为 SessionContext 直接字段
@@ -47,6 +47,7 @@ class SessionContext:
 
     # ── 权限字段（🔥 可热更新）──
     level: int = 1
+    is_management_unit: bool = False
     company_id: str = ""
     company_type: str = ""
     company_name: str = ""
@@ -86,6 +87,10 @@ class SessionContext:
 
     rag_available: bool = False
     rag_collections: list[str] = field(default_factory=list)
+
+    # ── 元认知模块字段（🔥 可热更新）──
+    project_world_book: str = ""        # 项目世界书纯文本摘要（注入 prompt）
+    rule_book: str = ""                 # 规则书全文（注入 prompt）
 
     # ══════════════════════════════════════════════════════════════════════════
     #  计算属性
@@ -145,6 +150,7 @@ class SessionContext:
 
         # 灌注权限（扁平化 snapshot，直接从顶层取值）
         ctx.level = snapshot.get("level", 1)
+        ctx.is_management_unit = snapshot.get("is_management_unit", False)
         ctx.company_id = snapshot.get("company_id", "")
         ctx.company_type = snapshot.get("company_type", "")
         ctx.company_name = snapshot.get("company_name", "")
@@ -183,6 +189,10 @@ class SessionContext:
         ctx.visible_files_summary = snapshot.get("visible_files_summary", "")
         ctx.rag_available = snapshot.get("rag_available", False)
         ctx.rag_collections = list(snapshot.get("rag_collections", []))
+
+        # 灌注元认知字段
+        ctx.project_world_book = snapshot.get("project_world_book", "")
+        ctx.rule_book = snapshot.get("rule_book", "")
 
         # 灌注最近对话 → message_history
         recent_turns = runtime.get("recent_turns", [])
@@ -343,6 +353,7 @@ class SessionContext:
             "{user_company_type}": self.company_type,
             "{user_department}": "、".join(self.department) if self.department else "",
             "{user_level}": _level_label(self.level),
+            "{user_permission_level}": _level_label(self.level),
             "{current_node_ids}": "、".join(self.authorized_node_ids),
             "{conversation_summary}": self.conversation_summary,
             "{user_memory}": self.long_term_memory,
@@ -354,6 +365,8 @@ class SessionContext:
             "{visible_schema}": self.visible_schema_summary,
             "{visible_files}": self.visible_files_summary,
             "{rag_info}": self._format_rag_summary(),
+            "{project_world_book}": self.project_world_book,
+            "{rule_book}": self.rule_book,
         }
 
     async def persist_and_consolidate(self, llm_client=None) -> None:
@@ -486,6 +499,7 @@ class SessionContext:
         # 🔥 可热更新字段（扁平化 snapshot，直接从顶层取值）
         _hot_fields = {
             "level": snapshot.get("level"),
+            "is_management_unit": snapshot.get("is_management_unit"),
             "company_id": snapshot.get("company_id"),
             "company_type": snapshot.get("company_type"),
             "company_name": snapshot.get("company_name"),
@@ -508,6 +522,8 @@ class SessionContext:
             "visible_files_summary": snapshot.get("visible_files_summary"),
             "rag_available": snapshot.get("rag_available"),
             "rag_collections": snapshot.get("rag_collections"),
+            "project_world_book": snapshot.get("project_world_book"),
+            "rule_book": snapshot.get("rule_book"),
         }
 
         for field, new_val in _hot_fields.items():

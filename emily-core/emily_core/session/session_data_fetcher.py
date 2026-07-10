@@ -1,4 +1,4 @@
-﻿"""SessionDataFetcher —— Session 聚合根全量数据采集器。
+"""SessionDataFetcher —— Session 聚合根全量数据采集器。
 
 替代旧的 collect_session_data.py 脚本逻辑，作为生产路径统一入口。
 一次调用 `fetch()` 返回 session_snapshot / session_runtime / errors。
@@ -210,6 +210,9 @@ class SessionDataFetcher:
             "visible_files_summary": _format_visible_files_summary(visible_files),
             "rag_available": rag_info.get("available", False),
             "rag_collections": rag_info.get("collections", []),
+            # 元认知字段
+            "project_world_book": _sub_fetch_world_book(project_id),
+            "rule_book": _sub_fetch_rule_book(),
         }
 
         session_runtime = {
@@ -368,9 +371,38 @@ def _empty_result(conversation_id: str, user_id: str, errors: list[str]) -> dict
             "visible_files_summary": "",
             "rag_available": False,
             "rag_collections": [],
+            # 元认知字段
+            "project_world_book": "",
+            "rule_book": "",
         },
         "session_runtime": {
             "recent_turns": [],
         },
         "errors": errors,
     }
+
+
+def _sub_fetch_world_book(project_id: Optional[str]) -> str:
+    """获取项目世界书纯文本摘要。"""
+    if not project_id:
+        return ""
+    try:
+        from ..repositories.world_book_repo import ProjectWorldBookRepo
+        wb = ProjectWorldBookRepo.get_by_project(project_id)
+        if wb is None:
+            return ""
+        return wb.content_text or ""
+    except Exception as e:
+        logger.error("_sub_fetch_world_book failed project=%s: %s", project_id, e)
+        return ""
+
+
+def _sub_fetch_rule_book() -> str:
+    """获取规则书全文。"""
+    try:
+        from ..services.rule_book_loader import RuleBookLoader
+        loader = RuleBookLoader()
+        return loader.content
+    except Exception as e:
+        logger.error("_sub_fetch_rule_book failed: %s", e)
+        return ""

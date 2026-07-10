@@ -28,7 +28,7 @@ Emily v0.6.0 是面向企业的 AI Agent 工具，通过 IM（QQ）与员工交�
 | **IM 接入** | NapCat + AstrBot (Docker) | QQ 消息桥接 |
 | **插件** | AstrBot Plugin Shell（薄插件 ~100 行） | 仅负责去重 + 标准化 + HTTP 转发 + SSE 监听，**无业务逻辑** |
 | **业务内核** | FastAPI + Python async | `emily-core` 独立容器，不 import AstrBot |
-| **数据库** | PostgreSQL + SQLAlchemy 2.0 sync | 29 表，esmily-postgres 容器 |
+| **数据库** | PostgreSQL + SQLAlchemy 2.0 sync | 53 表，esmily-postgres 容器 |
 | **AI/LLM** | DeepSeek API（OpenAI 兼容） | chat / chat_json / chat_with_tools |
 | **RAG** | MaxKB hit_test API | Qwen3-Embedding-0.6B 向量检索，可选本地关键词回退 |
 | **部署** | Docker Compose | 5 容器：napcat / astrbot / emily-core / maxkb / emily-postgres |
@@ -77,7 +77,7 @@ QQ → NapCat → AstrBot → emily_agent 薄插件
 | [docs/代码文件目录.md](docs/代码文件目录.md) | 全量 100+ 文件树 + 每文件一句话 | 找代码位置、理解文件职责、了解哪些是弃用/冷备/Mock |
 | [docs/业务模块与运转全景.md](docs/业务模块与运转全景.md) | Mermaid 端到端流程图 + ~30 模块清单 + WorkItem 状态机 + Mock/Real 切换 | 理解系统如何运转、模块之间如何交互、消息处理全路径 |
 | [docs/接口协议与调用约定.md](docs/接口协议与调用约定.md) | 标准协议对象 + 管道接口 ABC + 工具定义 + HTTP/SSE API + 12 条调用约定 | 写新模块/工具前确认契约、排查接口问题 |
-| [docs/数据库设计.md](docs/数据库设计.md) | 29 表速查 + 每表完整字段架构 + ER 关系图 + 维护注意事项 | 改模型、加表/字段、排查数据问题 |
+| [docs/数据库设计.md](docs/数据库设计.md) | 53 表速查 + 每表完整字段架构 + ER 关系图 + 维护注意事项 | 改模型、加表/字段、排查数据问题 |
 | [docs/开发记录.md](docs/开发记录.md) | EmyBot M1-M15→Emily Phase 0/A/B/C 演进 + 7 项架构决策 + 权威文档索引 | 了解历史决策原因、查阅原始设计文档 |
 | [docs/技术踩坑备忘录.md](docs/技术踩坑备忘录.md) | 按类别的 20+ 踩坑（容器/DB/AstrBot/异步/Hook/RAG/模式切换），每条现象+原因+解决 | 遇到问题先查、写新代码避坑 |
 
@@ -105,7 +105,6 @@ QQ → NapCat → AstrBot → emily_agent 薄插件
 |------|------|------|
 | **CodeGraph MCP** | 代码知识图谱索引（169 文件 / 2,110 符号 / 4,051 边），SQLite 后端，文件变更秒级热更新 | `codegraph_explore` 理解代码/架构/流程；`codegraph_search` 搜符号；`codegraph_callers/callees` 查调用链；`codegraph_impact` 评估改动影响 |
 | **emy-test** | Docker 内 emily-core 生产实战测试（HTTP + SSE） | `uv run python .claude/skills/emy-test/cli.py --managed --llm --message "..." --sender "真实用户名" --sender-id "真实UUID"` |
-| **smoke_test** | 离线烟雾测试（无 LLM，全 Mock 路径） | `uv run python scripts/smoke_test.py` |
 
 **emy-test 强制规则**：`--sender-id` 必须使用 `users` 表中真实存在的用户 UUID。随便编一个不存在的 ID 会导致：系统自动创建用户（污染 users 表）+ 权限降级到 level 1（测试的是访客降级路径，结果完全不可信）。每次测试前先查：`docker exec emily-postgres psql -U emily -d emily -c "SELECT id, username, permission_level FROM users WHERE status = 'active' ORDER BY permission_level LIMIT 10;"`
 
@@ -136,11 +135,11 @@ QQ → NapCat → AstrBot → emily_agent 薄插件
 | `emily-core/emily_core/scheduler/service.py` | `SchedulerService`：调度作业 CRUD + 执行记录 |
 | `emily-core/emily_core/scheduler/jobs/periodic_node.py` | `PeriodicNodeHandler`：定期创建 TASK 节点（替代旧 PlanTask 循环模板） |
 | `scripts/manage_nodes.py` | 全景节点管理 CLI 脚本（create/update/activate/discard/progress/query） |
-| `emily-core/emily_core/infrastructure/database/models.py` | ORM 模型——**24 张表**（PlanTask 4 表 + SOPCheckpoint 已废弃删除） |
+| `emily-core/emily_core/infrastructure/database/models.py` | ORM 模型——**53 张表**（PlanTask 4 表 + SOPCheckpoint 已废弃删除） |
 | `data/plugins/emily_agent/main.py` | AstrBot 薄插件入口（~100 行，无业务逻辑） |
 | `emily-data/config/core_config.json` | 非机密运行时配置 |
 | `emily-data/config/hook_config.json` | Hook 声明式挂载配置 |
-| `emily-data/sops/` | SOP 业务流手册仓库（8 份 .md，SOP-009/010 已废弃删除） |
+| `emily-data/sops/` | SOP 业务流手册仓库（10 份 .md） |
 | `emily-data/prompts/` | Agent system prompt 模板（session/workitem/guardian_step/guardian_reply/project .md） |
 
 ---
@@ -167,9 +166,6 @@ uv run python .claude/skills/emy-test/cli.py --managed --llm --message "帮我�
 # 命令行快速测试（不指定用户则交互式选择）
 uv run python .claude/skills/emy-test/cli.py --managed --llm --message "你好"
 
-# 离线烟雾测试（无 LLM，检查 Session→WorkItem→4节点BUS）
-uv run python scripts/smoke_test.py
-
 # 全景节点批量创建（预览模式）
 uv run python scripts/manage_nodes.py create --file nodes.yaml --dry-run
 
@@ -188,9 +184,6 @@ uv run python scripts/manage_nodes.py progress --file progress.yaml
 
 # 全景节点查询
 uv run python scripts/manage_nodes.py query --project-id ECOCITY-26
-
-# MaxKB RAG 测试
-uv run python testsearch.py "消防验收"
 
 # 查看 PostgreSQL 表
 docker exec -it emily-postgres psql -U emily -d emily -c "\dt"

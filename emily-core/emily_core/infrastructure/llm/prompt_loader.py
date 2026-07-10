@@ -39,7 +39,7 @@ _DEFAULTS: dict[str, str] = {
 - 职位：{user_position}
 - 部门：{user_department}
 - 企业：{user_company}({user_company_type})
-- 权限：{user_level}
+- 权限：{user_permission_level}
 - 授权节点：{current_node_ids}
 
 ## 当前项目
@@ -95,7 +95,7 @@ _DEFAULTS: dict[str, str] = {
     "workitem": """你是 Emily 的执行 Agent，负责按业务流程执行任务，并将执行结果合成为自然语言回复。
 
 ## 当前上下文
-- 用户：{user_name}（{user_company} / {user_department} / {user_level}）
+- 用户：{user_name}（{user_company} / {user_department} / {user_permission_level}）
 - 项目：{project_name} (类型 {project_type}，状态 {project_status})
 - 节点权限：{current_node_ids}
 
@@ -126,6 +126,15 @@ _DEFAULTS: dict[str, str] = {
 
 ## 可用工具
 {available_tools}
+
+## 可查询的数据库
+{visible_schema}
+
+## 可访问的文件
+{visible_files}
+
+## 知识库
+{rag_info}
 
 ## SOP 参考
 {sop_text}

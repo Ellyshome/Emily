@@ -70,15 +70,27 @@ def _register_base(core, reg):
 
     # knowledge_search (RAG)
     rp = getattr(core, "_rag_provider", None)
+    from .knowledge_search_tool import (
+        _KNOWLEDGE_SEARCH_SCHEMA, _KNOWLEDGE_SEARCH_DESCRIPTION,
+    )
     if rp is not None:
-        from .knowledge_search_tool import (
-            handle_knowledge_search, _KNOWLEDGE_SEARCH_SCHEMA, _KNOWLEDGE_SEARCH_DESCRIPTION,
-        )
+        from .knowledge_search_tool import handle_knowledge_search
         async def _rag(params, **kw):
             return await handle_knowledge_search(params, rag_provider=rp)
         reg.register(_tool("knowledge_search", _KNOWLEDGE_SEARCH_DESCRIPTION,
                            _KNOWLEDGE_SEARCH_SCHEMA, _rag))
-        _bc += 1
+    else:
+        # 兜底：rag_provider 不可用时仍注册工具，返回友好提示（而非完全缺失）
+        async def _rag_stub(params, **kw):
+            query = (params.get("query", "") or "").strip()
+            return {
+                "success": False,
+                "reply": f"知识库服务暂未就绪（查询：{query}），请稍后重试或联系管理员检查 RAG 配置。",
+            }
+        reg.register(_tool("knowledge_search", _KNOWLEDGE_SEARCH_DESCRIPTION,
+                           _KNOWLEDGE_SEARCH_SCHEMA, _rag_stub))
+        logger.warning("knowledge_search registered with stub handler (rag_provider is None)")
+    _bc += 1
 
 
 # ══════════════════════════════════════════════════════════════════════════════
