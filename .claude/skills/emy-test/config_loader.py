@@ -178,10 +178,13 @@ def get_active_users() -> list[dict]:
     """从数据库获取活跃用户列表。
 
     用于 Web UI 的发送者下拉选择框，按权限级别排序。
+    包含 u.qq 字段和 user_im_bindings 的 IM 绑定信息，
+    供 _resolve_sender() 正确提取 QQ 号作为 sender_id。
 
     Returns:
-        list[dict]: 用户列表，每个用户包含 id, real_name, username, 
-                   permission_level, company_name, phone 等字段
+        list[dict]: 用户列表，每个用户包含 id, real_name, username,
+                   permission_level, company_name, phone, qq,
+                   im_platform, im_user_id 等字段
                    失败时返回空列表
     """
     try:
@@ -193,9 +196,9 @@ def get_active_users() -> list[dict]:
     try:
         db_url = get_db_url()
         engine = create_engine(db_url)
-        
+
         query = text("""
-            SELECT 
+            SELECT
                 u.id,
                 COALESCE(u.username, '') as real_name,
                 u.username,
@@ -211,14 +214,18 @@ def get_active_users() -> list[dict]:
                     WHEN 5 THEN '管理员'
                     WHEN 6 THEN '系统管理员'
                     ELSE '未知'
-                END as permission_label
+                END as permission_label,
+                u.qq,
+                uib.im_platform,
+                uib.im_user_id
             FROM users u
             LEFT JOIN company_info c ON u.company = c.id
+            LEFT JOIN user_im_bindings uib ON u.id = uib.user_id AND uib.status = 'active'
             WHERE u.is_deleted = false
               AND u.status = 'active'
             ORDER BY u.level DESC, u.username
         """)
-        
+
         with engine.connect() as conn:
             result = conn.execute(query)
             users = []
@@ -232,7 +239,10 @@ def get_active_users() -> list[dict]:
                     "email": row[5],
                     "company_name": row[6] or "未分配单位",
                     "permission_label": row[7],
-                    "display_name": f"{row[1] or row[2]} ({row[7]} - {row[6] or '未分配单位'})"
+                    "display_name": f"{row[1] or row[2]} ({row[7]} - {row[6] or '未分配单位'})",
+                    "qq": row[8] or "",
+                    "im_platform": row[9] or "",
+                    "im_user_id": row[10] or "",
                 })
             return users
     except Exception as e:

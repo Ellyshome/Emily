@@ -65,11 +65,14 @@ def _resolve_sender(
             if uname == sender_name:
                 result["user_record"] = u
                 result["sender_name"] = uname
-                # 优先用 QQ 号作为 sender_id（与 AstrBot 行为一致）
-                uqq = u.get("qq", "") or u.get("phone", "")
+                # 优先用 IM 绑定的用户 ID（即真实 QQ 号）作为 sender_id
+                # 回退到 users.qq → users.phone → UUID
+                im_uid = u.get("im_user_id", "")
+                uqq = im_uid or u.get("qq", "") or u.get("phone", "")
                 if uqq:
                     result["sender_id"] = uqq
                     result["qq"] = uqq
+                    result["platform"] = u.get("im_platform", "") or "napcat"
                 else:
                     result["sender_id"] = u["id"]
                 return result
@@ -128,11 +131,13 @@ def _interactive_user_selection() -> dict:
                 u = users[idx]
                 result["user_record"] = u
                 result["sender_name"] = u.get("real_name", "") or u.get("username", "")
-                # 优先用 QQ 号作为 sender_id
-                uqq = u.get("qq", "") or u.get("phone", "")
+                # 优先用 IM 绑定的用户 ID（即真实 QQ 号）作为 sender_id
+                im_uid = u.get("im_user_id", "")
+                uqq = im_uid or u.get("qq", "") or u.get("phone", "")
                 if uqq:
                     result["sender_id"] = uqq
                     result["qq"] = uqq
+                    result["platform"] = u.get("im_platform", "") or "napcat"
                 else:
                     result["sender_id"] = u["id"]
                 print(f"✅ 已选择: {result['sender_name']} (sender_id={result['sender_id']})")
