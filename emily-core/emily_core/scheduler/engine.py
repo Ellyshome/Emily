@@ -180,6 +180,25 @@ class SchedulerEngine:
         # ③ after:execute hooks
         await self._fire_after_hooks(ctx)
 
+        # ── 进化日志：调度器作业日志 ──
+        try:
+            from ..infrastructure.logging.scheduler_logger import SchedulerJobLogger
+            from datetime import datetime, timezone
+            now = datetime.now(timezone.utc).isoformat()
+            SchedulerJobLogger.log_sync(
+                job_id=job.id,
+                action_type=job.action_type,
+                params_json=getattr(job, 'action_params', '{}') or '{}',
+                success=ctx.result.success if ctx.result else False,
+                summary=(ctx.result.summary or "")[:500] if ctx.result else "",
+                elapsed_ms=0,
+                error_detail="" if (ctx.result and ctx.result.success) else (ctx.result.summary if ctx.result else ""),
+                started_at="",
+                completed_at=now,
+            )
+        except Exception as e:
+            logger.warning("Scheduler job log write failed: %s", e)
+
     async def trigger_job(self, job_id: str):
         """手动触发作业（不检查调度时间）。"""
         job = await self._service.get_job(job_id)

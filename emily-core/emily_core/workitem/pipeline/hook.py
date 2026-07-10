@@ -1,4 +1,4 @@
-﻿"""Hook 基类 + 三态返回值 + 5 个具体 Hook 子类 — M12a 管道总线架构。
+"""Hook 基类 + 三态返回值 + 5 个具体 Hook 子类 — M12a 管道总线架构。
 
 借鉴 Claude Code Harness 的 exit code 语义：
   - ALLOW (exit 0): 放行
@@ -163,7 +163,7 @@ class AuditHook(Hook):
     event_type: str = ""  # "message_received" | "sop_invoked" | "sop_completed" | ...
 
     async def execute(self, context: "PipelineContext") -> HookResult:
-        """异步写审计记录，失败只记日志不抛异常。"""
+        """异步写审计记录，失败只记日志不抛异常。增强版：写入 user_id/sop_id/block_reason/session_level。"""
         try:
             from ...infrastructure.database.session import get_session
             from ...infrastructure.database.models import HookExecutionLog
@@ -172,15 +172,38 @@ class AuditHook(Hook):
 
             t0 = _time.time()
             run_id = context.pipeline_run_id
+
+            # ── 增强字段采集 ──
+            user_id = context.user_id or ""
+            sop_id = ""
+            session_level = None
+            session_ctx = context.get_session_context()
+            if session_ctx is not None:
+                session_level = session_ctx.level
+
+            intent = context.intent
+            if intent:
+                sop_id = getattr(intent, "sop_id", "") or ""
+
+            # 判断当前 hook 是否为 BLOCK（从 before hook 已设的 abort_reason 推断）
+            block_reason = ""
+            if context.should_abort and context.abort_reason:
+                block_reason = context.abort_reason[:500]
+
             log_entry = HookExecutionLog(
                 hook_name=self.name,
                 mount_point=f"after:{context.current_stage}",
                 pipeline_run_id=run_id,
                 phase="after",
-                decision="allow",
+                decision="block" if block_reason else "allow",
                 message=f"audit: {self.event_type}",
                 duration_ms=int((_time.time() - t0) * 1000),
                 metadata_json="{}",
+                # ── 增强字段 ──
+                user_id=user_id,
+                sop_id=sop_id,
+                block_reason=block_reason,
+                session_level=session_level,
                 created_at=datetime.now(timezone.utc).isoformat(),
             )
             with get_session() as session:
@@ -287,104 +310,9 @@ class ProgressHook(Hook):
 # Hook 类型字符串 → 类映射表
 # ════════════════════════════════════════════════════════════════════════════════
 
-# ══════════════════════════════════════════════════════════════════════════════
-# PlanTaskMatchHook — 计划外事件匹配（§2.5）
-# ══════════════════════════════════════════════════════════════════════════════
-
-
-def _build_deliverable_from_params(params: dict, submitted_by: str):
-    """从 record_event/record_task 的 tool_params 构造成果命令。"""
-    from ...services.plan_task_commands import SubmitDeliverableCommand
-    content = (
-        params.get("description", "")
-        or params.get("title", "")
-        or params.get("content", "")
-    )
-    return SubmitDeliverableCommand(
-        instance_id="",
-        type="TEXT",
-        content=content,
-        file_url=params.get("file_url", ""),
-        file_name=params.get("file_name", ""),
-        submitted_by=submitted_by,
-    )
-
-
-@dataclass
-class PlanTaskMatchHook(Hook):
-    """计划外事件匹配钩子 — 上传成果时匹配挂起的计划任务（§2.5）。
-
-    挂载点: before:wi_node3（执行节点前）。
-    对 record_event / record_task 步骤，提取上传上下文（项目/阶段/内容），
-    调用 PlanTaskService.match_or_create_unscheduled：
-      - 匹配成功 → 关联到已有计划任务
-      - 匹配失败 → 创建计划外任务实例（is_unscheduled=True）
-    决策: 永远 ALLOW（匹配为 fire-and-forget，不阻断 SOP 正常流程）。
-    仅对带项目上下文的步骤触发，减少噪音。
-    """
-    plan_task_service: Any = None  # PlanTaskService 实例，由 EmilyCore 注入
-
-    async def execute(self, context: "PipelineContext") -> HookResult:
-        if self.plan_task_service is None:
-            return HookResult.allow()
-
-        try:
-            wi = context.work_item
-            plan = getattr(wi, "execution_plan", None)
-            if plan is None:
-                return HookResult.allow()
-
-            matches: dict[str, dict] = {}
-            user_id = context.user_id or ""
-
-            for step in getattr(plan, "steps", []) or []:
-                tool_name = getattr(step, "tool_name", "") or ""
-                if tool_name not in ("record_event", "record_task"):
-                    continue
-
-                params = getattr(step, "tool_params", {}) or {}
-                project_id = params.get("project_id", "")
-                project_name = params.get("project_name", "")
-                if not project_id and not project_name:
-                    continue
-
-                upload_context = {
-                    "project_id": project_id,
-                    "project_name": project_name,
-                    "phase_code": params.get("phase_code", ""),
-                    "keywords": params.get("title", "") or params.get("description", ""),
-                }
-                deliverable = _build_deliverable_from_params(params, user_id)
-
-                instance, match_result = await self.plan_task_service.match_or_create_unscheduled(
-                    user_id=user_id,
-                    upload_context=upload_context,
-                    deliverable=deliverable,
-                )
-                matches[getattr(step, "step_id", "")] = {
-                    "instance_id": getattr(instance, "id", ""),
-                    "instance_no": getattr(instance, "instance_no", ""),
-                    "matched": match_result.matched,
-                    "confidence": match_result.confidence,
-                }
-                logger.info(
-                    "PlanTaskMatchHook[%s] %s step=%s → instance=%s matched=%s",
-                    self.name, tool_name, getattr(step, "step_id", "?"),
-                    getattr(instance, "instance_no", "?"), match_result.matched,
-                )
-
-            if matches:
-                context.baggage["plan_task_matches"] = matches
-        except Exception as e:
-            logger.warning("PlanTaskMatchHook[%s] failed (non-blocking): %s", self.name, e)
-
-        return HookResult.allow()
-
-
 HOOK_TYPE_MAP: dict[str, type[Hook]] = {
     "auth": AuthHook,
     "audit": AuditHook,
     "trace": TraceHook,
     "progress": ProgressHook,
-    "plan_task_match": PlanTaskMatchHook,
 }

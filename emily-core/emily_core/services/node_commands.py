@@ -1,6 +1,6 @@
 """全景节点图 V2 Command 数据结构 —— Service 层公共方法入参。
 
-参照模式：plan_task_commands.py。
+参照模式：emily_core/services/ 目录下的 Command 数据类。
 """
 
 from dataclasses import dataclass, field
@@ -223,7 +223,7 @@ class ResubmitNodeDeliverableCommand:
 
 @dataclass
 class CreateTaskNodeCommand:
-    """创建 TASK 类型叶子节点命令（替代 record_plan_task）。"""
+    """创建 TASK 类型叶子节点命令。"""
     project_id: str
     node_name: str
     responsible_user_id: str = ""       # 为空时取 creator_id

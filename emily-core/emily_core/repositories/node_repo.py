@@ -3,7 +3,7 @@
 包含：ProjectNodeRepo / NodeDependencyRepo / NodeDeliverableRepo /
       NodeAccessibleFileRepo / NodeEventRepo
 
-基于需求文档 §3.2–§3.6。参照模式：plan_task_repo.py。
+基于需求文档 §3.2–§3.6。
 """
 
 from __future__ import annotations

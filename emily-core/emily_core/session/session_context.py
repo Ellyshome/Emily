@@ -195,7 +195,7 @@ class SessionContext:
                 "name": name if name else None,
             })
 
-        # SOP 目录摘要（优先从 SkillRegistry 获取，回退到 SOPIntentRegistry）
+        # SOP 目录摘要（从 SkillRegistry 获取）
         if core is not None:
             skill_registry = getattr(core, "_skill_registry", None)
             if skill_registry is not None:
@@ -207,19 +207,6 @@ class SessionContext:
                         )
                 except Exception:
                     pass
-            # 回退到旧 SOPIntentRegistry（兼容过渡）
-            if not ctx.sop_catalog_summary:
-                sop_registry = getattr(core, "_sop_intent_registry", None)
-                if sop_registry is not None:
-                    try:
-                        sops = sop_registry.list_loaded_sops()
-                        if sops:
-                            ctx.sop_catalog_summary = (
-                                f"可用业务流程 ({len(sops)}): {', '.join(sops[:15])}"
-                            )
-                    except Exception:
-                        pass
-
         if errors:
             logger.warning("SessionContext.create: %d data fetch errors for user=%s",
                            len(errors), user_id)
