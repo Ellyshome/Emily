@@ -1,4 +1,4 @@
-﻿"""配置模块 —— Emily Core 运行时配置。"""
+"""配置模块 —— Emily Core 运行时配置。"""
 
 from dataclasses import dataclass, field
 
@@ -25,7 +25,7 @@ class Config:
     log_to_file: bool = True
     """是否写入日志文件"""
 
-    # ---- LLM 配置 (M3 启用) ----
+    # ---- LLM 配置 ----
     llm_api_key: str = ""
     """LLM API 密钥（为空时所有消息按 chat 处理）"""
 
@@ -56,7 +56,7 @@ class Config:
     /app/prompts → emily-data/prompts）。目录下按名称存放 .md 文件：
     routing.md / planner.md / guardian_step.md / guardian_reply.md"""
 
-    # ---- Agent 配置 (M7) ----
+    # ---- Agent 配置 ----
     agent_max_iterations: int = 10
     """MasterAgent ReAct 循环最大迭代次数。"""
 
@@ -66,14 +66,14 @@ class Config:
     agent_context_ttl_seconds: int = 600
     """对话上下文过期时间（秒），默认 10 分钟。"""
 
-    # ---- M7.1: Mermaid 决策树 ----
+    # ---- Mermaid 决策树 ----
     pending_issues_enabled: bool = True
     """待解决问题清单开关"""
 
     pending_issues_path: str = ""
     """待解决问题清单文件路径（为空时默认 tem_log/待解决问题.md）"""
 
-    # ---- M8c: 项目日记与长期记忆 ----
+    # ---- 项目日记与长期记忆 ----
     journal_enabled: bool = True
     """项目事件日志开关"""
 
@@ -89,7 +89,7 @@ class Config:
     user_memory_max_entries: int = 50
     """每个用户长期记忆最大条目数"""
 
-    # ---- M9: SOP 发现式路由 ----
+    # ---- SOP 发现式路由 ----
     sop_repository_dir: str = ""
     """SOP 仓库目录路径（为空时默认 SOPrepository/）"""
 
@@ -125,7 +125,7 @@ class Config:
     maxkb_similarity_threshold: float = 0.3
     """hit_test 相似度阈值（0.0-1.0）"""
 
-    # ---- M8b: 前导信息机制 ----
+    # ---- 前导信息机制 ----
     enable_progress_message: bool = True
     """前导信息开关（深度操作时先发"处理中..."再发结果）"""
 
@@ -135,14 +135,14 @@ class Config:
     progress_threshold_iterations: int = 3
     """对话上下文超过此轮数时自动发送前导信息"""
 
-    # ── M11: 聊天归档 ──
+    # ── 聊天归档 ──
     chat_archive_enabled: bool = True
     """全量聊天记录存档开关（入站+出站双向归档）"""
 
     chat_archive_include_progress: bool = False
     """前导消息是否纳入对话历史查询（默认否）"""
 
-    # ── M11: Agent 追踪 ──
+    # ── Agent 追踪 ──
     agent_trace_enabled: bool = True
     """Agent 推理过程记录总开关"""
 
@@ -155,9 +155,9 @@ class Config:
     tool_call_log_enabled: bool = True
     """工具调用日志开关（工具名/参数/结果摘要）"""
 
-    # ── M13: 文件下载 ──
+    # ── 文件下载 ──
     file_download_enabled: bool = True
-    """附件自动下载开关（M13: 默认开启，下载失败会自动跳过不阻断管道）"""
+    """附件自动下载开关（默认开启，下载失败会自动跳过不阻断管道）"""
 
     # ── Session 主线编排：公共 Pipeline BUS（4 节点）──
     hook_config_path: str = ""
@@ -173,11 +173,10 @@ class Config:
     workitem_max_per_session: int = 5
     """每 Session 最大 WorkItem 数。"""
 
-    # ── Phase B: Pipeline 节点大脑模式开关 ──
+    # ── Pipeline 节点大脑模式开关 ──
     planner_mode: str = "real"
     """规划大脑模式: mock | real（需 EMILY_LLM_API_KEY）"""
 
-    # ── Phase C: Pipeline 节点大脑模式开关 ──
     executor_mode: str = "real"
     """执行大脑模式: mock | real（需 EMILY_LLM_API_KEY + BusinessFlowToolRegistry）"""
 
@@ -187,7 +186,7 @@ class Config:
     risk_mode: str = "real"
     """风险评估模式: mock | real"""
 
-    # ── M12b: Checkpoint 持久化 ──
+    # ── Checkpoint 持久化 ──
     checkpoint_enabled: bool = True
     """检查点持久化开关"""
 

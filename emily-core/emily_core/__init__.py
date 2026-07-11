@@ -8,11 +8,6 @@ EmilyCore 是独立容器内的业务内核，不依赖任何 AstrBot 对象。�
   · 构建系统级公共 Pipeline BUS（全局单例 WorkItem-Agent + 声明式 Hook）
   · 构建 SessionPoolManager（消息路由 + Session 生命周期）
   · 暴露 handle_message 作为统一入站入口
-
-Phase C 升级（蓝图 §12.2）：
-  · MockWorkAgent → 真实执行引擎（M14 BusinessFlowToolRegistry 直调）
-  · MockAuthEngine → 角色鉴权（SOP allow_roles）
-  · MockRiskGrader → 基于规则的风险评估
 """
 
 import logging
@@ -31,11 +26,7 @@ logger = logging.getLogger("emily.core")
 
 
 class EmilyCore:
-    """Emily 业务内核 —— Session 主线编排。
-
-    Phase C 升级：
-      · _business_flow_tools → 执行引擎（M14 工具直调）
-    """
+    """Emily 业务内核 —— Session 主线编排。"""
 
     def __init__(self, config: Config, rag_provider=None):
         self.config = config
@@ -66,11 +57,11 @@ class EmilyCore:
         # Session 池
         self._session_pool = None
 
-        # Phase B/C: 共享基础设施
+        # 共享基础设施
         # SOPIntentRegistry 已废弃（由 SkillRegistry 替代），不再初始化
         # self._sop_intent_registry = None
 
-        # Phase C: 执行依赖
+        # 执行依赖
         self._business_flow_tools = None
 
         # 计划任务系统已废弃（由 scheduler/ + Node Task 体系替代）
@@ -79,7 +70,7 @@ class EmilyCore:
         # self._plan_task_app = None
         # self._workflow_integrator = None
 
-        # 系统调度器（Scheduler Module，M4-M5 新增）
+        # 系统调度器
         self._scheduler_service = None
         self._scheduler_engine = None
         self._scheduler_app = None
@@ -100,7 +91,7 @@ class EmilyCore:
         self._node_event_bus = None
         self._node_app = None
 
-        # M8c: 项目日记 + 长期记忆 + 待解决问题（文件级持久化）
+        # 项目日记 + 长期记忆 + 待解决问题（文件级持久化）
         self._event_journal = None
         self._user_memory_service = None
         self._pending_issues_service = None
@@ -158,10 +149,10 @@ class EmilyCore:
         # ── Email 模块（SMTP + IMAP Providers + EmailService）──
         self._init_email_module()
 
-        # ── Phase B: SOP 意图注册表 + 工具注册表 ──
+        # ── SOP 意图注册表 + 工具注册表 ──
         self._init_phase_b_deps()
 
-        #  ── Phase C: 执行 + 守护依赖 ──
+        #  ── 执行 + 守护依赖 ──
         self._init_phase_c_deps()
 
         #  ── 计划任务系统（已废弃，由 scheduler/ + Node Task 体系替代）──
@@ -176,7 +167,7 @@ class EmilyCore:
         #  ── 全景节点图 V2 ──
         self._init_node_module()
 
-        #  ── 项目日记 + 长期记忆（必须在 Phase C 之后，依赖 Application 实例）──
+        #  ── 项目日记 + 长期记忆 ──
         self._init_m8c_services()
 
         # ── Skill 模块 ──
@@ -203,7 +194,7 @@ class EmilyCore:
         )
 
     def _init_phase_b_deps(self) -> None:
-        """Phase B: 初始化共享基础设施。"""
+        """初始化共享基础设施。"""
         # SOPIntentRegistry 已废弃（由 SkillRegistry 替代），不再初始化
         # SkillRegistry 在 _init_skill_module() 中单独初始化
 
@@ -335,7 +326,7 @@ class EmilyCore:
         return self._rule_book_loader.reload()
 
     def _init_phase_c_deps(self) -> None:
-        """Phase C: 初始化执行引擎 + 守护审核依赖 + Application 层。"""
+        """初始化执行引擎 + 守护审核依赖 + Application 层。"""
         try:
             from .tools.business_flow_tools import BusinessFlowToolRegistry
 
@@ -353,7 +344,7 @@ class EmilyCore:
             self._task_app = TaskApplication(TaskService())
             self._meeting_app = MeetingApplication(MeetingService())
 
-            # M13 (TC-A01): 创建 FileStorageService 并注入 FileApplication
+            # 创建 FileStorageService 并注入 FileApplication
             storage_root = self.config.storage_root or ""
             if not storage_root:
                 container_path = Path("/app/attachments")
@@ -368,21 +359,21 @@ class EmilyCore:
             self._file_app = FileApplication(FileService(), storage_service=file_storage)
             self._query_service = QueryService()
 
-            # M8c: 注入项目日记到 Application 层（如果 journal 先于此处初始化则注入）
+            # 注入项目日记到 Application 层（如果 journal 先于此处初始化则注入）
             if self._event_journal is not None:
                 self._event_app.set_journal(self._event_journal)
                 self._task_app.set_journal(self._event_journal)
                 self._meeting_app.set_journal(self._event_journal)
                 self._file_app.set_journal(self._event_journal)
                 self._query_service.set_journal(self._event_journal)
-                logger.info("M8c: EventJournal injected into 4 apps + query_service")
+                logger.info("EventJournal injected into 4 apps + query_service")
 
         except Exception as e:
-            logger.warning("Phase C: init failed: %s", e)
+            logger.warning("Execution engine init failed: %s", e)
             self._business_flow_tools = None
 
     def _build_pipeline_bus(self) -> None:
-        """构建系统级公共 Pipeline BUS（蓝图 §5.4 + Phase C 升级）。"""
+        """构建系统级公共 Pipeline BUS（蓝图 §5.4）。"""
         from .workitem import WorkItemAgent, PipelineBUS, KnowledgeInjector
 
         injector = KnowledgeInjector(
@@ -392,10 +383,10 @@ class EmilyCore:
             injector=injector,
             llm_client=self._llm_client,
             config=self.config,
-            # Phase C: 执行依赖
+            # 执行依赖
             business_flow_tools=self._business_flow_tools,
             rag_provider=self._rag_provider,
-            # 阶段二：三维鉴权引擎
+            # 三维鉴权引擎
             permission_engine=self._permission_auth_engine,
             # Skill 模块
             skill_registry=self._skill_registry,
@@ -542,11 +533,11 @@ class EmilyCore:
             self._scheduler_app = None
 
     def _init_permission_module(self) -> None:
-        """初始化权限管理模块（阶段二：三维鉴权 + 校验接口）。
+        """初始化权限管理模块：三维鉴权 + 校验接口。
 
-        阶段一：PermissionService 在 SessionFactory._build_context() 中被调用，
+        PermissionService 在 SessionFactory._build_context() 中被调用，
         组装 PermissionSnapshot 注入 SessionContext。
-        阶段二：PermissionCache + PermissionAuthEngine + PermissionAuditLogRepository +
+        PermissionCache + PermissionAuthEngine + PermissionAuditLogRepository +
         PermissionApplication + API 路由注册。
         fail-open：初始化失败不阻塞 Core。
         """
@@ -654,10 +645,10 @@ class EmilyCore:
         except Exception:
             logger.warning("Node graph V2 module initialization failed", exc_info=True)
 
-    # ── M8c: 项目日记 + 长期记忆 ──
+    # ── 项目日记 + 长期记忆 ──
 
     def _init_m8c_services(self) -> None:
-        """初始化 M8c 文件级持久化服务：EventJournal + UserMemoryService。
+        """初始化文件级持久化服务：EventJournal + UserMemoryService。
 
         EventJournal：项目事件流水日志，记录所有系统事件的摘要行。
         通过 set_journal() 注入到 event_app / task_app / meeting_app / file_app /
@@ -686,7 +677,7 @@ class EmilyCore:
                 enabled=self.config.journal_enabled,
             )
             self._event_journal = journal
-            logger.info("M8c: EventJournal initialized — path=%s enabled=%s",
+            logger.info("EventJournal initialized — path=%s enabled=%s",
                          journal_path, journal.enabled)
 
             # 注入到已创建的 Application 实例
@@ -696,9 +687,9 @@ class EmilyCore:
                 self._meeting_app.set_journal(journal)
                 self._file_app.set_journal(journal)
                 self._query_service.set_journal(journal)
-                logger.info("M8c: EventJournal injected into 4 apps + query_service")
+                logger.info("EventJournal injected into 4 apps + query_service")
         except Exception as e:
-            logger.warning("M8c: EventJournal init failed: %s", e)
+            logger.warning("EventJournal init failed: %s", e)
             self._event_journal = None
 
         # ── 2. UserMemoryService（长期记忆）──
@@ -719,13 +710,13 @@ class EmilyCore:
                 enabled=self.config.user_memory_enabled,
                 max_entries=self.config.user_memory_max_entries,
             )
-            logger.info("M8c: UserMemoryService initialized — dir=%s enabled=%s",
+            logger.info("UserMemoryService initialized — dir=%s enabled=%s",
                          memory_dir, self._user_memory_service.enabled)
 
             # write_user_memory 工具注册已移至 register_all() → _register_business()
             # 此处不再重复注册，避免 user_name 参数在初始化时固定为空
         except Exception as e:
-            logger.warning("M8c: UserMemoryService init failed: %s", e)
+            logger.warning("UserMemoryService init failed: %s", e)
             self._user_memory_service = None
 
         # ── 3. PendingIssuesService（待解决问题清单 / notebooks 目录）──
@@ -743,9 +734,9 @@ class EmilyCore:
                     )
             self._pending_issues_service = PendingIssuesService(issues_path=issues_path)
             self._pending_issues_service._ensure_file()  # 确保文件存在
-            logger.info("M8c: PendingIssuesService initialized — path=%s", issues_path)
+            logger.info("PendingIssuesService initialized — path=%s", issues_path)
         except Exception as e:
-            logger.warning("M8c: PendingIssuesService init failed: %s", e)
+            logger.warning("PendingIssuesService init failed: %s", e)
             self._pending_issues_service = None
 
     def _register_node_tools(self) -> None:
@@ -823,7 +814,7 @@ class EmilyCore:
         return None
 
     def _collect_injected_services(self) -> dict:
-        """Phase C: 收集可注入到 Hook 的全量服务。"""
+        """收集可注入到 Hook 的全量服务。"""
         injected: dict = {}
 
         # 前导消息发送器
@@ -874,7 +865,7 @@ class EmilyCore:
         # 用户解析：BUG-001 修复 — 增加 UUID 直查路径
         user_id = ""
         try:
-            # ① 如果 sender_id 看起来是 UUID，先直接查 users 表
+            # ① 如果 sender_id 看起来像 UUID，先直接查 users 表
             if self._looks_like_uuid(message.sender_id):
                 from .repositories.user_repo import UserRepository
                 direct_user = UserRepository.get_by_id(message.sender_id)

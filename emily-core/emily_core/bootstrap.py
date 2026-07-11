@@ -56,7 +56,7 @@ def _config_from_env(config_data: dict | None) -> dict:
         "EMILY_STORAGE_ROOT": "storage_root",
         "EMILY_HOOK_CONFIG_PATH": "hook_config_path",
         "EMILY_SOP_REPOSITORY_DIR": "sop_repository_dir",
-        # Phase C: Pipeline node brain mode switches
+        # Pipeline node brain mode switches
         "EMILY_EXECUTOR_MODE": "executor_mode",
         "EMILY_PLANNER_MODE": "planner_mode",
         "EMILY_AUTH_MODE": "auth_mode",
@@ -95,7 +95,7 @@ def init(config_data: dict | None = None, rag_provider=None) -> "EmilyCore":
     init_db(db_url)
     _logger.info("Database ready: %s", get_db_path())
 
-    # Phase C: 初始化 RAG Provider（如果 kb_enabled + maxkb 配置了）
+    # 初始化 RAG Provider（如果 kb_enabled + maxkb 配置了）
     if rag_provider is None and config.kb_enabled:
         try:
             from .providers.rag.maxkb_provider import MaxKBRagProvider

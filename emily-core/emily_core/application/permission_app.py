@@ -1,4 +1,4 @@
-﻿"""PermissionApplication — 权限管理编排层（阶段二）。
+"""PermissionApplication — 权限管理编排层。
 
 遵循 plan_task_app.py 模式：
   - 接收 PermissionService 实例
@@ -23,7 +23,7 @@ class PermissionApplication:
         self._service = service
 
     # ========================================================================
-    #  权限校验（需求 §14.1）
+    #  权限校验
     # ========================================================================
 
     async def check_permission(self, user_id: str, sop_id: str) -> dict:
@@ -41,7 +41,7 @@ class PermissionApplication:
             return {"success": False, "allowed": False, "reason": str(e), "reply": f"权限校验失败：{e}"}
 
     # ========================================================================
-    #  授权管理（需求 §5）
+    #  授权管理
     # ========================================================================
 
     async def grant_permission(self, *, grantee_id: str, grantor_id: str,
@@ -87,7 +87,7 @@ class PermissionApplication:
             return {"success": False, "reply": f"撤销操作失败：{e}"}
 
     # ========================================================================
-    #  权限查询（需求 §14 GET）
+    #  权限查询
     # ========================================================================
 
     async def query_user_permissions(self, user_id: str) -> dict:
@@ -125,16 +125,16 @@ class PermissionApplication:
             return {"success": False, "reply": f"查询权限失败：{e}"}
 
     # ========================================================================
-    #  权限申请（需求 §9，轻量审批流）
+    #  权限申请
     # ========================================================================
 
     async def request_permission(self, *, requester_id: str, perm_code: str,
                                  request_type: str = "TEMP_GRANT",
                                  reason: str = "", priority: str = "NORMAL") -> dict:
-        """申请权限（创建 permission_request，阶段三完善审批流）。
+        """申请权限（创建 permission_request，审批流待完善）。
 
-        阶段二提供基础能力：创建申请记录 + 返回审批人建议。
-        完整审批工作流（超时升级/转审）在阶段三实现。
+        当前提供基础能力：创建申请记录 + 返回审批人建议。
+        完整审批工作流（超时升级/转审）待实现。
         """
         import asyncio
         from emily_core.infrastructure.database.models import _utc_now
@@ -204,9 +204,9 @@ class PermissionApplication:
 
     async def approve_request(self, *, request_no: str, approver_id: str,
                               approved: bool, remark: str = "") -> dict:
-        """审批权限申请（阶段二基础版：直接通过/拒绝）。
+        """审批权限申请（基础版：直接通过/拒绝）。
 
-        阶段三扩展：超时升级/转审/协同待办集成。
+        待扩展：超时升级/转审/协同待办集成。
         """
         import asyncio
         from emily_core.infrastructure.database.session import get_session

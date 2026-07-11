@@ -1,6 +1,5 @@
 """QueryApplication —— 查询编排层。
 
-M5: QueryCommand → execute → format_reply。
 负责从 RouteResult 构建 QueryCommand，调用 QueryService 执行查询，
 并返回格式化的回复。
 """

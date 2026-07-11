@@ -37,10 +37,10 @@ class EventApplication:
 
     def __init__(self, event_service: EventService):
         self.event_service = event_service
-        self._journal = None  # M8c: EventJournal（由 EmilyCore 注入）
+        self._journal = None  # EventJournal（由 EmilyCore 注入）
 
     def set_journal(self, journal) -> None:
-        """注入事件日志服务（M8c）。"""
+        """注入事件日志服务。"""
         self._journal = journal
 
     async def handle_event(
@@ -120,7 +120,7 @@ class EventApplication:
         if action == "confirm":
             event = self.event_service.confirm_event(event_id)
             if event:
-                # M8c: 写入项目日志
+                # 写入项目日志
                 if self._journal is not None:
                     from ._user_utils import resolve_user_name
                     user_name = resolve_user_name(event.user_id) if event.user_id else ""
