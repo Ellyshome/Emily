@@ -3,9 +3,9 @@
 模块组成：
   - level.py: PermissionLevel 枚举 + INHERITANCE_CHAIN 树形继承 + can_access()
   - code_compiler.py: PermissionCodeCompiler 权限编码解析/匹配
-  - auth_engine.py: PermissionAuthEngine 三维树形鉴权（阶段二）
-  - row_security.py: SQLAlchemy before_execute 行级安全拦截器 + PermissionAuditLogRepository（阶段二）
-  - cache.py: PermissionCache 两级缓存（L1 矩阵 + L2 用户白名单）（阶段二）
+  - auth_engine.py: PermissionAuthEngine 三维树形鉴权
+  - row_security.py: SQLAlchemy before_execute 行级安全拦截器 + PermissionAuditLogRepository
+  - cache.py: PermissionCache 两级缓存（L1 矩阵 + L2 用户白名单）
 
 实施计划见 需求文件/权限管理系统/权限管理系统-实施计划.md
 """
@@ -59,13 +59,13 @@ __all__ = [
     "compile_code",
     "code_matches_any",
     "can_view_security_level",
-    # auth_engine (阶段二)
+    # auth_engine
     "AccessCheckResult",
     "PermissionAuthEngine",
-    # cache (阶段二)
+    # cache
     "PermissionCache",
     "PermissionMatrix",
-    # row_security (阶段二)
+    # row_security
     "PermissionAuditLogRepository",
     "set_current_permission_snapshot",
     "get_current_permission_snapshot",

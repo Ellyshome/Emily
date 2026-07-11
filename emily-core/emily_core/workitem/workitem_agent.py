@@ -1,19 +1,13 @@
-﻿"""WorkItemAgent —— 全局单例，异步处理所有 WorkItem（蓝图 §5.3）。
+"""WorkItemAgent —— 全局单例，异步处理所有 WorkItem（蓝图 §5.3）。
 
 核心设计：不是每个 WorkItem 创建独立 Agent，而是全局唯一 Agent 实例，
 异步处理所有 WorkItem。新 WorkItem 进来时，KnowledgeInjector 增量注入
 执行该 WorkItem 缺失的知识（SOP/工具/schema），最小化上下文污染。
 
-Phase C 实现（蓝图 §12.2）：
-  - 节点1 [意图验证+注入]：路由已在 SessionAgent 完成，节点1 仅验证 + 增量注入
-  - 节点2 [计划+标准]：EMILY_PLANNER_MODE=real 时 LLM 动态规划，否则 MockPlanner
-  - 节点3 [执行+验收]：EMILY_EXECUTOR_MODE=real 时真实执行引擎（M14 工具直调）
-  - 节点4 [成果总结]：组装 result_text + Guardian 出站审核（追加式标记）
-
-节点 ↔ 大脑映射（蓝图 §5.4 + Phase C）：
+节点 ↔ 大脑映射：
   wi_node1 [意图验证+注入]  ← KnowledgeInjector + RouteDecision 构建
   wi_node2 [计划+标准]      ← LLM Planning | MockPlanner
-  wi_node3 [执行+验收]      ← RealExecutor (M14) | MockWorkAgent + RealGuardian（并进审核）
+  wi_node3 [执行+验收]      ← RealExecutor | MockWorkAgent + RealGuardian（并进审核）
   wi_node4 [成果总结]        ← 组装 result_text + RealGuardian.review_reply()（追加标记）
 """
 
@@ -37,7 +31,7 @@ from ..session.session_context import format_message_history
 logger = logging.getLogger("emily.workitem_agent")
 
 # ══════════════════════════════════════════════════════════════════════════════
-# Phase B/C: LLM System Prompts（从 prompt 文件加载）
+# LLM System Prompts（从 prompt 文件加载）
 # ══════════════════════════════════════════════════════════════════════════════
 
 def _load_planner_prompt() -> str:
@@ -66,23 +60,18 @@ def _fallback_steps() -> list[PlanStep]:
 
 
 class WorkItemAgent:
-    """全局单例 WorkItem-Agent —— 提供公共 BUS 的 4 节点 handler。
-
-    Phase C 升级：
-      - 节点3 支持真实执行引擎（EMILY_EXECUTOR_MODE=real）
-      - 全部真实模式时自动移除 [Mock 模式] 前缀
-    """
+    """全局单例 WorkItem-Agent —— 提供公共 BUS 的 4 节点 handler。"""
 
     def __init__(
         self,
         injector: KnowledgeInjector | None = None,
-        # Phase B: 真实大脑依赖
+        # 真实大脑依赖
         llm_client=None,
         config=None,
-        # Phase C: 执行和守护依赖
+        # 执行和守护依赖
         business_flow_tools=None,
         rag_provider=None,
-        # 阶段二：三维鉴权引擎
+        # 三维鉴权引擎
         permission_engine=None,
         # Skill 模块
         skill_registry=None,
@@ -94,20 +83,20 @@ class WorkItemAgent:
         # LLM 依赖
         self._llm = llm_client
 
-        # Phase C: 执行依赖
+        # 执行依赖
         self._business_flow_tools = business_flow_tools
 
-        # Phase C: RAG 依赖
+        # RAG 依赖
         self._rag_provider = rag_provider
 
-        # 阶段二：三维鉴权引擎
+        # 三维鉴权引擎
         self._permission_engine = permission_engine
 
         # Skill 模块
         self._skill_registry = skill_registry
         self._skill_executor = skill_executor
 
-        # Mock 大脑（Phase C 保留作为 fallback）
+        # Mock 大脑（保留作为 fallback）
         self._planner = MockPlanner()
         self._work_agent = MockWorkAgent()
 
@@ -295,7 +284,6 @@ class WorkItemAgent:
         message_history = getattr(session_ctx, 'message_history', []) if session_ctx else []
 
         # 组装多轮 messages: [system] + message_history + [plan_request]
-        # 组装多轮 messages: [system] + message_history + [plan_request]
         full_messages = [{"role": "system", "content": system_prompt}]
         full_messages.extend(message_history)
         full_messages.append({
@@ -339,7 +327,7 @@ class WorkItemAgent:
             _source="llm_planner",
         )
 
-    # ── Phase C: Node 3 真实执行引擎 ──
+    # ── Node 3 真实执行引擎 ──
 
     async def node3_execute(self, context: BusContext) -> None:
         """Node 3 [执行+验收] —— Skill 路径优先，否则走原有 _real_execute。"""
@@ -400,7 +388,7 @@ class WorkItemAgent:
         )
 
     async def _real_execute(self, plan: ExecutionPlan, context: BusContext) -> list[StepResult]:
-        """Phase C: 真实执行引擎 —— 按 PlanStep 调用 M14 工具 handler。
+        """真实执行引擎 —— 按 PlanStep 调用工具 handler。
 
         对有 tool_name 且在 BusinessFlowToolRegistry 中注册的步骤，
         调用 handler(tool_params) 直接执行；其他步骤返回纯文本结果。
@@ -415,7 +403,7 @@ class WorkItemAgent:
             t_start = _time.monotonic()
             tool_name = step.tool_name
             tool_params = dict(getattr(step, 'tool_params', {}) or {})
-            # TC-M01: 注入运行时上下文到 tool_params（所有 handler 可统一获取）
+            # 注入运行时上下文到 tool_params（所有 handler 可统一获取）
             tool_params["_user_id"] = context.user_id or ""
             tool_params["_message_id"] = context.db_message_id or ""
             tool_params["_conversation_id"] = (
@@ -437,7 +425,7 @@ class WorkItemAgent:
 
             try:
                 if tool_name and tool_name in self._business_flow_tools:
-                    # M14: 框架直接调用 handler
+                    # 框架直接调用 handler
                     tool = self._business_flow_tools.get(tool_name)
                     # 注入 user_id 和 message_id 到 handler 调用上下文
                     import inspect
@@ -533,7 +521,7 @@ class WorkItemAgent:
 
         return results
 
-    # ── Phase C: Node 4 成果总结 ──
+    # ── Node 4 成果总结 ──
 
     async def node4_summary(self, context: BusContext) -> None:
         """Node 4 [成果总结] —— LLM 回复合成 + Guardian 出站审核（追加标记）。
@@ -546,7 +534,7 @@ class WorkItemAgent:
         steps = summary.get("steps_executed", 0)
         tool_calls = summary.get("tool_calls", 0)
 
-        # Phase C: executor_mode=real 时无 Mock 前缀
+        # executor_mode=real 时无 Mock 前缀
         executor_mode = self._resolve_mode("executor")
         mock_prefix = "" if executor_mode == "real" else "[Mock 模式] "
 
@@ -701,10 +689,10 @@ class WorkItemAgent:
             pass
         return "（无可用工具）"
 
-    # ── Phase C: 鉴权引擎 ──
+    # ── 鉴权引擎 ──
 
     async def authorize(self, context: BusContext, route_decision) -> AuthResult:
-        """Phase C: 三维鉴权 —— 基于 PermissionAuthEngine（阶段二重写）。
+        """三维鉴权 —— 基于 PermissionAuthEngine。
 
         [reserved] 此方法暂无调用者。鉴权当前由 AuthHook（hook.py）在 pipeline
         钩子中独立处理。本方法保留用于未来的 pipeline 内联鉴权集成（例如在
@@ -766,10 +754,10 @@ class WorkItemAgent:
             _source="real_auth_engine",
         )
 
-    # ── Phase C: 风险评估 ──
+    # ── 风险评估 ──
 
     def grade_risk(self, route_decision, operation_type: str = "") -> str:
-        """Phase C: 真实风险评估 —— 基于意图类型和置信度。
+        """真实风险评估 —— 基于意图类型和置信度。
 
         [reserved] 此方法暂无调用者。当前风险等级由 node2_plan 通过 LLM 规划器
         （或 MockPlanner）生成，写入 ExecutionPlan.risk_level。本方法保留用于未来

@@ -26,10 +26,10 @@ def _log_business_event(**kwargs) -> None:
 class MeetingApplication:
     def __init__(self, meeting_service: MeetingService):
         self.meeting_service = meeting_service
-        self._journal = None  # M8c
+        self._journal = None  # EventJournal（由 EmilyCore 注入）
 
     def set_journal(self, journal) -> None:
-        """注入事件日志服务（M8c）。"""
+        """注入事件日志服务。"""
         self._journal = journal
 
     async def handle_meeting(
@@ -47,7 +47,7 @@ class MeetingApplication:
                 source_message_id=message_id,
             )
             meeting = self.meeting_service.create_meeting(cmd)
-            # M8c: 写入项目日志
+            # 写入项目日志
             if self._journal is not None:
                 from ._user_utils import resolve_user_name
                 user_name = resolve_user_name(cmd.creator_id) or "用户"

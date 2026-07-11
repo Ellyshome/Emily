@@ -26,10 +26,10 @@ def _log_business_event(**kwargs) -> None:
 class TaskApplication:
     def __init__(self, task_service: TaskService):
         self.task_service = task_service
-        self._journal = None  # M8c
+        self._journal = None  # EventJournal（由 EmilyCore 注入）
 
     def set_journal(self, journal) -> None:
-        """注入事件日志服务（M8c）。"""
+        """注入事件日志服务。"""
         self._journal = journal
 
     async def handle_task(
@@ -49,7 +49,7 @@ class TaskApplication:
                 source_message_id=message_id,
             )
             task = self.task_service.create_task(cmd)
-            # M8c: 写入项目日志
+            # 写入项目日志
             if self._journal is not None:
                 from ._user_utils import resolve_user_name
                 user_name = resolve_user_name(cmd.creator_id) or "用户"
