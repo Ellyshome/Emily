@@ -1,0 +1,28 @@
+% Emily 项目 PDF 页眉页脚配置
+% 用法: pandoc input.md -o output.pdf --pdf-engine=xelatex -H header-footer.tex
+
+\usepackage{fancyhdr}
+\pagestyle{fancy}
+
+% 清除默认样式
+\fancyhf{}
+
+% 页眉：左侧项目名称，右侧版本号
+\fancyhead[L]{\small 艾米地产项目人工智能调度管理系统}
+\fancyhead[R]{\small V1.0}
+
+% 页脚：居中页码
+\fancyfoot[C]{\small 第 \thepage{} 页}
+
+% 页眉下方划线
+\renewcommand{\headrulewidth}{0.4pt}
+% 页脚上方划线
+\renewcommand{\footrulewidth}{0.4pt}
+
+% 首页样式（不显示页眉，仅显示页脚页码）
+\fancypagestyle{plain}{
+  \fancyhf{}
+  \fancyfoot[C]{\small 第 \thepage{} 页}
+  \renewcommand{\headrulewidth}{0pt}
+  \renewcommand{\footrulewidth}{0.4pt}
+}
