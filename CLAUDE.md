@@ -2,13 +2,13 @@
 
 > **本文档作用**：AI 辅助开发工具的统一入口。Claude Code 启动时自动加载本文档。概述项目全局 + 后续关键文档导引，便于 AI 工具快速理解当前真实架构。
 >
-> **⚠ 注意**：本项目经历过主逻辑重构（EmyBot/teambrain_core → Emily/emily_core）。`看板内容/CLAUDE.md` 描述的是**旧架构**（EmyBot M15 八阶段 WorkOrder + AstrBot 内嵌插件），**已不准确**。本文档为 **当前真实架构**（Emily v0.7.0：双容器 + Session 主线 + WorkItem 4 节点 BUS）。旧架构已完全移除，当前唯一路径是 `WorkItem` + `BusContext` + 4 节点 `PipelineBUS`。
+> **⚠ 注意**：本项目经历过主逻辑重构（EmyBot/teambrain_core → Emily/emily_core）。`看板内容/CLAUDE.md` 描述的是**旧架构**（EmyBot M15 八阶段 WorkOrder + AstrBot 内嵌插件），**已不准确**。本文档为 **当前真实架构**（Emily V1.0：双容器 + Session 主线 + WorkItem 4 节点 BUS）。旧架构已完全移除，当前唯一路径是 `WorkItem` + `BusContext` + 4 节点 `PipelineBUS`。
 
 ---
 
 ## 1. 项目定位
 
-Emily v0.7.0 是面向企业的 AI Agent 工具，通过 IM（QQ）与员工交互，实现：
+Emily V1.0 是面向企业的 AI Agent 工具，通过 IM（QQ）与员工交互，实现：
 
 - 团队工作流记录与留痕（事件/任务/会议/文件）
 - 业务 SOP 数字化与 LLM 引导

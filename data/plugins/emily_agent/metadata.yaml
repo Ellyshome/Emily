@@ -1,4 +1,4 @@
 name: emily_agent
 desc: "Emily 薄通信层插件 —— 消息去重 + 格式转换 + HTTP 转发到 emily-core 容器 + SSE 出站推送（业务逻辑全部在独立 Core 容器）"
-version: 0.6.0
+version: 1.0.0
 author: Emily
