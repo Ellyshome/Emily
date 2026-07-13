@@ -1,0 +1,541 @@
+# ============================================================
+# 008_seed_emerald_nodes.yaml —— 全景节点树定义（EMERALD-01 翡翠湾项目）
+#
+# 用法：
+#   uv run python scripts/manage_nodes.py create --file 需求/环境布置/scripts/008_seed_emerald_nodes.yaml --dry-run
+#   uv run python scripts/manage_nodes.py create --file 需求/环境布置/scripts/008_seed_emerald_nodes.yaml
+#
+# 说明：
+#   - node_id 为业务编号，统一前缀 EMR（EMERALD 缩写）
+#   - stage_id: 0=立项 1=规划设计 2=工程施工 3=交付结算
+#   - node_type: MILESTONE / WORK_PACKAGE / TASK
+#   - owner_dept_id 和 related_company_id 用中文名称，batch 创建时会解析
+#   - children 嵌套自动展平并设 parent_node_id
+#   - deliverables 为节点需产出的成果清单
+#   - dependencies 为前置依赖（按 deliverable_name 模糊匹配）
+#   - status 字段不在 YAML 中指定，已完成节点的 deliverables 中 current_amount = target_amount 即可体现完成状态
+# ============================================================
+
+project_id: "EMERALD-01"
+creator_id: "admin_wang"
+
+nodes:
+  # ═══════════════════════════════════════════════════════════
+  # 立项阶段 (stage_id=0)
+  # ═══════════════════════════════════════════════════════════
+  - node_id: "EMR-LX-01"
+    node_name: "项目立项"
+    node_type: "MILESTONE"
+    stage_id: 0
+    owner_dept_id: "工程部"
+    related_company_id: "建设单位"
+    deadline: "2025-07-01"
+    sort_order: 1
+    child_weight: 1.0
+    remark: "立项阶段里程碑——已完成"
+    deliverables:
+      - deliverable_id: "EMR-LX-01-DELV-001"
+        deliverable_name: "项目立项批复(汇总)"
+        target_amount: 1
+        current_amount: 1
+        unit: "份"
+        is_required: true
+    children:
+      - node_id: "EMR-LX-01-01"
+        node_name: "可行性研究"
+        node_type: "WORK_PACKAGE"
+        stage_id: 0
+        owner_dept_id: "工程部"
+        related_company_id: "建设单位"
+        deadline: "2025-04-10"
+        sort_order: 1
+        child_weight: 1.0
+        remark: "已完成——编制可行性研究报告并通过评审"
+        deliverables:
+          - deliverable_id: "EMR-LX-01-01-DELV-001"
+            deliverable_name: "可行性研究报告"
+            target_amount: 1
+            current_amount: 1
+            unit: "份"
+            is_required: true
+      - node_id: "EMR-LX-01-02"
+        node_name: "立项审批"
+        node_type: "WORK_PACKAGE"
+        stage_id: 0
+        owner_dept_id: "工程部"
+        related_company_id: "建设单位"
+        deadline: "2025-07-01"
+        sort_order: 2
+        child_weight: 1.0
+        remark: "已完成——取得立项批复和用地预审意见"
+        dependencies:
+          - deliverable_name: "可行性研究报告"
+            dependency_type: "DELIVERABLE"
+            weight: 1.0
+        deliverables:
+          - deliverable_id: "EMR-LX-01-02-DELV-001"
+            deliverable_name: "立项批复文件"
+            target_amount: 1
+            current_amount: 1
+            unit: "份"
+            is_required: true
+
+  # ═══════════════════════════════════════════════════════════
+  # 规划设计阶段 (stage_id=1)
+  # ═══════════════════════════════════════════════════════════
+  - node_id: "EMR-GH-01"
+    node_name: "规划报建"
+    node_type: "MILESTONE"
+    stage_id: 1
+    owner_dept_id: "工程部"
+    related_company_id: "建设单位"
+    deadline: "2025-11-01"
+    sort_order: 2
+    child_weight: 1.0
+    remark: "规划设计阶段里程碑——已完成"
+    dependencies:
+      - deliverable_name: "立项批复文件"
+        dependency_type: "DELIVERABLE"
+        weight: 1.0
+    deliverables:
+      - deliverable_id: "EMR-GH-01-DELV-001"
+        deliverable_name: "建设用地规划许可证"
+        target_amount: 1
+        current_amount: 1
+        unit: "份"
+        is_required: true
+    children:
+      - node_id: "EMR-GH-01-01"
+        node_name: "方案设计"
+        node_type: "WORK_PACKAGE"
+        stage_id: 1
+        owner_dept_id: "建筑所"
+        related_company_id: "设计单位"
+        deadline: "2025-08-15"
+        sort_order: 1
+        child_weight: 1.0
+        remark: "已完成——方案设计及报审通过"
+        deliverables:
+          - deliverable_id: "EMR-GH-01-01-DELV-001"
+            deliverable_name: "方案设计文本"
+            target_amount: 1
+            current_amount: 1
+            unit: "份"
+            is_required: true
+          - deliverable_id: "EMR-GH-01-01-DELV-002"
+            deliverable_name: "施工图设计文件"
+            target_amount: 1
+            current_amount: 1
+            unit: "套"
+            is_required: true
+      - node_id: "EMR-GH-01-02"
+        node_name: "规划许可证办理"
+        node_type: "WORK_PACKAGE"
+        stage_id: 1
+        owner_dept_id: "工程部"
+        related_company_id: "建设单位"
+        deadline: "2025-11-01"
+        sort_order: 2
+        child_weight: 1.0
+        remark: "已完成——取得建设用地+建设工程规划许可证"
+        dependencies:
+          - deliverable_name: "方案设计文本"
+            dependency_type: "DELIVERABLE"
+            weight: 1.0
+        deliverables:
+          - deliverable_id: "EMR-GH-01-02-DELV-001"
+            deliverable_name: "建设工程规划许可证"
+            target_amount: 1
+            current_amount: 1
+            unit: "份"
+            is_required: true
+
+  # ═══════════════════════════════════════════════════════════
+  # 工程施工阶段 (stage_id=2)
+  # ═══════════════════════════════════════════════════════════
+  - node_id: "EMR-SG-01"
+    node_name: "施工总控"
+    node_type: "MILESTONE"
+    stage_id: 2
+    owner_dept_id: "项目部"
+    related_company_id: "总包"
+    deadline: "2026-10-31"
+    sort_order: 3
+    child_weight: 1.0
+    remark: "施工阶段总控里程碑——进行中（主体与安装已完成，待景观进场）"
+    dependencies:
+      - deliverable_name: "建设工程规划许可证"
+        dependency_type: "DELIVERABLE"
+        weight: 1.0
+      - deliverable_name: "建筑工程施工许可证"
+        dependency_type: "DELIVERABLE"
+        weight: 1.0
+    deliverables:
+      - deliverable_id: "EMR-SG-01-DELV-001"
+        deliverable_name: "建筑工程施工许可证"
+        target_amount: 1
+        current_amount: 1
+        unit: "份"
+        is_required: true
+      - deliverable_id: "EMR-SG-01-DELV-002"
+        deliverable_name: "竣工验收备案表"
+        target_amount: 1
+        current_amount: 0
+        unit: "份"
+        is_required: true
+    children:
+      # ── 地基与基础工程 ──
+      - node_id: "EMR-SG-01-01"
+        node_name: "地基与基础工程"
+        node_type: "WORK_PACKAGE"
+        stage_id: 2
+        owner_dept_id: "项目部"
+        related_company_id: "总包"
+        deadline: "2026-02-20"
+        sort_order: 1
+        child_weight: 1.5
+        remark: "已完成——土方开挖+桩基+基础承台验收通过"
+        dependencies:
+          - deliverable_name: "施工图设计文件"
+            dependency_type: "DELIVERABLE"
+            weight: 1.0
+        deliverables:
+          - deliverable_id: "EMR-SG-01-01-DELV-001"
+            deliverable_name: "地基与基础分部验收报告"
+            target_amount: 1
+            current_amount: 1
+            unit: "份"
+            is_required: true
+        children:
+          - node_id: "EMR-SG-01-01-01"
+            node_name: "土方开挖"
+            node_type: "TASK"
+            stage_id: 2
+            owner_dept_id: "项目部"
+            related_company_id: "总包"
+            deadline: "2026-01-15"
+            sort_order: 1
+            child_weight: 1.0
+            remark: "已完成——基坑开挖至设计标高"
+            deliverables:
+              - deliverable_id: "EMR-SG-01-01-01-DELV-001"
+                deliverable_name: "基坑验槽记录"
+                target_amount: 1
+                current_amount: 1
+                unit: "份"
+                is_required: true
+          - node_id: "EMR-SG-01-01-02"
+            node_name: "桩基与基础施工"
+            node_type: "TASK"
+            stage_id: 2
+            owner_dept_id: "项目部"
+            related_company_id: "总包"
+            deadline: "2026-02-15"
+            sort_order: 2
+            child_weight: 1.0
+            remark: "已完成——PHC管桩施工+基础承台浇筑，静载试验合格"
+            dependencies:
+              - deliverable_name: "基坑验槽记录"
+                dependency_type: "DELIVERABLE"
+                weight: 1.0
+            deliverables:
+              - deliverable_id: "EMR-SG-01-01-02-DELV-001"
+                deliverable_name: "桩基检测报告"
+                target_amount: 1
+                current_amount: 1
+                unit: "份"
+                is_required: true
+
+      # ── 主体结构工程 ──
+      - node_id: "EMR-SG-01-02"
+        node_name: "主体结构工程"
+        node_type: "WORK_PACKAGE"
+        stage_id: 2
+        owner_dept_id: "项目部"
+        related_company_id: "总包"
+        deadline: "2026-05-15"
+        sort_order: 2
+        child_weight: 2.0
+        remark: "已完成——五栋住宅楼全部封顶验收通过"
+        dependencies:
+          - deliverable_name: "地基与基础分部验收报告"
+            dependency_type: "DELIVERABLE"
+            weight: 1.0
+        deliverables:
+          - deliverable_id: "EMR-SG-01-02-DELV-001"
+            deliverable_name: "主体结构分部验收报告"
+            target_amount: 1
+            current_amount: 1
+            unit: "份"
+            is_required: true
+        children:
+          - node_id: "EMR-SG-01-02-01"
+            node_name: "1#-2#楼主体结构"
+            node_type: "TASK"
+            stage_id: 2
+            owner_dept_id: "项目部"
+            related_company_id: "总包"
+            deadline: "2026-04-15"
+            sort_order: 1
+            child_weight: 1.0
+            remark: "已完成——1#2#楼框架结构封顶，填充墙砌筑完成"
+            deliverables:
+              - deliverable_id: "EMR-SG-01-02-01-DELV-001"
+                deliverable_name: "1#2#楼阶段验收记录"
+                target_amount: 1
+                current_amount: 1
+                unit: "份"
+                is_required: true
+          - node_id: "EMR-SG-01-02-02"
+            node_name: "3#楼主体结构"
+            node_type: "TASK"
+            stage_id: 2
+            owner_dept_id: "项目部"
+            related_company_id: "总包"
+            deadline: "2026-04-30"
+            sort_order: 2
+            child_weight: 1.0
+            remark: "已完成——3#楼框架结构封顶（后因外立面整改延误至7月）"
+            dependencies:
+              - deliverable_name: "1#2#楼阶段验收记录"
+                dependency_type: "DELIVERABLE"
+                weight: 1.0
+            deliverables:
+              - deliverable_id: "EMR-SG-01-02-02-DELV-001"
+                deliverable_name: "3#楼阶段验收记录"
+                target_amount: 1
+                current_amount: 1
+                unit: "份"
+                is_required: true
+          - node_id: "EMR-SG-01-02-03"
+            node_name: "4#-5#楼主体结构"
+            node_type: "TASK"
+            stage_id: 2
+            owner_dept_id: "项目部"
+            related_company_id: "总包"
+            deadline: "2026-05-10"
+            sort_order: 3
+            child_weight: 1.0
+            remark: "已完成——4#5#楼框架结构封顶，坡屋顶施工完成"
+            dependencies:
+              - deliverable_name: "1#2#楼阶段验收记录"
+                dependency_type: "DELIVERABLE"
+                weight: 1.0
+            deliverables:
+              - deliverable_id: "EMR-SG-01-02-03-DELV-001"
+                deliverable_name: "4#5#楼阶段验收记录"
+                target_amount: 1
+                current_amount: 1
+                unit: "份"
+                is_required: true
+
+      # ── 机电安装工程 ──
+      - node_id: "EMR-SG-01-03"
+        node_name: "机电安装工程"
+        node_type: "WORK_PACKAGE"
+        stage_id: 2
+        owner_dept_id: "项目部"
+        related_company_id: "总包"
+        deadline: "2026-07-01"
+        sort_order: 3
+        child_weight: 1.0
+        remark: "已完成——水电预埋+电梯消防安装验收通过"
+        dependencies:
+          - deliverable_name: "主体结构分部验收报告"
+            dependency_type: "DELIVERABLE"
+            weight: 1.0
+        deliverables:
+          - deliverable_id: "EMR-SG-01-03-DELV-001"
+            deliverable_name: "机电安装分部验收报告"
+            target_amount: 1
+            current_amount: 1
+            unit: "份"
+            is_required: true
+        children:
+          - node_id: "EMR-SG-01-03-01"
+            node_name: "水电预埋与管线"
+            node_type: "TASK"
+            stage_id: 2
+            owner_dept_id: "项目部"
+            related_company_id: "总包"
+            deadline: "2026-05-31"
+            sort_order: 1
+            child_weight: 1.0
+            remark: "已完成——给排水管道+强弱电预埋完成，隐蔽验收通过"
+            deliverables:
+              - deliverable_id: "EMR-SG-01-03-01-DELV-001"
+                deliverable_name: "水电管线隐蔽验收记录"
+                target_amount: 1
+                current_amount: 1
+                unit: "份"
+                is_required: true
+          - node_id: "EMR-SG-01-03-02"
+            node_name: "电梯及消防安装"
+            node_type: "TASK"
+            stage_id: 2
+            owner_dept_id: "项目部"
+            related_company_id: "总包"
+            deadline: "2026-06-30"
+            sort_order: 2
+            child_weight: 1.0
+            remark: "已完成——5部电梯安装调试+消防报警系统安装完成"
+            deliverables:
+              - deliverable_id: "EMR-SG-01-03-02-DELV-001"
+                deliverable_name: "电梯及消防安装调试报告"
+                target_amount: 1
+                current_amount: 1
+                unit: "份"
+                is_required: true
+
+      # ── 室外场地平整 ──
+      - node_id: "EMR-SG-01-04"
+        node_name: "室外场地平整"
+        node_type: "WORK_PACKAGE"
+        stage_id: 2
+        owner_dept_id: "项目部"
+        related_company_id: "总包"
+        deadline: "2026-07-10"
+        sort_order: 4
+        child_weight: 1.0
+        remark: "刚刚完成——场地平整与压实验收通过"
+        dependencies:
+          - deliverable_name: "机电安装分部验收报告"
+            dependency_type: "DELIVERABLE"
+            weight: 0.5
+        deliverables:
+          - deliverable_id: "EMR-SG-01-04-DELV-001"
+            deliverable_name: "场地平整验收记录"
+            target_amount: 1
+            current_amount: 1
+            unit: "份"
+            is_required: true
+        children:
+          - node_id: "EMR-SG-01-04-01"
+            node_name: "场地平整与压实"
+            node_type: "TASK"
+            stage_id: 2
+            owner_dept_id: "项目部"
+            related_company_id: "总包"
+            deadline: "2026-07-10"
+            sort_order: 1
+            child_weight: 1.0
+            remark: "刚刚完成——场地垃圾清运+标高整平+碾压夯实完成"
+            deliverables:
+              - deliverable_id: "EMR-SG-01-04-01-DELV-001"
+                deliverable_name: "场地平整压实验收记录"
+                target_amount: 1
+                current_amount: 1
+                unit: "份"
+                is_required: true
+
+      # ── 景观绿化工程 ──
+      - node_id: "EMR-SG-01-05"
+        node_name: "景观绿化工程"
+        node_type: "WORK_PACKAGE"
+        stage_id: 2
+        owner_dept_id: "项目部"
+        related_company_id: "总包"
+        deadline: "2026-09-30"
+        sort_order: 5
+        child_weight: 1.5
+        remark: "待启动——需场地平整验收+主体结构验收+机电安装验收通过"
+        dependencies:
+          - deliverable_name: "场地平整验收记录"
+            dependency_type: "DELIVERABLE"
+            weight: 1.0
+          - deliverable_name: "主体结构分部验收报告"
+            dependency_type: "DELIVERABLE"
+            weight: 0.5
+          - deliverable_name: "机电安装分部验收报告"
+            dependency_type: "DELIVERABLE"
+            weight: 0.5
+        deliverables:
+          - deliverable_id: "EMR-SG-01-05-DELV-001"
+            deliverable_name: "景观绿化验收报告"
+            target_amount: 1
+            current_amount: 0
+            unit: "份"
+            is_required: true
+        children:
+          - node_id: "EMR-SG-01-05-01"
+            node_name: "绿化种植"
+            node_type: "TASK"
+            stage_id: 2
+            owner_dept_id: "项目部"
+            related_company_id: "总包"
+            deadline: "2026-09-15"
+            sort_order: 1
+            child_weight: 1.0
+            remark: "待启动——乔木灌木地被种植，含桂花/香樟/红叶石楠等"
+            deliverables:
+              - deliverable_id: "EMR-SG-01-05-01-DELV-001"
+                deliverable_name: "绿化种植施工方案"
+                target_amount: 1
+                current_amount: 0
+                unit: "份"
+                is_required: true
+          - node_id: "EMR-SG-01-05-02"
+            node_name: "硬质铺装与园路"
+            node_type: "TASK"
+            stage_id: 2
+            owner_dept_id: "项目部"
+            related_company_id: "总包"
+            deadline: "2026-09-15"
+            sort_order: 2
+            child_weight: 1.0
+            remark: "待启动——人行步道+广场铺装+停车位施工"
+            deliverables:
+              - deliverable_id: "EMR-SG-01-05-02-DELV-001"
+                deliverable_name: "硬质铺装施工方案"
+                target_amount: 1
+                current_amount: 0
+                unit: "份"
+                is_required: true
+          - node_id: "EMR-SG-01-05-03"
+            node_name: "景观照明与小品"
+            node_type: "TASK"
+            stage_id: 2
+            owner_dept_id: "项目部"
+            related_company_id: "总包"
+            deadline: "2026-09-30"
+            sort_order: 3
+            child_weight: 1.0
+            remark: "待启动——庭院灯+草坪灯+景观小品安装"
+            deliverables:
+              - deliverable_id: "EMR-SG-01-05-03-DELV-001"
+                deliverable_name: "景观照明施工方案"
+                target_amount: 1
+                current_amount: 0
+                unit: "份"
+                is_required: true
+
+  # ═══════════════════════════════════════════════════════════
+  # 交付结算阶段 (stage_id=3)
+  # ═══════════════════════════════════════════════════════════
+  - node_id: "EMR-JF-01"
+    node_name: "竣工验收"
+    node_type: "MILESTONE"
+    stage_id: 3
+    owner_dept_id: "工程部"
+    related_company_id: "建设单位"
+    deadline: "2026-10-31"
+    sort_order: 4
+    child_weight: 1.0
+    remark: "待启动——需主体结构验收+机电安装验收+景观绿化验收全部通过"
+    dependencies:
+      - deliverable_name: "主体结构分部验收报告"
+        dependency_type: "DELIVERABLE"
+        weight: 1.0
+      - deliverable_name: "机电安装分部验收报告"
+        dependency_type: "DELIVERABLE"
+        weight: 1.0
+      - deliverable_name: "景观绿化验收报告"
+        dependency_type: "DELIVERABLE"
+        weight: 1.0
+    deliverables:
+      - deliverable_id: "EMR-JF-01-DELV-001"
+        deliverable_name: "竣工验收备案表"
+        target_amount: 1
+        current_amount: 0
+        unit: "份"
+        is_required: true

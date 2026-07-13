@@ -1,4 +1,4 @@
-# Emily Core 容器镜像（蓝图 §10.3）
+# Emily Core 容器镜像
 FROM python:3.12-slim
 
 WORKDIR /app
@@ -11,12 +11,15 @@ RUN pip install --no-cache-dir -r requirements.txt
 COPY api/ ./api/
 COPY emily_core/ ./emily_core/
 
-# 数据目录挂载点（运行时由 docker-compose 卷挂载，蓝图 §10.2）
+# 前端静态文件
+COPY static/ ./static/
+
+# 数据目录挂载点
 RUN mkdir -p /app/sops /app/prompts /app/config /app/baseknowledge /app/tools \
              /app/notebooks /app/logs /app/attachments /app/user_memory \
              /app/journal /app/db_seeds
 
-EXPOSE 18080
+EXPOSE 18080 18081
 
-# api.server:app 内 lifespan 会 bootstrap EmilyCore
-CMD ["uvicorn", "api.server:app", "--host", "0.0.0.0", "--port", "18080"]
+# 双服务器启动：18080(业务API) + 18081(监控看板)
+CMD ["python", "-m", "api.run"]

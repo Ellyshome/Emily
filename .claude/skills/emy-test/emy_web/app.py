@@ -184,7 +184,7 @@ def send_message_sync(
         if user_info:
             # 使用数据库中的用户信息
             sid = user_info["id"]
-            sname = user_info["real_name"] or user_info["username"] or selected_user_id
+            sname = user_info["display_name"] or user_info["username"] or selected_user_id
         else:
             # 自定义模式或获取失败，使用默认值
             sid = f"web_{request.session_hash[:8]}"

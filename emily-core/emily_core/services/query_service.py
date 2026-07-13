@@ -337,7 +337,7 @@ class QueryService:
             results.append({
                 "user_id": u.id,
                 "username": u.username,
-                "real_name": u.username,
+                "display_name": u.username,
                 "status": u.status or "active",
                 "created_at": u.created_at,
             })
@@ -562,7 +562,7 @@ class QueryService:
                 return "暂无注册用户。"
             lines = [f"共有 {total} 位用户："]
             for i, u in enumerate(items[:10], 1):
-                name = u.get("real_name") or u.get("username") or "未知"
+                name = u.get("display_name") or u.get("username") or "未知"
                 status = u.get("status", "active")
                 line = f"  {name}"
                 if status != "active":

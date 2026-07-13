@@ -5,7 +5,7 @@ M8c: 当 Agent 识别到用户表达了长期工作需求时，
 
 用户名解析策略（运行时）：
   1. 如果 args 中有 user_name，直接使用（LLM 可能传入）
-  2. 否则从 args["_user_id"]（UUID）查 User 表获取 real_name / username
+  2. 否则从 args["_user_id"]（UUID）查 User 表获取 username
   3. fallback = "用户"
 """
 

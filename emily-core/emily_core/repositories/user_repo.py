@@ -99,7 +99,7 @@ class UserRepository:
         """按用户名查找用户（执行人姓名 → user_id 解析，best-effort）。
 
         匹配：username 精确。返回首个匹配，未找到返回 None。
-        注：原 real_name 字段已移除，统一使用 username。
+        注：用户显示名统一使用 username。
         """
         if not name:
             return None

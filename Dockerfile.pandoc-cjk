@@ -1,0 +1,31 @@
+FROM pandoc/latex:latest
+
+# Install CJK font for XeLaTeX + Node.js + Chromium (for mermaid-cli)
+RUN apk add --no-cache font-noto-cjk nodejs npm chromium
+
+# Configure Puppeteer (used by mermaid-cli) to use system Chromium, not download its own
+ENV PUPPETEER_SKIP_CHROMIUM_DOWNLOAD=true
+ENV PUPPETEER_EXECUTABLE_PATH=/usr/bin/chromium-browser
+
+# Update tlmgr and install xecjk for CJK support
+RUN tlmgr update --self 2>&1 | tail -3 && \
+    tlmgr install xecjk 2>&1 | tail -3 && \
+    tlmgr install ctex 2>&1 | tail -3
+
+# Install mermaid-cli (mmdc) + mermaid-filter (pandoc filter) globally via npm
+# mermaid-filter requires mmdc in PATH; install both explicitly
+RUN npm install -g @mermaid-js/mermaid-cli mermaid-filter 2>&1 | tail -5
+
+# Puppeteer config: --no-sandbox required when running Chromium as root in Docker
+RUN echo '{"args": ["--no-sandbox", "--disable-setuid-sandbox"]}' > /puppeteer-config.json
+
+# Wrap mmdc to always pass the no-sandbox puppeteer config file
+RUN mv /usr/local/bin/mmdc /usr/local/bin/mmdc-real && \
+    printf '#!/bin/sh\nexec /usr/local/bin/mmdc-real -p /puppeteer-config.json "$@"\n' > /usr/local/bin/mmdc && \
+    chmod +x /usr/local/bin/mmdc
+
+# Verify
+RUN fc-list :lang=zh | head -3 && \
+    mmdc --version && \
+    which mermaid-filter && \
+    pandoc --version | head -3

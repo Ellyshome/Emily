@@ -1,0 +1,11 @@
+
+Error: Failed to launch the browser process! undefined
+[33:33:0713/093723.921748:ERROR:content/browser/zygote_host/zygote_host_impl_linux.cc:101] Running as root without --no-sandbox is not supported. See https://crbug.com/638180.
+
+
+TROUBLESHOOTING: https://pptr.dev/troubleshooting
+
+    at ChildProcess.onClose (file:///usr/local/lib/node_modules/mermaid-filter/node_modules/@puppeteer/browsers/lib/esm/launch.js:253:24)
+    at ChildProcess.emit (node:events:521:24)
+    at ChildProcess._handle.onexit (node:internal/child_process:295:12)
+

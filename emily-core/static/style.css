@@ -1,0 +1,195 @@
+/* Emily 运维看板样式 */
+
+* { margin: 0; padding: 0; box-sizing: border-box; }
+
+body {
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+    background: #1a1a2e;
+    color: #e0e0e0;
+    line-height: 1.6;
+}
+
+.container { max-width: 1200px; margin: 0 auto; padding: 16px; }
+
+/* 顶栏 */
+.header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 12px 0;
+    border-bottom: 1px solid #333;
+    margin-bottom: 16px;
+}
+.header h1 { font-size: 20px; color: #00d4ff; }
+
+/* 按钮 */
+.btn-refresh {
+    background: #0f3460; color: #e0e0e0; border: 1px solid #00d4ff;
+    padding: 8px 16px; border-radius: 4px; cursor: pointer; font-size: 14px;
+}
+.btn-refresh:hover { background: #16537e; }
+.btn-refresh-sm {
+    background: transparent; color: #00d4ff; border: 1px solid #00d4ff;
+    padding: 4px 12px; border-radius: 3px; cursor: pointer; font-size: 12px;
+}
+.btn-refresh-sm:hover { background: #0f3460; }
+
+/* 核心状态区 */
+.core-status {
+    background: #16213e; border-radius: 8px; padding: 16px; margin-bottom: 16px;
+}
+.core-status h2 { font-size: 16px; margin-bottom: 12px; color: #00d4ff; }
+
+.containers {
+    display: flex; flex-wrap: wrap; gap: 12px; margin-bottom: 12px;
+}
+.container-item {
+    display: flex; align-items: center; gap: 6px;
+    background: #1a1a2e; padding: 6px 12px; border-radius: 4px; font-size: 14px;
+}
+.status-dot { width: 10px; height: 10px; border-radius: 50%; display: inline-block; }
+.status-dot.running { background: #4caf50; }
+.status-dot.stopped { background: #f44336; }
+.status-dot.unknown { background: #ff9800; }
+
+.im-accounts {
+    display: flex; flex-direction: column; gap: 10px;
+    margin-top: 16px;
+}
+.im-item {
+    display: flex; align-items: center; gap: 16px;
+    padding: 10px 16px;
+    background: #1a1a2e; border-radius: 8px; border: 1px solid #2a2a3e;
+}
+.im-item-connected {
+    border-color: #4caf5077; background: #1a2a1e;
+}
+.im-item-left {
+    display: flex; align-items: center; gap: 8px; min-width: 100px;
+}
+.im-label { font-weight: 600; color: #ccc; }
+.im-item-right { margin-left: auto; }
+.im-link {
+    color: #00d4ff; text-decoration: none; font-size: 13px;
+    white-space: nowrap;
+}
+.im-link:hover { text-decoration: underline; }
+.im-status-connected { color: #4caf50; font-weight: 600; font-size: 13px; }
+.im-status-disconnected { color: #f44336; font-weight: 600; font-size: 13px; }
+.im-status-no_account { color: #666; font-size: 13px; }
+
+/* 已登录账号卡片 */
+.im-account-card {
+    display: flex; align-items: center; gap: 10px;
+    padding: 6px 14px;
+    background: #16213e; border-radius: 6px;
+    border: 1px solid #4caf5066;
+}
+.im-account-nick {
+    color: #4caf50; font-weight: 700; font-size: 14px;
+}
+.im-account-num {
+    color: #aaa; font-size: 13px; font-family: monospace;
+}
+
+/* Tab 导航 */
+.tab-nav {
+    display: flex; gap: 0; border-bottom: 2px solid #333; margin-bottom: 0;
+}
+.tab-btn {
+    padding: 10px 20px; background: transparent; color: #999; border: none;
+    cursor: pointer; font-size: 14px; border-bottom: 2px solid transparent;
+    margin-bottom: -2px;
+}
+.tab-btn.active { color: #00d4ff; border-bottom-color: #00d4ff; }
+.tab-btn:hover { color: #e0e0e0; }
+
+/* Tab 内容 */
+.tab-panel { display: none; background: #16213e; padding: 16px; border-radius: 0 0 8px 8px; }
+.tab-panel.active { display: block; }
+
+.panel-header {
+    display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px;
+}
+.panel-header h3 { font-size: 16px; color: #00d4ff; }
+
+.filter-group { display: flex; gap: 8px; align-items: center; }
+.filter-group select {
+    background: #1a1a2e; color: #e0e0e0; border: 1px solid #333;
+    padding: 4px 8px; border-radius: 3px; font-size: 13px;
+}
+
+.summary { color: #999; font-size: 13px; margin-bottom: 8px; }
+
+/* 数据表格 */
+.data-table { width: 100%; border-collapse: collapse; font-size: 13px; }
+.data-table th {
+    text-align: left; padding: 8px 12px; border-bottom: 1px solid #333;
+    color: #999; font-weight: normal; white-space: nowrap;
+}
+.data-table td { padding: 8px 12px; border-bottom: 1px solid #222; }
+.data-table tr:hover td { background: #1a1a2e; }
+
+.cell-link { color: #00d4ff; cursor: pointer; text-decoration: none; }
+.cell-link:hover { text-decoration: underline; }
+
+/* 进度条 */
+.progress-bar {
+    display: inline-block; width: 60px; height: 8px; background: #333;
+    border-radius: 4px; overflow: hidden; vertical-align: middle;
+}
+.progress-fill { height: 100%; background: #4caf50; border-radius: 4px; }
+.progress-text { font-size: 12px; margin-left: 4px; vertical-align: middle; }
+
+/* 状态标签 */
+.status-tag {
+    display: inline-block; padding: 2px 8px; border-radius: 3px;
+    font-size: 12px;
+}
+.status-tag-NOT_ACTIVATED { background: #333; color: #999; }
+.status-tag-CONDITIONS_NOT_MET { background: #ff9800; color: #000; }
+.status-tag-IN_PROGRESS { background: #2196f3; color: #fff; }
+.status-tag-COMPLETED { background: #4caf50; color: #fff; }
+
+/* 密级标签 */
+.conf-tag { display: inline-block; padding: 2px 8px; border-radius: 3px; font-size: 12px; }
+.conf-0 { background: #333; color: #999; }
+.conf-1 { background: #2196f3; color: #fff; }
+.conf-2 { background: #ff9800; color: #000; }
+.conf-3 { background: #f44336; color: #fff; }
+
+/* 弹窗 */
+.modal-overlay {
+    display: none; position: fixed; top: 0; left: 0; width: 100%; height: 100%;
+    background: rgba(0,0,0,0.7); z-index: 100; justify-content: center; align-items: center;
+}
+.modal-overlay.active { display: flex; }
+.modal {
+    background: #16213e; border-radius: 8px; width: 600px; max-height: 80vh;
+    overflow-y: auto; padding: 20px;
+}
+.modal-wide { width: 800px; }
+.modal-header {
+    display: flex; justify-content: space-between; align-items: center;
+    margin-bottom: 16px; border-bottom: 1px solid #333; padding-bottom: 8px;
+}
+.modal-header h3 { color: #00d4ff; font-size: 16px; }
+.modal-close {
+    background: none; border: none; color: #999; font-size: 24px; cursor: pointer;
+}
+.modal-close:hover { color: #fff; }
+
+.msg-item {
+    padding: 8px 0; border-bottom: 1px solid #222;
+}
+.msg-item:last-child { border-bottom: none; }
+.msg-direction { font-size: 11px; color: #999; }
+.msg-user { color: #00d4ff; font-size: 13px; }
+.msg-agent { color: #4caf50; font-size: 13px; }
+.msg-content { font-size: 13px; margin-top: 2px; }
+.msg-time { font-size: 11px; color: #666; }
+
+/* 节点详情表格 */
+.detail-table { width: 100%; font-size: 13px; }
+.detail-table td { padding: 6px 12px; border-bottom: 1px solid #222; }
+.detail-table td:first-child { color: #999; width: 120px; }

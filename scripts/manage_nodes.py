@@ -342,12 +342,14 @@ def _run_create(args) -> None:
 
     _init_db(args.db_url)
 
-    # 验证 creator_id 存在
+    # 验证 creator_id 是否存在
     from emily_core.repositories.user_repo import UserRepository
     creator_user = UserRepository.get_by_id(creator_id)
     if creator_user is None:
-        print(f"错误：creator_id「{creator_id}」在 users 表中不存在")
-        sys.exit(1)
+        # Maybe it's a username? Try find_by_name
+        creator_user = UserRepository.find_by_name(creator_id)
+        if creator_user is not None:
+            creator_id = creator_user.id
 
     logger.info("项目: %s | 创建人: %s (%s) | 节点数: %d",
                 project_id, creator_user.username, creator_id, len(nodes))

@@ -61,7 +61,7 @@ def _resolve_sender(
     if sender_name:
         users = get_active_users()
         for u in users:
-            uname = u.get("real_name", "") or u.get("username", "")
+            uname = u.get("display_name", "") or u.get("username", "")
             if uname == sender_name:
                 result["user_record"] = u
                 result["sender_name"] = uname
@@ -104,7 +104,7 @@ def _interactive_user_selection() -> dict:
     print("\n📋 可选测试用户：")
     print("─" * 60)
     for i, u in enumerate(users, 1):
-        uname = u.get("real_name", "") or u.get("username", "未知")
+        uname = u.get("display_name", "") or u.get("username", "未知")
         level = u.get("permission_label", f"L{u.get('permission_level', '?')}")
         company = u.get("company_name", "未分配单位")
         uqq = u.get("qq", "") or u.get("phone", "")
@@ -130,7 +130,7 @@ def _interactive_user_selection() -> dict:
             if 0 <= idx < len(users):
                 u = users[idx]
                 result["user_record"] = u
-                result["sender_name"] = u.get("real_name", "") or u.get("username", "")
+                result["sender_name"] = u.get("display_name", "") or u.get("username", "")
                 # 优先用 IM 绑定的用户 ID（即真实 QQ 号）作为 sender_id
                 im_uid = u.get("im_user_id", "")
                 uqq = im_uid or u.get("qq", "") or u.get("phone", "")
@@ -169,7 +169,7 @@ def demo():
             uqq = u.get("qq", "") or u.get("phone", "") or u["id"]
             demo_users.append({
                 "sender_id": uqq,
-                "sender_name": u.get("real_name", "") or u.get("username", ""),
+                "sender_name": u.get("display_name", "") or u.get("username", ""),
             })
 
     with EmysTester() as emy:
@@ -206,7 +206,7 @@ def demo():
             db_users = emy.get_users()
             for u in db_users:
                 print(
-                    f"  {u['user_id'][:8]}... {u['real_name']} "
+                    f"  {u['user_id'][:8]}... {u['display_name']} "
                     f"(IM: {u['im_platform']}/{u['im_user_id']})"
                 )
         except Exception as e:
@@ -277,7 +277,7 @@ def repl(emy: "EmysTester", cid: str, sender_name: str, sender_id: str = "") -> 
                     users = emy.get_users()
                     if users:
                         for u in users:
-                            print(f"  {u['user_id'][:8]}... {u['real_name']} "
+                            print(f"  {u['user_id'][:8]}... {u['display_name']} "
                                   f"(IM: {u['im_platform']}/{u['im_user_id']})")
                     else:
                         print("  (无注册用户)")

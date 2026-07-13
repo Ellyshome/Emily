@@ -468,7 +468,7 @@ class EmysTester:
         """查询所有已注册用户及其 IM 绑定（直接 PG 查询）。
 
         Returns:
-            list[dict]: 含 user_id, username, real_name, im_platform, im_user_id。
+            list[dict]: 含 user_id, username, display_name, im_platform, im_user_id。
         """
         self._ensure_started()
         engine = self._get_pg_engine()
@@ -478,7 +478,7 @@ class EmysTester:
         with engine.connect() as conn:
             rows = conn.execute(
                 text(
-                    "SELECT u.id AS user_id, u.username, u.real_name, "
+                    "SELECT u.id AS user_id, u.username, "
                     "b.im_platform, b.im_user_id "
                     "FROM users u "
                     "LEFT JOIN user_im_bindings b ON u.id = b.user_id "
@@ -489,7 +489,7 @@ class EmysTester:
                 {
                     "user_id": r.user_id,
                     "username": r.username or "",
-                    "real_name": r.real_name or "",
+                    "display_name": r.username or "",
                     "im_platform": r.im_platform or "",
                     "im_user_id": r.im_user_id or "",
                 }
