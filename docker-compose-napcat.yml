@@ -33,6 +33,7 @@ services:
     restart: always
     ports:
       - "127.0.0.1:18080:18080"          # HTTP API（仅宿主机访问）
+      - "0.0.0.0:18081:18081"            # 监控看板（局域网可访问）
     environment:
       - EMILY_DATABASE_URL=postgresql://emily:emily_secret_2026@emily-postgres:5432/emily
       - EMILY_LLM_API_KEY=${EMILY_LLM_API_KEY:-}
@@ -45,6 +46,7 @@ services:
       - EMILY_API_TOKEN=${EMILY_API_TOKEN:-}
       - EMILY_EMAIL_IDKEY=${EMILY_EMAIL_IDKEY:-}
       - EMILY_EMAIL_PASSWORD=${EMILY_EMAIL_PASSWORD:-}
+      - NAPCAT_WEBUI_TOKEN=${NAPCAT_WEBUI_TOKEN:-a220057a48b3}
     volumes:
       # ── 人类编辑（只读）──
       - ./emily-data/sops:/app/sops
@@ -62,6 +64,8 @@ services:
       # ── 代码（只读，开发阶段可热更新）──
       - ./emily-core/emily_core:/app/emily_core:ro
       - ./emily-core/api:/app/api:ro
+      - ./emily-core/static:/app/static:ro
+      - /var/run/docker.sock:/var/run/docker.sock:ro   # Docker API（容器状态查询）
     networks:
       - emily_network
     depends_on:

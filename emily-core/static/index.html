@@ -1,0 +1,109 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Emily 运维看板</title>
+    <link rel="stylesheet" href="/assets/style.css">
+</head>
+<body>
+    <div class="container">
+        <!-- 顶栏 -->
+        <header class="header">
+            <h1>Emily 运维看板</h1>
+            <button id="btn-refresh-all" class="btn-refresh">全部刷新</button>
+        </header>
+
+        <!-- 核心状态区 -->
+        <section class="core-status" id="core-status">
+            <h2>核心状态</h2>
+            <div class="containers" id="containers"></div>
+            <div class="im-accounts" id="im-accounts"></div>
+        </section>
+
+        <!-- Tab 导航 -->
+        <nav class="tab-nav">
+            <button class="tab-btn active" data-tab="sessions">Session池</button>
+            <button class="tab-btn" data-tab="nodes">全景节点</button>
+            <button class="tab-btn" data-tab="files">文件</button>
+            <button class="tab-btn" data-tab="users">人员</button>
+        </nav>
+
+        <!-- Tab 内容 -->
+        <section class="tab-content">
+            <!-- Session 池 -->
+            <div class="tab-panel active" id="tab-sessions">
+                <div class="panel-header">
+                    <h3>Session 池</h3>
+                    <button class="btn-refresh-sm" data-refresh="sessions">刷新</button>
+                </div>
+                <div id="session-summary" class="summary"></div>
+                <table class="data-table" id="session-table">
+                    <thead><tr><th>会话ID</th><th>空闲时间</th><th>操作</th></tr></thead>
+                    <tbody></tbody>
+                </table>
+            </div>
+
+            <!-- 全景节点 -->
+            <div class="tab-panel" id="tab-nodes">
+                <div class="panel-header">
+                    <h3>全景节点</h3>
+                    <div class="filter-group">
+                        <select id="node-project-filter"><option value="">全部项目</option></select>
+                        <button class="btn-refresh-sm" data-refresh="nodes">刷新</button>
+                    </div>
+                </div>
+                <table class="data-table" id="node-table">
+                    <thead><tr><th>节点编号</th><th>节点名称</th><th>主责条线</th><th>截止时间</th><th>进度</th><th>状态</th></tr></thead>
+                    <tbody></tbody>
+                </table>
+            </div>
+
+            <!-- 文件 -->
+            <div class="tab-panel" id="tab-files">
+                <div class="panel-header">
+                    <h3>管控文件</h3>
+                    <div class="filter-group">
+                        <select id="file-project-filter"><option value="">全部项目</option></select>
+                        <button class="btn-refresh-sm" data-refresh="files">刷新</button>
+                    </div>
+                </div>
+                <table class="data-table" id="file-table">
+                    <thead><tr><th>文件名</th><th>类型</th><th>版本</th><th>上传者</th><th>时间</th><th>密级</th></tr></thead>
+                    <tbody></tbody>
+                </table>
+            </div>
+
+            <!-- 人员 -->
+            <div class="tab-panel" id="tab-users">
+                <div class="panel-header">
+                    <h3>人员列表</h3>
+                    <button class="btn-refresh-sm" data-refresh="users">刷新</button>
+                </div>
+                <table class="data-table" id="user-table">
+                    <thead><tr><th>ID</th><th>姓名</th><th>所属企业</th><th>等级</th></tr></thead>
+                    <tbody></tbody>
+                </table>
+            </div>
+        </section>
+    </div>
+
+    <!-- 消息详情弹窗 -->
+    <div class="modal-overlay" id="modal-overlay">
+        <div class="modal">
+            <div class="modal-header"><h3 id="modal-title">会话消息</h3><button class="modal-close" id="modal-close">&times;</button></div>
+            <div class="modal-body" id="modal-body"></div>
+        </div>
+    </div>
+
+    <!-- 节点详情弹窗 -->
+    <div class="modal-overlay" id="node-modal-overlay">
+        <div class="modal modal-wide">
+            <div class="modal-header"><h3 id="node-modal-title">节点详情</h3><button class="modal-close" id="node-modal-close">&times;</button></div>
+            <div class="modal-body" id="node-modal-body"></div>
+        </div>
+    </div>
+
+    <script src="/assets/app.js"></script>
+</body>
+</html>

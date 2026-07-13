@@ -19,7 +19,7 @@ try:
     print(f"\n✅ 成功连接到数据库，找到 {len(users)} 个活跃用户：\n")
     
     for u in users:
-        print(f"  👤 {u['real_name']}")
+        print(f"  👤 {u['display_name']}")
         print(f"     ID: {u['id']}")
         print(f"     权限: {u['permission_label']} (级别 {u['permission_level']})")
         print(f"     单位: {u['company_name']}")
@@ -31,7 +31,7 @@ try:
         first_user = users[0]
         user_detail = get_user_by_id(first_user['id'])
         if user_detail:
-            print(f"\n✅ 成功获取用户详情: {user_detail['real_name']}")
+            print(f"\n✅ 成功获取用户详情: {user_detail['display_name']}")
             print(f"   电话: {user_detail['phone']}")
             print(f"   邮箱: {user_detail['email']}")
             print(f"   微信: {user_detail.get('wechat', 'N/A')}")

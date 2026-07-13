@@ -1,0 +1,386 @@
+# ============================================================
+# 004_seed_nodes.yaml —— 全景节点树定义（ECOCITY-26 生态城一期）
+#
+# 用法：
+#   uv run python scripts/manage_nodes.py create --file emily-core/emily_core/infrastructure/database/scripts/004_seed_nodes.yaml --dry-run
+#   uv run python scripts/manage_nodes.py create --file emily-core/emily_core/infrastructure/database/scripts/004_seed_nodes.yaml
+#
+# 说明：
+#   - node_id 为业务编号，统一前缀 ECOC（ECOCITY缩写）
+#   - stage_id: 0=立项 1=规划设计 2=工程施工 3=交付结算
+#   - node_type: MILESTONE / WORK_PACKAGE / TASK
+#   - owner_dept_id 和 related_company_id 用中文名称，batch 创建时会解析
+#   - children 嵌套自动展平并设 parent_node_id
+#   - deliverables 为节点需产出的成果清单
+#   - dependencies 为前置依赖（按 deliverable_name 模糊匹配）
+# ============================================================
+
+project_id: "ECOCITY-26"
+creator_id: "admin_wang"
+
+nodes:
+  # ═══════════════════════════════════════════════════════════
+  # 立项阶段 (stage_id=0)
+  # ═══════════════════════════════════════════════════════════
+  - node_id: "ECOC-LX-01"
+    node_name: "项目立项"
+    node_type: "MILESTONE"
+    stage_id: 0
+    owner_dept_id: "工程部"
+    related_company_id: "建设单位"
+    deadline: "2025-06-30"
+    sort_order: 1
+    child_weight: 1.0
+    remark: "立项阶段里程碑——已完成"
+    deliverables:
+      - deliverable_id: "ECOC-LX-01-DELV-001"
+        deliverable_name: "项目立项批复"
+        target_amount: 1
+        current_amount: 1
+        unit: "份"
+        is_required: true
+    children:
+      - node_id: "ECOC-LX-01-01"
+        node_name: "可行性研究"
+        node_type: "WORK_PACKAGE"
+        stage_id: 0
+        owner_dept_id: "工程部"
+        related_company_id: "建设单位"
+        deadline: "2025-04-15"
+        sort_order: 1
+        child_weight: 1.0
+        remark: "已完成——可行性研究报告编制及评审"
+        deliverables:
+          - deliverable_id: "ECOC-LX-01-01-DELV-001"
+            deliverable_name: "可行性研究报告"
+            target_amount: 1
+            current_amount: 1
+            unit: "份"
+            is_required: true
+      - node_id: "ECOC-LX-01-02"
+        node_name: "立项审批"
+        node_type: "WORK_PACKAGE"
+        stage_id: 0
+        owner_dept_id: "工程部"
+        related_company_id: "建设单位"
+        deadline: "2025-06-30"
+        sort_order: 2
+        child_weight: 1.0
+        remark: "已完成——取得立项批复和用地预审意见"
+        dependencies:
+          - deliverable_name: "可行性研究报告"
+            dependency_type: "DELIVERABLE"
+            weight: 1.0
+        deliverables:
+          - deliverable_id: "ECOC-LX-01-02-DELV-001"
+            deliverable_name: "立项批复文件"
+            target_amount: 1
+            current_amount: 1
+            unit: "份"
+            is_required: true
+
+  # ═══════════════════════════════════════════════════════════
+  # 规划设计阶段 (stage_id=1)
+  # ═══════════════════════════════════════════════════════════
+  - node_id: "ECOC-GH-01"
+    node_name: "规划报建"
+    node_type: "MILESTONE"
+    stage_id: 1
+    owner_dept_id: "工程部"
+    related_company_id: "建设单位"
+    deadline: "2025-12-31"
+    sort_order: 2
+    child_weight: 1.0
+    remark: "规划设计阶段里程碑——已完成"
+    dependencies:
+      - deliverable_name: "立项批复文件"
+        dependency_type: "DELIVERABLE"
+        weight: 1.0
+    deliverables:
+      - deliverable_id: "ECOC-GH-01-DELV-001"
+        deliverable_name: "建设工程规划许可证"
+        target_amount: 1
+        current_amount: 1
+        unit: "份"
+        is_required: true
+    children:
+      - node_id: "ECOC-GH-01-01"
+        node_name: "方案设计"
+        node_type: "WORK_PACKAGE"
+        stage_id: 1
+        owner_dept_id: "建筑所"
+        related_company_id: "设计单位"
+        deadline: "2025-09-30"
+        sort_order: 1
+        child_weight: 1.0
+        remark: "已完成——方案设计及报审通过"
+        deliverables:
+          - deliverable_id: "ECOC-GH-01-01-DELV-001"
+            deliverable_name: "方案设计文本"
+            target_amount: 1
+            current_amount: 1
+            unit: "份"
+            is_required: true
+          - deliverable_id: "ECOC-GH-01-01-DELV-002"
+            deliverable_name: "施工图设计文件"
+            target_amount: 1
+            current_amount: 1
+            unit: "套"
+            is_required: true
+      - node_id: "ECOC-GH-01-02"
+        node_name: "规划许可证办理"
+        node_type: "WORK_PACKAGE"
+        stage_id: 1
+        owner_dept_id: "工程部"
+        related_company_id: "建设单位"
+        deadline: "2025-12-31"
+        sort_order: 2
+        child_weight: 1.0
+        remark: "已完成——建设用地规划许可证+建设工程规划许可证"
+        dependencies:
+          - deliverable_name: "方案设计文本"
+            dependency_type: "DELIVERABLE"
+            weight: 1.0
+        deliverables:
+          - deliverable_id: "ECOC-GH-01-02-DELV-001"
+            deliverable_name: "建设用地规划许可证"
+            target_amount: 1
+            current_amount: 1
+            unit: "份"
+            is_required: true
+
+  # ═══════════════════════════════════════════════════════════
+  # 工程施工阶段 (stage_id=2)
+  # ═══════════════════════════════════════════════════════════
+  - node_id: "ECOC-SG-01"
+    node_name: "施工总控"
+    node_type: "MILESTONE"
+    stage_id: 2
+    owner_dept_id: "项目部"
+    related_company_id: "总包"
+    deadline: "2027-06-30"
+    sort_order: 3
+    child_weight: 1.0
+    remark: "施工阶段总控里程碑——进行中（地基基础已完成，主体结构施工中）"
+    dependencies:
+      - deliverable_name: "建设工程规划许可证"
+        dependency_type: "DELIVERABLE"
+        weight: 1.0
+      - deliverable_name: "建筑工程施工许可证"
+        dependency_type: "DELIVERABLE"
+        weight: 1.0
+    deliverables:
+      - deliverable_id: "ECOC-SG-01-DELV-001"
+        deliverable_name: "建筑工程施工许可证"
+        target_amount: 1
+        current_amount: 1
+        unit: "份"
+        is_required: true
+      - deliverable_id: "ECOC-SG-01-DELV-002"
+        deliverable_name: "竣工验收备案表"
+        target_amount: 1
+        current_amount: 0
+        unit: "份"
+        is_required: true
+    children:
+      # ── 地基与基础 ──
+      - node_id: "ECOC-SG-01-01"
+        node_name: "地基与基础"
+        node_type: "WORK_PACKAGE"
+        stage_id: 2
+        owner_dept_id: "项目部"
+        related_company_id: "总包"
+        deadline: "2026-03-31"
+        sort_order: 1
+        child_weight: 1.5
+        remark: "已完成——桩基+地下室底板+地下室结构验收通过"
+        dependencies:
+          - deliverable_name: "施工图设计文件"
+            dependency_type: "DELIVERABLE"
+            weight: 1.0
+        deliverables:
+          - deliverable_id: "ECOC-SG-01-01-DELV-001"
+            deliverable_name: "地基与基础分部验收报告"
+            target_amount: 1
+            current_amount: 1
+            unit: "份"
+            is_required: true
+        children:
+          - node_id: "ECOC-SG-01-01-01"
+            node_name: "土方开挖"
+            node_type: "TASK"
+            stage_id: 2
+            owner_dept_id: "项目部"
+            related_company_id: "总包"
+            deadline: "2025-08-15"
+            sort_order: 1
+            child_weight: 1.0
+            remark: "已完成——基坑开挖至设计标高，边坡支护完成"
+            deliverables:
+              - deliverable_id: "ECOC-SG-01-01-01-DELV-001"
+                deliverable_name: "基坑验槽记录"
+                target_amount: 1
+                current_amount: 1
+                unit: "份"
+                is_required: true
+          - node_id: "ECOC-SG-01-01-02"
+            node_name: "桩基施工"
+            node_type: "TASK"
+            stage_id: 2
+            owner_dept_id: "项目部"
+            related_company_id: "总包"
+            deadline: "2025-11-30"
+            sort_order: 2
+            child_weight: 1.0
+            remark: "已完成——PHC管桩施工完成，静载试验合格"
+            dependencies:
+              - deliverable_name: "基坑验槽记录"
+                dependency_type: "DELIVERABLE"
+                weight: 1.0
+            deliverables:
+              - deliverable_id: "ECOC-SG-01-01-02-DELV-001"
+                deliverable_name: "桩基检测报告"
+                target_amount: 1
+                current_amount: 1
+                unit: "份"
+                is_required: true
+
+      # ── 主体结构 ──
+      - node_id: "ECOC-SG-01-02"
+        node_name: "主体结构"
+        node_type: "WORK_PACKAGE"
+        stage_id: 2
+        owner_dept_id: "项目部"
+        related_company_id: "总包"
+        deadline: "2026-12-31"
+        sort_order: 2
+        child_weight: 2.0
+        remark: "进行中——地下室已完成，1-3层施工中，4-6层待启动"
+        dependencies:
+          - deliverable_name: "地基与基础分部验收报告"
+            dependency_type: "DELIVERABLE"
+            weight: 1.0
+        deliverables:
+          - deliverable_id: "ECOC-SG-01-02-DELV-001"
+            deliverable_name: "主体结构分部验收报告"
+            target_amount: 1
+            current_amount: 0
+            unit: "份"
+            is_required: true
+        children:
+          - node_id: "ECOC-SG-01-02-01"
+            node_name: "地下室结构"
+            node_type: "TASK"
+            stage_id: 2
+            owner_dept_id: "项目部"
+            related_company_id: "总包"
+            deadline: "2026-01-31"
+            sort_order: 1
+            child_weight: 1.0
+            remark: "已完成——地下二层结构封顶，防水施工完成"
+            deliverables:
+              - deliverable_id: "ECOC-SG-01-02-01-DELV-001"
+                deliverable_name: "地下室结构验收记录"
+                target_amount: 1
+                current_amount: 1
+                unit: "份"
+                is_required: true
+          - node_id: "ECOC-SG-01-02-02"
+            node_name: "1-3层主体结构"
+            node_type: "TASK"
+            stage_id: 2
+            owner_dept_id: "项目部"
+            related_company_id: "总包"
+            deadline: "2026-06-30"
+            sort_order: 2
+            child_weight: 1.0
+            remark: "进行中——1-2层已浇筑完成，3层钢筋绑扎中，进度约65%"
+            dependencies:
+              - deliverable_name: "地下室结构验收记录"
+                dependency_type: "DELIVERABLE"
+                weight: 1.0
+            deliverables:
+              - deliverable_id: "ECOC-SG-01-02-02-DELV-001"
+                deliverable_name: "1-3层结构验收记录"
+                target_amount: 1
+                current_amount: 0
+                unit: "份"
+                is_required: true
+          - node_id: "ECOC-SG-01-02-03"
+            node_name: "4-6层主体结构"
+            node_type: "TASK"
+            stage_id: 2
+            owner_dept_id: "项目部"
+            related_company_id: "总包"
+            deadline: "2026-12-31"
+            sort_order: 3
+            child_weight: 1.0
+            remark: "待激活——需1-3层结构验收通过后启动"
+            dependencies:
+              - deliverable_name: "1-3层结构验收记录"
+                dependency_type: "DELIVERABLE"
+                weight: 1.0
+            deliverables:
+              - deliverable_id: "ECOC-SG-01-02-03-DELV-001"
+                deliverable_name: "4-6层结构验收记录"
+                target_amount: 1
+                current_amount: 0
+                unit: "份"
+                is_required: true
+
+      # ── 机电安装 ──
+      - node_id: "ECOC-SG-01-03"
+        node_name: "机电安装"
+        node_type: "WORK_PACKAGE"
+        stage_id: 2
+        owner_dept_id: "项目部"
+        related_company_id: "总包"
+        deadline: "2027-04-30"
+        sort_order: 3
+        child_weight: 1.0
+        remark: "前置条件未满足——需主体结构验收通过后启动"
+        dependencies:
+          - deliverable_name: "主体结构分部验收报告"
+            dependency_type: "DELIVERABLE"
+            weight: 1.0
+        deliverables:
+          - deliverable_id: "ECOC-SG-01-03-DELV-001"
+            deliverable_name: "机电安装施工方案"
+            target_amount: 1
+            current_amount: 0
+            unit: "份"
+            is_required: true
+
+  # ═══════════════════════════════════════════════════════════
+  # 交付阶段 (stage_id=3)
+  # ═══════════════════════════════════════════════════════════
+  - node_id: "ECOC-JF-01"
+    node_name: "竣工验收"
+    node_type: "MILESTONE"
+    stage_id: 3
+    owner_dept_id: "工程部"
+    related_company_id: "建设单位"
+    deadline: "2027-06-30"
+    sort_order: 4
+    child_weight: 1.0
+    remark: "未激活——需施工全部完成后启动"
+    dependencies:
+      - deliverable_name: "主体结构分部验收报告"
+        dependency_type: "DELIVERABLE"
+        weight: 1.0
+      - deliverable_name: "机电安装施工方案"
+        dependency_type: "DELIVERABLE"
+        weight: 0.5
+    deliverables:
+      - deliverable_id: "ECOC-JF-01-DELV-001"
+        deliverable_name: "竣工验收报告"
+        target_amount: 1
+        current_amount: 0
+        unit: "份"
+        is_required: true
+      - deliverable_id: "ECOC-JF-01-DELV-002"
+        deliverable_name: "竣工备案证明"
+        target_amount: 1
+        current_amount: 0
+        unit: "份"
+        is_required: true

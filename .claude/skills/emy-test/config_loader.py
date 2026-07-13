@@ -182,7 +182,7 @@ def get_active_users() -> list[dict]:
     供 _resolve_sender() 正确提取 QQ 号作为 sender_id。
 
     Returns:
-        list[dict]: 用户列表，每个用户包含 id, real_name, username,
+        list[dict]: 用户列表，每个用户包含 id, display_name, username,
                    permission_level, company_name, phone, qq,
                    im_platform, im_user_id 等字段
                    失败时返回空列表
@@ -200,7 +200,7 @@ def get_active_users() -> list[dict]:
         query = text("""
             SELECT
                 u.id,
-                COALESCE(u.username, '') as real_name,
+                COALESCE(u.username, '') as display_name,
                 u.username,
                 u.level as permission_level,
                 u.phone,
@@ -232,7 +232,7 @@ def get_active_users() -> list[dict]:
             for row in result:
                 users.append({
                     "id": row[0],
-                    "real_name": row[1] or row[2] or "未知用户",
+                    "display_name": row[1] or row[2] or "未知用户",
                     "username": row[2],
                     "permission_level": row[3],
                     "phone": row[4],
@@ -274,7 +274,7 @@ def get_user_by_id(user_id: str) -> dict | None:
         query = text("""
             SELECT 
                 u.id,
-                u.real_name,
+                u.username as display_name,
                 u.username,
                 u.permission_level,
                 u.phone,
@@ -295,7 +295,7 @@ def get_user_by_id(user_id: str) -> dict | None:
             if row:
                 return {
                     "id": row[0],
-                    "real_name": row[1] or row[2],
+                    "display_name": row[1] or row[2],
                     "username": row[2],
                     "permission_level": row[3],
                     "phone": row[4],

@@ -366,8 +366,17 @@ async def create_node_tree(
         # 解析上游成果：支持 deliverable_id 或 deliverable_name
         deliverable_id = ds.get("depends_on_deliverable_id", "")
         deliverable_name = ds.get("deliverable_name", "")
-        if not deliverable_id and deliverable_name and upstream_node_id:
-            deliverable_id = await _resolve_deliverable_id(upstream_node_id, deliverable_name)
+        if not deliverable_id and deliverable_name:
+            if upstream_node_id:
+                deliverable_id = await _resolve_deliverable_id(upstream_node_id, deliverable_name)
+            else:
+                # 跨节点搜索：在所有已创建节点中查找 deliverable
+                for fn_other in flat_nodes:
+                    candidate_id = await _resolve_deliverable_id(fn_other["node_id"], deliverable_name)
+                    if candidate_id:
+                        deliverable_id = candidate_id
+                        upstream_node_id = fn_other["node_id"]
+                        break
 
         if not deliverable_id:
             msg = (

@@ -183,3 +183,36 @@ class SessionPoolManager:
     def uptime_seconds(self) -> int:
         """池运行时长（秒）。"""
         return int(time.time() - self._start_time)
+
+    # ── 监控 API 支持 ──
+
+    def get_status(self) -> dict:
+        """返回 Session 池状态摘要（供监控 API 调用）。
+
+        Returns:
+            {
+                "total": int,           # 活跃 Session 数
+                "uptime_seconds": int,  # 池运行时长
+                "sessions": [           # 各 Session 摘要
+                    {
+                        "conversation_id": str,
+                        "last_active_ts": float,   # Unix 时间戳
+                        "idle_seconds": int,        # 空闲秒数
+                    },
+                    ...
+                ]
+            }
+        """
+        now = time.time()
+        sessions = []
+        for conv_id, entry in self._sessions.items():
+            sessions.append({
+                "conversation_id": conv_id,
+                "last_active_ts": entry.last_active,
+                "idle_seconds": int(now - entry.last_active),
+            })
+        return {
+            "total": len(self._sessions),
+            "uptime_seconds": self.uptime_seconds,
+            "sessions": sessions,
+        }

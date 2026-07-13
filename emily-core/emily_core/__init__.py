@@ -107,6 +107,9 @@ class EmilyCore:
         self._skill_registry = None
         self._skill_executor = None
 
+        # 监控模块（Monitor Dashboard）
+        self._monitor_service = None
+
         # 元认知模块
         self._rule_book_loader = None
         self._world_book_service = None
@@ -172,6 +175,9 @@ class EmilyCore:
 
         # ── Skill 模块 ──
         self._init_skill_module()
+
+        #  ── 监控模块（Monitor Dashboard）──
+        self._init_monitor_module()
 
         # ── 元认知模块 ──
         self._init_meta_cognition()
@@ -278,6 +284,24 @@ class EmilyCore:
         except Exception as e:
             logger.error("SkillRegistry reload failed: %s", e)
             return {"ok": False, "total": 0, "skill_ids": [], "error": str(e)}
+
+    def _init_monitor_module(self) -> None:
+        """初始化监控模块：MonitorService。fail-open。"""
+        try:
+            from .services.monitor_service import MonitorService
+            self._monitor_service = MonitorService(core=self)
+
+            # 注入到 API 路由
+            try:
+                from api.routes.monitor import set_monitor_service
+                set_monitor_service(self._monitor_service)
+            except ImportError:
+                pass  # 非 API 场景
+
+            logger.info("Monitor module initialized")
+        except Exception as e:
+            logger.warning("Monitor module init failed: %s", e)
+            self._monitor_service = None
 
     def _init_meta_cognition(self) -> None:
         """初始化元认知模块：规则书 + 世界书 + 系统描述。fail-open。"""

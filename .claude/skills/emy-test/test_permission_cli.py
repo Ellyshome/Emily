@@ -32,7 +32,7 @@ def print_separator(title=""):
 def test_user_permission(tester, user, message):
     """测试单个用户发送消息"""
     print_separator()
-    print(f"👤 测试用户: {user['real_name']}")
+    print(f"👤 测试用户: {user['display_name']}")
     print(f"   权限级别: {user['permission_label']} (级别 {user['permission_level']})")
     print(f"   所属单位: {user['company_name']}")
     print(f"\n📨 发送消息: {message}\n")
@@ -41,7 +41,7 @@ def test_user_permission(tester, user, message):
         reply = tester.send_sync(
             message,
             sender_id=user['id'],
-            sender_name=user['real_name'],
+            sender_name=user['display_name'],
             conversation_type="private",
         )
 
@@ -80,7 +80,7 @@ def main():
 
     print(f"✅ 找到 {len(users)} 个测试用户:\n")
     for i, u in enumerate(users, 1):
-        print(f"  {i}. {u['real_name']} - {u['permission_label']}")
+        print(f"  {i}. {u['display_name']} - {u['permission_label']}")
 
     print()
 
@@ -111,7 +111,7 @@ def main():
         # 只发送第一条测试消息
         reply = test_user_permission(tester, user, test_messages[0])
         results.append({
-            "user": user['real_name'],
+            "user": user['display_name'],
             "permission": user['permission_label'],
             "has_reply": reply is not None and hasattr(reply, 'content'),
         })

@@ -54,14 +54,14 @@ def print_result(passed, message=""):
 def run_test(tester, user, test_name, message, description=""):
     """执行单个测试用例"""
     print_test(test_name, description)
-    print(f"  👤 用户: {user['real_name']} ({user['permission_label']})")
+    print(f"  👤 用户: {user['display_name']} ({user['permission_label']})")
     print(f"  💬 消息: {message}\n")
 
     try:
         reply = tester.send_sync(
             message,
             sender_id=user['id'],
-            sender_name=user['real_name'],
+            sender_name=user['display_name'],
             conversation_type="private",
         )
 
@@ -158,7 +158,7 @@ def main():
             results.append({
                 'module': '权限管理',
                 'test': test_name,
-                'user': user['real_name'],
+                'user': user['display_name'],
                 'passed': passed,
                 'content': content[:200] if content else None,
             })
@@ -205,7 +205,7 @@ def main():
             results.append({
                 'module': '全局状态机',
                 'test': test_name,
-                'user': user['real_name'],
+                'user': user['display_name'],
                 'passed': passed,
                 'content': content[:200] if content else None,
             })
@@ -252,7 +252,7 @@ def main():
             results.append({
                 'module': '综合场景',
                 'test': test_name,
-                'user': user['real_name'],
+                'user': user['display_name'],
                 'passed': passed,
                 'content': content[:200] if content else None,
             })

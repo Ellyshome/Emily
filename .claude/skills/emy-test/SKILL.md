@@ -132,7 +132,7 @@ uv run python .claude/skills/emy-test/cli.py --managed --llm \
 ```powershell
 # 查询可用用户（含 QQ 号）
 docker exec emily-postgres psql -U emily -d emily -c "
-SELECT u.id, u.username, u.real_name, u.qq, u.permission_level, c.company_name
+SELECT u.id, u.username, u.qq, u.level, c.company_name
 FROM users u
 LEFT JOIN company_info c ON u.company = c.id
 WHERE u.is_deleted = false AND u.status = 'active'
