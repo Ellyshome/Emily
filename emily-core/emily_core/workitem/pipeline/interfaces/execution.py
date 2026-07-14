@@ -126,8 +126,7 @@ class WorkAgent(ABC):
     Plan 模式 (Step 4): 输入 RouteDecision → 输出 ExecutionPlan
     Execute 模式 (Step 5): 输入 ExecutionPlan → 逐步输出 StepResult[]
 
-    Mock: 返回固定 ExecutionPlan 和 StepResult[]
-    真实: LLM 驱动的计划制定 + 逐步执行
+    WorkAgent ABC 保留作为扩展接口，当前主路径由 WorkItemAgent 直接实现。
     """
 
     @abstractmethod

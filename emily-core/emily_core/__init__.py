@@ -147,7 +147,7 @@ class EmilyCore:
                 logger.error("LLM client init failed: %s", e)
                 self._llm_client = None
         else:
-            logger.info("No LLM API key — running with Mock WorkItem-Agent brain")
+            logger.info("No LLM API key — LLM-dependent features disabled (fallback steps will be used)")
 
         # ── Email 模块（SMTP + IMAP Providers + EmailService）──
         self._init_email_module()

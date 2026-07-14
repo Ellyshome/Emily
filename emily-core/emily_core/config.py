@@ -173,19 +173,6 @@ class Config:
     workitem_max_per_session: int = 5
     """每 Session 最大 WorkItem 数。"""
 
-    # ── Pipeline 节点大脑模式开关 ──
-    planner_mode: str = "real"
-    """规划大脑模式: mock | real（需 EMILY_LLM_API_KEY）"""
-
-    executor_mode: str = "real"
-    """执行大脑模式: mock | real（需 EMILY_LLM_API_KEY + BusinessFlowToolRegistry）"""
-
-    auth_mode: str = "real"
-    """鉴权引擎模式: mock | real（需 SOPIntentRegistry）"""
-
-    risk_mode: str = "real"
-    """风险评估模式: mock | real"""
-
     # ── Checkpoint 持久化 ──
     checkpoint_enabled: bool = True
     """检查点持久化开关"""

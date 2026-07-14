@@ -56,11 +56,6 @@ def _config_from_env(config_data: dict | None) -> dict:
         "EMILY_STORAGE_ROOT": "storage_root",
         "EMILY_HOOK_CONFIG_PATH": "hook_config_path",
         "EMILY_SOP_REPOSITORY_DIR": "sop_repository_dir",
-        # Pipeline node brain mode switches
-        "EMILY_EXECUTOR_MODE": "executor_mode",
-        "EMILY_PLANNER_MODE": "planner_mode",
-        "EMILY_AUTH_MODE": "auth_mode",
-        "EMILY_RISK_MODE": "risk_mode",
         "EMILY_MAXKB_URL": "maxkb_url",
         "EMILY_MAXKB_ADMIN_PASSWORD": "maxkb_admin_password",
         "EMILY_MAXKB_KNOWLEDGE_ID": "maxkb_knowledge_id",
@@ -113,7 +108,7 @@ def init(config_data: dict | None = None, rag_provider=None) -> "EmilyCore":
         "Emily Core initialized, mode=%s, bot_name=%s, llm=%s, kb=%s",
         config.takeover_mode,
         config.bot_name,
-        "configured" if config.llm_api_key else "disabled (Mock brain)",
+        "configured" if config.llm_api_key else "disabled",
         "enabled" if rag_provider else "disabled",
     )
     return EmilyCore(config, rag_provider=rag_provider)
