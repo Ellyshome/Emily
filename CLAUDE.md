@@ -74,8 +74,8 @@ QQ → NapCat → AstrBot → emily_agent 薄插件
 
 | 文档 | 一句话 | 何时读 |
 |------|--------|--------|
-| [docs/代码文件目录.md](docs/代码文件目录.md) | 全量 100+ 文件树 + 每文件一句话 | 找代码位置、理解文件职责、了解哪些是弃用/冷备/Mock |
-| [docs/业务模块与运转全景.md](docs/业务模块与运转全景.md) | Mermaid 端到端流程图 + ~30 模块清单 + WorkItem 状态机 + Mock/Real 切换 | 理解系统如何运转、模块之间如何交互、消息处理全路径 |
+| [docs/代码文件目录.md](docs/代码文件目录.md) | 全量 100+ 文件树 + 每文件一句话 | 找代码位置、理解文件职责、了解哪些是弃用/冷备 |
+| [docs/业务模块与运转全景.md](docs/业务模块与运转全景.md) | Mermaid 端到端流程图 + ~30 模块清单 + WorkItem 状态机 + 降级策略 | 理解系统如何运转、模块之间如何交互、消息处理全路径 |
 | [docs/接口协议与调用约定.md](docs/接口协议与调用约定.md) | 标准协议对象 + 管道接口 ABC + 工具定义 + HTTP/SSE API + 12 条调用约定 | 写新模块/工具前确认契约、排查接口问题 |
 | [docs/数据库设计.md](docs/数据库设计.md) | 53 表速查 + 每表完整字段架构 + ER 关系图 + 维护注意事项 | 改模型、加表/字段、排查数据问题 |
 | [docs/开发记录.md](docs/开发记录.md) | EmyBot M1-M15→Emily Phase 0/A/B/C 演进 + 7 项架构决策 + 权威文档索引 | 了解历史决策原因、查阅原始设计文档 |
@@ -126,7 +126,7 @@ QQ → NapCat → AstrBot → emily_agent 薄插件
 | `emily-core/emily_core/adapters/session/session_pool.py` | `SessionPoolManager`：conversation_id→SessionAgent 路由 |
 | `emily-core/emily_core/session/session_agent.py` | `SessionAgent`：每会话大脑——快回/意图/WorkItem 拆分/回复聚合 |
 | `emily-core/emily_core/workitem/workitem.py` | `WorkItem`：单任务全息记录 + 6 态状态机 |
-| `emily-core/emily_core/workitem/workitem_agent.py` | `WorkItemAgent`：4 节点 handler + Mock/Real 模式切换 + auth/risk |
+| `emily-core/emily_core/workitem/workitem_agent.py` | `WorkItemAgent`：4 节点 handler + auth/risk |
 | `emily-core/emily_core/workitem/pipeline/bus.py` | `PipelineBUS`：4 节点执行总线 + Hook 触发 |
 | `emily-core/emily_core/workitem/pipeline/hook.py` | Hook 基类 + 4 种具体 Hook 子类（Auth/Audit/Trace/Progress） |
 | `emily-core/emily_core/services/node_batch.py` | `create_node_tree`：全景节点批量创建核心（CLI 和系统工具共享） |
@@ -204,7 +204,7 @@ docker exec emily-core find /app/emily_core -name '__pycache__' -type d -exec rm
 - **`set_result()` 被覆盖**：使用 `event.send()` 直发前导/中间消息
 - **插件 DTO 副本是设计意图**：`data/plugins/emily_agent/adapters/standard/` 下副本使插件不依赖 Core 包
 - **无 LLM 时 return None**：放行给 AstrBot 兜底，不硬编码回复
-- **Mock 是默认模式**：`EMILY_PLANNER_MODE=mock` 等。`real` 需有 LLM client 才生效
+- **LLM 不可用时自然降级**：规划走 `_fallback_steps()`（3 步通用计划），执行走空结果，Guardian 跳过。无 Mock 模式
 - **expire_on_commit=False**：避免 ORM 对象在 session 外访问报 `DetachedInstanceError`
 - **Windows PowerShell GBK 乱码**：预先 `$env:PYTHONIOENCODING="utf-8"`
 - **emy-test 禁用假 sender-id**：随便造一个 `--sender-id`（如 `zhang_gong`、`alice`）不在 users 表中，会导致系统自动创建用户（permission_level=1）污染 DB，且权限降级使测试结果完全不可信。推荐用 `--sender "用户名"`（自动从 users 表 + user_im_bindings 解析 QQ 号），或先查 users 表取真实 UUID 再用 `--sender-id`

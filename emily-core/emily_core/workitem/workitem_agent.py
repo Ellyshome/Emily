@@ -6,8 +6,8 @@
 
 节点 ↔ 大脑映射：
   wi_node1 [意图验证+注入]  ← KnowledgeInjector + RouteDecision 构建
-  wi_node2 [计划+标准]      ← LLM Planning | MockPlanner
-  wi_node3 [执行+验收]      ← RealExecutor | MockWorkAgent + RealGuardian（并进审核）
+  wi_node2 [计划+标准]      ← Skill 定义优先，否则 LLM 规划（fallback steps 兜底）
+  wi_node3 [执行+验收]      ← Skill 执行优先，否则 RealExecutor + RealGuardian（并进审核）
   wi_node4 [成果总结]        ← 组装 result_text + RealGuardian.review_reply()（追加标记）
 """
 
@@ -24,7 +24,6 @@ from .pipeline.interfaces.routing import RouteDecision, SubTask
 from .pipeline.interfaces.planning import ExecutionPlan, PlanStep
 from .pipeline.interfaces.execution import StepResult, ToolCallRecord, DbResult, RagResult, RagChunk, GuardianStepVerdict
 from .pipeline.interfaces.auth import AuthResult, AuthDecision
-from .pipeline.mocks import MockPlanner, MockWorkAgent
 from .pipeline.real_guardian import RealGuardian, GuardianNote
 from ..session.session_context import format_message_history
 
@@ -96,10 +95,6 @@ class WorkItemAgent:
         self._skill_registry = skill_registry
         self._skill_executor = skill_executor
 
-        # Mock 大脑（保留作为 fallback）
-        self._planner = MockPlanner()
-        self._work_agent = MockWorkAgent()
-
         # Guardian: LLM 可用则自动启用，不可用则为 None（静默跳过）
         if self._llm:
             self._guardian = RealGuardian(llm_client=self._llm, config=config)
@@ -107,21 +102,6 @@ class WorkItemAgent:
         else:
             self._guardian = None
             logger.info("LLM not available — Guardian disabled (silent skip)")
-
-    # ── 模式解析 ──
-
-    def _resolve_mode(self, component: str) -> str:
-        """解析组件模式，mock 为默认回退。"""
-        if self.config is None:
-            return "mock"
-        mode = getattr(self.config, f"{component}_mode", "mock") or "mock"
-        if mode in ("real", "review", "agent") and self._llm is None:
-            logger.warning(
-                "Component '%s' mode=%s but no LLM client — falling back to mock",
-                component, mode,
-            )
-            return "mock"
-        return mode
 
     # ── 公共 Pipeline BUS 节点 handler ──
 
@@ -222,7 +202,7 @@ class WorkItemAgent:
                      getattr(wi.route_decision, "_source", ""))
 
     async def node2_plan(self, context: BusContext) -> None:
-        """Node 2 [计划+标准] —— Skill 定义优先，否则 LLM 规划 或 MockPlanner fallback。"""
+        """Node 2 [计划+标准] —— Skill 定义优先，否则 LLM 规划，fallback steps 兜底。"""
         wi = context.work_item
 
         # ── Skill 路径优先 ──
@@ -237,13 +217,18 @@ class WorkItemAgent:
             logger.info("WI %s node2: using Skill definition (sop=%s)", wi.id, wi.sop_id)
             return
 
-        # ── 原有 LLM/Mock 规划路径 ──
-        planner_mode = self._resolve_mode("planner")
-
-        if planner_mode == "real" and self._llm:
+        # ── LLM 规划路径 ──
+        if self._llm:
             plan = await self._llm_plan(wi, context)
         else:
-            plan = await self._planner.plan(wi.route_decision, context)
+            plan = ExecutionPlan(
+                risk_level="L2",
+                steps=_fallback_steps(),
+                acceptance_criteria=[],
+                estimated_steps=3,
+                _source="fallback",
+            )
+            logger.info("WI %s node2: no LLM, using fallback steps", wi.id)
 
         wi.execution_plan = plan
         wi.risk_level = plan.risk_level
@@ -251,7 +236,7 @@ class WorkItemAgent:
         wi.llm_call_count += 1
         logger.debug("WI %s node2: risk=%s steps=%d _source=%s",
                      wi.id, plan.risk_level, getattr(plan, "estimated_steps", 0),
-                     getattr(plan, "_source", "mock"))
+                     getattr(plan, "_source", "fallback"))
 
     async def _llm_plan(self, wi, context) -> ExecutionPlan:
         """LLM 动态规划 —— 从 SOP 全文、对话历史、用户输入生成 ExecutionPlan。
@@ -296,8 +281,14 @@ class WorkItemAgent:
             data = result.get("data", {})
             logger.debug("LLM planner response: %s", data)
         except Exception as e:
-            logger.error("LLM planner failed: %s, falling back to MockPlanner", e)
-            return await self._planner.plan(wi.route_decision, context)
+            logger.error("LLM planner failed: %s, falling back to fallback steps", e)
+            return ExecutionPlan(
+                risk_level="L2",
+                steps=_fallback_steps(),
+                acceptance_criteria=[],
+                estimated_steps=3,
+                _source="fallback",
+            )
 
         return self._map_to_execution_plan(data)
 
@@ -330,7 +321,7 @@ class WorkItemAgent:
     # ── Node 3 真实执行引擎 ──
 
     async def node3_execute(self, context: BusContext) -> None:
-        """Node 3 [执行+验收] —— Skill 路径优先，否则走原有 _real_execute。"""
+        """Node 3 [执行+验收] —— Skill 路径优先，否则走 RealExecutor。"""
         wi = context.work_item
         if wi.execution_plan is None:
             return
@@ -339,13 +330,8 @@ class WorkItemAgent:
         if getattr(wi.execution_plan, "_source", "") == "skill_definition" and self._skill_executor:
             step_results = await self._execute_skill(wi, context)
         else:
-            # ── 原有路径 ──
-            executor_mode = self._resolve_mode("executor")
-
-            if executor_mode == "real":
-                step_results = await self._real_execute(wi.execution_plan, context)
-            else:
-                step_results = await self._work_agent.execute(wi.execution_plan, context)
+            # ── RealExecutor 路径 ──
+            step_results = await self._real_execute(wi.execution_plan, context)
 
         # Guardian 并进审核：每个 step 的 review 作为后台 Task，
         # 在全部步骤执行完后 gather() 汇合，不阻塞主链路
@@ -382,8 +368,8 @@ class WorkItemAgent:
             context.agent_result = step_results[-1]
             context.agent_reply = step_results[-1].output
         logger.debug(
-            "WI %s node3: %d steps, executor=%s guardian=%s",
-            wi.id, len(step_results), executor_mode,
+            "WI %s node3: %d steps, guardian=%s",
+            wi.id, len(step_results),
             "enabled" if self._guardian else "disabled",
         )
 
@@ -394,8 +380,8 @@ class WorkItemAgent:
         调用 handler(tool_params) 直接执行；其他步骤返回纯文本结果。
         """
         if self._business_flow_tools is None:
-            logger.warning("RealExecutor: no BusinessFlowToolRegistry, falling back to MockWorkAgent")
-            return await self._work_agent.execute(plan, context)
+            logger.error("RealExecutor: no BusinessFlowToolRegistry available, returning empty results")
+            return []
 
         results: list[StepResult] = []
 
@@ -534,14 +520,10 @@ class WorkItemAgent:
         steps = summary.get("steps_executed", 0)
         tool_calls = summary.get("tool_calls", 0)
 
-        # executor_mode=real 时无 Mock 前缀
-        executor_mode = self._resolve_mode("executor")
-        mock_prefix = "" if executor_mode == "real" else "[Mock 模式] "
-
         # ---- LLM 回复合成（传入对话历史 + SessionContext）----
         session_ctx = context.get_session_context() if context else None
         message_history = getattr(session_ctx, 'message_history', []) if session_ctx else []
-        draft = await self._llm_synthesize_reply(wi, mock_prefix,
+        draft = await self._llm_synthesize_reply(wi,
                                                    message_history=message_history if message_history else None,
                                                    session_ctx=session_ctx)
 
@@ -574,7 +556,7 @@ class WorkItemAgent:
             len(wi.warnings),
         )
 
-    async def _llm_synthesize_reply(self, wi, mock_prefix: str = "",
+    async def _llm_synthesize_reply(self, wi,
                                       message_history: list[dict] | None = None,
                                       session_ctx=None) -> str:
         """用 LLM 根据 workitem.md prompt + 步骤结果 + 对话历史合成自然语言回复。
@@ -584,7 +566,6 @@ class WorkItemAgent:
 
         Args:
             wi: WorkItem 实例
-            mock_prefix: Mock 模式下的前缀
             message_history: 对话历史，由 node4_summary 从 BusContext 提取后传入
             session_ctx: SessionContext 实例，用于填充 prompt 中的用户/项目变量
         """
@@ -643,7 +624,7 @@ class WorkItemAgent:
                 reply = data.get("reply", "") if isinstance(data, dict) else ""
                 if reply and len(reply) > 20:
                     logger.debug("node4: LLM synthesized reply (%d chars)", len(reply))
-                    return mock_prefix + reply
+                    return reply
             except Exception as e:
                 logger.warning("node4: LLM reply synthesis failed, falling back: %s", e)
 
@@ -661,15 +642,15 @@ class WorkItemAgent:
                         doc_name = getattr(chunk, "doc_name", "") or "未知来源"
                         rag_texts.append(f"根据《{doc_name}》：{chunk.content}")
             if rag_texts:
-                return mock_prefix + "根据知识库检索，找到以下相关信息：\n\n" + "\n".join(rag_texts[:5])
-            return mock_prefix + f"已完成知识库查询，共找到 {rag_hits} 条相关信息。"
+                return "根据知识库检索，找到以下相关信息：\n\n" + "\n".join(rag_texts[:5])
+            return f"已完成知识库查询，共找到 {rag_hits} 条相关信息。"
         elif tool_calls > 0:
             return (
-                f"{mock_prefix}操作已完成！共执行 {steps} 个步骤，"
+                f"操作已完成！共执行 {steps} 个步骤，"
                 f"调用 {tool_calls} 个工具，数据库操作 {summary.get('db_operations', 0)} 次。"
             )
         else:
-            return mock_prefix + "Emily 已处理完毕。"
+            return "Emily 已处理完毕。"
 
     @staticmethod
     def _build_tools_text() -> str:
@@ -699,12 +680,7 @@ class WorkItemAgent:
         node1_intent 或 node2_plan 中调用）。
 
         从 BusContext 获取 SessionContext，委托 PermissionAuthEngine 执行三维鉴权。
-        mock 模式：始终 ALLOW。
         """
-        auth_mode = self._resolve_mode("auth")
-        if auth_mode != "real":
-            return AuthResult(decision=AuthDecision.ALLOW, matched_roles=["all"],
-                            _source="mock_auth")
 
         sop_id = getattr(route_decision, "sop_id", None)
         if not sop_id:
@@ -757,19 +733,14 @@ class WorkItemAgent:
     # ── 风险评估 ──
 
     def grade_risk(self, route_decision, operation_type: str = "") -> str:
-        """真实风险评估 —— 基于意图类型和置信度。
+        """风险评估 —— 基于意图类型和置信度。
 
         [reserved] 此方法暂无调用者。当前风险等级由 node2_plan 通过 LLM 规划器
-        （或 MockPlanner）生成，写入 ExecutionPlan.risk_level。本方法保留用于未来
-        的 node2_plan 内联调用（当 EMILY_RISK_MODE=real 时替代 LLM 输出中的
-        risk_level 字段）。
+        生成，写入 ExecutionPlan.risk_level。本方法保留用于未来的
+        node2_plan 内联调用。
 
-        当 EMILY_RISK_MODE=real 时使用。
+        降级逻辑：按 intent_type/confidence/operation_type 分级。
         """
-        risk_mode = self._resolve_mode("risk")
-        if risk_mode != "real":
-            return "L2"
-
         intent_type = getattr(route_decision, "intent_type", "fallback")
         confidence = getattr(route_decision, "confidence", "none")
         is_compound = getattr(route_decision, "is_compound", False)
