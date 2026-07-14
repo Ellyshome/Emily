@@ -12,146 +12,58 @@
 
 **Emily** 是一款陪跑地产开发全生命周期的AI协作工具，定位为"地产开发团队公共大脑"。系统通过QQ等即时通讯渠道接入，以纯口语化交互方式，帮助团队完成消息归档、节点追踪、意图路由、知识沉淀等日常工作，让个体经验沉淀为团队公共能力。当前版本 V1.0，技术架构采用薄插件 + 独立业务内核（Session 主线 + WorkItem + PipelineBUS）。
 
-### 1.2 软件定位
+### 1.2 产品定位与核心能力
 
-**Emily** 是一款专为地产开发行业设计的 **团队公共大脑**，旨在解决传统地产项目管理中的核心痛点：
+Emily是地产开发团队的公共大脑，通过QQ等IM以口语化交互接入日常，围绕项目全生命周期提供消息归档、任务调度、节点追踪、知识沉淀等功能。运转上，用户消息经薄插件协议转换与去重后入核，SessionAgent识别意图拆解为WorkItem，沿PipelineBUS四节点流水线执行，结果异步回复。核心解决传统地产管理中信息差、协作低效、经验流失、知识孤岛四大痛点。
 
-#### 行业痛点
+### 1.3 运作逻辑与关键价值
 
-| 痛点 | 影响 |
-|------|------|
-| **信息差** | 开发建设中的过程细节散落各处，关键信息不对称 |
-| **协作低效** | 依赖"人盯人"的原始模式，跨团队沟通成本高 |
-| **经验流失** | 团队成员变动导致宝贵经验无法传承 |
-| **知识孤岛** | 各专业条线知识无法共享，同类问题重复踩坑 |
-
-
-### 1.3 核心价值主张
-
-#### ✨ 价值一：全面记录，消除信息差
-
-开发建设中的过程细节被全量归档、追踪和统一管理，消除信息不对称。
-
-#### ✨ 价值二：高效协作，打破信息壁垒
-
-多渠道统一接入、纯口语化交互与意图智能路由，大幅提升团队协作效率。
-
-#### ✨ 价值三：知识沉淀，经验永不流失
-
-通过世界书、规则书和自我认知书的三书协同自进化，将行业经验永久沉淀为团队资产。
-
-#### ✨ 价值四：模式升级，AI 融入日常
-
-节点巡检、健康度监控与智能推荐让AI工具融入地产行业日常。
+Emily以"意图识别→任务拆解→管道执行→成果沉淀"闭环运转，每轮交互同时贡献知识增量。全面记录：消息全量归档，参建方共享同一信息视图，消除信息差。高效协作：自然语言交互，复合请求智能拆解，打破沟通壁垒。知识沉淀：三书协同自进化，个体经验提炼为团队资产。主动巡检：节点周期巡检、分级预警与智能推荐，AI融入日常管理。
 
 ### 1.4 功能全景图
 
 ```mermaid
 graph TD
-    subgraph UI["用户交互层"]
-        QQ[QQ 接入 ✅]
-        WX[微信 接入 📋]
-        Mail[邮件 接入 📋]
-        Web[Web 管理端 📋]
-    end
+    IM[用户消息<br/>QQ接入] -->|入站| Plugin[薄插件层<br/>协议转换 + 去重]
 
-    subgraph Agent["Agent 层"]
-        PA[ProjectAgent<br/>项目级 · 自主运行 📋]
-        SA[SessionAgent<br/>会话级 · 智能调度 ✅]
-        WA[WorkItemAgent<br/>任务级 · 执行引擎 ✅]
-    end
+    Plugin --> SA[SessionAgent<br/>会话上下文 + 意图识别]
 
-    subgraph Core["核心业务层"]
-        SM[WorkItem状态机管理]
-        TM[任务管理]
-        DM[文档管理]
-        MM[会议管理]
-        PM[权限管理]
-    end
+    SA -->|匹配| SOP[(SOP注册表<br/>执行规范 + 工具集)]
+    SOP -->|注入规范| WA[WorkItem<br/>任务执行单元]
 
-    subgraph Infra["基础设施层"]
-        LLM[LLM 多模型引擎]
-        RAG[RAG 知识库]
-        DB[(PostgreSQL)]
-        FS[(文件存储)]
-    end
+    Node[(全景节点<br/>项目/进度/可见范围)] -->|注入上下文| WA
 
-    QQ --> SA
-    WX -.-> SA
-    Mail -.-> SA
-    Web -.-> PA
+    WA -->|沿流水线执行| BUS[PipelineBUS<br/>意图拆分 → 计划标准<br/>→ 执行验收 → 成果总结]
 
-    PA -.-> SM
-    SA --> WA
-    WA --> TM
-    WA --> DM
-    WA --> MM
+    BUS -->|推理规划| LLM[LLM引擎]
+    BUS -->|知识检索| RAG[RAG知识库]
+    BUS -->|数据存取| DB[(PostgreSQL)]
+    BUS -->|文件管理| FS[(文件存储)]
 
-    PM --> SA
-    PM --> WA
+    BUS -->|成果合成 + 回复| SSE[SSE出站事件流]
+    SSE -->|推送回复| Plugin
+    Plugin -->|出站| IM
 
-    WA --> LLM
-    WA --> RAG
-    Core --> DB
-    DM --> FS
+    BUS -->|任务/事件/文件回写| Node
+
+    Perm[三维权限系统] -.->|会话层鉴权| SA
+    Perm -.->|管道层鉴权| BUS
 ```
-
-> **图例**：✅ 已实现 | 📋 规划中 | -.-> 规划中连接
 
 ---
 
 ## 2. 系统架构设计
 
-### 2.1 设计理念：薄插件 + 独立业务内核
+### 2.1 系统架构概述
 
-Emily 采用 **"薄插件 + 独立业务内核"** 的架构设计，确保系统的可扩展性和独立性：
-
-#### 设计原则
-
-| 原则 | 说明 |
-|------|------|
-| **插件无业务** | 薄插件层仅做协议转换和消息转发，不含任何业务逻辑 |
-| **内核不依赖** | 业务内核不依赖具体 IM 平台，可以独立运行和演进 |
-| **分层不可跳** | 严格分层架构，各层不可跨层调用，确保职责边界清晰 |
-| **WorkItem+PipelineBUS 驱动** | WorkItem 6 态状态机 + 4 节点 PipelineBUS 驱动业务流转，确保一致性和可追溯性 |
-
-#### 架构优势
-
-```mermaid
-graph LR
-    subgraph 优势
-        A[未来可扩展微服务]
-        B[多平台同时接入]
-        C[业务逻辑集中维护]
-        D[测试友好，自然降级]
-    end
-
-    A --> E[架构演进]
-    B --> E
-    C --> E
-    D --> E
-```
-
-#### 降级策略
-
-系统各组件在 LLM 不可用时有自然降级行为，无需显式模式切换：
-
-| 组件 | 正常路径 | LLM 不可用时 |
-|------|----------|-------------|
-| **规划器** | `WorkItemAgent._llm_plan()` | `_fallback_steps()`（3 步通用计划） |
-| **执行器** | `WorkItemAgent._real_execute()`（M14 直调） | 无 BusinessFlowToolRegistry 时返回空结果 |
-| **Guardian** | `RealGuardian` 陪跑+出站审核 | 跳过（`_guardian=None`） |
-| **鉴权** | `PermissionAuthEngine` 三维鉴权 | 无引擎时走 `sop_allow` 白名单 |
-| **风险评估** | `grade_risk()` 按 intent_type 分级 | 始终按分级逻辑执行 |
+Emily系统由五层核心模块构成，各层职责边界清晰，通过标准化接口协同工作。自下而上依次为：基础设施层提供LLM推理、RAG检索、数据持久化等基础能力；调度引擎层驱动定时作业与自进化闭环；业务内核层包含会话调度、流水线执行与业务服务三大组件，是系统核心；薄插件层屏蔽各IM平台差异，完成协议转换与消息转发；用户交互层通过QQ、微信等即时通讯工具面向最终用户。请求从用户交互层逐层向下传递至业务内核，执行结果一方面通过SSE事件流异步回传至用户，另一方面沉淀到全景节点体系与知识库。三维权限系统作为横切能力，在会话层与管道执行层双重挂载鉴权点，确保全链路安全可控。
 
 ### 2.2 技术架构图
 
 ```mermaid
 graph TB
     subgraph External["外部接入层"]
-        IM1[QQ / NapCat ✅]
-        IM2[微信 📋]
-        IM3[邮箱 📋]
+        IM1[QQ / NapCat]
         API[REST API]
     end
 
@@ -204,8 +116,6 @@ graph TB
     end
 
     IM1 --> Adapter
-    IM2 -.-> Adapter
-    IM3 -.-> Adapter
 
     Adapter --> Client --> Core
     SSE --> Sender --> IM1
@@ -297,24 +207,8 @@ stateDiagram-v2
 ```mermaid
 graph TD
     subgraph Pipeline["PipelineBUS 4节点流水线"]
-        N1[节点1: 意图+拆分<br/>知识注入 + 路由决策]
-        N2[节点2: 计划+标准<br/>LLM规划 + 鉴权Hook]
-        N3[节点3: 执行+验收<br/>工具调用 + 审计Hook]
-        N4[节点4: 成果总结<br/>回复合成 + 校验Hook]
-    end
-
-    N1 --> N2 --> N3 --> N4
-
-    subgraph Hooks["Hook 挂载点"]
-        B1[before:node1]
-        B2[before:node2]
-        B3[before:node3]
-        B4[before:node4]
-        A1[after:node1]
-        A2[after:node2]
-        A3[after:node3]
-        A4[after:node4]
-        E3[on_error:node3]
+        direction LR
+        N1[节点1<br/>意图+拆分<br/><br/>before: 知识注入<br/>after: 路由审核] --> N2[节点2<br/>计划+标准<br/><br/>before: 鉴权<br/>after: 计划校验] --> N3[节点3<br/>执行+验收<br/><br/>before: 审计<br/>after: 结果校验] --> N4[节点4<br/>成果总结<br/><br/>before: 合成预检<br/>after: 出站审核]
     end
 ```
 
@@ -660,8 +554,6 @@ graph TB
 | **关键节点** | 重要时间节点，影响整体进度 | 土方开挖完成、地下结构封顶、主体封顶 |
 | **交付里程碑** | 对外交付节点 | 预售节点、交付节点 |
 
-> **📋 里程碑看守机制**（规划中）：5 分钟定时巡检 → T-7/T-3/T-1 分级预警 → 智能解堵推荐。当前里程碑节点通过节点成果提交和状态流转管理。
-
 #### 3.2.3 文件可见范围控制
 
 **基于节点的权限继承**：
@@ -952,16 +844,14 @@ flowchart TD
 
 ### 3.4 自进化系统
 
-> **实现状态说明**：三书体系已建立数据模型和基础服务，但部分高级功能（Rete 规则引擎、认知漂移检测、灰度验证闭环）仍在规划中。以下按已实现和规划中分别标注。
-
 #### 3.4.1 三书体系架构
 
 ```mermaid
 graph TB
     subgraph 自进化内核
-        WB[世界书 World Book ✅<br/>外部知识 + 行业规范]
-        RB[规则书 Rule Book 🔧<br/>业务规则 + 最佳实践]
-        SA[自我认知书 Self-Awareness ✅<br/>能力边界 + 系统描述]
+        WB[世界书<br/>外部知识 + 行业规范]
+        RB[规则书<br/>业务规则 + 最佳实践]
+        SA[自我认知书<br/>能力边界 + 系统描述]
     end
 
     subgraph 输入源
@@ -989,9 +879,7 @@ graph TB
     WB & RB & SA --> H
 ```
 
-> **图例**：✅ 已实现 | 🔧 部分实现 | 📋 规划中
-
-#### 3.4.2 世界书（World Book） ✅
+#### 3.4.2 世界书（World Book）
 
 **世界书内容结构**：
 
@@ -1025,59 +913,23 @@ graph TD
 - **关键词回退**：本地 TF 关键词搜索（MaxKB 不可用时兜底）
 - **范围过滤**：按项目阶段（stage）、岗位角色（role）缩小检索范围
 
-#### 3.4.3 规则书（Rule Book） 🔧
+#### 3.4.3 规则书（Rule Book）
 
-**规则书内容结构**：
+RuleBookLoader 加载 YAML 规则文件，注入 Session prompt 供 LLM 参考。规则作为上下文提示 LLM，不通过独立的规则引擎执行。
 
-```python
-{
-    "business_rules": [
-        {
-            "rule_id": "RULE-001",
-            "name": "工程款支付审批流程",
-            "condition": "申请金额 > 100万 AND 进度 < 80%",
-            "action": "需要总经理审批",
-            "priority": "high",
-            "source": "财务管理制度V3.0",
-            "version": "v1.0"
-        }
-    ],
-    "best_practices": [
-        {
-            "practice_id": "BP-001",
-            "name": "雨季施工注意事项",
-            "scenario": "天气预报显示未来3天有大雨",
-            "recommendation": [
-                "检查基坑排水系统",
-                "暂停室外高空作业",
-                "覆盖已浇筑混凝土"
-            ],
-            "source": "项目经验总结"
-        }
-    ]
-}
-```
-
-**当前实现**：RuleBookLoader 加载 YAML 规则文件 → 注入 Session prompt 供 LLM 参考。规则作为上下文提示 LLM，不通过独立的规则引擎执行。
-
-> **📋 规划中**：Rete 算法规则引擎，支持条件自动匹配和动作执行。
-
-#### 3.4.4 自我认知书（Self-Awareness Book） ✅
+#### 3.4.4 自我认知书（Self-Awareness Book）
 
 **自我认知维度**：
 
-| 维度 | 内容 | 实现状态 |
-|------|------|---------|
-| **能力边界** | 系统自我描述（SystemDescription） | ✅ 已实现 |
-| **历史表现** | 各 SOP 成功率、平均耗时 | 🔧 部分实现（EvolutionDailyInsight） |
-| **错误模式** | 常见错误类型、发生频率 | 🔧 部分实现（AgentTraceService） |
-| **知识盲区** | 哪些领域知识不足 | 📋 规划中 |
+| 维度 | 内容 |
+|------|------|
+| **能力边界** | 系统自我描述（SystemDescription），启动时自动构建，包含数据库 schema、SOP 目录、工具列表等 |
+| **历史表现** | 各 SOP 命中率、兜底率、健康度评分（EvolutionDailyInsight） |
+| **错误模式** | 常见错误类型与发生频率追踪（AgentTraceService） |
 
 **SystemDescriptionBuilder**：启动时自动构建系统自我认知描述，包含数据库 schema、SOP 目录、工具列表等，供 LLM 理解系统能力边界。
 
-> **📋 规划中**：认知漂移检测（统计显著性检验）、基准线建立与自动校准。
-
-#### 3.4.5 三者协同进化机制 🔧
+#### 3.4.5 三者协同进化机制
 
 **自进化闭环**：
 
@@ -1089,15 +941,15 @@ graph TD
         C[结果反馈]
     end
 
-    subgraph 学习 ✅
+    subgraph 学习
         D[每日洞察<br/>EvolutionDailyInsight]
         E[规则归纳<br/>RuleInductor]
     end
 
-    subgraph 进化 🔧
-        G[世界书更新 ✅<br/>WorldBookUpdateHandler]
-        H[规则书更新 🔧<br/>RuleBookLoader热重载]
-        I[自我认知更新 ✅<br/>SystemDescriptionBuilder]
+    subgraph 进化
+        G[世界书更新<br/>WorldBookUpdateHandler]
+        H[规则书更新<br/>RuleBookLoader热重载]
+        I[自我认知更新<br/>SystemDescriptionBuilder]
     end
 
     A & B & C --> D
@@ -1109,13 +961,11 @@ graph TD
 
 **进化触发条件**：
 
-| 触发类型 | 触发条件 | 进化内容 | 实现状态 |
-|---------|---------|---------|---------|
-| **定时进化** | 调度作业（每日） | 世界书偏差检测 + 更新 | ✅ |
-| **规则归纳** | 每周（可配置） | LLM 归纳 EvolutionRule | ✅ |
-| **人工触发** | 管理员手动执行脚本 | 全量重建世界书 | ✅ |
-
-> **📋 规划中**：灰度验证→效果评估→全量发布闭环；事件触发式进化；性能触发的自动降级。
+| 触发类型 | 触发条件 | 进化内容 |
+|---------|---------|---------|
+| **定时进化** | 调度作业（每日） | 世界书偏差检测 + 更新 |
+| **规则归纳** | 每周（可配置） | LLM 归纳 EvolutionRule |
+| **人工触发** | 管理员手动执行脚本 | 全量重建世界书 |
 
 ---
 
@@ -1368,8 +1218,6 @@ graph TD
 - **关键词回退**：本地 TF 关键词搜索（MaxKB 不可用时）
 - **范围过滤**：按项目阶段（stage）、岗位角色（role）过滤
 
-> **📋 规划中**：查询改写、交叉编码器 Rerank、混合检索加权融合。
-
 ### 4.2 PostgreSQL 数据库设计
 
 #### 核心表概览（54 表）
@@ -1488,8 +1336,6 @@ graph TD
 | 消息去重哈希 | Python set（内存） | 插件进程内维护最近 10 分钟哈希 |
 | Prompt 模板 | prompt_loader 内存缓存 | 文件变更后自动失效重读 |
 
-> **📋 规划中**：系统规模扩大后，可引入 Redis 作为分布式缓存和消息队列，实现多实例水平扩展。
-
 #### 4.3.2 消息队列（AsyncIO Queue）
 
 **当前实现**：采用 Python `asyncio.Queue` 作为进程内消息队列：
@@ -1497,8 +1343,6 @@ graph TD
 | 队列 | 用途 | 消费者 |
 |------|------|--------|
 | `outbound_events` | 出站事件（回复消息、通知等） | SSE 监听器 |
-
-> **📋 规划中**：系统规模扩大后，可迁移到 Redis Queue 或 Kafka，实现多实例水平扩展。
 
 ---
 
@@ -1562,39 +1406,7 @@ graph TD
     D --> E[RuleInductor 归纳规则<br/>（每周/可配置）]
 ```
 
-### 5.3 📋 每日晨报生成流程（规划中）
-
-> 以下为规划中的晨报生成流程，当前调度引擎支持 PeriodicNodeHandler 定期创建 TASK 节点，晨报功能尚未实现。
-
-**项目健康度晨报**：
-
-```mermaid
-graph TD
-    A[每日早晨 8:00 触发] --> B[扫描所有项目]
-
-    B --> C[节点状态分析]
-    C --> C1[卡滞节点清单]
-    C --> C2[即将到期里程碑]
-    C --> C3[进度偏差统计]
-
-    B --> D[关键指标汇总]
-    D --> D1[新增任务/事件/会议数]
-    D --> D2[待办事项统计]
-    D --> D3[文件上传数量]
-
-    B --> E[风险预警]
-    E --> E1[高风险任务预警]
-    E --> E2[即将超期待办]
-    E --> E3[权限申请待审批]
-
-    C1 & C2 & C3 & D1 & D2 & D3 & E1 & E2 & E3 --> F[LLM 生成晨报]
-
-    F --> G[格式化为 Markdown]
-    G --> H[推送到项目群]
-    H --> I[@相关负责人]
-```
-
-### 5.4 系统冷启动/热启动流程
+### 5.3 系统冷启动/热启动流程
 
 **冷启动流程（系统重启）**：
 
@@ -1636,39 +1448,39 @@ graph TD
 ### 6.1 ER 图
 
 ```mermaid
-erDiagram
-    USERS ||--o{ USER_IM_BINDINGS : "IM绑定"
-    USERS ||--o{ MESSAGES : "发送"
-    USERS ||--o{ SESSION_ARCHIVES : "归档"
-    USERS ||--o{ EVENTS : "创建"
-    USERS ||--o{ TASKS : "负责/创建"
-    USERS ||--o{ MEETINGS : "创建"
-    USERS ||--o{ FILES : "上传"
-    USERS ||--o{ PERMISSION_GRANTS : "被授权"
+graph TD
+    USERS[USERS<br/>用户] --- USER_IM_BINDINGS[USER_IM_BINDINGS<br/>IM绑定]
+    USERS --- MESSAGES[MESSAGES<br/>消息]
+    USERS --- SESSION_ARCHIVES[SESSION_ARCHIVES<br/>会话归档]
+    USERS --- EVENTS[EVENTS<br/>事件记录]
+    USERS --- TASKS[TASKS<br/>任务]
+    USERS --- MEETINGS[MEETINGS<br/>会议]
+    USERS --- FILES[FILES<br/>文件]
+    USERS --- PERMISSION_GRANTS[PERMISSION_GRANTS<br/>授权]
 
-    CONVERSATIONS ||--o{ MESSAGES : "包含"
+    CONVERSATIONS[CONVERSATIONS<br/>会话] --- MESSAGES
 
-    PROJECTS ||--o{ EVENTS : "项目"
-    PROJECTS ||--o{ TASKS : "项目"
-    PROJECTS ||--o{ MEETINGS : "项目"
-    PROJECTS ||--o{ FILES : "项目"
-    PROJECTS ||--o{ PROJECT_NODES : "项目"
+    PROJECTS[PROJECTS<br/>项目] --- EVENTS
+    PROJECTS --- TASKS
+    PROJECTS --- MEETINGS
+    PROJECTS --- FILES
+    PROJECTS --- PROJECT_NODES[PROJECT_NODES<br/>全景节点]
 
-    MESSAGES ||--o{ MESSAGE_ATTACHMENTS : "附件"
-    FILES ||--o{ MESSAGE_ATTACHMENTS : "关联"
+    MESSAGES --- MESSAGE_ATTACHMENTS[MESSAGE_ATTACHMENTS<br/>消息附件]
+    FILES --- MESSAGE_ATTACHMENTS
 
-    PROJECT_NODES ||--o{ NODE_DEPENDENCIES : "依赖"
-    PROJECT_NODES ||--o{ NODE_DELIVERABLES : "成果"
-    PROJECT_NODES ||--o{ NODE_ACCESSIBLE_FILES : "可见文件"
-    PROJECT_NODES ||--o{ NODE_EVENTS : "事件日志"
+    PROJECT_NODES --- NODE_DEPENDENCIES[NODE_DEPENDENCIES<br/>节点依赖]
+    PROJECT_NODES --- NODE_DELIVERABLES[NODE_DELIVERABLES<br/>交付物]
+    PROJECT_NODES --- NODE_ACCESSIBLE_FILES[NODE_ACCESSIBLE_FILES<br/>可见文件]
+    PROJECT_NODES --- NODE_EVENTS[NODE_EVENTS<br/>节点事件]
 
-    PERMISSION_GROUPS ||--o{ SOP_PERMISSION_BINDINGS : "绑定"
-    SOP_BUSINESS_FLOWS ||--o{ SOP_PERMISSION_BINDINGS : "绑定"
+    PERMISSION_GROUPS[PERMISSION_GROUPS<br/>权限组] --- SOP_PERMISSION_BINDINGS[SOP_PERMISSION_BINDINGS<br/>SOP权限绑定]
+    SOP_BUSINESS_FLOWS[SOP_BUSINESS_FLOWS<br/>SOP业务流] --- SOP_PERMISSION_BINDINGS
 
-    SCHEDULER_JOBS ||--o{ SCHEDULER_EXECUTIONS : "生成"
+    SCHEDULER_JOBS[SCHEDULER_JOBS<br/>调度作业] --- SCHEDULER_EXECUTIONS[SCHEDULER_EXECUTIONS<br/>执行记录]
 
-    EVOLUTION_DAILY_INSIGHTS ||--o{ EVOLUTION_RULES : "归纳"
-    EVOLUTION_DAILY_INSIGHTS ||--o{ EVOLUTION_PATCHES : "生成"
+    EVOLUTION_DAILY_INSIGHTS[EVOLUTION_DAILY_INSIGHTS<br/>每日洞察] --- EVOLUTION_RULES[EVOLUTION_RULES<br/>进化规则]
+    EVOLUTION_DAILY_INSIGHTS --- EVOLUTION_PATCHES[EVOLUTION_PATCHES<br/>进化补丁]
 ```
 
 ### 6.2 核心表结构详解
@@ -1840,7 +1652,6 @@ graph TD
     
     subgraph 数据层
         PG[PostgreSQL<br/>主从复制]
-        MQ[消息队列<br/>📋 Redis Queue / Kafka]
     end
     
     subgraph 知识库
@@ -1849,13 +1660,10 @@ graph TD
     
     LB --> AC1 & AC2 & AC3
     AC1 & AC2 & AC3 --> PG
-    AC1 & AC2 & AC3 --> MQ
     AC1 & AC2 & AC3 --> MAXKB
 ```
 
-> **注意**：当前生产环境为单实例部署。Redis Queue / Kafka 为多实例水平扩展时需要引入的中间件，当前版本不依赖。
-
-**资源配置建议**：
+#### 资源配置建议：
 
 | 环境 | CPU | 内存 | 磁盘 | 实例数 |
 |------|-----|------|------|--------|
@@ -1941,31 +1749,6 @@ graph TD
 | `INFO` | 一般信息 | 系统启动、用户登录 |
 | `DEBUG` | 调试信息 | 详细调用流程 |
 
-### 7.5 常见问题排查
-
-**容器相关问题**：
-
-| 问题 | 排查步骤 |
-|------|----------|
-| 容器启动失败 | 1. 查看容器日志 `docker logs <container-name>`<br/>2. 检查环境变量配置<br/>3. 检查端口是否被占用 |
-| 容器频繁重启 | 1. 检查健康检查配置<br/>2. 查看 OOM 日志<br/>3. 增加内存限制 |
-| `__pycache__` 不刷新 | Docker bind-mount 不触发 Python 重编译，需手动清除：`docker exec emily-core find /app/emily_core -name '__pycache__' -type d -exec rm -rf {} +` |
-
-**数据库相关问题**：
-
-| 问题 | 排查步骤 |
-|------|----------|
-| 数据库连接失败 | 1. 检查 PostgreSQL 容器状态<br/>2. 验证连接串配置<br/>3. 检查网络连通性 |
-| 查询性能问题 | 1. 查看慢查询日志<br/>2. 检查索引是否缺失<br/>3. 分析执行计划 `EXPLAIN ANALYZE` |
-| 新增字段不生效 | `create_all()` 不 ALTER 已有表，需手动 DDL 或通过 `_ensure_columns` 注册 |
-
-**LLM 相关问题**：
-
-| 问题 | 排查步骤 |
-|------|----------|
-| LLM 调用超时 | 1. 检查网络连通性<br/>2. 验证 API Key 有效性<br/>3. 调整超时参数 |
-| 回复质量差 | 1. 检查 Prompt 模板<br/>2. 验证上下文注入是否正确<br/>3. 尝试调整 temperature 参数 |
-
 ---
 
 ## 8. 使用手册
@@ -1976,10 +1759,10 @@ graph TD
 
 ```mermaid
 graph TD
-    A[邀请机器人入群] --> B[@机器人打招呼]
-    B --> C[系统自动创建用户]
-    C --> D[分配默认权限]
-    D --> E[开始使用]
+    A["邀请机器人入群"] --> B["@机器人打招呼"]
+    B --> C["系统自动创建用户"]
+    C --> D["分配默认权限"]
+    D --> E["开始使用"]
 ```
 
 **常用命令速查**：
@@ -1995,34 +1778,122 @@ graph TD
 
 ### 8.2 管理员操作指南
 
-**权限管理**：
+**场景演示：通过IM指令创建全景节点**
 
-```bash
-# 查看用户权限
-docker exec emily-postgres psql -U emily -d emily -c "
-  SELECT username, level, status
-  FROM users
-  ORDER BY level DESC
-"
+以下演示管理员如何通过自然语言指令，逐步完成一个全景节点的创建与配置：
 
-# 提升用户权限
-UPDATE users
-SET level = 5
-WHERE username = '张三'
+```
+用户：@Emily 在翡翠公园项目的主体施工阶段下，创建一个1号楼的新节点"主体结构施工"
+
+Emily：好的，已识别项目"翡翠公园"，将在"主体施工"阶段下创建节点。请确认以下信息：
+━━━━━━━━━━━━━━━━━━━━
+📌 节点名称：主体结构施工
+📁 上级节点：翡翠公园 → 主体施工
+📍 节点层级：第3级
+
+确认无误吗？
+
+用户：确认
+
+Emily：✅ 节点已创建！
+  节点编号：NODE-20260714-0001
+  接下来需要配置文件可见范围。该节点的内容和文件，哪些单位可以查看？
+
+用户：施工单位A和监理单位
+
+Emily：已设置可见范围：
+━━━━━━━━━━━━━━━━━━━━
+👥 可见单位：施工单位A、监理单位
+🔒 其他参建方：不可见
+
+接下来请设定该节点的预期输出成果。
+
+用户：预期成果是主体结构验收报告，负责人是张工
+
+Emily：已记录输出成果：
+━━━━━━━━━━━━━━━━━━━━
+📋 输出成果：主体结构验收报告
+👤 负责人：张工
+📅 截止时间：待设定，请提供日期或说"暂不设定"
+
+用户：截止时间下个月15号
+
+Emily：已更新。当前节点配置汇总：
+━━━━━━━━━━━━━━━━━━━━
+📌 节点：主体结构施工
+📁 所属：翡翠公园 → 主体施工
+👥 可见：施工单位A、监理单位
+📋 成果：主体结构验收报告
+👤 负责人：张工
+📅 截止：2026-08-15
+
+是否需要设定关联单位负责该节点？如需，请告知。
+
+用户：关联施工单位A，负责人李经理
+
+Emily：✅ 已设定关联单位及负责人。节点配置完成！
+  节点编号：NODE-20260714-0001
+  状态：NOT_ACTIVATED → 等待激活
 ```
 
-**SOP 管理**：
+通过以上对话，管理员无需后台操作，全程以自然语言完成了节点创建、可见范围设置、输出成果定义、关联单位绑定的完整配置流程。
 
-1. **新增 SOP**：
-   - 在 `emily-data/sops/` 目录下创建新的 `.md` 文件
-   - 按照七段式结构编写
-   - 重启 `emily-core` 容器生效，或通过 API 触发热重载
+**权限管理**：
 
-2. **热加载 SOP（无需重启）**：
-   ```bash
-   # Skill 热重载 API
-   curl -X POST http://localhost:18080/api/v1/skills/reload
-   ```
+管理员也可通过 IM 自然语言指令完成权限管理操作：
+
+```
+用户：@Emily 查看当前项目所有用户的权限级别
+
+Emily：当前项目用户权限如下：
+━━━━━━━━━━━━━━━━━━━━
+👤 张三  级别4  建设主管  正常
+👤 李四  级别3  参建管理  正常
+👤 王五  级别2  参建执行  正常
+...
+共 12 名用户
+
+用户：@Emily 把张三的权限提升到级别5管理员
+
+Emily：⚠️ 该操作将赋予张三系统级管理权限，确认吗？
+
+用户：确认
+
+Emily：✅ 已更新！
+👤 张三：级别4 → 级别5（管理员）
+```
+
+**SOP 管理**：管理员可通过对话指令将新的业务流程注册到系统。
+
+```
+用户：@Emily 我要新增一个"安全巡检记录"的SOP，适用于日常安全巡检场景
+
+Emily：好的，我来引导您完成SOP注册。首先，这个SOP的触发条件是什么？比如用户提到哪些关键词时应匹配此流程？
+
+用户：安全巡检、安全检查、隐患记录这几个词
+
+Emily：已记录触发词。该流程需要哪些执行工具？比如 record_event、create_task 等。
+
+用户：需要 record_event 记录巡检情况，还有 create_task 分配整改任务
+
+Emily：已关联工具。请描述执行步骤。
+
+用户：1.记录巡检发现的问题 2.提取隐患作为任务分配给整改责任人 3.生成巡检报告
+
+Emily：已记录。SOP配置汇总：
+━━━━━━━━━━━━━━━━━━━━
+📋 SOP编号：SOP-006-REC
+📌 名称：安全巡检记录
+🔑 触发词：安全巡检、安全检查、隐患记录
+🔧 工具：record_event、create_task
+📝 步骤：记录问题 → 分配整改 → 生成报告
+
+确认注册该SOP吗？
+
+用户：确认
+
+Emily：✅ SOP"安全巡检记录"已注册完成！用户提到相关关键词时，系统将自动匹配此流程执行。
+```
 
 **系统维护**：
 
@@ -2117,44 +1988,3 @@ Emily：✅ 文件已成功归档！
 | **分步骤操作** | 复杂操作分步说，不要一句话多个意图 |
 
 ---
-
-## 9. 附录
-
-### 术语表
-
-| 术语 | 英文 | 说明 |
-|------|------|------|
-| **SOP** | Standard Operating Procedure | 标准操作流程，系统预设的业务处理流程 |
-| **WorkItem** | 工作项 | 单个任务执行单元，一条消息可拆解为多个 WorkItem |
-| **Session** | 会话 | 用户与系统的一次连续交互上下文 |
-| **PipelineBUS** | 管道总线 | 4 节点顺序执行的消息处理流水线 |
-| **KnowledgeInjector** | 知识注入器 | 将 SOP、工具、Schema 增量注入到执行上下文 |
-| **世界书** | World Book | 项目级外部知识沉淀 |
-| **规则书** | Rule Book | 从对话和洞察中归纳的业务规则 |
-| **自我认知书** | Self-Awareness Book | 系统对自身能力的描述 |
-| **全景节点** | Panorama Node | 树状结构的项目工作分解节点 |
-| **RAG** | Retrieval-Augmented Generation | 检索增强生成，结合知识库的 LLM 问答 |
-| **薄插件** | Thin Plugin | 仅负责消息转发，不含业务逻辑的 AstrBot 插件 |
-| **BusContext** | 管道上下文 | 流经 4 节点的共享状态对象 |
-| **Hook** | 管道钩子 | 声明式挂载的管道拦截器，支持 ALLOW/WARN/BLOCK 三态决策 |
-
-### 变更日志
-
-| 版本 | 日期 | 说明 |
-|------|------|------|
-| v1.0 | 2026-07-14 | 初始版本 |
-| v1.1 | 2026-07-14 | 审核修正：删除虚构 Redis 描述、修正节点状态枚举、修正设计原则、修正权限级别编号、修正 SSE 端点路径、修正向量维度、标注规划中功能、补全 54 表清单、修正 ER 图、修正 Hook 示例、修正权限编码分隔符、简化 RAG 检索策略、简化自进化描述 |
-| v1.2 | 2026-07-14 | 移除 Mock/Real 双模式：删除 mocks/ 目录、删除 _resolve_mode() 和 4 个 mode 配置字段，改为自然降级策略 |
-
-### 参考资料
-
-1. **AstrBot 官方文档** - https://docs.astrbot.com/
-2. **NapCat 官方文档** - https://napcat.one/
-3. **FastAPI 官方文档** - https://fastapi.tiangolo.com/
-4. **PostgreSQL 官方文档** - https://www.postgresql.org/docs/
-5. **MaxKB 官方文档** - https://maxkb.cn/docs/
-6. **OpenAI API 文档** - https://platform.openai.com/docs/
-
----
-
-*本文档最后更新时间：2026-07-14*
