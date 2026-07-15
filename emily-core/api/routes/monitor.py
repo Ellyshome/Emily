@@ -62,11 +62,7 @@ async def get_containers():
     svc = _get_service()
     containers = await svc.get_containers()
     im_accounts = await svc.get_im_accounts()
-    # 注入 NapCat WebUI token
-    napcat_token = os.environ.get("NAPCAT_WEBUI_TOKEN", "")
-    for acc in im_accounts:
-        if acc["platform"] == "qq":
-            acc["webui_token"] = napcat_token
+    # webui_token 已由 get_im_accounts() 动态从 NapCat 容器读取，无需覆盖
     return MonitorApiResponse(data={
         "containers": containers,
         "im_accounts": im_accounts,
