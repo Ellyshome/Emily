@@ -44,7 +44,7 @@ function renderContainers(containers) {
     el.innerHTML = containers.map(c => `
         <div class="container-item">
             <span class="status-dot ${c.status}"></span>
-            <span>${escapeHtml(c.name)}</span>
+            <span>${escapeHtml(c.display_name || c.name)}</span>
             <span style="color:#666;font-size:12px">${c.status === 'running' ? '运行中' : c.status === 'stopped' ? '已停止' : '未知'}</span>
         </div>
     `).join('');
@@ -66,7 +66,7 @@ function renderImAccounts(accounts) {
             ? `http://${hostname}:6099/webui?token=${encodeURIComponent(napcatToken)}`
             : a.webui_available ? `http://${hostname}:6099/webui` : '';
         const link = napcatUrl
-            ? `<a class="im-link" href="${escapeHtml(napcatUrl)}" target="_blank">NapCat管理 &rarr;</a>` : '';
+            ? `<a class="im-link" href="${escapeHtml(napcatUrl)}" target="_blank">通讯接口管理 &rarr;</a>` : '';
 
         // 已登录时显示账号卡片
         let accountCard = '';

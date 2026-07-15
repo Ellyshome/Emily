@@ -46,7 +46,9 @@ services:
       - EMILY_API_TOKEN=${EMILY_API_TOKEN:-}
       - EMILY_EMAIL_IDKEY=${EMILY_EMAIL_IDKEY:-}
       - EMILY_EMAIL_PASSWORD=${EMILY_EMAIL_PASSWORD:-}
-      - NAPCAT_WEBUI_TOKEN=${NAPCAT_WEBUI_TOKEN:-a220057a48b3}
+      # NAPCAT_WEBUI_TOKEN 现已动态从 NapCat 容器读取（docker/client.py _fetch_napcat_webui_token），
+      # 不再依赖环境变量硬编码。保留此行仅当 Docker API 不可用时回退使用：
+      - NAPCAT_WEBUI_TOKEN=${NAPCAT_WEBUI_TOKEN:-}
     volumes:
       # ── 人类编辑（只读）──
       - ./emily-data/sops:/app/sops

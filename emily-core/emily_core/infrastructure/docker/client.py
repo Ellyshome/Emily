@@ -20,6 +20,15 @@ MONITORED_CONTAINERS = [
     "emily-postgres",
 ]
 
+# 容器对外展示名称（不暴露底层工具名）
+CONTAINER_DISPLAY_NAMES = {
+    "napcat": "通讯接口",
+    "astrbot": "消息平台",
+    "emily-core": "业务内核",
+    "maxkb": "知识库",
+    "emily-postgres": "数据库",
+}
+
 # IM 账号占位（需求 V2 §4.1）
 IM_ACCOUNTS = [
     {"platform": "qq", "label": "QQ", "status": "active", "webui_url": "/napcat-webui"},
@@ -50,7 +59,7 @@ async def get_container_status() -> list[dict]:
     if not _docker_socket_available():
         logger.debug("Docker socket not available — returning all containers as unknown")
         return [
-            {"name": name, "status": "unknown", "image": ""}
+            {"name": name, "display_name": CONTAINER_DISPLAY_NAMES.get(name, name), "status": "unknown", "image": ""}
             for name in MONITORED_CONTAINERS
         ]
 
@@ -72,6 +81,7 @@ async def get_container_status() -> list[dict]:
             name = names[0].lstrip("/") if names else ""
             container_map[name] = {
                 "name": name,
+                "display_name": CONTAINER_DISPLAY_NAMES.get(name, name),
                 "status": "running" if c.get("State") == "running" else "stopped",
                 "image": c.get("Image", ""),
             }
@@ -82,7 +92,7 @@ async def get_container_status() -> list[dict]:
             if name in container_map:
                 result.append(container_map[name])
             else:
-                result.append({"name": name, "status": "stopped", "image": ""})
+                result.append({"name": name, "display_name": CONTAINER_DISPLAY_NAMES.get(name, name), "status": "stopped", "image": ""})
         return result
 
     except Exception as e:
@@ -93,7 +103,7 @@ async def get_container_status() -> list[dict]:
 def _fallback_status() -> list[dict]:
     """Docker API 不可用时的降级返回。"""
     return [
-        {"name": name, "status": "unknown", "image": ""}
+        {"name": name, "display_name": CONTAINER_DISPLAY_NAMES.get(name, name), "status": "unknown", "image": ""}
         for name in MONITORED_CONTAINERS
     ]
 
@@ -119,6 +129,58 @@ async def _get_napcat_container_id() -> str | None:
     except Exception:
         return None
     return None
+
+
+async def _fetch_napcat_webui_token() -> str | None:
+    """从 NapCat 容器内 webui.json 读取真实 token。
+
+    优先通过 Docker API exec 读取 /app/napcat/config/webui.json，
+    回退到从日志中解析 WebUi Token 行。
+    """
+    if not _docker_socket_available():
+        return None
+    try:
+        container_id = await _get_napcat_container_id()
+        if not container_id:
+            return None
+        connector = aiohttp.UnixConnector("/var/run/docker.sock")
+        async with aiohttp.ClientSession(connector=connector) as client:
+            # 创建 exec 实例
+            async with client.post(
+                f"http://localhost/containers/{container_id}/exec",
+                json={
+                    "Cmd": ["cat", "/app/napcat/config/webui.json"],
+                    "AttachStdout": True,
+                    "AttachStderr": True,
+                },
+            ) as resp:
+                if resp.status not in (200, 201):
+                    return None
+                exec_id = (await resp.json())["Id"]
+            # 启动 exec
+            async with client.post(
+                f"http://localhost/exec/{exec_id}/start",
+                json={"Detach": False, "Tty": False},
+            ) as resp:
+                if resp.status != 200:
+                    return None
+                raw = await resp.read()
+                # Docker multiplex 格式: 8字节头 + payload
+                text = ""
+                pos = 0
+                while pos + 8 <= len(raw):
+                    size = struct.unpack(">I", raw[pos + 4 : pos + 8])[0]
+                    pos += 8
+                    if pos + size > len(raw):
+                        break
+                    text += raw[pos : pos + size].decode("utf-8", errors="replace")
+                    pos += size
+                import json as _json
+                data = _json.loads(text)
+                return data.get("token")
+    except Exception as e:
+        logger.debug("Failed to fetch napcat webui token: %s", e)
+        return None
 
 
 async def _fetch_napcat_logs(container_id: str, tail: int = 200) -> str:
@@ -212,7 +274,12 @@ async def get_im_accounts() -> list[dict]:
         c["name"] == "napcat" and c["status"] == "running"
         for c in containers
     )
-    webui_token = os.environ.get("NAPCAT_WEBUI_TOKEN", "")
+
+    # 动态从 NapCat 容器内读取真实 webui token（不依赖环境变量）
+    webui_token = await _fetch_napcat_webui_token()
+    if not webui_token:
+        # 回退到环境变量（兼容旧配置）
+        webui_token = os.environ.get("NAPCAT_WEBUI_TOKEN", "")
 
     # 通过日志解析 QQ 登录状态
     qq_logged_in = False
