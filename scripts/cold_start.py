@@ -26,6 +26,18 @@ _CORE_DIR = _HERE.parent / "emily-core"
 if str(_CORE_DIR) not in sys.path:
     sys.path.insert(0, str(_CORE_DIR))
 
+# 加载 .env 文件（位于项目根目录）
+_ENV_FILE = _HERE.parent / ".env"
+if _ENV_FILE.exists():
+    with open(_ENV_FILE, "r", encoding="utf-8") as _f:
+        for _line in _f:
+            _line = _line.strip()
+            if _line and not _line.startswith("#") and "=" in _line:
+                _key, _, _val = _line.partition("=")
+                _key, _val = _key.strip(), _val.strip().strip("'").strip('"')
+                if _key and _key not in os.environ:
+                    os.environ[_key] = _val
+
 logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(name)s: %(message)s")
 logger = logging.getLogger("cold_start")
 
@@ -52,6 +64,26 @@ def _init_db(db_url: str = "") -> None:
                     pg_db=os.environ.get("EMILY_PG_DB", "emily"),
                     pg_user=os.environ.get("EMILY_PG_USER", "emily"),
                     pg_password=os.environ.get("EMILY_PG_PASSWORD", "emily_secret_2026"))
+
+
+def _get_email_credentials():
+    """从环境变量获取邮箱凭证，失败返回 None（fail-open）。"""
+    from emily_core.providers.email.base import EmailCredentials
+
+    username = os.environ.get("EMILY_EMAIL_IDKEY", "")
+    password = os.environ.get("EMILY_EMAIL_PASSWORD", "")
+    if not username or not password:
+        return None
+
+    return EmailCredentials(
+        smtp_host=os.environ.get("EMILY_EMAIL_SMTP_HOST", "smtp.qq.com"),
+        smtp_port=int(os.environ.get("EMILY_EMAIL_SMTP_PORT", "465")),
+        imap_host=os.environ.get("EMILY_EMAIL_IMAP_HOST", "imap.qq.com"),
+        imap_port=int(os.environ.get("EMILY_EMAIL_IMAP_PORT", "993")),
+        username=username,
+        password=password,
+        use_ssl=True,
+    )
 
 
 async def run_cold_start(*, db_url: str = "", dry_run: bool = False) -> dict:
@@ -108,26 +140,51 @@ async def run_cold_start(*, db_url: str = "", dry_run: bool = False) -> dict:
     email_sent = 0
     email_failed = 0
     if not dry_run:
-        from emily_core.infrastructure.database.models import User
+        creds = _get_email_credentials()
+        if creds is None:
+            logger.warning("邮件通知跳过：未配置 EMILY_EMAIL_IDKEY / EMILY_EMAIL_PASSWORD，请检查 .env")
+        else:
+            from emily_core.infrastructure.database.models import User
+            from emily_core.providers.email.smtp_provider import SMTPEmailProvider
+            from emily_core.services.email_service import EmailService
 
-        for init_r in init_results:
-            try:
-                with get_session() as session:
-                    admins = session.query(User).filter(
-                        User.project_id == init_r["project_id"],
-                        User.is_deleted == False,
-                        User.is_admin == True,
-                    ).all()
+            smtp = SMTPEmailProvider()
+            email_service = EmailService(smtp=smtp, imap=None)
 
-                for admin in admins:
-                    if admin.email:
-                        # 邮件通知（简单实现：仅日志记录，实际发送依赖 EmailService）
-                        logger.info("Cold start notification: project=%s admin=%s email=%s tier=T%d",
-                                    init_r["project_name"], admin.username, admin.email, init_r["tier"])
-                        email_sent += 1
-            except Exception as e:
-                logger.warning("Email notification failed for project %s: %s", init_r["project_id"], e)
-                email_failed += 1
+            for init_r in init_results:
+                try:
+                    with get_session() as session:
+                        admins = session.query(User).filter(
+                            User.project_id == init_r["project_id"],
+                            User.is_deleted == False,
+                            User.is_admin == True,
+                        ).all()
+
+                    for admin in admins:
+                        if admin.email:
+                            tier = init_r.get("tier", "?")
+                            subject = f"[Emily] 冷启动完成 - {init_r['project_name']} (T{tier})"
+                            body = (
+                                f"项目「{init_r['project_name']}」冷启动初始化已完成。\n"
+                                f"初始化等级：T{tier}\n"
+                                f"时间：{datetime.now(BEIJING_TZ).strftime('%Y-%m-%d %H:%M:%S')}\n"
+                            )
+                            result = await email_service.send(
+                                creds=creds,
+                                to=admin.email,
+                                subject=subject,
+                                body=body,
+                            )
+                            if result.success:
+                                logger.info("Cold start email sent: %s -> %s", init_r["project_name"], admin.email)
+                                email_sent += 1
+                            else:
+                                logger.warning("Cold start email failed: %s -> %s: %s",
+                                               init_r["project_name"], admin.email, result.error)
+                                email_failed += 1
+                except Exception as e:
+                    logger.warning("Email notification failed for project %s: %s", init_r["project_id"], e)
+                    email_failed += 1
     print(f"[4/4] 邮件通知: {email_sent} 已发送, {email_failed} 失败")
 
     return {

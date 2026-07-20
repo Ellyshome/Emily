@@ -111,4 +111,92 @@ def init(config_data: dict | None = None, rag_provider=None) -> "EmilyCore":
         "configured" if config.llm_api_key else "disabled",
         "enabled" if rag_provider else "disabled",
     )
-    return EmilyCore(config, rag_provider=rag_provider)
+
+    core = EmilyCore(config, rag_provider=rag_provider)
+
+    # 启动后异步发送冷启动邮件通知（fail-open，不阻塞启动）
+    import asyncio
+    try:
+        _loop = asyncio.get_running_loop()
+        _loop.create_task(_send_startup_email(core, config))
+    except RuntimeError:
+        pass  # 无事件循环时跳过
+
+    return core
+
+
+async def _send_startup_email(core: "EmilyCore", config: Config) -> None:
+    """冷启动邮件通知：向所有活跃项目的管理员发送启动完成邮件（fail-open）。"""
+    email_idkey = os.environ.get("EMILY_EMAIL_IDKEY", "")
+    email_password = os.environ.get("EMILY_EMAIL_PASSWORD", "")
+    if not email_idkey or not email_password:
+        _logger.info("Startup email skipped: EMILY_EMAIL_IDKEY / EMILY_EMAIL_PASSWORD not set")
+        return
+
+    try:
+        from .infrastructure.database.session import get_session
+        from .infrastructure.database.models import User, Project
+        from .providers.email.base import EmailCredentials
+        from .providers.email.smtp_provider import SMTPEmailProvider
+        from .services.email_service import EmailService
+
+        creds = EmailCredentials(
+            smtp_host=getattr(config, "email_smtp_host", "smtp.qq.com"),
+            smtp_port=getattr(config, "email_smtp_port", 465),
+            imap_host=getattr(config, "email_imap_host", "imap.qq.com"),
+            imap_port=getattr(config, "email_imap_port", 993),
+            username=email_idkey,
+            password=email_password,
+            use_ssl=True,
+        )
+
+        smtp = SMTPEmailProvider()
+        email_service = EmailService(smtp=smtp, imap=None)
+
+        with get_session() as session:
+            projects = session.query(Project).filter(
+                Project.is_deleted == False,
+                Project.status == "active",
+            ).all()
+
+        sent, failed = 0, 0
+        now_str = datetime.now(BEIJING_TZ).strftime("%Y-%m-%d %H:%M:%S")
+
+        for p in projects:
+            try:
+                with get_session() as session:
+                    admins = session.query(User).filter(
+                        User.project_id == p.id,
+                        User.is_deleted == False,
+                        User.is_admin == True,
+                        User.email != None,
+                        User.email != "",
+                    ).all()
+
+                for admin in admins:
+                    subject = f"[Emily] 系统启动完成 - {p.name}"
+                    body = (
+                        f"Emily 系统已启动，项目「{p.name}」已就绪。\n"
+                        f"启动时间：{now_str}\n"
+                    )
+                    result = await email_service.send(
+                        creds=creds,
+                        to=admin.email,
+                        subject=subject,
+                        body=body,
+                    )
+                    if result.success:
+                        _logger.info("Startup email sent: %s -> %s", p.name, admin.email)
+                        sent += 1
+                    else:
+                        _logger.warning("Startup email failed: %s -> %s: %s", p.name, admin.email, result.error)
+                        failed += 1
+            except Exception as e:
+                _logger.warning("Startup email error for project %s: %s", p.name, e)
+                failed += 1
+
+        if sent > 0 or failed > 0:
+            _logger.info("Startup email done: %d sent, %d failed", sent, failed)
+
+    except Exception as e:
+        _logger.warning("Startup email init failed: %s", e)
