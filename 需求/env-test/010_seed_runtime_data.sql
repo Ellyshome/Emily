@@ -125,9 +125,9 @@ FROM (
     SELECT *, row_number() OVER (ORDER BY pipeline_run_id) AS rn FROM _spel
 ) t
 JOIN _su u ON u.username = CASE (t.rn % 5)
-    WHEN 0 THEN 'pm_li' WHEN 1 THEN 'engineer_zhang'
-    WHEN 2 THEN 'supervisor_chen' WHEN 3 THEN 'worker_sun'
-    WHEN 4 THEN 'designer_zhao'
+    WHEN 0 THEN '李景利' WHEN 1 THEN '张正宏'
+    WHEN 2 THEN '陈建华' WHEN 3 THEN '孙建国'
+    WHEN 4 THEN '赵明远'
 END;
 
 -- Cleanup and rebuild _spel with actual data
@@ -163,7 +163,7 @@ SELECT uuid_generate_v4()::text, 'JOB-002',
        0, '',
        'morning_report',
        'emily_core.scheduler.handlers.report_handler',
-       '{"report_type":"daily","recipients":["pm_li","admin_wang"]}',
+       '{"report_type":"daily","recipients":["李景利","王建国"]}',
        'ACTIVE',
        '2026-07-20T08:00:00',
        '2026-07-21T08:00:00',
@@ -190,7 +190,7 @@ SELECT
     s.interval_seconds, s.deadline_rule, s.action_type, s.handler_module,
     s.action_params, s.status, s.last_executed_at, s.next_execution_at,
     u.id, s.created_at, s.created_at
-FROM _sjobs s, _su u WHERE u.username = 'admin_wang';
+FROM _sjobs s, _su u WHERE u.username = '王建国';
 
 -- ============================================================
 -- 3. Scheduler Executions (14 records, ~2 weeks)
@@ -438,9 +438,9 @@ SELECT
     NOW()::text
 FROM generate_series(1, 30) gs
 JOIN _su u ON u.username = CASE (gs % 5)
-    WHEN 0 THEN 'pm_li' WHEN 1 THEN 'engineer_zhang'
-    WHEN 2 THEN 'supervisor_chen' WHEN 3 THEN 'worker_sun'
-    WHEN 4 THEN 'designer_zhao'
+    WHEN 0 THEN '李景利' WHEN 1 THEN '张正宏'
+    WHEN 2 THEN '陈建华' WHEN 3 THEN '孙建国'
+    WHEN 4 THEN '赵明远'
 END
 LEFT JOIN _sm m ON m.id = (SELECT id FROM _sm ORDER BY RANDOM() LIMIT 1);
 
@@ -480,9 +480,9 @@ SELECT
     NOW()::text
 FROM generate_series(1, 20) gs
 JOIN _su u ON u.username = CASE (gs % 5)
-    WHEN 0 THEN 'pm_li' WHEN 1 THEN 'engineer_zhang'
-    WHEN 2 THEN 'supervisor_chen' WHEN 3 THEN 'designer_zhao'
-    WHEN 4 THEN 'worker_sun'
+    WHEN 0 THEN '李景利' WHEN 1 THEN '张正宏'
+    WHEN 2 THEN '陈建华' WHEN 3 THEN '赵明远'
+    WHEN 4 THEN '孙建国'
 END;
 
 -- ============================================================
@@ -550,7 +550,7 @@ SELECT
     NULL,
     '2026-07-01T09:00:00', '2026-07-02T10:00:00', false
 FROM _su u1, _su u2
-WHERE u1.username = 'landscape_huang' AND u2.username = 'pm_li'
+WHERE u1.username = '黄志强' AND u2.username = '李景利'
 UNION ALL
 SELECT
     uuid_generate_v4()::text, 'PRQ-20260705-001',
@@ -564,7 +564,7 @@ SELECT
     NULL,
     '2026-07-05T14:00:00', '2026-07-05T14:00:00', false
 FROM _su u1, _su u2
-WHERE u1.username = 'it_support_luo' AND u2.username = 'admin_wang'
+WHERE u1.username = '罗永强' AND u2.username = '王建国'
 UNION ALL
 SELECT
     uuid_generate_v4()::text, 'PRQ-20260708-001',
@@ -579,7 +579,7 @@ SELECT
     NULL,
     '2026-07-08T11:00:00', '2026-07-09T16:00:00', false
 FROM _su u1, _su u2
-WHERE u1.username = 'supervisor_chen' AND u2.username = 'pm_li';
+WHERE u1.username = '陈建华' AND u2.username = '李景利';
 
 -- ============================================================
 -- 12. Permission Audit Log (10 records)
@@ -592,13 +592,13 @@ INSERT INTO permission_audit_log (event_time, grantor_id, grantee_id, perm_code,
 SELECT
     ('2026-07-' || LPAD((gs % 10 + 1)::text, 2, '0') || 'T' ||
      TO_CHAR((8 + gs % 8)::int, '00') || ':00:00')::text,
-    CASE (gs % 3) WHEN 0 THEN (SELECT id FROM _su WHERE username = 'admin_wang')
-                  WHEN 1 THEN (SELECT id FROM _su WHERE username = 'pm_li')
-                  WHEN 2 THEN (SELECT id FROM _su WHERE username = 'it_support_luo') END,
-    CASE (gs % 4) WHEN 0 THEN (SELECT id FROM _su WHERE username = 'engineer_zhang')
-                  WHEN 1 THEN (SELECT id FROM _su WHERE username = 'worker_sun')
-                  WHEN 2 THEN (SELECT id FROM _su WHERE username = 'landscape_huang')
-                  WHEN 3 THEN (SELECT id FROM _su WHERE username = 'it_support_luo') END,
+    CASE (gs % 3) WHEN 0 THEN (SELECT id FROM _su WHERE username = '王建国')
+                  WHEN 1 THEN (SELECT id FROM _su WHERE username = '李景利')
+                  WHEN 2 THEN (SELECT id FROM _su WHERE username = '罗永强') END,
+    CASE (gs % 4) WHEN 0 THEN (SELECT id FROM _su WHERE username = '张正宏')
+                  WHEN 1 THEN (SELECT id FROM _su WHERE username = '孙建国')
+                  WHEN 2 THEN (SELECT id FROM _su WHERE username = '黄志强')
+                  WHEN 3 THEN (SELECT id FROM _su WHERE username = '罗永强') END,
     CASE (gs % 5) WHEN 0 THEN 'project.read' WHEN 1 THEN 'project.write'
                   WHEN 2 THEN 'task.read' WHEN 3 THEN 'task.write'
                   WHEN 4 THEN 'perm.manage' END,
@@ -638,7 +638,7 @@ SELECT
     NULL,
     '2026-07-10T16:00:00', '2026-07-10T16:00:00', false
 FROM _su u1, _su u2
-WHERE u1.username = 'landscape_huang' AND u2.username = 'pm_li';
+WHERE u1.username = '黄志强' AND u2.username = '李景利';
 
 -- ============================================================
 -- 14. Message Attachments (6 records)
@@ -674,7 +674,7 @@ SELECT
     uuid_generate_v4()::text,
     node_id,
     f.id,
-    (SELECT id FROM _su WHERE username = 'pm_li' LIMIT 1),
+    (SELECT id FROM _su WHERE username = '李景利' LIMIT 1),
     NOW()::text
 FROM (VALUES
     ('EMR-SG-01-01', '地基与基础分部验收报告.pdf'),

@@ -1,6 +1,5 @@
 -- ============================================================
 -- 002_seed_test_data.sql —— 测试种子数据：公司 + 用户 + IM 绑定
--- Schema v2.0: users 表无 real_name 列，无 unified_code 唯一约束
 -- Usage: docker exec -i emily-postgres psql -U emily -d emily < 002_seed_test_data.sql
 -- ============================================================
 
@@ -11,8 +10,8 @@ CREATE EXTENSION IF NOT EXISTS "uuid-ossp";
 -- ============================================================
 DELETE FROM user_im_bindings WHERE im_platform = 'simulator';
 DELETE FROM users WHERE username IN (
-    'admin_wang', 'pm_li', 'engineer_zhang', 'supervisor_chen',
-    'designer_zhao', 'worker_sun', 'guest_zhou'
+    '王建国', '李景利', '张正宏', '陈建华',
+    '赵明远', '孙建国', '周文斌'
 );
 DELETE FROM company_info WHERE unified_code IN (
     '91310000MA1K3XXX01', '91310000MA1K3XXX02', '91310000MA1K3XXX03',
@@ -48,9 +47,9 @@ SELECT id, company_name, type FROM company_info WHERE is_deleted = false;
 INSERT INTO users (id, username, phone, email, status, is_admin, gender, id_card, qq, wechat, remark, creator_id, is_deleted, perm_list, org_category, level, supervisor_id, company, position, created_at, updated_at)
 VALUES (
     uuid_generate_v4()::text,
-    'admin_wang',
+    '王建国',
     '13800000001', 'wangzong@xxestate.com',
-    'active', true, 1, '310101197001010001', '123456001', 'wx_admin_wang',
+    'active', true, 1, '310101197001010001', '123456001', 'wx_王建国',
     '系统管理员，拥有所有权限',
     'system', false, '["*"]', 4, 6, NULL,
     (SELECT id FROM temp_company_ids WHERE type = '建设单位' LIMIT 1),
@@ -61,13 +60,13 @@ VALUES (
 INSERT INTO users (id, username, phone, email, status, is_admin, gender, id_card, qq, wechat, remark, creator_id, is_deleted, perm_list, org_category, level, supervisor_id, company, position, created_at, updated_at)
 VALUES (
     uuid_generate_v4()::text,
-    'pm_li',
+    '李景利',
     '13800000002', 'lijingli@xxestate.com',
-    'active', false, 1, '310101197502020002', '123456002', 'wx_pm_li',
+    'active', false, 1, '310101197502020002', '123456002', 'wx_李景利',
     '甲方工程部经理，负责项目整体协调',
-    'admin_wang', false, '["project.read","project.write","task.assign","review.approve"]',
+    '王建国', false, '["project.read","project.write","task.assign","review.approve"]',
     4, 4,
-    (SELECT id FROM users WHERE username = 'admin_wang' LIMIT 1),
+    (SELECT id FROM users WHERE username = '王建国' LIMIT 1),
     (SELECT id FROM temp_company_ids WHERE type = '建设单位' LIMIT 1),
     '["工程部经理","甲方代表"]', NOW()::text, NOW()::text
 );
@@ -76,13 +75,13 @@ VALUES (
 INSERT INTO users (id, username, phone, email, status, is_admin, gender, id_card, qq, wechat, remark, creator_id, is_deleted, perm_list, org_category, level, supervisor_id, company, position, created_at, updated_at)
 VALUES (
     uuid_generate_v4()::text,
-    'engineer_zhang',
+    '张正宏',
     '13800000003', 'zhanggong@zhongtian.com',
-    'active', false, 1, '310101198003030003', '123456003', 'wx_engineer_zhang',
+    'active', false, 1, '310101198003030003', '123456003', 'wx_张正宏',
     '总包项目经理，负责现场施工管理',
-    'admin_wang', false, '["task.read","task.write","progress.update"]',
+    '王建国', false, '["task.read","task.write","progress.update"]',
     2, 3,
-    (SELECT id FROM users WHERE username = 'pm_li' LIMIT 1),
+    (SELECT id FROM users WHERE username = '李景利' LIMIT 1),
     (SELECT id FROM temp_company_ids WHERE type = '总包' LIMIT 1),
     '["项目经理","土建工程师"]', NOW()::text, NOW()::text
 );
@@ -91,13 +90,13 @@ VALUES (
 INSERT INTO users (id, username, phone, email, status, is_admin, gender, id_card, qq, wechat, remark, creator_id, is_deleted, perm_list, org_category, level, supervisor_id, company, position, created_at, updated_at)
 VALUES (
     uuid_generate_v4()::text,
-    'supervisor_chen',
+    '陈建华',
     '13800000004', 'chenjianli@hengda.com',
-    'active', false, 1, '310101197804040004', '123456004', 'wx_supervisor_chen',
+    'active', false, 1, '310101197804040004', '123456004', 'wx_陈建华',
     '监理工程师，负责质量验收',
-    'admin_wang', false, '["quality.check","progress.review","issue.report"]',
+    '王建国', false, '["quality.check","progress.review","issue.report"]',
     2, 3,
-    (SELECT id FROM users WHERE username = 'pm_li' LIMIT 1),
+    (SELECT id FROM users WHERE username = '李景利' LIMIT 1),
     (SELECT id FROM temp_company_ids WHERE type = '监理' LIMIT 1),
     '["监理工程师","质量监督员"]', NOW()::text, NOW()::text
 );
@@ -106,13 +105,13 @@ VALUES (
 INSERT INTO users (id, username, phone, email, status, is_admin, gender, id_card, qq, wechat, remark, creator_id, is_deleted, perm_list, org_category, level, supervisor_id, company, position, created_at, updated_at)
 VALUES (
     uuid_generate_v4()::text,
-    'designer_zhao',
+    '赵明远',
     '13800000005', 'zhaogong@shdesign.com',
-    'active', false, 2, '310101198505050005', '123456005', 'wx_designer_zhao',
+    'active', false, 2, '310101198505050005', '123456005', 'wx_赵明远',
     '建筑设计师，负责设计变更',
-    'admin_wang', false, '["design.read","design.upload","change.request"]',
+    '王建国', false, '["design.read","design.upload","change.request"]',
     2, 3,
-    (SELECT id FROM users WHERE username = 'pm_li' LIMIT 1),
+    (SELECT id FROM users WHERE username = '李景利' LIMIT 1),
     (SELECT id FROM temp_company_ids WHERE type = '设计单位' LIMIT 1),
     '["建筑设计师","设计负责人"]', NOW()::text, NOW()::text
 );
@@ -121,13 +120,13 @@ VALUES (
 INSERT INTO users (id, username, phone, email, status, is_admin, gender, id_card, qq, wechat, remark, creator_id, is_deleted, perm_list, org_category, level, supervisor_id, company, position, created_at, updated_at)
 VALUES (
     uuid_generate_v4()::text,
-    'worker_sun',
+    '孙建国',
     '13800000006', 'sunshifu@zhongtian.com',
-    'active', false, 1, '310101199006060006', '123456006', 'wx_worker_sun',
+    'active', false, 1, '310101199006060006', '123456006', 'wx_孙建国',
     '土建施工员，负责现场作业执行',
-    'engineer_zhang', false, '["task.read","progress.report"]',
+    '张正宏', false, '["task.read","progress.report"]',
     2, 2,
-    (SELECT id FROM users WHERE username = 'engineer_zhang' LIMIT 1),
+    (SELECT id FROM users WHERE username = '张正宏' LIMIT 1),
     (SELECT id FROM temp_company_ids WHERE type = '总包' LIMIT 1),
     '["施工员","班组长"]', NOW()::text, NOW()::text
 );
@@ -136,13 +135,13 @@ VALUES (
 INSERT INTO users (id, username, phone, email, status, is_admin, gender, id_card, qq, wechat, remark, creator_id, is_deleted, perm_list, org_category, level, supervisor_id, company, position, created_at, updated_at)
 VALUES (
     uuid_generate_v4()::text,
-    'guest_zhou',
+    '周文斌',
     '13800000007', 'zhouwuye@xinda.com',
-    'active', false, 1, '31010119920809999', '123456007', 'wx_guest_zhou',
+    'active', false, 1, '31010119920809999', '123456007', 'wx_周文斌',
     '供应商联系人，仅可查看公开信息',
-    'admin_wang', false, '["public.read"]',
+    '王建国', false, '["public.read"]',
     1, 1,
-    (SELECT id FROM users WHERE username = 'admin_wang' LIMIT 1),
+    (SELECT id FROM users WHERE username = '王建国' LIMIT 1),
     (SELECT id FROM temp_company_ids WHERE type = '供应商' LIMIT 1),
     '["业务员","供应商联系人"]', NOW()::text, NOW()::text
 );
@@ -159,13 +158,13 @@ SELECT
     'sim_' || u.username,
     -- display name from position field (JSON array, first element)
     CASE u.username
-        WHEN 'admin_wang' THEN '王总'
-        WHEN 'pm_li' THEN '李经理'
-        WHEN 'engineer_zhang' THEN '张工'
-        WHEN 'supervisor_chen' THEN '陈监理'
-        WHEN 'designer_zhao' THEN '赵工'
-        WHEN 'worker_sun' THEN '孙师傅'
-        WHEN 'guest_zhou' THEN '周业务员'
+        WHEN '王建国' THEN '王总'
+        WHEN '李景利' THEN '李经理'
+        WHEN '张正宏' THEN '张工'
+        WHEN '陈建华' THEN '陈监理'
+        WHEN '赵明远' THEN '赵工'
+        WHEN '孙建国' THEN '孙师傅'
+        WHEN '周文斌' THEN '周业务员'
         ELSE u.username
     END,
     'active',
@@ -173,8 +172,8 @@ SELECT
     NOW()::text
 FROM users u
 WHERE u.username IN (
-    'admin_wang', 'pm_li', 'engineer_zhang', 'supervisor_chen',
-    'designer_zhao', 'worker_sun', 'guest_zhou'
+    '王建国', '李景利', '张正宏', '陈建华',
+    '赵明远', '孙建国', '周文斌'
 );
 
 -- ============================================================
@@ -196,8 +195,8 @@ SELECT
 FROM users u
 LEFT JOIN company_info c ON u.company = c.id
 WHERE u.username IN (
-    'admin_wang', 'pm_li', 'engineer_zhang', 'supervisor_chen',
-    'designer_zhao', 'worker_sun', 'guest_zhou'
+    '王建国', '李景利', '张正宏', '陈建华',
+    '赵明远', '孙建国', '周文斌'
 )
 ORDER BY u.level DESC;
 

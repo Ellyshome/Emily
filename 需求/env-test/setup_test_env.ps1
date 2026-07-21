@@ -43,10 +43,15 @@ function ExecSql {
         exit 1
     }
 
-    Get-Content $SqlFilePath -Raw -Encoding UTF8 | docker exec -i emily-postgres psql -U emily -d emily 2>$null
+    # 通过 docker cp 将文件拷贝进容器再执行，避免 PowerShell 管道损坏 UTF-8 编码
+    $tmpName = "/tmp/emily_seed_$(Get-Random).sql"
+    docker cp $SqlFilePath "emily-postgres:${tmpName}" 2>$null
+    $output = docker exec emily-postgres psql -U emily -d emily -f $tmpName 2>&1
+    docker exec emily-postgres rm -f $tmpName 2>$null
 
     if ($LASTEXITCODE -ne 0) {
         Write-Host "[ERROR] SQL 执行失败: $SqlFilePath" -ForegroundColor Red
+        Write-Host $output -ForegroundColor Red
         exit 1
     }
 }
@@ -73,7 +78,9 @@ function Invoke-ResetDatabase {
         Write-Host "[ERROR] 找不到 $resetPath" -ForegroundColor Red
         exit 1
     }
-    Get-Content $resetPath -Raw -Encoding UTF8 | docker exec -i emily-postgres psql -U emily -d emily 2>$null
+    docker cp $resetPath "emily-postgres:/tmp/reset_all.sql" 2>$null
+    docker exec emily-postgres psql -U emily -d emily -f /tmp/reset_all.sql 2>$null
+    docker exec emily-postgres rm -f /tmp/reset_all.sql 2>$null
 
     # 验证空库
     Write-Host "  [验证] 确认数据已清空..." -ForegroundColor DarkGray
@@ -193,7 +200,12 @@ WHERE uib.user_id = u.id
   AND u.qq IS NOT NULL
   AND u.qq != '';
 "@
-    $sql | docker exec -i emily-postgres psql -U emily -d emily 2>$null
+    $tmpPath = [System.IO.Path]::GetTempFileName()
+    [System.IO.File]::WriteAllText($tmpPath, $sql, [System.Text.UTF8Encoding]::new($false))
+    docker cp $tmpPath "emily-postgres:/tmp/fix_im.sql" 2>$null
+    docker exec emily-postgres psql -U emily -d emily -f /tmp/fix_im.sql 2>$null
+    docker exec emily-postgres rm -f /tmp/fix_im.sql 2>$null
+    Remove-Item $tmpPath -Force -ErrorAction SilentlyContinue
 
     if ($LASTEXITCODE -ne 0) {
         Write-Host "  [WARN] IM 绑定修复可能失败，请手动检查" -ForegroundColor Yellow
@@ -280,9 +292,11 @@ function Invoke-Verify {
     Write-Host "[验证] 数据完整性检查..." -ForegroundColor Yellow
     Write-Host ""
 
-    # 使用独立SQL文件避免PowerShell 5.1解析器兼容问题
+    # 使用 docker cp 避免 PowerShell 管道损坏 UTF-8 编码
     $verifyPath = "$SEED/verify_data.sql"
-    Get-Content $verifyPath -Raw -Encoding UTF8 | docker exec -i emily-postgres psql -U emily -d emily
+    docker cp $verifyPath "emily-postgres:/tmp/verify_data.sql" 2>$null
+    docker exec emily-postgres psql -U emily -d emily -f /tmp/verify_data.sql
+    docker exec emily-postgres rm -f /tmp/verify_data.sql 2>$null
 
     Write-Host ""
 
@@ -334,6 +348,17 @@ if (-not $ResetOnly) {
         New-MockFiles
     }
 
+    # ── 世界书 tier 补丁（补全 T2/T3 数据缺口，确保 tier≥3 激活）──
+    $patchPath = "$SEED/011_seed_world_book_patch.sql"
+    if (Test-Path $patchPath) {
+        Write-Host "[补丁] 世界书 tier 数据补丁 (011)..." -ForegroundColor Yellow
+        ExecSql $patchPath
+        Write-Host "  [OK] 总监理工程师 + 里程碑节点已补全" -ForegroundColor Green
+    } else {
+        Write-Host "  [WARN] 找不到 011_seed_world_book_patch.sql，世界书可能无法达到 tier≥3" -ForegroundColor Yellow
+    }
+    Write-Host ""
+
     # ── 世界书重建（reset 后 project_id 已变，旧世界书失效，必须重跑）──
     Write-Host "[世界书] 重建项目世界书..." -ForegroundColor Yellow
     Push-Location "emily-core"
@@ -346,6 +371,37 @@ if (-not $ResetOnly) {
         Write-Host "  [OK] 世界书已重建" -ForegroundColor Green
     }
     Pop-Location
+    Write-Host ""
+
+    # ── 世界书验证 ──
+    Write-Host "[世界书] 验证层级与激活状态..." -ForegroundColor Yellow
+    $tierCheck = docker exec emily-postgres psql -U emily -d emily -t -A -c "SELECT initialization_tier, is_activated, length(content_text) FROM project_world_books WHERE project_id = (SELECT id FROM projects WHERE code = '$Project' AND is_deleted = false);"
+    if ($tierCheck) {
+        $tierParts = $tierCheck -split '\|'
+        $wbTier = $tierParts[0].Trim()
+        $wbActivated = $tierParts[1].Trim()
+        $wbTextLen = $tierParts[2].Trim()
+        Write-Host "  tier=${wbTier}  activated=${wbActivated}  text_len=${wbTextLen}" -ForegroundColor DarkGray
+        if ($wbTier -ge 3 -and $wbActivated -eq 't') {
+            Write-Host "  [OK] 世界书已激活 (tier>=3)，Emily 将自动注入项目上下文" -ForegroundColor Green
+        } elseif ($wbTier -ge 1) {
+            Write-Host "  [提示] 世界书 tier=${wbTier}，未达激活阈值(tier>=3)" -ForegroundColor Yellow
+            Write-Host "         当前缺失项不影响基本问答，Emily 可识别项目基本信息" -ForegroundColor Yellow
+        } else {
+            Write-Host "  [WARN] 世界书 tier=0，请检查种子数据是否完整" -ForegroundColor Yellow
+        }
+    }
+    Write-Host ""
+
+    # ── 重启 emily-core 使 Session 缓存失效（加载新世界书）──
+    Write-Host "[缓存] 刷新 emily-core Session 缓存..." -ForegroundColor Yellow
+    $coreRunning = docker inspect -f '{{.State.Running}}' emily-core 2>$null
+    if ($coreRunning -eq 'true') {
+        docker compose -f $COMPOSE_FILE restart emily-core 2>$null
+        Write-Host "  [OK] emily-core 已重启，新会话将加载最新世界书" -ForegroundColor Green
+    } else {
+        Write-Host "  [跳过] emily-core 未运行" -ForegroundColor DarkGray
+    }
     Write-Host ""
 
     Invoke-Verify
