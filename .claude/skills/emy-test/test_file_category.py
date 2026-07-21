@@ -24,7 +24,7 @@ def test_archive_with_category():
     with EmysTester(use_llm=True) as emy:
         reply = emy.send_sync(
             "帮我归档一份建筑施工许可证，文件名是 科技城项目施工许可证.pdf，这是项目开工前必须取得的证照",
-            sender_id="sim_admin_wang",
+            sender_id="sim_王建国",
             sender_name="王总",
             platform=PLATFORM,
         )
@@ -51,7 +51,7 @@ def test_query_by_category():
     with EmysTester(use_llm=True) as emy:
         reply = emy.send_sync(
             "帮我查一下承包合同类的文件",
-            sender_id="sim_admin_wang",
+            sender_id="sim_王建国",
             sender_name="王总",
             platform=PLATFORM,
         )
@@ -74,7 +74,7 @@ def test_keyword_search():
     with EmysTester(use_llm=True) as emy:
         reply = emy.send_sync(
             "帮我找一下关于消防的文件",
-            sender_id="sim_admin_wang",
+            sender_id="sim_王建国",
             sender_name="王总",
             platform=PLATFORM,
         )
@@ -97,7 +97,7 @@ def test_update_category():
     with EmysTester(use_llm=True) as emy:
         reply = emy.send_sync(
             "把文件 FIL-20260703-0001 改到管理规程类",
-            sender_id="sim_pm_li",
+            sender_id="sim_李景利",
             sender_name="李经理",
             platform=PLATFORM,
         )
@@ -123,7 +123,7 @@ def test_permission_denied():
     with EmysTester(use_llm=True) as emy:
         reply = emy.send_sync(
             "把文件 FIL-20260703-0002 改到承包合同类",
-            sender_id="sim_worker_sun",
+            sender_id="sim_孙建国",
             sender_name="孙师傅",
             platform=PLATFORM,
         )
@@ -148,7 +148,7 @@ def test_default_category():
     with EmysTester(use_llm=True) as emy:
         reply = emy.send_sync(
             "帮我归档一份文件，文件名是 临时会议纪要.txt，就是普通会议记录",
-            sender_id="sim_admin_wang",
+            sender_id="sim_王建国",
             sender_name="王总",
             platform=PLATFORM,
         )

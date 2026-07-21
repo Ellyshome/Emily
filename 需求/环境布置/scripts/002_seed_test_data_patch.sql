@@ -2,8 +2,8 @@
 -- 002_seed_test_data_patch.sql —— 补充3名测试用户到现有用户池
 --
 -- Precondition: 002_seed_test_data.sql must be run first
---                (creates admin_wang, pm_li, engineer_zhang, supervisor_chen,
---                 designer_zhao, worker_sun, guest_zhou + company_info)
+--                (creates 王建国, 李景利, 张正宏, 陈建华,
+--                 赵明远, 孙建国, 周文斌 + company_info)
 -- Usage: docker exec -i emily-postgres psql -U emily -d emily < 002_seed_test_data_patch.sql
 -- ============================================================
 
@@ -15,10 +15,10 @@ CREATE EXTENSION IF NOT EXISTS "uuid-ossp";
 -- 1. 删除旧数据（幂等）
 -- ============================================================
 DELETE FROM user_im_bindings WHERE im_user_id IN (
-    'sim_it_support_luo', 'sim_site_foreman_liu', 'sim_landscape_huang'
+    'sim_罗永强', 'sim_刘大勇', 'sim_黄志强'
 );
 DELETE FROM users WHERE username IN (
-    'it_support_luo', 'site_foreman_liu', 'landscape_huang'
+    '罗永强', '刘大勇', '黄志强'
 );
 
 -- ============================================================
@@ -41,13 +41,13 @@ INSERT INTO users (id, username, phone, email, status, is_admin, gender,
     org_category, level, supervisor_id, company, position, created_at, updated_at)
 VALUES (
     uuid_generate_v4()::text,
-    'it_support_luo',
+    '罗永强',
     '13800000008', 'luoyongqiang@xxestate.com',
     'active', false, 1, '310101198801010008', '123456008', 'wx_it_luo',
     'IT系统管理员，负责系统运维和权限管理',
-    'admin_wang', false, '["project.read","project.write","perm.manage","sop.manage"]',
+    '王建国', false, '["project.read","project.write","perm.manage","sop.manage"]',
     4, 5,
-    (SELECT id FROM users WHERE username = 'admin_wang' LIMIT 1),
+    (SELECT id FROM users WHERE username = '王建国' LIMIT 1),
     (SELECT id FROM _patch_company_ids WHERE type = '建设单位' LIMIT 1),
     '["IT系统管理员"]', NOW()::text, NOW()::text
 );
@@ -58,13 +58,13 @@ INSERT INTO users (id, username, phone, email, status, is_admin, gender,
     org_category, level, supervisor_id, company, position, created_at, updated_at)
 VALUES (
     uuid_generate_v4()::text,
-    'site_foreman_liu',
+    '刘大勇',
     '13800000009', 'liudayong@zhongtian.com',
-    'active', false, 1, '310101198901010009', '123456009', 'wx_site_foreman_liu',
+    'active', false, 1, '310101198901010009', '123456009', 'wx_刘大勇',
     '现场工长，负责施工班组日常管理',
-    'admin_wang', false, '["task.read","progress.report"]',
+    '王建国', false, '["task.read","progress.report"]',
     2, 2,
-    (SELECT id FROM users WHERE username = 'engineer_zhang' LIMIT 1),
+    (SELECT id FROM users WHERE username = '张正宏' LIMIT 1),
     (SELECT id FROM _patch_company_ids WHERE type = '总包' LIMIT 1),
     '["现场工长"]', NOW()::text, NOW()::text
 );
@@ -75,13 +75,13 @@ INSERT INTO users (id, username, phone, email, status, is_admin, gender,
     org_category, level, supervisor_id, company, position, created_at, updated_at)
 VALUES (
     uuid_generate_v4()::text,
-    'landscape_huang',
+    '黄志强',
     '13800000010', 'huangzhiqiang@zhongtian.com',
-    'active', false, 1, '310101199001010010', '123456010', 'wx_landscape_huang',
+    'active', false, 1, '310101199001010010', '123456010', 'wx_黄志强',
     '景观施工员，负责绿化景观施工',
-    'admin_wang', false, '["task.read","progress.report"]',
+    '王建国', false, '["task.read","progress.report"]',
     2, 2,
-    (SELECT id FROM users WHERE username = 'engineer_zhang' LIMIT 1),
+    (SELECT id FROM users WHERE username = '张正宏' LIMIT 1),
     (SELECT id FROM _patch_company_ids WHERE type = '总包' LIMIT 1),
     '["景观施工员"]', NOW()::text, NOW()::text
 );
@@ -97,9 +97,9 @@ SELECT
     'simulator',
     'sim_' || u.username,
     CASE u.username
-        WHEN 'it_support_luo' THEN '罗永强'
-        WHEN 'site_foreman_liu' THEN '刘大勇'
-        WHEN 'landscape_huang' THEN '黄志强'
+        WHEN '罗永强' THEN '罗永强'
+        WHEN '刘大勇' THEN '刘大勇'
+        WHEN '黄志强' THEN '黄志强'
         ELSE u.username
     END,
     'active',
@@ -107,7 +107,7 @@ SELECT
     NOW()::text
 FROM users u
 WHERE u.username IN (
-    'it_support_luo', 'site_foreman_liu', 'landscape_huang'
+    '罗永强', '刘大勇', '黄志强'
 );
 
 -- ============================================================
@@ -154,7 +154,7 @@ SELECT
 FROM users u
 LEFT JOIN company_info c ON u.company = c.id
 WHERE u.username IN (
-    'it_support_luo', 'site_foreman_liu', 'landscape_huang'
+    '罗永强', '刘大勇', '黄志强'
 )
 ORDER BY u.level DESC;
 
@@ -164,7 +164,7 @@ SELECT u.username, b.im_user_id, b.im_display_name, b.im_platform
 FROM user_im_bindings b
 JOIN users u ON b.user_id = u.id
 WHERE b.im_user_id IN (
-    'sim_it_support_luo', 'sim_site_foreman_liu', 'sim_landscape_huang'
+    'sim_罗永强', 'sim_刘大勇', 'sim_黄志强'
 );
 
 -- 清理临时表

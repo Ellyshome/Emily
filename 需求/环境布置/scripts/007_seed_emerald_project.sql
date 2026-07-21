@@ -2,7 +2,7 @@
 -- 007_seed_emerald_project.sql —— 翠湖庭院项目 EMERALD-01 + 指标 + 18个模拟文件
 --
 -- Precondition: 002_seed_test_data.sql must be run first
---                002_seed_test_data_patch.sql recommended (adds site_foreman_liu)
+--                002_seed_test_data_patch.sql recommended (adds 刘大勇)
 -- Usage: docker exec -i emily-postgres psql -U emily -d emily < 007_seed_emerald_project.sql
 -- ============================================================
 
@@ -38,7 +38,7 @@ SELECT
     NOW()::text,
     NOW()::text,
     false
-FROM _su u WHERE u.username = 'admin_wang';
+FROM _su u WHERE u.username = '王建国';
 
 -- 捕获项目 ID 供后续使用
 CREATE TEMP TABLE _sp AS
@@ -54,31 +54,31 @@ SELECT
     uuid_generate_v4()::text, p.id, '总建筑面积', '9850', '㎡',
     NULL, '地上建筑面积约7,800㎡，地下建筑面积约2,050㎡', true,
     u.id, NOW()::text, NOW()::text, false
-FROM _sp p, _su u WHERE u.username = 'admin_wang'
+FROM _sp p, _su u WHERE u.username = '王建国'
 UNION ALL
 SELECT
     uuid_generate_v4()::text, p.id, '容积率', '1.59', '-',
     NULL, '规划条件要求容积率≤1.8', true,
     u.id, NOW()::text, NOW()::text, false
-FROM _sp p, _su u WHERE u.username = 'admin_wang'
+FROM _sp p, _su u WHERE u.username = '王建国'
 UNION ALL
 SELECT
     uuid_generate_v4()::text, p.id, '绿化率', '38', '%',
     NULL, '规划条件要求绿化率≥35%', true,
     u.id, NOW()::text, NOW()::text, false
-FROM _sp p, _su u WHERE u.username = 'admin_wang'
+FROM _sp p, _su u WHERE u.username = '王建国'
 UNION ALL
 SELECT
     uuid_generate_v4()::text, p.id, '合同总工期', '450', '天',
     NULL, '自开工令签发之日起计算', true,
     u.id, NOW()::text, NOW()::text, false
-FROM _sp p, _su u WHERE u.username = 'admin_wang'
+FROM _sp p, _su u WHERE u.username = '王建国'
 UNION ALL
 SELECT
     uuid_generate_v4()::text, p.id, '总投资额', '26000000', '元',
     NULL, '建安工程费约1800万元', true,
     u.id, NOW()::text, NOW()::text, false
-FROM _sp p, _su u WHERE u.username = 'admin_wang';
+FROM _sp p, _su u WHERE u.username = '王建国';
 
 -- ============================================================
 -- 4. 辅助函数：自动生成 file_no
@@ -115,7 +115,7 @@ SELECT
     u2.id, NOW()::text, NOW()::text, false,
     'NODE_STARTUP_DOC', 'EMR-LX-01-01'
 FROM _sp p, _su u1, _su u2
-WHERE u1.username = 'admin_wang' AND u2.username = 'pm_li';
+WHERE u1.username = '王建国' AND u2.username = '李景利';
 
 -- File #2: 建设用地规划许可证.pdf
 INSERT INTO files (id, file_no, project_id, filename, file_type, bucket,
@@ -130,7 +130,7 @@ SELECT
     u2.id, NOW()::text, NOW()::text, false,
     NULL, 'EMR-GH-01'
 FROM _sp p, _su u1, _su u2
-WHERE u1.username = 'admin_wang' AND u2.username = 'pm_li';
+WHERE u1.username = '王建国' AND u2.username = '李景利';
 
 -- File #3: 建设工程规划许可证.pdf
 INSERT INTO files (id, file_no, project_id, filename, file_type, bucket,
@@ -145,7 +145,7 @@ SELECT
     u2.id, NOW()::text, NOW()::text, false,
     NULL, 'EMR-GH-01'
 FROM _sp p, _su u1, _su u2
-WHERE u1.username = 'admin_wang' AND u2.username = 'pm_li';
+WHERE u1.username = '王建国' AND u2.username = '李景利';
 
 -- File #4: 建筑工程施工许可证.pdf
 INSERT INTO files (id, file_no, project_id, filename, file_type, bucket,
@@ -160,7 +160,7 @@ SELECT
     u2.id, NOW()::text, NOW()::text, false,
     NULL, 'EMR-SG-01'
 FROM _sp p, _su u1, _su u2
-WHERE u1.username = 'admin_wang' AND u2.username = 'pm_li';
+WHERE u1.username = '王建国' AND u2.username = '李景利';
 
 -- File #5: 不动产权证（土地证）.pdf
 INSERT INTO files (id, file_no, project_id, filename, file_type, bucket,
@@ -175,7 +175,7 @@ SELECT
     u2.id, NOW()::text, NOW()::text, false,
     NULL, 'EMR-LX-01-02'
 FROM _sp p, _su u1, _su u2
-WHERE u1.username = 'admin_wang' AND u2.username = 'pm_li';
+WHERE u1.username = '王建国' AND u2.username = '李景利';
 
 -- -----------------------------------------------------------
 -- 5.2 承包合同 (CONTRACT) — 3 files (#6-#8)
@@ -194,7 +194,7 @@ SELECT
     u1.id, NOW()::text, NOW()::text, false,
     'NODE_WORKLOAD_DOC', 'EMR-SG-01'
 FROM _sp p, _su u1
-WHERE u1.username = 'admin_wang';
+WHERE u1.username = '王建国';
 
 -- File #7: 建设工程委托监理合同.pdf
 INSERT INTO files (id, file_no, project_id, filename, file_type, bucket,
@@ -209,7 +209,7 @@ SELECT
     u2.id, NOW()::text, NOW()::text, false,
     NULL, 'EMR-SG-01'
 FROM _sp p, _su u1, _su u2
-WHERE u1.username = 'admin_wang' AND u2.username = 'pm_li';
+WHERE u1.username = '王建国' AND u2.username = '李景利';
 
 -- File #8: 建设工程设计合同.pdf
 INSERT INTO files (id, file_no, project_id, filename, file_type, bucket,
@@ -224,7 +224,7 @@ SELECT
     u2.id, NOW()::text, NOW()::text, false,
     NULL, 'EMR-GH-01-01'
 FROM _sp p, _su u1, _su u2
-WHERE u1.username = 'admin_wang' AND u2.username = 'pm_li';
+WHERE u1.username = '王建国' AND u2.username = '李景利';
 
 -- -----------------------------------------------------------
 -- 5.3 阶段成果 (PHASE_DELIVERABLE) — 6 files (#9-#14)
@@ -243,7 +243,7 @@ SELECT
     u2.id, NOW()::text, NOW()::text, false,
     'NODE_DELIVERABLE_DOC', 'EMR-GH-01-01'
 FROM _sp p, _su u1, _su u2
-WHERE u1.username = 'designer_zhao' AND u2.username = 'pm_li';
+WHERE u1.username = '赵明远' AND u2.username = '李景利';
 
 -- File #10: 施工图设计文件.pdf
 INSERT INTO files (id, file_no, project_id, filename, file_type, bucket,
@@ -258,7 +258,7 @@ SELECT
     u2.id, NOW()::text, NOW()::text, false,
     NULL, 'EMR-GH-01-01'
 FROM _sp p, _su u1, _su u2
-WHERE u1.username = 'designer_zhao' AND u2.username = 'pm_li';
+WHERE u1.username = '赵明远' AND u2.username = '李景利';
 
 -- File #11: 地基与基础分部验收报告.pdf
 INSERT INTO files (id, file_no, project_id, filename, file_type, bucket,
@@ -273,7 +273,7 @@ SELECT
     u2.id, NOW()::text, NOW()::text, false,
     NULL, 'EMR-SG-01-01'
 FROM _sp p, _su u1, _su u2
-WHERE u1.username = 'supervisor_chen' AND u2.username = 'pm_li';
+WHERE u1.username = '陈建华' AND u2.username = '李景利';
 
 -- File #12: 主体结构分部验收报告.pdf
 INSERT INTO files (id, file_no, project_id, filename, file_type, bucket,
@@ -288,7 +288,7 @@ SELECT
     u2.id, NOW()::text, NOW()::text, false,
     NULL, 'EMR-SG-01-02'
 FROM _sp p, _su u1, _su u2
-WHERE u1.username = 'supervisor_chen' AND u2.username = 'pm_li';
+WHERE u1.username = '陈建华' AND u2.username = '李景利';
 
 -- File #13: 机电安装分部验收报告.pdf
 INSERT INTO files (id, file_no, project_id, filename, file_type, bucket,
@@ -303,7 +303,7 @@ SELECT
     u2.id, NOW()::text, NOW()::text, false,
     NULL, 'EMR-SG-01-03'
 FROM _sp p, _su u1, _su u2
-WHERE u1.username = 'supervisor_chen' AND u2.username = 'pm_li';
+WHERE u1.username = '陈建华' AND u2.username = '李景利';
 
 -- File #14: 场地平整压实验收记录.pdf
 INSERT INTO files (id, file_no, project_id, filename, file_type, bucket,
@@ -318,7 +318,7 @@ SELECT
     u2.id, NOW()::text, NOW()::text, false,
     'NODE_DELIVERABLE_DOC', 'EMR-SG-01-04-01'
 FROM _sp p, _su u1, _su u2
-WHERE u1.username = 'site_foreman_liu' AND u2.username = 'pm_li';
+WHERE u1.username = '刘大勇' AND u2.username = '李景利';
 
 -- -----------------------------------------------------------
 -- 5.4 过程文件 (PROCESS_DOC) — 2 files (#15-#16)
@@ -337,7 +337,7 @@ SELECT
     u2.id, NOW()::text, NOW()::text, false,
     'NODE_WORKLOAD_DOC', 'EMR-SG-01'
 FROM _sp p, _su u1, _su u2
-WHERE u1.username = 'engineer_zhang' AND u2.username = 'pm_li';
+WHERE u1.username = '张正宏' AND u2.username = '李景利';
 
 -- File #16: 设计变更通知单（结构）.pdf
 INSERT INTO files (id, file_no, project_id, filename, file_type, bucket,
@@ -352,7 +352,7 @@ SELECT
     u2.id, NOW()::text, NOW()::text, false,
     NULL, 'EMR-SG-01-02'
 FROM _sp p, _su u1, _su u2
-WHERE u1.username = 'designer_zhao' AND u2.username = 'pm_li';
+WHERE u1.username = '赵明远' AND u2.username = '李景利';
 
 -- -----------------------------------------------------------
 -- 5.5 阶段成果补充 (PHASE_DELIVERABLE) — 1 file (#17)
@@ -371,7 +371,7 @@ SELECT
     u2.id, NOW()::text, NOW()::text, false,
     'NODE_DELIVERABLE_DOC', 'EMR-SG-01-05'
 FROM _sp p, _su u1, _su u2
-WHERE u1.username = 'designer_zhao' AND u2.username = 'pm_li';
+WHERE u1.username = '赵明远' AND u2.username = '李景利';
 
 -- -----------------------------------------------------------
 -- 5.6 管理规程 (MANAGEMENT_SPEC) — 1 file (#18)
@@ -390,7 +390,7 @@ SELECT
     u2.id, NOW()::text, NOW()::text, false,
     'NODE_STARTUP_DOC', 'EMR-SG-01'
 FROM _sp p, _su u1, _su u2
-WHERE u1.username = 'pm_li' AND u2.username = 'admin_wang';
+WHERE u1.username = '李景利' AND u2.username = '王建国';
 
 -- ============================================================
 -- 6. 验证查询
