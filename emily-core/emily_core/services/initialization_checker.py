@@ -180,8 +180,8 @@ class InitializationChecker:
                     reg = SkillRegistry(skill_directory=skill_dir)
                     reg.load()
                     sop_count = len(reg.list_sop_ids())
-            except Exception:
-                pass
+            except Exception as e:
+                logger.debug("T3 sop check failed: %s", e, exc_info=True)
             t3["T3_sop_adapted"] = sop_count > 0
 
             # T3-5: 项目经理已绑定 IM
@@ -226,8 +226,8 @@ class InitializationChecker:
             try:
                 from ..infrastructure.database.models import File
                 file_count = session.query(File).filter(File.project_id == project_id).count()
-            except Exception:
-                pass
+            except Exception as e:
+                logger.debug("T4 file count check failed: %s", e, exc_info=True)
             t4["T4_knowledge_filled"] = file_count >= 5
 
             # T4-5: 晨报已成功发送至少1次
@@ -239,8 +239,8 @@ class InitializationChecker:
                     SchedulerJobLog.status == "success",
                 ).first()
                 t4["T4_morning_report_sent"] = log is not None
-            except Exception:
-                pass
+            except Exception as e:
+                logger.debug("T4 morning report check failed: %s", e, exc_info=True)
 
             t4_done = sum(1 for v in t4.values() if v)
             t4_total = len(t4)

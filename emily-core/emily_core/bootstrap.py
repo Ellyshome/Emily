@@ -104,6 +104,9 @@ def init(config_data: dict | None = None, rag_provider=None) -> "EmilyCore":
         except Exception as e:
             _logger.warning("MaxKB RAG provider init failed: %s", e)
 
+    # ── 基座工具就绪检查 ──
+    _check_base_tools_readiness(rag_provider)
+
     _logger.info(
         "Emily Core initialized, mode=%s, bot_name=%s, llm=%s, kb=%s",
         config.takeover_mode,
@@ -125,8 +128,41 @@ def init(config_data: dict | None = None, rag_provider=None) -> "EmilyCore":
     return core
 
 
+def _check_base_tools_readiness(rag_provider) -> None:
+    """基座工具就绪检查：验证 query_data + knowledge_search 依赖是否可用（fail-open）。"""
+    checks = {}
+
+    # 1. query_data — 依赖数据库连接
+    try:
+        from .infrastructure.database.session import get_session
+        from .infrastructure.database.models import Project
+        with get_session() as session:
+            count = session.query(Project).count()
+        checks["query_data"] = f"ok (projects={count})"
+    except Exception as e:
+        checks["query_data"] = f"degraded ({e})"
+
+    # 2. knowledge_search — 依赖 RAG Provider
+    if rag_provider is not None:
+        checks["knowledge_search"] = "ok (rag connected)"
+    else:
+        checks["knowledge_search"] = "stub (kb disabled)"
+
+    # 3. 工具目录存在性
+    import importlib
+    for mod_name in ("query_tool", "knowledge_search_tool"):
+        try:
+            importlib.import_module(f".tools.{mod_name}", package="emily_core")
+            checks[f"tool:{mod_name}"] = "found"
+        except ImportError:
+            checks[f"tool:{mod_name}"] = "missing"
+
+    status_parts = [f"{k}={v}" for k, v in checks.items()]
+    _logger.info("Base tools readiness: %s", "; ".join(status_parts))
+
+
 async def _send_startup_email(core: "EmilyCore", config: Config) -> None:
-    """冷启动邮件通知：向所有活跃项目的管理员发送启动完成邮件（fail-open）。"""
+    """冷启动邮件通知：向 EMILY_EMAIL_IDKEY 邮箱发送启动完成邮件（fail-open）。"""
     email_idkey = os.environ.get("EMILY_EMAIL_IDKEY", "")
     email_password = os.environ.get("EMILY_EMAIL_PASSWORD", "")
     if not email_idkey or not email_password:
@@ -134,8 +170,6 @@ async def _send_startup_email(core: "EmilyCore", config: Config) -> None:
         return
 
     try:
-        from .infrastructure.database.session import get_session
-        from .infrastructure.database.models import User, Project
         from .providers.email.base import EmailCredentials
         from .providers.email.smtp_provider import SMTPEmailProvider
         from .services.email_service import EmailService
@@ -153,50 +187,20 @@ async def _send_startup_email(core: "EmilyCore", config: Config) -> None:
         smtp = SMTPEmailProvider()
         email_service = EmailService(smtp=smtp, imap=None)
 
-        with get_session() as session:
-            projects = session.query(Project).filter(
-                Project.is_deleted == False,
-                Project.status == "active",
-            ).all()
-
-        sent, failed = 0, 0
         now_str = datetime.now(BEIJING_TZ).strftime("%Y-%m-%d %H:%M:%S")
+        subject = "[Emily] 系统启动完成"
+        body = f"Emily 系统已启动。\n启动时间：{now_str}\n"
 
-        for p in projects:
-            try:
-                with get_session() as session:
-                    admins = session.query(User).filter(
-                        User.project_id == p.id,
-                        User.is_deleted == False,
-                        User.is_admin == True,
-                        User.email != None,
-                        User.email != "",
-                    ).all()
-
-                for admin in admins:
-                    subject = f"[Emily] 系统启动完成 - {p.name}"
-                    body = (
-                        f"Emily 系统已启动，项目「{p.name}」已就绪。\n"
-                        f"启动时间：{now_str}\n"
-                    )
-                    result = await email_service.send(
-                        creds=creds,
-                        to=admin.email,
-                        subject=subject,
-                        body=body,
-                    )
-                    if result.success:
-                        _logger.info("Startup email sent: %s -> %s", p.name, admin.email)
-                        sent += 1
-                    else:
-                        _logger.warning("Startup email failed: %s -> %s: %s", p.name, admin.email, result.error)
-                        failed += 1
-            except Exception as e:
-                _logger.warning("Startup email error for project %s: %s", p.name, e)
-                failed += 1
-
-        if sent > 0 or failed > 0:
-            _logger.info("Startup email done: %d sent, %d failed", sent, failed)
+        result = await email_service.send(
+            creds=creds,
+            to=email_idkey,
+            subject=subject,
+            body=body,
+        )
+        if result.success:
+            _logger.info("Startup email sent to %s", email_idkey)
+        else:
+            _logger.warning("Startup email failed: %s", result.error)
 
     except Exception as e:
         _logger.warning("Startup email init failed: %s", e)

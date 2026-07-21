@@ -40,6 +40,7 @@ class SchedulerApplication:
             await self._engine.trigger_job(cmd.job_id)
             return {"success": True, "reply": "已触发作业执行"}
         except Exception as e:
+            logger.error("trigger_job failed: %s", e, exc_info=True)
             return {"success": False, "reply": f"触发失败: {e}"}
 
     async def get_job_status(self, job_id: str) -> dict:

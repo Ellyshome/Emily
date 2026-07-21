@@ -58,17 +58,9 @@ class EmilyCore:
         self._session_pool = None
 
         # 共享基础设施
-        # SOPIntentRegistry 已废弃（由 SkillRegistry 替代），不再初始化
-        # self._sop_intent_registry = None
 
         # 执行依赖
         self._business_flow_tools = None
-
-        # 计划任务系统已废弃（由 scheduler/ + Node Task 体系替代）
-        # self._plan_task_service = None
-        # self._plan_task_scheduler = None
-        # self._plan_task_app = None
-        # self._workflow_integrator = None
 
         # 系统调度器
         self._scheduler_service = None
@@ -152,14 +144,8 @@ class EmilyCore:
         # ── Email 模块（SMTP + IMAP Providers + EmailService）──
         self._init_email_module()
 
-        # ── SOP 意图注册表 + 工具注册表 ──
-        self._init_phase_b_deps()
-
         #  ── 执行 + 守护依赖 ──
         self._init_phase_c_deps()
-
-        #  ── 计划任务系统（已废弃，由 scheduler/ + Node Task 体系替代）──
-        # self._init_plan_task_module()
 
         #  ── 系统调度器 ──
         self._init_scheduler_module()
@@ -198,11 +184,6 @@ class EmilyCore:
             "EmilyCore initialized: bus_hooks=%d, session_pool ready",
             self._bus.hook_count() if self._bus else 0,
         )
-
-    def _init_phase_b_deps(self) -> None:
-        """初始化共享基础设施。"""
-        # SOPIntentRegistry 已废弃（由 SkillRegistry 替代），不再初始化
-        # SkillRegistry 在 _init_skill_module() 中单独初始化
 
     def _init_email_module(self) -> None:
         """初始化邮箱模块：Provider + Service。fail-open，不阻塞 Core。"""
@@ -440,12 +421,6 @@ class EmilyCore:
             core=self,
         )
 
-    # ────────────────────────────────────────────────────────────────────
-    # 计划任务系统（Scheduled Task Module）— 已废弃
-    # 替代者：scheduler/ + Node Task 体系（create_task_node / submit_node_deliverable）
-    # _register_plan_task_tools() 和 _init_plan_task_module() 已删除
-    # ────────────────────────────────────────────────────────────────────
-
     def _init_scheduler_module(self) -> None:
         """初始化系统调度器模块：Service + Engine + Handler + Application。"""
         try:
@@ -613,8 +588,8 @@ class EmilyCore:
             try:
                 from emily_core.api.routes.permission import set_permission_app
                 set_permission_app(self._permission_app)
-            except Exception:
-                pass  # router registration handled by api/server.py
+            except Exception as e:
+                logger.debug("permission route registration skipped: %s", e, exc_info=True)
 
             # 注册行级安全拦截器
             try:
@@ -848,10 +823,6 @@ class EmilyCore:
         injected["progress_template"] = getattr(
             self.config, "progress_message_template", "收到，正在为你{action}，请稍候..."
         )
-
-        # SOPIntentRegistry 已废弃，不再注入
-
-        # 计划任务系统已废弃，不再注入 plan_task_service
 
         # 邮箱模块：供 LLM Tool 使用
         if self._email_service is not None:

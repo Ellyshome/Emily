@@ -106,12 +106,6 @@ class BusContext:
             return False
         return self._session_context.has_db_permission(table, operation)
 
-    def meets_grouping_requirement(self, required_grouping: int) -> bool:
-        """检查是否满足权限层级要求（累进继承，便捷方法）。"""
-        if self._session_context is None:
-            return False
-        return self._session_context.meets_grouping_requirement(required_grouping)
-
     # ── 常规方法 ──
 
     def add_warning(self, msg: str) -> None:

@@ -5,8 +5,12 @@
 - 标记问题为已处理（需要管理员权限）
 """
 
+import logging
+
 from .definitions import ToolDefinition
 from ..services.pending_issues import PendingIssuesService
+
+logger = logging.getLogger("emily.tool.pending_issue")
 
 
 def create_pending_issue_tool(
@@ -76,8 +80,8 @@ def create_pending_issue_tool(
                                 u.username or
                                 "用户"
                             )
-                    except Exception:
-                        pass
+                    except Exception as e:
+                        logger.warning("resolve raised_by from _user_id failed: %s", e, exc_info=True)
 
             issue_id = pending_issues.add(
                 raised_by=raised_by,

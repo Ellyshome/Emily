@@ -28,8 +28,8 @@ def _log_business_event(**kwargs) -> None:
         kwargs.setdefault("pipeline_run_id", ctx.get("pipeline_run_id", ""))
         kwargs.setdefault("conversation_id", ctx.get("conversation_id", ""))
         asyncio.ensure_future(BusinessEventLogger.log(**kwargs))
-    except Exception:
-        pass
+    except Exception as e:
+        logger.debug("_log_business_event failed: %s", e, exc_info=True)
 
 
 class EventApplication:

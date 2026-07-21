@@ -489,8 +489,8 @@ def _log_session_lifecycle(conversation_id: str, user_id: str, event_type: str) 
             message_count=0,
             duration_ms=0,
         ))
-    except Exception:
-        pass
+    except Exception as e:
+        logger.debug("_log_session_lifecycle failed: %s", e, exc_info=True)
 
 
 def _detect_feedback(user_message: str, assistant_reply: str,
@@ -511,5 +511,5 @@ def _detect_feedback(user_message: str, assistant_reply: str,
                 conversation_id=conversation_id,
                 user_id=user_id or "",
             ))
-    except Exception:
-        pass
+    except Exception as e:
+        logger.debug("_detect_feedback failed: %s", e, exc_info=True)

@@ -115,9 +115,6 @@ class PipelineBUS:
                 if "progress_template" in injected_services:
                     kwargs["progress_template"] = injected_services["progress_template"]
                 kwargs["enable_progress"] = spec.get("enabled", True)
-            elif hook_type == "plan_task_match":
-                # PlanTaskMatchHook 已废弃，跳过
-                pass
             kwargs["name"] = hook_name
             kwargs["priority"] = spec.get("priority", 10)
             kwargs["enabled"] = spec.get("enabled", True)

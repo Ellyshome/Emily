@@ -315,6 +315,26 @@ def main():
 
 
 # ══════════════════════════════════════════════════════════════════════════════
+# 工具函数
+# ══════════════════════════════════════════════════════════════════════════════
+
+def _resolve_project_id(project_id_or_code: str) -> str:
+    """将项目编码解析为 UUID。若传入的已是 UUID（projects.id 存在）则原样返回。"""
+    from emily_core.infrastructure.database.session import get_session
+    from emily_core.infrastructure.database.models import Project
+    with get_session() as session:
+        # 先按 id（UUID）查
+        p = session.query(Project).filter(Project.id == project_id_or_code, Project.is_deleted == False).first()
+        if p:
+            return p.id
+        # 再按 code（编码）查
+        p = session.query(Project).filter(Project.code == project_id_or_code, Project.is_deleted == False).first()
+        if p:
+            return p.id
+    return ""
+
+
+# ══════════════════════════════════════════════════════════════════════════════
 # create 子命令
 # ══════════════════════════════════════════════════════════════════════════════
 
@@ -341,6 +361,14 @@ def _run_create(args) -> None:
         sys.exit(1)
 
     _init_db(args.db_url)
+
+    # 解析 project_id：若为项目编码则转成 UUID（project_nodes.project_id 应存 UUID）
+    resolved = _resolve_project_id(project_id)
+    if not resolved:
+        print(f"错误：项目 '{project_id}' 不存在，无法解析 UUID")
+        sys.exit(1)
+    logger.info("project_id 解析: %s → %s", project_id, resolved)
+    project_id = resolved
 
     # 验证 creator_id 是否存在
     from emily_core.repositories.user_repo import UserRepository

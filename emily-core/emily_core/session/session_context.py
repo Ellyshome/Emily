@@ -217,8 +217,8 @@ class SessionContext:
                         ctx.sop_catalog_summary = (
                             f"可用业务流程 ({len(skill_ids)}): {', '.join(skill_ids[:15])}"
                         )
-                except Exception:
-                    pass
+                except Exception as e:
+                    logger.warning("sop_catalog_summary failed: %s", e, exc_info=True)
         if errors:
             logger.warning("SessionContext.create: %d data fetch errors for user=%s",
                            len(errors), user_id)
@@ -269,9 +269,6 @@ class SessionContext:
         from ..permission.level import can_access
         return can_access(self.level, required_level)
 
-    def meets_grouping_requirement(self, required_grouping: int) -> bool:
-        """【已废弃 v2.0】保留向后兼容。"""
-        return self.meets_level_requirement(required_grouping)
 
     # ══════════════════════════════════════════════════════════════════════════
     #  操作台方法

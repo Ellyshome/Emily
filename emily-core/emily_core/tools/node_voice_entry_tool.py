@@ -219,6 +219,7 @@ async def voice_execute_create(user_id: str, project_id: str, extracted: dict) -
             return {"success": False, "node_id": "", "message": result.message}
 
     except Exception as e:
+        logger.error("node_voice_entry failed: %s", e, exc_info=True)
         return {"success": False, "node_id": "", "message": str(e)}
 
 

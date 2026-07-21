@@ -1,11 +1,11 @@
 """SQLAlchemy ORM 模型 —— 关系型数据库 PostgreSQL 表结构。
 
-十六张表（原 15 + M12b SOPCheckpoint）：
+54 张表（33 张业务表 + 21 张权限管理/系统支持表）：
   原有表（扩展）：users / user_im_bindings / conversations / messages / projects
                   / events / tasks / meetings / files
   新增表：company_info / project_indicator_details
           / business_flow_orders / instruction_orders / project_plans / plan_items
-          / hook_execution_logs (M12a) / sop_checkpoints (M12b)
+          / hook_execution_logs (M12a)
 
 users 表已合并原 employee 的人事档案字段（gender/id_card/qq/wechat/grouping/position 等），
 不再需要独立的 employees 表。
@@ -695,12 +695,6 @@ class HookExecutionLog(Base):
 
 
 # ══════════════════════════════════════════════════════════════════════════════
-# M12b: SOP 执行状态检查点表 — 已废弃
-#   CheckpointService 无调用方，ORM 已删除
-# ══════════════════════════════════════════════════════════════════════════════
-
-
-# ══════════════════════════════════════════════════════════════════════════════
 # 权限架构 v1.2: SOP 鉴权两层结构
 #   第一层：PermissionGroup - 权限组（企业+部门 两层归属）
 #   第二层：SOPBusinessFlow - SOP 业务流特征信息（关联权限组）
@@ -827,13 +821,6 @@ class SOPPermissionBinding(Base):
     __table_args__ = (
         UniqueConstraint("sop_business_flow_id", "permission_group_id", name="uq_sop_permission_binding"),
     )
-
-
-# ══════════════════════════════════════════════════════════════════════════════
-# 计划任务系统 (Scheduled Task Module) — 已废弃
-#   替代者：scheduler_jobs / scheduler_executions + Node Task 体系
-#   ORM 类已删除（PlanTaskTemplate/PlanTaskInstance/PlanTaskLog/PlanTaskDeliverable）
-# ══════════════════════════════════════════════════════════════════════════════
 
 
 # ══════════════════════════════════════════════════════════════════════════════

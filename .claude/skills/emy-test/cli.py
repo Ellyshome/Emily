@@ -217,7 +217,7 @@ def demo():
     print("=" * 60)
 
 
-def repl(emy: "EmysTester", cid: str, sender_name: str, sender_id: str = "") -> None:
+def repl(emy: "EmysTester", cid: str, sender_name: str, sender_id: str = "", platform: str = "napcat") -> None:
     """交互式 REPL 模式。在同一进程内持续对话，保持上下文。
 
     Args:
@@ -225,6 +225,7 @@ def repl(emy: "EmysTester", cid: str, sender_name: str, sender_id: str = "") -> 
         cid: 会话 ID。
         sender_name: 发送者名称。
         sender_id: 发送者 ID（QQ 号或 UUID）。
+        platform: IM 平台，默认 "napcat"。
     """
     llm_cfg = get_llm_config()
     print(f"╔══════════════════════════════════════════════════════╗")
@@ -314,8 +315,9 @@ def repl(emy: "EmysTester", cid: str, sender_name: str, sender_id: str = "") -> 
             raw,
             sender_id=sender_id or None,
             sender_name=sender_name,
-            conversation_type=state["conversation_type"],
+            platform=platform,
             conversation_id=cid,
+            conversation_type=state["conversation_type"],
             group_id=state["group_id"] if is_group else None,
             is_at_bot=state["is_at_bot"] if is_group else False,
         )
@@ -412,7 +414,7 @@ def main():
         # ── REPL 模式 ──
         use_llm = args.llm or bool(get_llm_config())
         with EmysTester(use_llm=use_llm) as emy:
-            repl(emy, cid, sender_info["sender_name"], sender_info["sender_id"])
+            repl(emy, cid, sender_info["sender_name"], sender_info["sender_id"], sender_info.get("platform", "napcat"))
     elif args.message:
         # ── 单条消息模式 ──
         use_llm = args.llm or bool(get_llm_config())
@@ -447,6 +449,7 @@ def main():
                 args.message,
                 sender_id=sender_info["sender_id"],
                 sender_name=sender_info["sender_name"],
+                platform=sender_info.get("platform", "napcat"),
                 conversation_id=cid,
                 attachments=attachments,
             )

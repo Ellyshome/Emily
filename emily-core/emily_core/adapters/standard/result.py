@@ -50,6 +50,7 @@ class HandlerResult:
     reply: str | None = None
     error_code: str | None = None
     pending_confirmation: bool = False
+    data: dict | None = None
 
 
 # ── M7: MasterAgent 结果类型 ──

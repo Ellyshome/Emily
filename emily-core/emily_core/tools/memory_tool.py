@@ -61,8 +61,8 @@ def create_memory_tool(user_memory_service) -> ToolDefinition:
                     u = UserRepository.get(user_id)
                     if u:
                         user_name = u.username or ""
-                except Exception:
-                    pass
+                except Exception as e:
+                    logger.warning("resolve user_name from _user_id failed: %s", e, exc_info=True)
 
         # 3. fallback
         if not user_name:

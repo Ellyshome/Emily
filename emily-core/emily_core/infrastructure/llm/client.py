@@ -103,8 +103,8 @@ class LLMClient:
                     "tool_count": len(tools) if tools else 0,
                     "json_mode": json_mode,
                 })
-            except Exception:
-                pass
+            except Exception as e:
+                logger.debug("trace callback start failed: %s", e, exc_info=True)
 
         t0 = time.time()
 
@@ -168,8 +168,8 @@ class LLMClient:
                         "total_tokens": getattr(response.usage, "total_tokens", 0) if response.usage else 0,
                         "latency_ms": elapsed_ms,
                     })
-                except Exception:
-                    pass
+                except Exception as e:
+                    logger.debug("trace callback end failed: %s", e, exc_info=True)
 
             return {
                 "type": "tool_call",
@@ -197,8 +197,8 @@ class LLMClient:
                     "total_tokens": getattr(response.usage, "total_tokens", 0) if response.usage else 0,
                     "latency_ms": elapsed_ms,
                 })
-            except Exception:
-                pass
+            except Exception as e:
+                logger.debug("trace callback end failed: %s", e, exc_info=True)
 
         if json_mode:
             data = self._parse_json_response(content)

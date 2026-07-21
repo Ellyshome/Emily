@@ -126,7 +126,8 @@ async def _get_napcat_container_id() -> str | None:
                     for n in names:
                         if n.lstrip("/") == "napcat":
                             return c.get("Id", "")
-    except Exception:
+    except Exception as e:
+        logger.debug("fetch napcat container id failed: %s", e, exc_info=True)
         return None
     return None
 

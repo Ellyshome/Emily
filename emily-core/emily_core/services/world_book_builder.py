@@ -409,8 +409,8 @@ class ProjectWorldBookBuilder:
                     reg = SkillRegistry(skill_directory=skill_dir)
                     reg.load()
                     sop_ids = reg.list_sop_ids()
-            except Exception:
-                pass
+            except Exception as e:
+                logger.warning("SkillRegistry load failed: %s", e, exc_info=True)
 
             # RAG 信息
             rag_available = False

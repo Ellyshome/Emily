@@ -1,7 +1,6 @@
 """Pipeline 模块接口定义。
 
 定义了所有管道阶段间的数据契约。
-risk.py (RiskGrader) 和 auth.py (AuthEngine) 的 ABC 已废弃并移除，
 鉴权/风险评估由 workitem_agent.py 中 authorize()/grade_risk() 自包含实现。
 """
 
