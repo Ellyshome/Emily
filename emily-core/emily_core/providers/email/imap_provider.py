@@ -391,8 +391,8 @@ def _envelope_from_message(msg, filter_lower: Optional[str] = None) -> Optional[
     if date_str:
         try:
             date = parsedate_to_datetime(date_str)
-        except Exception:
-            pass
+        except Exception as e:
+            logger.debug("email date parse failed: %s", e, exc_info=True)
 
     return EmailEnvelope(
         uid=uid,
@@ -416,7 +416,8 @@ def _decode_payload(part) -> str:
             return ""
         charset = part.get_content_charset() or "utf-8"
         return payload.decode(charset, errors="replace")
-    except Exception:
+    except Exception as e:
+        logger.debug("email body decode failed: %s", e, exc_info=True)
         return ""
 
 

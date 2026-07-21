@@ -75,8 +75,8 @@ class EventJournal:
             from datetime import timedelta
             local = datetime.now(timezone.utc) + timedelta(hours=8)
             date_str = local.strftime("%Y-%m-%d")
-        except Exception:
-            pass
+        except Exception as e:
+            logger.debug("journal date compute failed: %s", e, exc_info=True)
 
         line = f"[{date_str}] {name} {summary}\n"
 

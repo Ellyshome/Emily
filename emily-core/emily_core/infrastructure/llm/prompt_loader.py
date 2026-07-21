@@ -360,11 +360,6 @@ def load_prompt(name: str, prompts_dir: str = "") -> str:
         )
         return fallback
 
-    # 向后兼容别名
-    if name == "routing":
-        logger.info("Prompt 'routing' deprecated — redirecting to 'session'")
-        return load_prompt("session", prompts_dir)
-
     raise FileNotFoundError(
         f"Prompt '{name}' not found on disk or in defaults. "
         f"Checked: prompts_dir={prompts_dir or '(auto-resolved)'}"

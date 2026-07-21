@@ -449,6 +449,14 @@ GROUP BY file_category
 ORDER BY file_category;
 
 -- ============================================================
+-- 6b. 用户项目归属回填
+--     002 脚本创建用户时不设 project_id，在项目创建后回填
+-- ============================================================
+UPDATE users
+SET project_id = (SELECT id FROM _sp LIMIT 1)
+WHERE (project_id IS NULL OR project_id = '') AND is_deleted = false;
+
+-- ============================================================
 -- 7. 清理
 -- ============================================================
 DROP FUNCTION IF EXISTS _seed_file_no;

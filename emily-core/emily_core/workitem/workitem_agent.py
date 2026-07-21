@@ -666,8 +666,8 @@ class WorkItemAgent:
                     if tool:
                         entries.append(f"- {name}: {tool.description}")
                 return "\n".join(entries) if entries else "（无可用工具）"
-        except Exception:
-            pass
+        except Exception as e:
+            logger.warning("format tool list failed: %s", e, exc_info=True)
         return "（无可用工具）"
 
     # ── 鉴权引擎 ──

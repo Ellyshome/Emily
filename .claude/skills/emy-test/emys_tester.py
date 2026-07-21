@@ -8,7 +8,7 @@
 from __future__ import annotations
 
 from tester import EmysTester
-from config_loader import get_core_url, get_llm_config, get_pg_config, _read_cmd_config, _load_pg_config
+from config_loader import get_core_url, get_llm_config, get_pg_config, _read_cmd_config
 from cli import main
 
 if __name__ == "__main__":

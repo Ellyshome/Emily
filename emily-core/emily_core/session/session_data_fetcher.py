@@ -62,8 +62,8 @@ def _resolve_display_name(user) -> str:
                 display = getattr(binding, "im_display_name", None)
                 if display:
                     return display
-    except Exception:
-        pass
+    except Exception as e:
+        logger.warning("resolve display_name failed: %s", e, exc_info=True)
     # 回退到 username
     return getattr(user, "username", "") or ""
 

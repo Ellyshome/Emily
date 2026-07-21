@@ -125,8 +125,8 @@ class SchedulerEngine:
                         text("SELECT pg_advisory_unlock(hashtext(:key))"),
                         {"key": lock_key},
                     )
-                except Exception:
-                    pass
+                except Exception as e:
+                    logger.debug("advisory unlock failed: %s", e, exc_info=True)
         finally:
             lock_session.close()
 

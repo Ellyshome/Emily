@@ -35,6 +35,7 @@ services:
       - "127.0.0.1:18080:18080"          # HTTP API（仅宿主机访问）
       - "0.0.0.0:18081:18081"            # 监控看板（局域网可访问）
     environment:
+      - TZ=Asia/Shanghai
       - EMILY_DATABASE_URL=postgresql://emily:emily_secret_2026@emily-postgres:5432/emily
       - EMILY_LLM_API_KEY=${EMILY_LLM_API_KEY:-}
       - EMILY_LLM_BASE_URL=${EMILY_LLM_BASE_URL:-https://api.deepseek.com}

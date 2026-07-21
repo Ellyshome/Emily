@@ -37,7 +37,8 @@ class MonitorService:
             from api.server import get_core
             core = get_core()
             return core._session_pool
-        except Exception:
+        except Exception as e:
+            logger.warning("get SessionPool failed: %s", e, exc_info=True)
             return None
 
     # ── 容器状态 ──

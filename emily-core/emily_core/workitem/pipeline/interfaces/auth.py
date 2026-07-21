@@ -1,6 +1,6 @@
 """鉴权引擎接口。
 
-定义鉴权决策的数据结构。AuthEngine ABC 已废弃（鉴权由 workitem_agent.authorize() 自包含）。
+定义鉴权决策的数据结构（鉴权由 workitem_agent.authorize() 自包含）。
 """
 
 from __future__ import annotations
