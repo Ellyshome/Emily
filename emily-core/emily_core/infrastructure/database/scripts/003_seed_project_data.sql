@@ -38,7 +38,7 @@ SELECT
     NOW()::text,
     NOW()::text,
     false
-FROM _seed_users u WHERE u.username = 'admin_wang';
+FROM _seed_users u WHERE u.username = '王建国';
 
 -- Capture project UUID for later use
 CREATE TEMP TABLE _seed_project AS
@@ -53,31 +53,31 @@ SELECT
     uuid_generate_v4()::text, p.id, '总建筑面积', '156000', '㎡',
     NULL, '地上建筑面积约12.8万㎡，地下建筑面积约2.8万㎡', true,
     u.id, NOW()::text, NOW()::text, false
-FROM _seed_project p, _seed_users u WHERE u.username = 'admin_wang'
+FROM _seed_project p, _seed_users u WHERE u.username = '王建国'
 UNION ALL
 SELECT
     uuid_generate_v4()::text, p.id, '容积率', '2.5', '-',
     NULL, '规划条件要求容积率≤2.8', false,
     u.id, NOW()::text, NOW()::text, false
-FROM _seed_project p, _seed_users u WHERE u.username = 'admin_wang'
+FROM _seed_project p, _seed_users u WHERE u.username = '王建国'
 UNION ALL
 SELECT
     uuid_generate_v4()::text, p.id, '绿化率', '35', '%',
     NULL, '规划条件要求绿化率≥30%', false,
     u.id, NOW()::text, NOW()::text, false
-FROM _seed_project p, _seed_users u WHERE u.username = 'admin_wang'
+FROM _seed_project p, _seed_users u WHERE u.username = '王建国'
 UNION ALL
 SELECT
     uuid_generate_v4()::text, p.id, '合同总工期', '730', '天',
     NULL, '自开工令签发之日起计算，含不可抗力宽限期30天', true,
     u.id, NOW()::text, NOW()::text, false
-FROM _seed_project p, _seed_users u WHERE u.username = 'admin_wang'
+FROM _seed_project p, _seed_users u WHERE u.username = '王建国'
 UNION ALL
 SELECT
     uuid_generate_v4()::text, p.id, '总投资额', '485000000', '元',
     NULL, '建安工程费约3.2亿元，其他费用约1.65亿元', true,
     u.id, NOW()::text, NOW()::text, false
-FROM _seed_project p, _seed_users u WHERE u.username = 'admin_wang';
+FROM _seed_project p, _seed_users u WHERE u.username = '王建国';
 
 -- ============================================================
 -- 4. Seed files — 15 mock project documents
@@ -102,7 +102,7 @@ SELECT
     u2.id, NOW()::text, NOW()::text, false,
     'NODE_STARTUP_DOC', 'ECOC-LX-01'
 FROM _seed_project p, _seed_users u1, _seed_users u2
-WHERE u1.username = 'admin_wang' AND u2.username = 'pm_li';
+WHERE u1.username = '王建国' AND u2.username = '李景利';
 
 INSERT INTO files (id, file_no, project_id, filename, file_type, bucket, object_key, storage_path,
     file_size, uploaded_by, file_ext, file_category, confidentiality, version, is_latest,
@@ -115,7 +115,7 @@ SELECT
     u2.id, NOW()::text, NOW()::text, false,
     'NODE_STARTUP_DOC', 'ECOC-GH-01'
 FROM _seed_project p, _seed_users u1, _seed_users u2
-WHERE u1.username = 'admin_wang' AND u2.username = 'pm_li';
+WHERE u1.username = '王建国' AND u2.username = '李景利';
 
 INSERT INTO files (id, file_no, project_id, filename, file_type, bucket, object_key, storage_path,
     file_size, uploaded_by, file_ext, file_category, confidentiality, version, is_latest,
@@ -128,7 +128,7 @@ SELECT
     u2.id, NOW()::text, NOW()::text, false,
     'NODE_STARTUP_DOC', 'ECOC-GH-01'
 FROM _seed_project p, _seed_users u1, _seed_users u2
-WHERE u1.username = 'admin_wang' AND u2.username = 'pm_li';
+WHERE u1.username = '王建国' AND u2.username = '李景利';
 
 INSERT INTO files (id, file_no, project_id, filename, file_type, bucket, object_key, storage_path,
     file_size, uploaded_by, file_ext, file_category, confidentiality, version, is_latest,
@@ -141,7 +141,7 @@ SELECT
     u2.id, NOW()::text, NOW()::text, false,
     'NODE_STARTUP_DOC', 'ECOC-SG-01'
 FROM _seed_project p, _seed_users u1, _seed_users u2
-WHERE u1.username = 'admin_wang' AND u2.username = 'pm_li';
+WHERE u1.username = '王建国' AND u2.username = '李景利';
 
 INSERT INTO files (id, file_no, project_id, filename, file_type, bucket, object_key, storage_path,
     file_size, uploaded_by, file_ext, file_category, confidentiality, version, is_latest,
@@ -154,7 +154,7 @@ SELECT
     u2.id, NOW()::text, NOW()::text, false,
     'NODE_STARTUP_DOC', 'ECOC-LX-01'
 FROM _seed_project p, _seed_users u1, _seed_users u2
-WHERE u1.username = 'admin_wang' AND u2.username = 'pm_li';
+WHERE u1.username = '王建国' AND u2.username = '李景利';
 
 -- 4.2 Contracts (CONTRACT) — 3 files
 INSERT INTO files (id, file_no, project_id, filename, file_type, bucket, object_key, storage_path,
@@ -168,7 +168,7 @@ SELECT
     u1.id, NOW()::text, NOW()::text, false,
     'NODE_WORKLOAD_DOC', 'ECOC-SG-01'
 FROM _seed_project p, _seed_users u1
-WHERE u1.username = 'admin_wang';
+WHERE u1.username = '王建国';
 
 INSERT INTO files (id, file_no, project_id, filename, file_type, bucket, object_key, storage_path,
     file_size, uploaded_by, file_ext, file_category, confidentiality, version, is_latest,
@@ -181,7 +181,7 @@ SELECT
     u1.id, NOW()::text, NOW()::text, false,
     'NODE_WORKLOAD_DOC', 'ECOC-SG-01'
 FROM _seed_project p, _seed_users u1
-WHERE u1.username = 'admin_wang';
+WHERE u1.username = '王建国';
 
 INSERT INTO files (id, file_no, project_id, filename, file_type, bucket, object_key, storage_path,
     file_size, uploaded_by, file_ext, file_category, confidentiality, version, is_latest,
@@ -194,7 +194,7 @@ SELECT
     u1.id, NOW()::text, NOW()::text, false,
     'NODE_WORKLOAD_DOC', 'ECOC-GH-01'
 FROM _seed_project p, _seed_users u1
-WHERE u1.username = 'admin_wang';
+WHERE u1.username = '王建国';
 
 -- 4.3 Phase Deliverables (PHASE_DELIVERABLE) — 4 files
 INSERT INTO files (id, file_no, project_id, filename, file_type, bucket, object_key, storage_path,
@@ -208,7 +208,7 @@ SELECT
     u2.id, NOW()::text, NOW()::text, false,
     'NODE_DELIVERABLE_DOC', 'ECOC-GH-01-01'
 FROM _seed_project p, _seed_users u1, _seed_users u2
-WHERE u1.username = 'designer_zhao' AND u2.username = 'pm_li';
+WHERE u1.username = '赵明远' AND u2.username = '李景利';
 
 INSERT INTO files (id, file_no, project_id, filename, file_type, bucket, object_key, storage_path,
     file_size, uploaded_by, file_ext, file_category, confidentiality, version, is_latest,
@@ -221,7 +221,7 @@ SELECT
     u2.id, NOW()::text, NOW()::text, false,
     'NODE_DELIVERABLE_DOC', 'ECOC-GH-01-01'
 FROM _seed_project p, _seed_users u1, _seed_users u2
-WHERE u1.username = 'designer_zhao' AND u2.username = 'pm_li';
+WHERE u1.username = '赵明远' AND u2.username = '李景利';
 
 INSERT INTO files (id, file_no, project_id, filename, file_type, bucket, object_key, storage_path,
     file_size, uploaded_by, file_ext, file_category, confidentiality, version, is_latest,
@@ -234,7 +234,7 @@ SELECT
     u2.id, NOW()::text, NOW()::text, false,
     'NODE_DELIVERABLE_DOC', 'ECOC-SG-01-01'
 FROM _seed_project p, _seed_users u1, _seed_users u2
-WHERE u1.username = 'supervisor_chen' AND u2.username = 'pm_li';
+WHERE u1.username = '陈建华' AND u2.username = '李景利';
 
 INSERT INTO files (id, file_no, project_id, filename, file_type, bucket, object_key, storage_path,
     file_size, uploaded_by, file_ext, file_category, confidentiality, version, is_latest,
@@ -247,7 +247,7 @@ SELECT
     u2.id, NOW()::text, NOW()::text, false,
     'NODE_DELIVERABLE_DOC', 'ECOC-SG-01-02'
 FROM _seed_project p, _seed_users u1, _seed_users u2
-WHERE u1.username = 'supervisor_chen' AND u2.username = 'pm_li';
+WHERE u1.username = '陈建华' AND u2.username = '李景利';
 
 -- 4.4 Process Documents (PROCESS_DOC) — 2 files
 INSERT INTO files (id, file_no, project_id, filename, file_type, bucket, object_key, storage_path,
@@ -261,7 +261,7 @@ SELECT
     u2.id, NOW()::text, NOW()::text, false,
     'NODE_WORKLOAD_DOC', 'ECOC-SG-01-01'
 FROM _seed_project p, _seed_users u1, _seed_users u2
-WHERE u1.username = 'engineer_zhang' AND u2.username = 'pm_li';
+WHERE u1.username = '张正宏' AND u2.username = '李景利';
 
 INSERT INTO files (id, file_no, project_id, filename, file_type, bucket, object_key, storage_path,
     file_size, uploaded_by, file_ext, file_category, confidentiality, version, is_latest,
@@ -274,7 +274,7 @@ SELECT
     u2.id, NOW()::text, NOW()::text, false,
     'NODE_WORKLOAD_DOC', 'ECOC-SG-01-02'
 FROM _seed_project p, _seed_users u1, _seed_users u2
-WHERE u1.username = 'designer_zhao' AND u2.username = 'pm_li';
+WHERE u1.username = '赵明远' AND u2.username = '李景利';
 
 -- 4.5 Management Specs (MANAGEMENT_SPEC) — 1 file
 INSERT INTO files (id, file_no, project_id, filename, file_type, bucket, object_key, storage_path,
@@ -288,7 +288,7 @@ SELECT
     u2.id, NOW()::text, NOW()::text, false,
     'NODE_STARTUP_DOC', 'ECOC-SG-01'
 FROM _seed_project p, _seed_users u1, _seed_users u2
-WHERE u1.username = 'pm_li' AND u2.username = 'admin_wang';
+WHERE u1.username = '李景利' AND u2.username = '王建国';
 
 -- ============================================================
 -- 5. Verify

@@ -36,7 +36,7 @@ SELECT uuid_generate_v4()::text,
     2, NULL,
     '["REC","FILE","QRY","FLOW","SYS"]', 4, 'active', true,
     u.id, NOW()::text, NOW()::text, false
-FROM _su u WHERE u.username = 'admin_wang';
+FROM _su u WHERE u.username = '王建国';
 
 INSERT INTO permission_groups (id, name, code, description, company_type, department,
     org_level, parent_group_id, allowed_sop_types, min_level, status, is_system,
@@ -49,7 +49,7 @@ SELECT uuid_generate_v4()::text,
     2, NULL,
     '["QRY","FILE","FLOW"]', 3, 'active', true,
     u.id, NOW()::text, NOW()::text, false
-FROM _su u WHERE u.username = 'admin_wang';
+FROM _su u WHERE u.username = '王建国';
 
 INSERT INTO permission_groups (id, name, code, description, company_type, department,
     org_level, parent_group_id, allowed_sop_types, min_level, status, is_system,
@@ -62,7 +62,7 @@ SELECT uuid_generate_v4()::text,
     2, NULL,
     '["REC","FILE","QRY","FLOW","SYS"]', 6, 'active', true,
     u.id, NOW()::text, NOW()::text, false
-FROM _su u WHERE u.username = 'admin_wang';
+FROM _su u WHERE u.username = '王建国';
 
 -- 1.2 设计单位 groups
 INSERT INTO permission_groups (id, name, code, description, company_type, department,
@@ -76,7 +76,7 @@ SELECT uuid_generate_v4()::text,
     2, NULL,
     '["REC","FILE","QRY","FLOW"]', 3, 'active', true,
     u.id, NOW()::text, NOW()::text, false
-FROM _su u WHERE u.username = 'admin_wang';
+FROM _su u WHERE u.username = '王建国';
 
 INSERT INTO permission_groups (id, name, code, description, company_type, department,
     org_level, parent_group_id, allowed_sop_types, min_level, status, is_system,
@@ -89,7 +89,7 @@ SELECT uuid_generate_v4()::text,
     2, NULL,
     '["REC","FILE","QRY","FLOW"]', 3, 'active', true,
     u.id, NOW()::text, NOW()::text, false
-FROM _su u WHERE u.username = 'admin_wang';
+FROM _su u WHERE u.username = '王建国';
 
 -- 1.3 总包 groups
 INSERT INTO permission_groups (id, name, code, description, company_type, department,
@@ -103,7 +103,7 @@ SELECT uuid_generate_v4()::text,
     2, NULL,
     '["REC","QRY","FILE","FLOW"]', 3, 'active', true,
     u.id, NOW()::text, NOW()::text, false
-FROM _su u WHERE u.username = 'admin_wang';
+FROM _su u WHERE u.username = '王建国';
 
 INSERT INTO permission_groups (id, name, code, description, company_type, department,
     org_level, parent_group_id, allowed_sop_types, min_level, status, is_system,
@@ -116,7 +116,7 @@ SELECT uuid_generate_v4()::text,
     2, NULL,
     '["REC","QRY"]', 2, 'active', true,
     u.id, NOW()::text, NOW()::text, false
-FROM _su u WHERE u.username = 'admin_wang';
+FROM _su u WHERE u.username = '王建国';
 
 -- 1.4 监理 groups
 INSERT INTO permission_groups (id, name, code, description, company_type, department,
@@ -130,7 +130,7 @@ SELECT uuid_generate_v4()::text,
     2, NULL,
     '["REC","QRY","FILE","FLOW"]', 3, 'active', true,
     u.id, NOW()::text, NOW()::text, false
-FROM _su u WHERE u.username = 'admin_wang';
+FROM _su u WHERE u.username = '王建国';
 
 -- 1.5 供应商 group
 INSERT INTO permission_groups (id, name, code, description, company_type, department,
@@ -144,7 +144,7 @@ SELECT uuid_generate_v4()::text,
     2, NULL,
     '["QRY","FILE"]', 1, 'active', true,
     u.id, NOW()::text, NOW()::text, false
-FROM _su u WHERE u.username = 'admin_wang';
+FROM _su u WHERE u.username = '王建国';
 
 -- ============================================================
 -- 2. SOP Business Flows —— Register existing SOPs
@@ -159,7 +159,7 @@ SELECT uuid_generate_v4()::text,
     'PRIVATE', '[]', pg.id,
     'V1.0', true,
     u.id, NOW()::text, NOW()::text
-FROM _su u, permission_groups pg WHERE u.username = 'admin_wang' AND pg.code = 'OWNER-EXEC' LIMIT 1;
+FROM _su u, permission_groups pg WHERE u.username = '王建国' AND pg.code = 'OWNER-EXEC' LIMIT 1;
 
 INSERT INTO sop_business_flows (id, sop_id, sop_file_name, display_name, description,
     sop_type, category, security_level, required_node_ids, default_permission_group_id,
@@ -171,7 +171,7 @@ SELECT uuid_generate_v4()::text,
     'INTERNAL', '[]', pg.id,
     'V1.0', true,
     u.id, NOW()::text, NOW()::text
-FROM _su u, permission_groups pg WHERE u.username = 'admin_wang' AND pg.code = 'CONTRACTOR-PM' LIMIT 1;
+FROM _su u, permission_groups pg WHERE u.username = '王建国' AND pg.code = 'CONTRACTOR-PM' LIMIT 1;
 
 INSERT INTO sop_business_flows (id, sop_id, sop_file_name, display_name, description,
     sop_type, category, security_level, required_node_ids, default_permission_group_id,
@@ -183,7 +183,7 @@ SELECT uuid_generate_v4()::text,
     'INTERNAL', '[]', pg.id,
     'V1.0', true,
     u.id, NOW()::text, NOW()::text
-FROM _su u, permission_groups pg WHERE u.username = 'admin_wang' AND pg.code = 'CONTRACTOR-PM' LIMIT 1;
+FROM _su u, permission_groups pg WHERE u.username = '王建国' AND pg.code = 'CONTRACTOR-PM' LIMIT 1;
 
 INSERT INTO sop_business_flows (id, sop_id, sop_file_name, display_name, description,
     sop_type, category, security_level, required_node_ids, default_permission_group_id,
@@ -195,7 +195,7 @@ SELECT uuid_generate_v4()::text,
     'INTERNAL', '[]', pg.id,
     'V1.0', true,
     u.id, NOW()::text, NOW()::text
-FROM _su u, permission_groups pg WHERE u.username = 'admin_wang' AND pg.code = 'OWNER-ENG' LIMIT 1;
+FROM _su u, permission_groups pg WHERE u.username = '王建国' AND pg.code = 'OWNER-ENG' LIMIT 1;
 
 INSERT INTO sop_business_flows (id, sop_id, sop_file_name, display_name, description,
     sop_type, category, security_level, required_node_ids, default_permission_group_id,
@@ -207,7 +207,7 @@ SELECT uuid_generate_v4()::text,
     'INTERNAL', '[]', pg.id,
     'V1.0', true,
     u.id, NOW()::text, NOW()::text
-FROM _su u, permission_groups pg WHERE u.username = 'admin_wang' AND pg.code = 'DESIGN-ARCH' LIMIT 1;
+FROM _su u, permission_groups pg WHERE u.username = '王建国' AND pg.code = 'DESIGN-ARCH' LIMIT 1;
 
 INSERT INTO sop_business_flows (id, sop_id, sop_file_name, display_name, description,
     sop_type, category, security_level, required_node_ids, default_permission_group_id,
@@ -219,7 +219,7 @@ SELECT uuid_generate_v4()::text,
     'INTERNAL', '[]', pg.id,
     'V1.0', true,
     u.id, NOW()::text, NOW()::text
-FROM _su u, permission_groups pg WHERE u.username = 'admin_wang' AND pg.code = 'SUPERVISOR-1' LIMIT 1;
+FROM _su u, permission_groups pg WHERE u.username = '王建国' AND pg.code = 'SUPERVISOR-1' LIMIT 1;
 
 INSERT INTO sop_business_flows (id, sop_id, sop_file_name, display_name, description,
     sop_type, category, security_level, required_node_ids, default_permission_group_id,
@@ -231,7 +231,7 @@ SELECT uuid_generate_v4()::text,
     'INTERNAL', '[]', pg.id,
     'V1.0', true,
     u.id, NOW()::text, NOW()::text
-FROM _su u, permission_groups pg WHERE u.username = 'admin_wang' AND pg.code = 'OWNER-ENG' LIMIT 1;
+FROM _su u, permission_groups pg WHERE u.username = '王建国' AND pg.code = 'OWNER-ENG' LIMIT 1;
 
 INSERT INTO sop_business_flows (id, sop_id, sop_file_name, display_name, description,
     sop_type, category, security_level, required_node_ids, default_permission_group_id,
@@ -243,7 +243,7 @@ SELECT uuid_generate_v4()::text,
     'PRIVATE', '[]', pg.id,
     'V1.0', true,
     u.id, NOW()::text, NOW()::text
-FROM _su u, permission_groups pg WHERE u.username = 'admin_wang' AND pg.code = 'OWNER-ENG' LIMIT 1;
+FROM _su u, permission_groups pg WHERE u.username = '王建国' AND pg.code = 'OWNER-ENG' LIMIT 1;
 
 INSERT INTO sop_business_flows (id, sop_id, sop_file_name, display_name, description,
     sop_type, category, security_level, required_node_ids, default_permission_group_id,
@@ -255,7 +255,7 @@ SELECT uuid_generate_v4()::text,
     'PRIVATE', '[]', pg.id,
     'V1.0', true,
     u.id, NOW()::text, NOW()::text
-FROM _su u, permission_groups pg WHERE u.username = 'admin_wang' AND pg.code = 'OWNER-EXEC' LIMIT 1;
+FROM _su u, permission_groups pg WHERE u.username = '王建国' AND pg.code = 'OWNER-EXEC' LIMIT 1;
 
 INSERT INTO sop_business_flows (id, sop_id, sop_file_name, display_name, description,
     sop_type, category, security_level, required_node_ids, default_permission_group_id,
@@ -267,7 +267,7 @@ SELECT uuid_generate_v4()::text,
     'PUBLIC', '[]', pg.id,
     'V1.0', true,
     u.id, NOW()::text, NOW()::text
-FROM _su u, permission_groups pg WHERE u.username = 'admin_wang' AND pg.code = 'OWNER-EXEC' LIMIT 1;
+FROM _su u, permission_groups pg WHERE u.username = '王建国' AND pg.code = 'OWNER-EXEC' LIMIT 1;
 
 -- ============================================================
 -- 3. SOP-Permission Bindings (~15 bindings)
@@ -334,7 +334,7 @@ SELECT uuid_generate_v4()::text,
     '',
     NOW()::text, NOW()::text
 FROM _su u1, _su u2
-WHERE u1.username = 'supervisor_chen' AND u2.username = 'pm_li';
+WHERE u1.username = '陈建华' AND u2.username = '李景利';
 
 -- 4.2 总包获得成本数据的临时查看权限（进度款审核相关）
 INSERT INTO permission_grants (id, grant_no, grantee_id, grantor_id, perm_code,
@@ -353,7 +353,7 @@ SELECT uuid_generate_v4()::text,
     '',
     NOW()::text, NOW()::text
 FROM _su u1, _su u2
-WHERE u1.username = 'engineer_zhang' AND u2.username = 'pm_li';
+WHERE u1.username = '张正宏' AND u2.username = '李景利';
 
 -- 4.3 设计单位永久拥有设计文件的完全权限
 INSERT INTO permission_grants (id, grant_no, grantee_id, grantor_id, perm_code,
@@ -372,7 +372,7 @@ SELECT uuid_generate_v4()::text,
     '',
     NOW()::text, NOW()::text
 FROM _su u1, _su u2
-WHERE u1.username = 'designer_zhao' AND u2.username = 'admin_wang';
+WHERE u1.username = '赵明远' AND u2.username = '王建国';
 
 -- ============================================================
 -- 5. Permission Definitions — basic permission codes

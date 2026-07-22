@@ -73,7 +73,7 @@
     "prompt_prefix": "{{prompt}}",
     "context_limit_reached_strategy": "llm_compress",
     "llm_compress_instruction": "Based on our full conversation history, produce a concise summary of key takeaways and/or project progress.\nThe primary goal of this summary is to enable seamless continuation of the work that follows.\n1. Systematically cover all core topics discussed and the final conclusion/outcome for each; clearly highlight the latest primary focus.\n2. If any tools were used, summarize tool usage (total call count) and extract the most valuable insights from tool outputs.\n3. If any materials (files, documents, code, references) were read during the conversation that may be helpful for subsequent work, list each one with its scope and path.\n4. If there was an initial user goal, state it first and describe the current progress/status.\n5. Write the summary in the user's language.\n",
-    "llm_compress_keep_recent": 10,
+    "llm_compress_keep_recent_ratio": 0.15,
     "llm_compress_provider_id": "",
     "max_context_length": 50,
     "dequeue_context_length": 10,
@@ -196,14 +196,25 @@
   "dashboard": {
     "enable": true,
     "username": "astrbot",
-    "password": "613aef96af252e370099253f65ec323a",
-    "pbkdf2_password": "pbkdf2_sha256$600000$47774d7d9eec17e45aea66efa9d5017d$ed005acdeb9b158417a27e9550e6797118d782210761ad7b4b5e88d99a35ebd7",
+    "password": "f3a6dc54594d957c7ffb4f66f91a2aa8",
+    "pbkdf2_password": "pbkdf2_sha256$600000$237e1bf3d0671e1b800cceb57abe65fc$edec8df57e9137d75ce7ea7aaebb8baa100786abb0ffe4da9245c1faa5194bf5",
     "password_storage_upgraded": true,
     "password_change_required": true,
     "jwt_secret": "8867ea004ab623aef8ec48a92352843d5215e890b34680fb97406dcbb4dfe038",
     "host": "0.0.0.0",
     "port": 6185,
     "disable_access_log": true,
+    "trust_proxy_headers": false,
+    "auth_rate_limit": {
+      "enable": true,
+      "average_interval": 1.0,
+      "max_burst": 3
+    },
+    "totp": {
+      "enable": false,
+      "secret": "",
+      "recovery_code_hash": ""
+    },
     "ssl": {
       "enable": false,
       "cert_file": "",
