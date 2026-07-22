@@ -61,6 +61,9 @@ def _ensure_columns(engine) -> None:
             ("block_reason", "VARCHAR(500)", "''"),
             ("session_level", "INTEGER", "NULL"),
         ],
+        "session_archives": [
+            ("md_file_path", "VARCHAR(500)", "''"),
+        ],
     }
 
     from sqlalchemy import text as sa_text

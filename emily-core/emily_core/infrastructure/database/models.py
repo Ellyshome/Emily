@@ -211,8 +211,7 @@ class Event(Base):
 class SessionArchive(Base):
     """会话归档表 —— Session 注销时持久化关键数据（BUG-004）。
 
-    记录每个 Session 的对话历史快照、上下文快照、归档原因等。
-    conversation_summary 的整合写入 users 表，此表保存原始快照供审计/恢复。
+    薄索引模式：DB 存元数据 + md_file_path，对话内容实时追加到 md 文件供人工复查。
     """
     __tablename__ = "session_archives"
     id = Column(String, primary_key=True, default=_new_uuid)
@@ -220,8 +219,7 @@ class SessionArchive(Base):
     user_id = Column(String, ForeignKey("users.id"), nullable=True)
     user_name = Column(String(200), default="")
     turn_count = Column(Integer, default=0)
-    message_history_snapshot = Column(Text, default="")     # JSON: 最近对话快照
-    context_snapshot = Column(Text, default="")             # JSON: 上下文摘要
+    md_file_path = Column(String(500), default="")          # 归档 md 文件路径
     started_at = Column(String, nullable=True)
     archived_at = Column(String, default=_utc_now)
     archive_reason = Column(String(50), default="expired")  # expired | terminated | manual

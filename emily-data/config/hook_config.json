@@ -21,11 +21,9 @@
       { "type": "audit", "name": "audit.plan_failed", "event_type": "plan_failed", "enabled": true }
     ],
     "before:wi_node3": [
-      { "type": "trace", "name": "trace.execution_start", "trace_level": "summary", "enabled": true }
     ],
     "after:wi_node3": [
-      { "type": "audit", "name": "audit.sop_completed", "event_type": "execution_completed", "enabled": true },
-      { "type": "trace", "name": "trace.execution_end", "trace_level": "summary", "enabled": true }
+      { "type": "audit", "name": "audit.sop_completed", "event_type": "execution_completed", "enabled": true }
     ],
     "on_error:wi_node3": [
       { "type": "audit", "name": "audit.execution_error", "event_type": "execution_failed", "enabled": true }

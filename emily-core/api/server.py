@@ -79,3 +79,13 @@ app.include_router(evolution.router)
 from .routes import meta_cognition  # noqa: E402
 
 app.include_router(meta_cognition.router)
+
+# 监控看板 API（D4：补注册漏掉的 route）
+from .routes import monitor  # noqa: E402
+
+app.include_router(monitor.router, prefix="/api/v1")
+
+# Agent 追踪查询 API（D1：trace 闭环）
+from .routes import trace as trace_routes  # noqa: E402
+
+app.include_router(trace_routes.router, prefix="/api/v1")

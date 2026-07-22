@@ -69,8 +69,10 @@ async def write_legacy_logs(context: "BusContext", started_at: str) -> None:
 
     # ── 2. agent_reasoning_logs ──
     try:
-        # 从 DB message 获取 message_id
+        # 从 DB message 获取 message_id（M3 防御加固）
         db_msg_id = context.db_message_id if hasattr(context, "db_message_id") else None
+        db_msg_id = db_msg_id or ""  # 归一化 None → ""
+
         elapsed_ms = 0
         for sr in (wi.step_results or []):
             for tc in (sr.tool_calls or []):
@@ -87,23 +89,30 @@ async def write_legacy_logs(context: "BusContext", started_at: str) -> None:
         reply_preview = (wi.result_text or "")[:500]
         error_msg = wi.error_message or ""
 
-        await EvolutionLogWriter.write(
-            AgentReasoningLog,
-            message_id=db_msg_id or "",
-            user_id=context.user_id or None,
-            conversation_id=None,
-            iteration_count=wi.llm_call_count,
-            elapsed_ms=elapsed_ms,
-            max_iterations_reached=False,
-            matched_sop_id=sop_id,
-            match_confidence=confidence,
-            is_compound=getattr(intent, "is_compound", False) if intent else False,
-            fallback=not is_hit,
-            execution_result="success" if not error_msg else "failed",
-            reply_preview=reply_preview,
-            error_message=error_msg[:500],
-            steps_json=json.dumps(steps_json, ensure_ascii=False),
-        )
+        if not db_msg_id:
+            # message_id 是 nullable=False，空值会触发 FK 违规 → 跳过
+            logger.warning(
+                "Legacy agent_reasoning_logs skipped: db_message_id empty (wi=%s)",
+                wi.id,
+            )
+        else:
+            await EvolutionLogWriter.write(
+                AgentReasoningLog,
+                message_id=db_msg_id,
+                user_id=context.user_id or None,
+                conversation_id=None,
+                iteration_count=wi.llm_call_count,
+                elapsed_ms=elapsed_ms,
+                max_iterations_reached=False,
+                matched_sop_id=sop_id,
+                match_confidence=confidence,
+                is_compound=getattr(intent, "is_compound", False) if intent else False,
+                fallback=not is_hit,
+                execution_result="success" if not error_msg else "failed",
+                reply_preview=reply_preview,
+                error_message=error_msg[:500],
+                steps_json=json.dumps(steps_json, ensure_ascii=False),
+            )
     except Exception as e:
         logger.warning("Legacy agent_reasoning_logs write failed: %s", e)
 
@@ -135,7 +144,7 @@ async def write_legacy_logs(context: "BusContext", started_at: str) -> None:
                     await EvolutionLogWriter.write(
                         LLMInteractionLog,
                         reasoning_log_id=None,
-                        message_id=context.db_message_id if hasattr(context, "db_message_id") else None,
+                        message_id=db_msg_id or None,
                         call_sequence=0,
                         call_type="chat_with_tools",
                         model="",

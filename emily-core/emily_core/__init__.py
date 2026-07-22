@@ -10,7 +10,9 @@ EmilyCore 是独立容器内的业务内核，不依赖任何 AstrBot 对象。�
   · 暴露 handle_message 作为统一入站入口
 """
 
+import asyncio
 import logging
+import uuid
 from pathlib import Path
 from typing import Optional
 
@@ -18,6 +20,7 @@ from .adapters.standard.message import StandardMessage
 from .adapters.standard.reply import ReplyMessage
 from .adapters.standard.route_decision import RouteDecision
 from .config import Config
+from .infrastructure.paths import resolve_data_path
 from .outbound_bus import OutboundEventBus
 from .services.domain_takeover_service import DomainTakeoverService
 from .services.user_binding_service import UserBindingService
@@ -88,6 +91,9 @@ class EmilyCore:
         self._user_memory_service = None
         self._pending_issues_service = None
 
+        # Session 归档 md 文件
+        self._session_archive_writer = None
+
         # Application 层实例（供工具 handler 注入）
         self._event_app = None
         self._task_app = None
@@ -101,6 +107,12 @@ class EmilyCore:
 
         # 监控模块（Monitor Dashboard）
         self._monitor_service = None
+
+        # Agent 追踪查询服务（trace API）
+        self._agent_trace_service = None
+
+        # 聊天归档服务（chat_archive 工具）
+        self._chat_archive_service = None
 
         # 元认知模块
         self._rule_book_loader = None
@@ -165,6 +177,31 @@ class EmilyCore:
         #  ── 监控模块（Monitor Dashboard）──
         self._init_monitor_module()
 
+        # ── Agent 追踪查询服务（D1：接线，供 trace API 查询）──
+        try:
+            from .services.agent_trace_service import AgentTraceService
+            self._agent_trace_service = AgentTraceService()
+            logger.info("AgentTraceService initialized (trace query ready)")
+        except Exception as e:
+            logger.warning("AgentTraceService init failed: %s", e)
+            self._agent_trace_service = None
+
+        # ── 聊天归档服务（D2：接线，激活 chat_archive 工具）──
+        try:
+            from .services.chat_archive_service import ChatArchiveService
+            self._chat_archive_service = ChatArchiveService()
+            logger.info("ChatArchiveService initialized (chat_archive tool ready)")
+        except Exception as e:
+            logger.warning("ChatArchiveService init failed: %s", e)
+            self._chat_archive_service = None
+
+        # ── 注入 trace 服务到 API 路由（lazy fallback 也能工作，直接注入更可靠）──
+        try:
+            from api.routes.trace import set_trace_service
+            set_trace_service(self._agent_trace_service)
+        except ImportError:
+            pass  # 非 API 运行场景
+
         # ── 元认知模块 ──
         self._init_meta_cognition()
 
@@ -206,14 +243,12 @@ class EmilyCore:
             from .skill.registry import SkillRegistry
             from .skill.executor import SkillExecutor
 
-            # 多级 fallback: 容器内 > 环境变量 > 宿主机开发路径
-            skill_dir = "/app/skills"
-            if not Path(skill_dir).exists():
-                skill_dir = getattr(self.config, "skill_directory", "") or ""
-            if not skill_dir or not Path(skill_dir).exists():
-                dev_dir = str(Path(__file__).resolve().parents[2] / "emily-data" / "skills")
-                if Path(dev_dir).exists():
-                    skill_dir = dev_dir
+            # 使用统一路径解析：config → 容器 → 开发回退
+            skill_dir = resolve_data_path(
+                getattr(self.config, "skill_directory", "") or "",
+                "/app/skills",
+                "emily-data/skills",
+            )
 
             self._skill_registry = SkillRegistry(skill_directory=skill_dir)
             status = self._skill_registry.load()
@@ -350,16 +385,11 @@ class EmilyCore:
             self._meeting_app = MeetingApplication(MeetingService())
 
             # 创建 FileStorageService 并注入 FileApplication
-            storage_root = self.config.storage_root or ""
-            if not storage_root:
-                container_path = Path("/app/attachments")
-                if container_path.parent.exists():
-                    storage_root = str(container_path)
-                else:
-                    storage_root = str(
-                        Path(__file__).resolve().parents[2]
-                        / "emily-data" / "attachments"
-                    )
+            storage_root = resolve_data_path(
+                self.config.storage_root or "",
+                "/app/attachments",
+                "emily-data/attachments",
+            )
             file_storage = FileStorageService(storage_root=storage_root)
             self._file_app = FileApplication(FileService(), storage_service=file_storage)
             self._query_service = QueryService()
@@ -659,18 +689,11 @@ class EmilyCore:
         # ── 1. EventJournal（项目日记）──
         try:
             from .services.event_journal import EventJournal
-            journal_path = self.config.journal_path or ""
-            if not journal_path:
-                # Docker 容器内默认路径：/app/journal/项目日志.md
-                container_path = Path("/app/journal/项目日志.md")
-                if container_path.parent.exists():
-                    journal_path = str(container_path)
-                else:
-                    # 开发环境回退
-                    journal_path = str(
-                        Path(__file__).resolve().parents[2]
-                        / "emily-data" / "journal" / "项目日志.md"
-                    )
+            journal_path = resolve_data_path(
+                self.config.journal_path or "",
+                "/app/journal/项目日志.md",
+                "emily-data/journal/项目日志.md",
+            )
             journal = EventJournal(
                 path=journal_path,
                 enabled=self.config.journal_enabled,
@@ -694,16 +717,11 @@ class EmilyCore:
         # ── 2. UserMemoryService（长期记忆）──
         try:
             from .services.user_memory_service import UserMemoryService
-            memory_dir = self.config.user_memory_dir or ""
-            if not memory_dir:
-                container_path = Path("/app/user_memory")
-                if container_path.exists():
-                    memory_dir = str(container_path)
-                else:
-                    memory_dir = str(
-                        Path(__file__).resolve().parents[2]
-                        / "emily-data" / "user_memory"
-                    )
+            memory_dir = resolve_data_path(
+                self.config.user_memory_dir or "",
+                "/app/user_memory",
+                "emily-data/user_memory",
+            )
             self._user_memory_service = UserMemoryService(
                 memory_dir=memory_dir,
                 enabled=self.config.user_memory_enabled,
@@ -721,22 +739,35 @@ class EmilyCore:
         # ── 3. PendingIssuesService（待解决问题清单 / notebooks 目录）──
         try:
             from .services.pending_issues import PendingIssuesService
-            issues_path = self.config.pending_issues_path or ""
-            if not issues_path:
-                container_path = Path("/app/notebooks/待解决问题.md")
-                if container_path.parent.exists():
-                    issues_path = str(container_path)
-                else:
-                    issues_path = str(
-                        Path(__file__).resolve().parents[2]
-                        / "emily-data" / "notebooks" / "待解决问题.md"
-                    )
+            issues_path = resolve_data_path(
+                self.config.pending_issues_path or "",
+                "/app/notebooks/待解决问题.md",
+                "emily-data/notebooks/待解决问题.md",
+            )
             self._pending_issues_service = PendingIssuesService(issues_path=issues_path)
             self._pending_issues_service._ensure_file()  # 确保文件存在
             logger.info("PendingIssuesService initialized — path=%s", issues_path)
         except Exception as e:
             logger.warning("PendingIssuesService init failed: %s", e)
             self._pending_issues_service = None
+
+        # ── 4. SessionArchiveWriter（会话归档 md 文件实时追加）──
+        try:
+            from .services.session_archive_writer import SessionArchiveWriter
+            archive_dir = resolve_data_path(
+                self.config.session_archive_dir or "",
+                "/app/session_archives",
+                "emily-data/session_archives",
+            )
+            self._session_archive_writer = SessionArchiveWriter(
+                archive_dir=archive_dir,
+                enabled=self.config.session_archive_enabled,
+            )
+            logger.info("SessionArchiveWriter initialized — dir=%s enabled=%s",
+                         archive_dir, self._session_archive_writer.enabled)
+        except Exception as e:
+            logger.warning("SessionArchiveWriter init failed: %s", e)
+            self._session_archive_writer = None
 
     def _register_node_tools(self) -> None:
         """将全景节点工具注册到 BusinessFlowToolRegistry。"""
@@ -883,8 +914,30 @@ class EmilyCore:
             # UserNotAllowedError 不应吞掉——记录但继续（返回无用户回复）
             logger.warning("user binding failed (continuing): %s", e)
 
-        # SessionPool 路由
-        reply = await self._session_pool.route(message, user_id=user_id)
+        # ── 入站消息持久化（M1 修复：恢复落库，供 trace 关联）──
+        db_message_id = ""
+        try:
+            from .services.message_service import MessageService
+            _msg_service = MessageService()
+            # event_id 防御：空串时生成 fallback，避免 unique 约束冲突
+            _event_id = event_id or f"fallback_{uuid.uuid4().hex[:12]}"
+            db_msg = await asyncio.to_thread(
+                _msg_service.record_message, _event_id, message, decision
+            )
+            db_message_id = db_msg.id
+            # 回填 sender_user_id（用户绑定已在上面完成）
+            if user_id:
+                await asyncio.to_thread(_msg_service.bind_sender, db_message_id, user_id)
+            logger.info(
+                "Inbound message persisted: id=%s event_id=%s conv=%s",
+                db_message_id, _event_id, message.conversation_id,
+            )
+        except Exception as e:
+            # 非阻断：持久化失败不阻塞 Pipeline，仅 trace 会缺失
+            logger.warning("Inbound message persist failed (non-blocking): %s", e)
+
+        # SessionPool 路由（携带 db_message_id —— 见 M2）
+        reply = await self._session_pool.route(message, user_id=user_id, db_message_id=db_message_id)
 
         # 出站
         if reply is not None:

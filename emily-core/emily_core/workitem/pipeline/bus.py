@@ -105,10 +105,6 @@ class PipelineBUS:
                 kwargs["action"] = spec.get("action", "")
             elif hook_type == "audit":
                 kwargs["event_type"] = spec.get("event_type", "")
-            elif hook_type == "trace":
-                kwargs["trace_level"] = spec.get("trace_level", "summary")
-                if "agent_trace_service" in injected_services:
-                    kwargs["agent_trace_service"] = injected_services["agent_trace_service"]
             elif hook_type == "progress":
                 if "progress_sender" in injected_services:
                     kwargs["progress_sender"] = injected_services["progress_sender"]

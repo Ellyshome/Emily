@@ -78,6 +78,8 @@ class SessionAgent:
         bus: "PipelineBUS",
         llm_client=None,
         skill_registry=None,
+        journal=None,
+        archive_writer=None,
     ):
         self.conversation_id = conversation_id
         self.context = context
@@ -91,32 +93,58 @@ class SessionAgent:
 
         self._llm = llm_client
         self._skill_registry = skill_registry
+        self._journal = journal
+        self._archive_writer = archive_writer
 
         from datetime import datetime, timezone
         self._created_at = datetime.now(timezone.utc).isoformat()
 
         self.state = SessionState.ACTIVE
 
+        # ── 实时归档：Session 创建时写 md 文件头 ──
+        self._archive_md_path = ""
+        self._last_turn_workitems: list = []
+        if self._archive_writer is not None:
+            try:
+                ctx_dict = {
+                    "user_position": context.user_position,
+                    "company_name": context.company_name,
+                    "level": context.level,
+                }
+                self._archive_md_path = self._archive_writer.ensure_header(
+                    conversation_id=conversation_id,
+                    user_name=context.user_name or "anonymous",
+                    started_at=self._created_at,
+                    context=ctx_dict,
+                )
+            except Exception as e:
+                logger.warning("SessionArchive ensure_header failed: %s", e)
+
         # ── 进化日志：Session 创建 ──
         _log_session_lifecycle(self.conversation_id, self.context.user_id, "created")
 
-    async def handle(self, message: "StandardMessage") -> ReplyMessage | None:
+    async def handle(self, message: "StandardMessage", db_message_id: str = "") -> ReplyMessage | None:
         """处理一条入站消息（蓝图 §4.3.2）。"""
-        reply = await self._handle_impl(message)
+        reply = await self._handle_impl(message, db_message_id=db_message_id)
         if reply is not None:
             self._record_turn(message, reply.content)
             # 溢出压缩由 record_turn 内部检测触发
             if len(self.context.message_history) > 40 and self._llm:
                 asyncio.ensure_future(self.context.compress_overflow(self._llm))
+            # ── 实时追加归档 ──
+            self._append_archive_turn(message, reply, self._last_turn_workitems)
             # ── 进化日志：反馈信号检测 ──
             _detect_feedback(message.content or "", reply.content or "",
                              self.conversation_id, self.context.user_id)
         return reply
 
-    async def _handle_impl(self, message: "StandardMessage") -> ReplyMessage | None:
+    async def _handle_impl(self, message: "StandardMessage", db_message_id: str = "") -> ReplyMessage | None:
         """内部方法：实际的消息处理逻辑。"""
         content = (message.content or "").strip()
         logger.debug("Session[%s] handle: %s", self.conversation_id, content[:60])
+
+        # 重置本轮 WorkItem 追踪
+        self._last_turn_workitems = []
 
         # ① 短路指令
         fast = self._try_fast_reply(content, message.sender_name)
@@ -145,13 +173,16 @@ class SessionAgent:
             if wi.sop_id == "SYS-confirm":
                 confirm_reply = await self._handle_confirm(wi)
                 if confirm_reply:
+                    self._last_turn_workitems = [wi]
                     return self._reply(message, confirm_reply)
+                self._last_turn_workitems = [wi]
                 return self._reply(message, "确认处理完成。")
 
         # ③ 经 Pipeline BUS 执行
         for wi in work_items:
             self.scheduler.enqueue(wi)
-        done = await self.scheduler.run_all_with_message(message)
+        done = await self.scheduler.run_all_with_message(message, db_message_id=db_message_id)
+        self._last_turn_workitems = done
 
         # ③b 待确认队列
         pending = self._collect_pending_confirms(done)
@@ -344,7 +375,10 @@ class SessionAgent:
 
             event_service = EventService()
             event_app = EventApplication(event_service)
-            journal = EventJournal(path="", enabled=True)
+            # 优先复用 Core 注入的 journal；兜底仍临时构造（保持 fail-open）
+            journal = self._journal
+            if journal is None:
+                journal = EventJournal(path="", enabled=True)
             event_app.set_journal(journal)
 
             result = event_app.handle_confirmation(event_id=event_id, action=action)
@@ -398,7 +432,12 @@ class SessionAgent:
                     except ValueError:
                         pass
 
-            await self.context.persist_and_consolidate(llm_client=self._llm)
+            # 归档时传入 md_file_path
+            await self.context.persist_and_consolidate(
+                llm_client=self._llm,
+                md_file_path=self._archive_md_path,
+                archive_writer=self._archive_writer,
+            )
 
             logger.info("Session[%s] archived successfully", self.conversation_id)
             # ── 进化日志：Session 归档 ──
@@ -407,6 +446,48 @@ class SessionAgent:
             logger.warning("Session[%s] archive warning: %s", self.conversation_id, e)
         finally:
             self.state = SessionState.CLOSED
+
+    # ── 实时归档追加 ──
+
+    def _append_archive_turn(self, message: "StandardMessage", reply, workitems: list) -> None:
+        """实时追加一轮对话到归档 md 文件（fail-open）。
+
+        Args:
+            message: 入站消息。
+            reply: 出站回复。
+            workitems: 本轮执行的 WorkItem 列表。
+        """
+        if self._archive_writer is None or not self._archive_md_path:
+            return
+
+        try:
+            import asyncio
+
+            # 收集 pipeline_run_id
+            run_ids = [wi.pipeline_run_id for wi in workitems if getattr(wi, "pipeline_run_id", "")]
+            llm_logs = []
+            if run_ids:
+                from ..repositories.evolution_llm_interaction_repo import EvolutionLLMInteractionRepo
+                try:
+                    llm_logs = EvolutionLLMInteractionRepo.list_by_pipeline_run_ids(run_ids)
+                except Exception as e:
+                    logger.warning("SessionArchive LLM log query failed: %s", e)
+
+            turn_idx = len(self.context.message_history) // 2
+
+            user_msg = (message.content or "")[:2000]
+            reply_content = (reply.content or "")[:2000]
+
+            self._archive_writer.append_turn(
+                path=self._archive_md_path,
+                turn_idx=max(turn_idx, 1),
+                user_message=user_msg,
+                reply_content=reply_content,
+                workitems=workitems,
+                llm_logs=llm_logs,
+            )
+        except Exception as e:
+            logger.warning("SessionArchive append_turn failed: %s", e)
 
     # ── 热更新 ──
 
