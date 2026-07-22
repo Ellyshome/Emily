@@ -402,7 +402,7 @@ class ProjectWorldBookBuilder:
                     skill_dir = ""
                 if not skill_dir:
                     from pathlib import Path as _P
-                    dev_dir = str(_P(__file__).resolve().parents[2] / "emily-data" / "skills")
+                    dev_dir = str(_P(__file__).resolve().parents[3] / "emily-data" / "skills")
                     if _P(dev_dir).exists():
                         skill_dir = dev_dir
                 if skill_dir:
@@ -432,54 +432,20 @@ class ProjectWorldBookBuilder:
     def _build_introspection(self, project_id: str) -> dict:
         """层7：自省认知——初始化状态、能力边界。委托 InitializationChecker。
 
-        注意：M3 尚未实现时，此方法返回最小骨架。
-        M3 完成后，此处改为调用 InitializationChecker。
+        InitializationChecker 实现 T1-T4 四层 23 项检查，
+        返回完整 tier / is_activated / missing 等信息。
         """
-        # 先做最小实现：检查项目基本信息是否齐全
         try:
-            with get_session() as session:
-                project = session.query(Project).filter(Project.id == project_id, Project.is_deleted == False).first()
-                if project is None:
-                    return {
-                        "initialization_tier": 0,
-                        "initialization_status": {},
-                        "is_activated": False,
-                        "missing_items": ["项目不存在"],
-                    }
-
-                # T1 基本检查
-                init_status = {}
-                init_status["T1_project_name"] = bool(project.name and project.name != "未命名项目")
-                init_status["T1_project_code"] = bool(project.code)
-                init_status["T1_project_address"] = bool(project.address)
-                init_status["T1_lifecycle_stage"] = (project.lifecycle_stage or 0) != 0
-
-                # 管理员检查
-                admins = session.query(User).filter(
-                    User.project_id == project_id,
-                    User.is_deleted == False,
-                    User.is_admin == True,
-                ).all()
-                init_status["T1_admin_user"] = len(admins) > 0
-                init_status["T1_admin_email"] = any(u.email for u in admins if u.email)
-
-                # 统计 T1 完成项
-                t1_items = [k for k, v in init_status.items() if k.startswith("T1_") and v]
-                t1_total = sum(1 for k in init_status if k.startswith("T1_"))
-                t1_done = len(t1_items)
-
-                tier = 0
-                if t1_done >= t1_total:
-                    tier = 1
-
-                missing = [k for k, v in init_status.items() if not v]
-
-                return {
-                    "initialization_tier": tier,
-                    "initialization_status": init_status,
-                    "is_activated": tier >= 3,
-                    "missing_items": missing,
-                }
+            from .initialization_checker import InitializationChecker
+            checker = InitializationChecker()
+            result = checker.check(project_id)
+            return {
+                "initialization_tier": result["tier"],
+                "initialization_status": result["items"],
+                "is_activated": result["is_activated"],
+                "missing_items": result["missing"],
+                "summary_by_tier": result.get("summary_by_tier", {}),
+            }
         except Exception as e:
             logger.error("_build_introspection failed: %s", e)
             return {
@@ -558,11 +524,28 @@ class ProjectWorldBookBuilder:
         intro = content_json.get("introspection", {})
         tier = intro.get("initialization_tier", 0)
         tier_labels = {0: "未开始", 1: "T1 可识别", 2: "T2 有组织", 3: "T3 可运转", 4: "T4 充分运转"}
-        if tier < 3:
-            missing = intro.get("missing_items", [])
-            missing_str = " / ".join(missing[:3])
-            lines.append(f"🟡 {tier_labels.get(tier, '未知')}级 — 缺失：{missing_str}")
-        else:
+        summary = intro.get("summary_by_tier", {})
+
+        if tier >= 3:
             lines.append(f"🟢 {tier_labels.get(tier, '未知')}级")
+        elif tier == 0:
+            missing = intro.get("missing_items", [])
+            if missing:
+                missing_str = " / ".join(missing[:3])
+                lines.append(f"� 未初始化 — 缺失：{missing_str}")
+            else:
+                lines.append(f"🔴 未初始化")
+        else:
+            # tier 1 或 2：显示当前层级状态 + 下一层缺失项
+            current_label = tier_labels.get(tier, f"T{tier}")
+            # 取下一层未完成的项（仅限下一层，不跨层列所有）
+            next_tier_key = f"T{tier + 1}"
+            next_info = summary.get(next_tier_key, {})
+            next_done = next_info.get("done", 0)
+            next_total = next_info.get("total", 0)
+            if next_total > 0 and next_done < next_total:
+                lines.append(f"� {current_label}级 — 下一级还需 {next_done}/{next_total} 项")
+            else:
+                lines.append(f"🟡 {current_label}级")
 
         return "\n".join(lines)

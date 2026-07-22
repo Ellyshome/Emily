@@ -173,7 +173,7 @@ class InitializationChecker:
                 if not Path(skill_dir).exists():
                     skill_dir = ""
                 if not skill_dir:
-                    dev_dir = str(Path(__file__).resolve().parents[2] / "emily-data" / "skills")
+                    dev_dir = str(Path(__file__).resolve().parents[3] / "emily-data" / "skills")
                     if Path(dev_dir).exists():
                         skill_dir = dev_dir
                 if skill_dir:
