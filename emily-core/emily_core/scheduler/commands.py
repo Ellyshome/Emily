@@ -37,6 +37,7 @@ class SchedulerOperationResult:
     """调度操作结果。"""
     success: bool = True
     job_id: str = ""
+    execution_id: str = ""             # 执行记录 ID（引擎状态流转用）
     execution_no: str = ""
     message: str = ""
     error_code: str = ""

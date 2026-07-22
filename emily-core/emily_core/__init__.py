@@ -159,14 +159,14 @@ class EmilyCore:
         #  ── 执行 + 守护依赖 ──
         self._init_phase_c_deps()
 
+        #  ── 全景节点图 V2（须先于调度器：PeriodicNodeHandler 注册时注入 NodeService）──
+        self._init_node_module()
+
         #  ── 系统调度器 ──
         self._init_scheduler_module()
 
         #  ── 权限管理模块（v2.0：快照灌注）──
         self._init_permission_module()
-
-        #  ── 全景节点图 V2 ──
-        self._init_node_module()
 
         #  ── 项目日记 + 长期记忆 ──
         self._init_m8c_services()
@@ -430,6 +430,7 @@ class EmilyCore:
         self._bus = PipelineBUS.build_default(
             node_handlers=self._workitem_agent.node_handlers(),
             name="emily_bus",
+            outbound_bus=self.outbound_bus,
         )
 
         # Hook 配置
