@@ -105,6 +105,8 @@ class SessionAgent:
         self._archive_md_path = ""
         self._last_turn_workitems: list = []
         self._turn_counter: int = 0
+        # 意图识别阶段 Prompt 注入信息（_recognize_intent 暂存，归档段读取）
+        self._last_intent_prompt_info: dict | None = None
         if self._archive_writer is not None:
             try:
                 ctx_dict = {
@@ -156,19 +158,24 @@ class SessionAgent:
             except Exception as e:
                 logger.warning("SessionArchive ensure_header failed: %s", e)
 
+        # 将归档路径注入 scheduler，由其在 BusContext.baggage 中传递给 ArchiveHook
+        self.scheduler.archive_md_path = self._archive_md_path
+
         # ── 进化日志：Session 创建 ──
         _log_session_lifecycle(self.conversation_id, self.context.user_id, "created")
 
     async def handle(self, message: "StandardMessage", db_message_id: str = "") -> ReplyMessage | None:
         """处理一条入站消息（蓝图 §4.3.2）。"""
+        # ── 归档：轮次开头（用户消息段，BUS 之前写入）──
+        self._append_archive_turn_start(message)
         reply = await self._handle_impl(message, db_message_id=db_message_id)
         if reply is not None:
             self._record_turn(message, reply.content)
             # 溢出压缩由 record_turn 内部检测触发
             if len(self.context.message_history) > 40 and self._llm:
                 asyncio.ensure_future(self.context.compress_overflow(self._llm))
-            # ── 实时追加归档 ──
-            self._append_archive_turn(message, reply, self._last_turn_workitems)
+            # ── 归档：轮次结尾（系统审核标记 + Emily 回复，BUS 之后写入）──
+            self._append_archive_turn_end(reply)
             # ── 进化日志：反馈信号检测 ──
             _detect_feedback(message.content or "", reply.content or "",
                              self.conversation_id, self.context.user_id)
@@ -290,6 +297,30 @@ class SessionAgent:
             "name": sender if sender else None,
         })
 
+        # ── 归档：暂存意图识别 Prompt 注入信息 + 设置 LLM 日志上下文 ──
+        # 意图识别在 BUS 之前运行，用独立 pipeline_run_id 标记，归档据此查回日志。
+        from ..infrastructure.logging.llm_logger import LLMInteractionLogger
+        intent_run_id = f"intent-{self.conversation_id[:8]}"
+        authorized = list(getattr(self.context, "authorized_node_ids", []) or [])
+        self._last_intent_prompt_info = {
+            "template": "session.md",
+            "rendered_chars": len(system_prompt),
+            "variables": {
+                "sop_catalog": f"{len(sop_catalog)}字",
+                "current_datetime": _beijing_now_str(),
+                "user_name": (getattr(self.context, "user_name", "") or "")[:80],
+                "project_name": (getattr(self.context, "project_name", "") or "")[:80],
+                "authorized_node_ids": (
+                    "、".join(authorized[:5]) + ("..." if len(authorized) > 5 else "")
+                ) or "（无）",
+            },
+        }
+        LLMInteractionLogger.set_context(
+            pipeline_run_id=intent_run_id,
+            conversation_id=self.conversation_id,
+            user_id=self.context.user_id,
+            call_category="intent",
+        )
         try:
             result = await self._llm.chat_messages(full_messages, json_mode=True)
             data = result.get("data", {})
@@ -301,11 +332,15 @@ class SessionAgent:
             logger.warning("SessionAgent intent recognition failed: %s", e)
             return {"sop_id": None, "confidence": "none", "reasoning": f"LLM调用失败: {e}",
                     "is_compound": False, "sub_tasks": [], "fallback": True}
+        finally:
+            LLMInteractionLogger.clear_context()
 
     async def _split_into_workitems(self, message: "StandardMessage") -> list[WorkItem]:
         """Phase B: 基于 LLM 意图识别的 WorkItem 拆分。"""
         content = message.content or ""
         intent = await self._recognize_intent(message)
+        # ── 归档：意图识别段（BUS 之前，含 Prompt 注入信息）──
+        await self._append_archive_intent(intent)
 
         sop_id = intent.get("sop_id")
         is_compound = intent.get("is_compound", False)
@@ -483,48 +518,51 @@ class SessionAgent:
         finally:
             self.state = SessionState.CLOSED
 
-    # ── 实时归档追加 ──
+    # ── 实时归档逐段追加（V2：turn_start / intent / [ArchiveHook 各节点] / turn_end）──
 
-    def _append_archive_turn(self, message: "StandardMessage", reply, workitems: list) -> None:
-        """实时追加一轮对话到归档 md 文件（fail-open）。
-
-        Args:
-            message: 入站消息。
-            reply: 出站回复。
-            workitems: 本轮执行的 WorkItem 列表。
-        """
+    def _append_archive_turn_start(self, message: "StandardMessage") -> None:
+        """归档：写入轮次标题 + 用户消息段（BUS 之前）。fail-open。"""
         if self._archive_writer is None or not self._archive_md_path:
             return
+        try:
+            self._turn_counter += 1
+            content = self._archive_writer.render_turn_start(
+                turn_idx=self._turn_counter,
+                user_message=(message.content or "")[:2000],
+            )
+            self._archive_writer.append_section(self._archive_md_path, content)
+        except Exception as e:
+            logger.warning("SessionArchive turn_start failed: %s", e)
 
+    async def _append_archive_intent(self, intent: dict) -> None:
+        """归档：写入意图识别段（BUS 之前，含 Prompt 注入信息）。fail-open。"""
+        if self._archive_writer is None or not self._archive_md_path:
+            return
         try:
             import asyncio
-
-            # 收集 pipeline_run_id
-            run_ids = [wi.pipeline_run_id for wi in workitems if getattr(wi, "pipeline_run_id", "")]
-            llm_logs = []
-            if run_ids:
-                from ..repositories.evolution_llm_interaction_repo import EvolutionLLMInteractionRepo
-                try:
-                    llm_logs = EvolutionLLMInteractionRepo.list_by_pipeline_run_ids(run_ids)
-                except Exception as e:
-                    logger.warning("SessionArchive LLM log query failed: %s", e)
-
-            self._turn_counter += 1
-            turn_idx = self._turn_counter
-
-            user_msg = (message.content or "")[:2000]
-            reply_content = (reply.content or "")[:2000]
-
-            self._archive_writer.append_turn(
-                path=self._archive_md_path,
-                turn_idx=turn_idx,
-                user_message=user_msg,
-                reply_content=reply_content,
-                workitems=workitems,
-                llm_logs=llm_logs,
+            from ..repositories.evolution_llm_interaction_repo import EvolutionLLMInteractionRepo
+            intent_run_id = f"intent-{self.conversation_id[:8]}"
+            llm_logs = await asyncio.to_thread(
+                EvolutionLLMInteractionRepo.list_by_pipeline_run_ids, [intent_run_id]
             )
+            prompt_info = getattr(self, "_last_intent_prompt_info", None)
+            content = self._archive_writer.render_intent_section(intent, llm_logs, prompt_info)
+            self._archive_writer.append_section(self._archive_md_path, content)
         except Exception as e:
-            logger.warning("SessionArchive append_turn failed: %s", e)
+            logger.warning("SessionArchive intent section failed: %s", e)
+
+    def _append_archive_turn_end(self, reply) -> None:
+        """归档：写入系统审核标记（如有）+ Emily 回复段 + 分隔线（BUS 之后）。fail-open。"""
+        if self._archive_writer is None or not self._archive_md_path:
+            return
+        try:
+            from ..services.session_archive_writer import SessionArchiveWriter
+            reply_content = (reply.content or "")[:2000]
+            reply_body, guardian_warnings = SessionArchiveWriter._split_reply_and_warnings(reply_content)
+            content = self._archive_writer.render_turn_end(reply_body, guardian_warnings)
+            self._archive_writer.append_section(self._archive_md_path, content)
+        except Exception as e:
+            logger.warning("SessionArchive turn_end failed: %s", e)
 
     # ── 热更新 ──
 

@@ -15,7 +15,7 @@ import asyncio
 import io
 import json
 import sys
-from datetime import datetime
+from datetime import datetime, timezone
 from pathlib import Path
 
 _HERE = Path(__file__).resolve().parent
@@ -60,7 +60,7 @@ async def generate_node_closure(node_id: str, *, db_url: str = "", dry_run: bool
 
         # 统计
         created_at = node.created_at
-        completed_at = node.completed_at or datetime.now().isoformat()
+        completed_at = node.completed_at or datetime.now(timezone.utc).isoformat()
 
         duration_str = ""
         try:

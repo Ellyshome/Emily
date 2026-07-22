@@ -864,6 +864,10 @@ class EmilyCore:
         if self._skill_registry is not None:
             injected["skill_registry"] = self._skill_registry
 
+        # Session 归档 writer（供 ArchiveHook 逐段追加归档）
+        if self._session_archive_writer is not None:
+            injected["archive_writer"] = self._session_archive_writer
+
         return injected
 
     # ────────────────────────────────────────────────────────────────────

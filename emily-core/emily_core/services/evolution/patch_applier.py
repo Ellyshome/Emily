@@ -10,7 +10,7 @@ import asyncio
 import json
 import logging
 import os
-from datetime import datetime
+from datetime import datetime, timezone
 from pathlib import Path
 
 logger = logging.getLogger("emily.patch_applier")
@@ -86,7 +86,7 @@ class PatchApplier:
         target_path.write_text(new_content, encoding="utf-8")
 
         # 更新状态
-        now_str = datetime.now().isoformat()
+        now_str = datetime.now(timezone.utc).isoformat()
         await asyncio.to_thread(
             EvolutionRepo.update_patch_status,
             patch_no,
