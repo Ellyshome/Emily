@@ -3,6 +3,8 @@
   "bot_name": "Emily",
   "takeover_mode": "collaborate",
   "log_level": "INFO",
+  "log_to_file": true,
+  "log_dir": "/app/logs",
 
   "pipeline_mode": "session",
 
@@ -30,5 +32,8 @@
   "email_poll_interval": 60,
 
   "checkpoint_enabled": true,
-  "checkpoint_ttl_seconds": 300
+  "checkpoint_ttl_seconds": 300,
+
+  "session_archive_enabled": true,
+  "session_archive_dir": ""
 }

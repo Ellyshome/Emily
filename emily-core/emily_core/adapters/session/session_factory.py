@@ -47,9 +47,13 @@ class SessionFactory:
         # 从 EmilyCore 获取依赖
         llm = None
         skill_registry = None
+        journal = None
+        archive_writer = None
         if self._core is not None:
             llm = getattr(self._core, "_llm_client", None)
             skill_registry = getattr(self._core, "_skill_registry", None)
+            journal = getattr(self._core, "_event_journal", None)
+            archive_writer = getattr(self._core, "_session_archive_writer", None)
 
         agent = SessionAgent(
             conversation_id=conv_id,
@@ -57,12 +61,16 @@ class SessionFactory:
             bus=self._bus,
             llm_client=llm,
             skill_registry=skill_registry,
+            journal=journal,
+            archive_writer=archive_writer,
         )
         logger.info(
-            "SessionFactory created session: conv=%s user=%s llm=%s skill_registry=%s",
+            "SessionFactory created session: conv=%s user=%s llm=%s skill_registry=%s journal=%s archive_writer=%s",
             conv_id, user_id or "?",
             "yes" if llm else "no",
             "yes" if skill_registry else "no",
+            "yes" if journal else "no",
+            "yes" if archive_writer else "no",
         )
         return agent
 

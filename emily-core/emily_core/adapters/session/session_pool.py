@@ -89,7 +89,7 @@ class SessionPoolManager:
 
     # ── 路由入口 ──
 
-    async def route(self, message: "StandardMessage", user_id: str = "") -> "ReplyMessage | None":
+    async def route(self, message: "StandardMessage", user_id: str = "", db_message_id: str = "") -> "ReplyMessage | None":
         """路由一条入站消息到对应 Session（命中复用，未命中创建）。
 
         同一 conversation_id 的消息串行处理（Session 内锁）；
@@ -98,6 +98,7 @@ class SessionPoolManager:
         Args:
             message: 标准化入站消息。
             user_id: 已绑定的用户 UUID（Adapter 层完成绑定后传入）。
+            db_message_id: 入站消息持久化后的数据库 ID（M2 修复：供 trace 关联）。
 
         Returns:
             ReplyMessage | None: Session 处理后的回复。
@@ -123,7 +124,7 @@ class SessionPoolManager:
         # Session 内串行
         async with entry.lock:
             entry.last_active = time.time()
-            return await entry.agent.handle(message)
+            return await entry.agent.handle(message, db_message_id=db_message_id)
 
     # ── 池维护 ──
 

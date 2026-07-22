@@ -239,7 +239,6 @@ def get_active_users() -> list[dict]:
                     "email": row[5],
                     "company_name": row[6] or "未分配单位",
                     "permission_label": row[7],
-                    "display_name": f"{row[1] or row[2]} ({row[7]} - {row[6] or '未分配单位'})",
                     "qq": row[8] or "",
                     "im_platform": row[9] or "",
                     "im_user_id": row[10] or "",

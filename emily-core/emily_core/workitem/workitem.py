@@ -61,6 +61,7 @@ class WorkItem:
     llm_call_count: int = 0
     warnings: list[str] = field(default_factory=list)
     error_message: str = ""
+    pipeline_run_id: str = ""       # Pipeline 执行 run_id，供回查 LLM 日志
     created_at: str = field(
         default_factory=lambda: datetime.now(timezone.utc).isoformat()
     )

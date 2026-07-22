@@ -238,52 +238,6 @@ class AuditHook(Hook):
 
 
 @dataclass
-class TraceHook(Hook):
-    """追踪钩子 — 记录 Agent 推理过程（M11 追踪逻辑迁移）。
-
-    挂载点: before:execute（开始追踪）、after:execute（结束追踪）
-    """
-    trace_level: str = "summary"  # "summary" | "full"
-    agent_trace_service: Any = None  # AgentTraceService 实例，由 EmilyCore 注入
-
-    async def execute(self, context: "PipelineContext") -> HookResult:
-        """记录 Agent 推理追踪。"""
-        if self.agent_trace_service is None:
-            return HookResult.allow()
-
-        try:
-            if self.name == "trace.reasoning_start":
-                reasoning_id = self.agent_trace_service.create_reasoning_log(
-                    message_id=context.db_message_id,
-                    user_id=context.user_id,
-                    conversation_id=context.message.conversation_id if context.message else "",
-                    matched_sop_id=getattr(context.intent, "sop_id", None),
-                    match_confidence=getattr(context.intent, "confidence", "none"),
-                    is_compound=bool(context.sub_tasks),
-                    fallback=getattr(context.intent, "fallback", False),
-                )
-                context.set("_trace_reasoning_id", reasoning_id)
-
-            elif self.name == "trace.reasoning_end":
-                reasoning_id = context.get("_trace_reasoning_id", "")
-                if reasoning_id:
-                    agent_result = context.agent_result
-                    self.agent_trace_service.update_reasoning_log(
-                        reasoning_log_id=reasoning_id,
-                        iteration_count=context.get("trace_iteration_count", 0),
-                        elapsed_ms=context.get("trace_elapsed_ms", 0),
-                        execution_result="success" if agent_result and agent_result.success else "failed",
-                        reply_preview=(context.agent_reply or "")[:500],
-                        error_message=getattr(agent_result, "error_code", "") if agent_result else "",
-                    )
-
-            return HookResult.allow()
-        except Exception as e:
-            logger.warning("TraceHook[%s] failed (non-blocking): %s", self.name, e)
-            return HookResult.allow()
-
-
-@dataclass
 class ProgressHook(Hook):
     """前导消息钩子 — 发送"正在处理..."前导消息（M8b 逻辑迁移）。
 
@@ -347,6 +301,5 @@ class ProgressHook(Hook):
 HOOK_TYPE_MAP: dict[str, type[Hook]] = {
     "auth": AuthHook,
     "audit": AuditHook,
-    "trace": TraceHook,
     "progress": ProgressHook,
 }

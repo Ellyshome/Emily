@@ -625,6 +625,12 @@ class WorkItemAgent:
                 if reply and len(reply) > 20:
                     logger.debug("node4: LLM synthesized reply (%d chars)", len(reply))
                     return reply
+                # LLM 返回不可用（空/过短/缺 reply 键）——记录原因后退到硬编码兜底
+                logger.warning(
+                    "node4: LLM reply unusable (reply=%r len=%d keys=%s), falling back to hardcoded",
+                    reply[:80], len(reply),
+                    list(data.keys()) if isinstance(data, dict) else [],
+                )
             except Exception as e:
                 logger.warning("node4: LLM reply synthesis failed, falling back: %s", e)
 
@@ -645,6 +651,14 @@ class WorkItemAgent:
                 return "根据知识库检索，找到以下相关信息：\n\n" + "\n".join(rag_texts[:5])
             return f"已完成知识库查询，共找到 {rag_hits} 条相关信息。"
         elif tool_calls > 0:
+            # 优先使用最后一个成功步骤的 output（工具 handler 的 reply 字段，
+            # 已在 _real_execute 中写入 sr.output），避免丢失工具实际返回内容
+            last_output = ""
+            for sr in getattr(wi, "step_results", []) or []:
+                if getattr(sr, "success", True) and getattr(sr, "output", ""):
+                    last_output = sr.output
+            if last_output:
+                return last_output
             return (
                 f"操作已完成！共执行 {steps} 个步骤，"
                 f"调用 {tool_calls} 个工具，数据库操作 {summary.get('db_operations', 0)} 次。"
@@ -652,13 +666,14 @@ class WorkItemAgent:
         else:
             return "Emily 已处理完毕。"
 
-    @staticmethod
-    def _build_tools_text() -> str:
-        """构建可用工具列表文本（供 prompt 注入）。"""
-        # 惰性导入避免循环依赖
+    def _build_tools_text(self) -> str:
+        """构建可用工具列表文本（供 prompt 注入）。
+
+        使用注入的 self._business_flow_tools 实例（而非 get_instance() 单例——
+        BusinessFlowToolRegistry 非单例类，实例由 EmilyCore 构建时注入）。
+        """
         try:
-            from ..tools.business_flow_tools import BusinessFlowToolRegistry
-            registry = BusinessFlowToolRegistry.get_instance()
+            registry = self._business_flow_tools
             if registry:
                 entries = []
                 for name in sorted(registry.list_names()):

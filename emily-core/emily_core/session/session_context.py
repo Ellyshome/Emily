@@ -14,7 +14,6 @@
 from __future__ import annotations
 
 import asyncio
-import json
 import logging
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
@@ -369,44 +368,43 @@ class SessionContext:
             "{system_description}": self.system_description,
         }
 
-    async def persist_and_consolidate(self, llm_client=None) -> None:
+    async def persist_and_consolidate(self, llm_client=None, md_file_path: str = "", archive_writer=None) -> None:
         """持久化归档 + 整合 conversation_summary。
 
         从 SessionAgent._persist_archive() + _consolidate_conversation_summary() 迁入。
         """
-        await self._persist_archive()
+        await self._persist_archive(md_file_path=md_file_path, archive_writer=archive_writer)
         if self.user_id and llm_client:
             await self._consolidate_conversation_summary(llm_client)
 
-    async def _persist_archive(self) -> None:
-        """将 Session 关键数据持久化到 session_archives 表。"""
+    async def _persist_archive(self, md_file_path: str = "", archive_writer=None) -> None:
+        """将 Session 关键数据持久化到 session_archives 表（薄索引模式）。"""
         try:
             from ..repositories.session_archive_repo import SessionArchiveRepo
 
             turn_count = len(self.message_history) // 2
-            history_snapshot = json.dumps(
-                self.message_history[-40:], ensure_ascii=False
-            )
-            context_snapshot = json.dumps({
-                "user_name": self.user_name,
-                "sop_catalog_summary": self.sop_catalog_summary,
-                "level": self.level,
-                "company_name": self.company_name,
-            }, ensure_ascii=False)
 
+            # 薄索引：仅存元数据 + md_file_path
             SessionArchiveRepo.create(
                 conversation_id=self.conversation_id,
                 user_id=self.user_id or None,
                 user_name=self.user_name,
                 turn_count=turn_count,
-                message_history_snapshot=history_snapshot,
-                context_snapshot=context_snapshot,
+                md_file_path=md_file_path,
                 started_at=self.created_at or None,
                 archive_reason="expired",
             )
+
+            # 归档时追加 footer 到 md 文件
+            if archive_writer is not None and md_file_path:
+                try:
+                    archive_writer.append_footer(md_file_path, turn_count, "expired")
+                except Exception as e:
+                    logger.warning("SessionArchive append_footer failed: %s", e)
+
             logger.info(
-                "SessionContext archive persisted: conv=%s turns=%d",
-                self.conversation_id, turn_count,
+                "SessionContext archive persisted: conv=%s turns=%d md=%s",
+                self.conversation_id, turn_count, md_file_path or "(none)",
             )
         except Exception as e:
             logger.warning("SessionContext archive persist failed: %s", e)

@@ -73,7 +73,7 @@ class SessionScheduler:
             results.append(await self._run_one(wi))
         return results
 
-    async def run_all_with_message(self, message) -> list[WorkItem]:
+    async def run_all_with_message(self, message, db_message_id: str = "") -> list[WorkItem]:
         """顺序执行队列中所有 WorkItem，携带原始入站消息（含附件等信息）。
 
         文件上传链路需要 message.attachments 在 BusContext 中可用，
@@ -81,6 +81,7 @@ class SessionScheduler:
 
         Args:
             message: 原始 StandardMessage（含 attachments）
+            db_message_id: 入站消息持久化后的数据库 ID（M2 修复：供 trace 关联）
 
         Returns:
             list[WorkItem]: 全部执行完毕的 WorkItem。
@@ -88,10 +89,10 @@ class SessionScheduler:
         results: list[WorkItem] = []
         while self._queue:
             wi = self._queue.pop(0)
-            results.append(await self._run_one(wi, message=message))
+            results.append(await self._run_one(wi, message=message, db_message_id=db_message_id))
         return results
 
-    async def _run_one(self, wi: WorkItem, message=None) -> WorkItem:
+    async def _run_one(self, wi: WorkItem, message=None, db_message_id: str = "") -> WorkItem:
         """在公共 BUS 上执行单个 WorkItem，驱动其状态机。"""
         self._active[wi.id] = wi
         try:
@@ -105,8 +106,11 @@ class SessionScheduler:
                 message=message,
                 user_id=wi.user_id,
                 is_admin=wi.is_admin,
+                db_message_id=db_message_id,
                 _session_context=self._session_context,  # 私有字段，仅初始化时设置
             )
+            # 回填 pipeline_run_id 到 WorkItem，供 Session 归档回查 LLM 日志
+            wi.pipeline_run_id = context.pipeline_run_id
 
             # 文件上传链路：确保 context.message 携带原始消息附件
             # 回退路径——从 WorkItem 上存储的原始消息对象恢复

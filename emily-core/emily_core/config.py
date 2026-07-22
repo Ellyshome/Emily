@@ -202,7 +202,14 @@ class Config:
     scheduler_escalate_after_overdue_days: int = 7
     """超期 N 天后自动升级给上级（P2），默认 7 天"""
 
-    # ---- 用户准入 (User Binding) ----
+    # ── Session 归档 md 文件 ----
+    session_archive_enabled: bool = True
+    """会话归档 md 文件实时追加开关"""
+
+    session_archive_dir: str = ""
+    """会话归档 md 文件存储目录（为空时三级回退：config → /app/session_archives → emily-data/session_archives）"""
+
+    # ── 用户准入 (User Binding) ----
     auto_create_user: bool = False
     """未知 IM 用户是否自动创建系统用户。True=自动创建（开发/测试），
     False=拒绝未知用户（生产环境推荐）。"""

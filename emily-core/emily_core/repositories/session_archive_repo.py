@@ -19,8 +19,7 @@ class SessionArchiveRepo:
         user_id: Optional[str] = None,
         user_name: str = "",
         turn_count: int = 0,
-        message_history_snapshot: str = "",
-        context_snapshot: str = "",
+        md_file_path: str = "",
         started_at: Optional[str] = None,
         archive_reason: str = "expired",
     ) -> SessionArchive:
@@ -31,8 +30,7 @@ class SessionArchiveRepo:
                 user_id=user_id,
                 user_name=user_name,
                 turn_count=turn_count,
-                message_history_snapshot=message_history_snapshot,
-                context_snapshot=context_snapshot,
+                md_file_path=md_file_path,
                 started_at=started_at,
                 archive_reason=archive_reason,
             )
