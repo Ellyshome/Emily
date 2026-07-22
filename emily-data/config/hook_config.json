@@ -6,7 +6,8 @@
     ],
     "after:wi_node1": [
       { "type": "audit", "name": "audit.intent_result", "event_type": "intent_completed", "enabled": true },
-      { "type": "progress", "name": "progress.processing", "enabled": true }
+      { "type": "progress", "name": "progress.processing", "enabled": true },
+      { "type": "archive", "name": "archive.node1", "enabled": true }
     ],
     "on_error:wi_node1": [
       { "type": "audit", "name": "audit.intent_failed", "event_type": "intent_failed", "enabled": true }
@@ -15,7 +16,8 @@
       { "type": "auth", "name": "auth.resource_check", "resource_type": "table", "action": "read", "enabled": true }
     ],
     "after:wi_node2": [
-      { "type": "audit", "name": "audit.plan_created", "event_type": "plan_completed", "enabled": true }
+      { "type": "audit", "name": "audit.plan_created", "event_type": "plan_completed", "enabled": true },
+      { "type": "archive", "name": "archive.node2", "enabled": true }
     ],
     "on_error:wi_node2": [
       { "type": "audit", "name": "audit.plan_failed", "event_type": "plan_failed", "enabled": true }
@@ -23,7 +25,8 @@
     "before:wi_node3": [
     ],
     "after:wi_node3": [
-      { "type": "audit", "name": "audit.sop_completed", "event_type": "execution_completed", "enabled": true }
+      { "type": "audit", "name": "audit.sop_completed", "event_type": "execution_completed", "enabled": true },
+      { "type": "archive", "name": "archive.node3", "enabled": true }
     ],
     "on_error:wi_node3": [
       { "type": "audit", "name": "audit.execution_error", "event_type": "execution_failed", "enabled": true }
@@ -31,7 +34,8 @@
     "before:wi_node4": [
     ],
     "after:wi_node4": [
-      { "type": "audit", "name": "audit.result_final", "event_type": "result_completed", "enabled": true }
+      { "type": "audit", "name": "audit.result_final", "event_type": "result_completed", "enabled": true },
+      { "type": "archive", "name": "archive.node4", "enabled": true }
     ],
     "on_error:wi_node4": [
       { "type": "audit", "name": "audit.summary_failed", "event_type": "summary_failed", "enabled": true }

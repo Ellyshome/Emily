@@ -449,6 +449,238 @@ class SessionArchiveWriter:
         ]
         return "\n".join(lines)
 
+    # ── V2 逐段追加渲染方法（纯函数，无 I/O）──
+
+    @staticmethod
+    def _render_llm_log_line(log, idx: int) -> list[str]:
+        """渲染单条 LLM 调用明细行（主行 + 可选摘要行）。"""
+        category = getattr(log, "call_category", "") or "?"
+        model = getattr(log, "model", "") or "?"
+        latency = getattr(log, "latency_ms", 0) or 0
+        tokens = getattr(log, "total_tokens", 0) or 0
+        summary = getattr(log, "response_summary", "") or ""
+        json_mode = getattr(log, "json_mode", False)
+        mode_tag = "[json]" if json_mode else ""
+        lines = [f"  - #{idx} {category} {mode_tag} {model} · {latency}ms · {tokens} tok"]
+        if summary:
+            lines.append(f"    摘要: {summary[:200]}")
+        return lines
+
+    @staticmethod
+    def _render_prompt_info(prompt_info) -> list[str]:
+        """渲染 Prompt 注入信息段落（模板名 + 渲染后字符数 + 关键变量摘要）。
+
+        格式：
+          - Prompt: planner.md (渲染后 1560 字)
+            - 关键变量: sop_text=847字 · user_input="..." · available_tools=6个
+            - Session级: user_name=李景利 · project_name=翠湖庭院 · level=L4
+        """
+        if not prompt_info or not isinstance(prompt_info, dict):
+            return []
+        template = prompt_info.get("template", "?")
+        chars = prompt_info.get("rendered_chars", 0)
+        chars_display = f"渲染后 {chars} 字" if chars else "（未追踪）"
+        lines = [f"- Prompt: {template} ({chars_display})"]
+
+        variables = prompt_info.get("variables", {}) or {}
+        if variables:
+            var_parts: list[str] = []
+            session_vars = None
+            for key, value in variables.items():
+                if key == "session_vars" and isinstance(value, dict):
+                    session_vars = value
+                    continue
+                val_str = str(value)
+                if len(val_str) > 80:
+                    val_str = val_str[:77] + "..."
+                var_parts.append(f"{key}={val_str}")
+            if var_parts:
+                lines.append(f"  - 关键变量: {' · '.join(var_parts)}")
+            if session_vars:
+                sv_parts = [f"{sk}={str(sv)[:40]}" for sk, sv in session_vars.items()]
+                lines.append(f"  - Session级: {' · '.join(sv_parts)}")
+        return lines
+
+    @staticmethod
+    def render_turn_start(turn_idx: int, user_message: str, turn_time: str = "") -> str:
+        """渲染轮次开头：标题 + 用户消息段。"""
+        time_str = turn_time or _beijing_time_str()
+        return "\n".join([
+            f"## 第 {turn_idx} 轮 · {time_str}",
+            "",
+            "### 👤 用户",
+            user_message or "（空消息）",
+            "",
+        ])
+
+    @staticmethod
+    def render_intent_section(intent_data: dict, llm_logs: list,
+                              prompt_info=None) -> str:
+        """渲染意图识别段（SessionAgent 层，BUS 之前）。"""
+        intent_data = intent_data or {}
+        lines = ["### 🔍 意图识别"]
+        sop_id = intent_data.get("sop_id", "") or "unknown"
+        fallback = intent_data.get("fallback", False)
+        intent_type = "fallback" if fallback else "sop"
+        confidence = intent_data.get("confidence", "") or "none"
+        lines.append(f"- sop={sop_id}, 意图类型={intent_type}, 置信度={confidence}")
+        reasoning = intent_data.get("reasoning", "")
+        if reasoning:
+            lines.append(f"- 推理: {str(reasoning)[:200]}")
+        if prompt_info:
+            lines.extend(SessionArchiveWriter._render_prompt_info(prompt_info))
+        if llm_logs:
+            lines.append(f"- LLM 调用 ({len(llm_logs)}):")
+            for i, log in enumerate(llm_logs, 1):
+                lines.extend(SessionArchiveWriter._render_llm_log_line(log, i))
+        lines.append("")
+        return "\n".join(lines)
+
+    @staticmethod
+    def render_node_section(node_name: str, work_item, llm_logs: list,
+                            prompt_info=None,
+                            prompt_info_guardian=None) -> str:
+        """渲染单个 BUS 节点的归档段落（含 Prompt 注入信息）。"""
+        node_labels = {
+            "wi_node1": "意图验证",
+            "wi_node2": "规划",
+            "wi_node3": "执行+验收",
+            "wi_node4": "成果总结",
+        }
+        label = node_labels.get(node_name, node_name)
+        node_idx = node_name[-1] if node_name else "?"
+        lines = [f"### 🔧 {label} (Node{node_idx})"]
+
+        wi = work_item
+
+        if node_name == "wi_node1":
+            sop_id = getattr(wi, "sop_id", "") or "unknown"
+            intent_type = getattr(wi, "intent_type", "") or "fallback"
+            route = getattr(wi, "route_decision", None)
+            source = getattr(route, "_source", "") if route else ""
+            lines.append(f"- sop={sop_id}, 意图类型={intent_type}, _source={source or 'session_agent'}")
+            lines.append("- Prompt: (node1 无 LLM 调用，仅验证路由)")
+
+        elif node_name == "wi_node2":
+            plan = getattr(wi, "execution_plan", None)
+            if plan:
+                risk = getattr(plan, "risk_level", "?")
+                source = getattr(plan, "_source", "?")
+                lines.append(f"- 风险等级: {risk}, _source={source}")
+                steps = getattr(plan, "steps", []) or []
+                if steps:
+                    lines.append("- 步骤:")
+                    for s in steps:
+                        tool = getattr(s, "tool_name", "") or "(无工具)"
+                        desc = (getattr(s, "description", "") or "")[:80]
+                        lines.append(f"  - {getattr(s, 'step_id', '?')} ({tool}) — {desc}")
+            if prompt_info:
+                lines.extend(SessionArchiveWriter._render_prompt_info(prompt_info))
+
+        elif node_name == "wi_node3":
+            step_results = getattr(wi, "step_results", []) or []
+            if step_results:
+                lines.append("- 工具调用:")
+                for sr in step_results:
+                    for tc in getattr(sr, "tool_calls", []) or []:
+                        name = getattr(tc, "tool_name", "?") or "?"
+                        success = "✓" if getattr(tc, "is_success", True) else "✗"
+                        elapsed = getattr(tc, "elapsed_ms", 0) or 0
+                        args = getattr(tc, "tool_arguments", "{}") or "{}"
+                        arg_preview = (str(args)[:120] + "...") if len(str(args)) > 120 else str(args)
+                        lines.append(f"  - {success} {name} ({elapsed}ms)  参数: {arg_preview}")
+            # Guardian 并进审核
+            guardian_notes: list[str] = []
+            for sr in step_results:
+                g = getattr(sr, "guardian", None)
+                if g:
+                    verdict = getattr(g, "verdict", "?")
+                    reason = (getattr(g, "reason", "") or "")[:100]
+                    guardian_notes.append(f"  - {getattr(sr, 'step_id', '?')}: {verdict} ({reason})")
+            if guardian_notes:
+                lines.append("- Guardian 并进审核:")
+                lines.extend(guardian_notes)
+            # Prompt 信息（可能是 list，每个 step 一项）
+            if prompt_info:
+                pis = prompt_info if isinstance(prompt_info, list) else [prompt_info]
+                for pi in pis:
+                    lines.extend(SessionArchiveWriter._render_prompt_info(pi))
+
+        elif node_name == "wi_node4":
+            lines.append(f"- 回复合成: {getattr(wi, 'llm_call_count', 0)} 次 LLM 调用")
+            if getattr(wi, "warnings", None):
+                lines.append("- Guardian 出站审核:")
+                for w in wi.warnings[-5:]:
+                    lines.append(f"  - {w[:150]}")
+            if prompt_info:
+                lines.extend(SessionArchiveWriter._render_prompt_info(prompt_info))
+            if prompt_info_guardian:
+                lines.extend(SessionArchiveWriter._render_prompt_info(prompt_info_guardian))
+
+        # LLM 调用明细（按 call_category 分组）
+        if llm_logs:
+            phase_groups: dict = {}
+            for log in llm_logs:
+                cat = getattr(log, "call_category", "") or "unknown"
+                phase_groups.setdefault(cat, []).append(log)
+            lines.append(f"- LLM 调用 ({len(llm_logs)}):")
+            phase_labels = {
+                "intent": "意图",
+                "planning": "规划",
+                "execution": "执行/合成",
+                "guardian": "审核",
+            }
+            for phase in ["intent", "planning", "execution", "guardian"]:
+                group = phase_groups.get(phase, [])
+                if not group:
+                    continue
+                plabel = phase_labels.get(phase, phase)
+                lines.append(f"  [{plabel}] ({len(group)}):")
+                for i, log in enumerate(group, 1):
+                    lines.extend(SessionArchiveWriter._render_llm_log_line(log, i))
+
+        # 错误信息
+        error = getattr(wi, "error_message", "") or ""
+        if error:
+            lines.append(f"- ⚠️ 错误: {error[:300]}")
+
+        lines.append("")
+        return "\n".join(lines)
+
+    @staticmethod
+    def render_turn_end(reply_body: str, guardian_warnings: str = "") -> str:
+        """渲染轮次结尾：系统审核标记（如有）+ Emily 回复 + 分隔线。"""
+        lines = []
+        if guardian_warnings:
+            lines.extend([
+                "### ⚠️ 系统审核标记",
+                guardian_warnings.strip(),
+                "",
+            ])
+        lines.extend([
+            "### 🤖 Emily",
+            reply_body or "（无回复）",
+            "",
+            "---",
+            "",
+        ])
+        return "\n".join(lines)
+
+    @staticmethod
+    def _split_reply_and_warnings(reply_content: str) -> tuple[str, str]:
+        """将 reply_content 中的 Guardian warning 段分离出来。
+
+        node4_summary 以 '\\n\\n⚠️ Emily 提醒' 为标记将 warnings 追加到回复末尾，
+        此方法将其拆分，供 render_turn_end 分别写入独立段落。
+        """
+        if not reply_content:
+            return "", ""
+        marker = "\n\n⚠️ Emily 提醒"
+        if marker in reply_content:
+            idx = reply_content.index(marker)
+            return reply_content[:idx], reply_content[idx:]
+        return reply_content, ""
+
     # ── 文件 I/O 方法 ──
 
     def ensure_header(
@@ -548,4 +780,19 @@ class SessionArchiveWriter:
             return True
         except OSError as e:
             logger.warning("SessionArchive append_footer failed: %s — %s", path, e)
+            return False
+
+    def append_section(self, path: str, content: str) -> bool:
+        """追加一段内容到归档文件（供 ArchiveHook 和 SessionAgent 逐段调用）。
+
+        与 EventJournal.append() 同模式：open(path, "a") + try/except OSError。
+        """
+        if not self.enabled or not path:
+            return False
+        try:
+            with open(path, "a", encoding="utf-8") as f:
+                f.write(content)
+            return True
+        except OSError as e:
+            logger.warning("SessionArchive append_section failed: %s — %s", path, e)
             return False

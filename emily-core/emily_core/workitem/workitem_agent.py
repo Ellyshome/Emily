@@ -249,8 +249,8 @@ class WorkItemAgent:
 
         # 构建可用工具列表（从 BusinessFlowToolRegistry 动态生成）
         tools_text = ""
+        tool_entries: list[str] = []
         if self._business_flow_tools:
-            tool_entries = []
             for name in sorted(self._business_flow_tools.list_names()):
                 tool = self._business_flow_tools.get(name)
                 if tool:
@@ -263,6 +263,20 @@ class WorkItemAgent:
             user_input=wi.user_input,
             available_tools=tools_text,
         )
+
+        # ── 归档：存储 Node2 Prompt 注入信息到 BusContext.baggage ──
+        try:
+            context.set("prompt_info_node2", {
+                "template": "planner.md",
+                "rendered_chars": len(system_prompt),
+                "variables": {
+                    "sop_text": f"{len(sop_text)}字" if len(sop_text) > 80 else sop_text[:80],
+                    "user_input": (wi.user_input or "")[:80],
+                    "available_tools": f"{len(tool_entries)}个",
+                },
+            })
+        except Exception as e:
+            logger.debug("node2 prompt_info storage failed: %s", e)
 
         # 从 SessionContext 获取消息历史
         session_ctx = context.get_session_context() if context else None
@@ -359,6 +373,34 @@ class WorkItemAgent:
                         )
             except Exception as e:
                 logger.warning("Guardian gather failed: %s", e)
+
+        # ── 归档：存储 Node3 Guardian Prompt 注入信息到 baggage ──
+        # Guardian prompt 在 RealGuardian 内构建，渲染后字符数未追踪（标 0）；
+        # 关键变量值从 step_results 反推（output/tool_info/rag_info 字数）。
+        try:
+            guardian_prompt_info = []
+            for sr in step_results:
+                output = (getattr(sr, "output", "") or "")
+                tool_info_str = ""
+                for tc in getattr(sr, "tool_calls", []) or []:
+                    tool_info_str += getattr(tc, "tool_name", "") or ""
+                rag_info_str = ""
+                for rr in getattr(sr, "rag_results", []) or []:
+                    for chunk in getattr(rr, "chunks", []) or []:
+                        rag_info_str += getattr(chunk, "content", "") or ""
+                guardian_prompt_info.append({
+                    "template": "guardian_step.md",
+                    "rendered_chars": 0,
+                    "variables": {
+                        "step_id": getattr(sr, "step_id", "?"),
+                        "output": f"{len(output)}字",
+                        "tool_info": f"{len(tool_info_str)}字",
+                        "rag_info": f"{len(rag_info_str)}字",
+                    },
+                })
+            context.set("prompt_info_node3", guardian_prompt_info)
+        except Exception as e:
+            logger.debug("node3 prompt_info storage failed: %s", e)
 
         for sr in step_results:
             wi.add_step_result(sr)
@@ -525,7 +567,8 @@ class WorkItemAgent:
         message_history = getattr(session_ctx, 'message_history', []) if session_ctx else []
         draft = await self._llm_synthesize_reply(wi,
                                                    message_history=message_history if message_history else None,
-                                                   session_ctx=session_ctx)
+                                                   session_ctx=session_ctx,
+                                                   context=context)
 
         # Guardian 出站审核 —— 只标记不拦截
         if self._guardian:
@@ -536,6 +579,28 @@ class WorkItemAgent:
                         wi.add_warning(f"[reply] {issue}")
             except Exception as e:
                 logger.debug("Guardian review_reply failed (silent skip): %s", e)
+
+        # ── 归档：存储 Node4 Guardian (reply) Prompt 注入信息到 baggage ──
+        # Guardian prompt 在 RealGuardian 内构建，渲染后字符数未追踪（标 0）。
+        try:
+            steps_summary_text = ""
+            for sr in getattr(wi, "step_results", []) or []:
+                steps_summary_text += (
+                    f"[{getattr(sr, 'step_id', '?')}] "
+                    f"{(getattr(sr, 'output', '') or '')[:200]}\n"
+                )
+            context.set("prompt_info_node4_guardian", {
+                "template": "guardian_reply.md",
+                "rendered_chars": 0,
+                "variables": {
+                    "draft_reply": f"{len(draft)}字",
+                    "user_input": (wi.user_input or "")[:80],
+                    "sop_id": wi.sop_id or "unknown",
+                    "steps_summary": f"{len(steps_summary_text)}字",
+                },
+            })
+        except Exception as e:
+            logger.debug("node4 guardian prompt_info storage failed: %s", e)
 
         # 将 warnings 追加到回复末尾（只标记，不替换）
         if wi.warnings:
@@ -558,7 +623,8 @@ class WorkItemAgent:
 
     async def _llm_synthesize_reply(self, wi,
                                       message_history: list[dict] | None = None,
-                                      session_ctx=None) -> str:
+                                      session_ctx=None,
+                                      context: BusContext | None = None) -> str:
         """用 LLM 根据 workitem.md prompt + 步骤结果 + 对话历史合成自然语言回复。
 
         使用 chat_messages() 传入完整 message_history，利用 KV cache 复用。
@@ -568,6 +634,7 @@ class WorkItemAgent:
             wi: WorkItem 实例
             message_history: 对话历史，由 node4_summary 从 BusContext 提取后传入
             session_ctx: SessionContext 实例，用于填充 prompt 中的用户/项目变量
+            context: BusContext，用于存储 Node4 Prompt 注入信息到 baggage（归档用）
         """
         # 组装步骤结果摘要
         steps_text = ""
@@ -610,6 +677,30 @@ class WorkItemAgent:
 
                 # 清除未替换的 {xxx} 占位符（防止残留模板语法泄露到 LLM）
                 system_prompt = re.sub(r'\{[a-z_]+\}', '', system_prompt)
+
+                # ── 归档：存储 Node4 Prompt 注入信息到 BusContext.baggage ──
+                if context is not None:
+                    try:
+                        node4_vars = {
+                            "available_tools": f"{len(wi_vars.get('{available_tools}', ''))}字",
+                            "sop_text": f"{len(wi_vars.get('{sop_text}', ''))}字",
+                            "user_input": (getattr(wi, "user_input", "") or "")[:80],
+                            "step_results": f"{len(steps_text)}字",
+                            "warnings": f"{len(warnings_text)}字" if getattr(wi, "warnings", None) else "（无）",
+                        }
+                        if session_ctx is not None:
+                            node4_vars["session_vars"] = {
+                                "user_name": (getattr(session_ctx, "user_name", "") or "")[:40],
+                                "project_name": (getattr(session_ctx, "project_name", "") or "")[:40],
+                                "level": f"L{getattr(session_ctx, 'level', 0)}",
+                            }
+                        context.set("prompt_info_node4", {
+                            "template": "workitem.md",
+                            "rendered_chars": len(system_prompt),
+                            "variables": node4_vars,
+                        })
+                    except Exception as e:
+                        logger.debug("node4 prompt_info storage failed: %s", e)
 
                 full_messages = [{"role": "system", "content": system_prompt}]
                 if message_history:
