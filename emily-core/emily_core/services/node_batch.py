@@ -47,7 +47,7 @@ def flatten_nodes(
         if not node_id:
             # 自动生成：NODE-{4位hash}
             node_name = node_def.get("node_name", "未命名")
-            node_id = _generate_node_id(node_name, project_id)
+            node_id = generate_node_id(node_name, project_id)
             logger.debug("自动生成 node_id: %s → %s", node_name, node_id)
 
         record = {
@@ -79,8 +79,11 @@ def flatten_nodes(
     return flat
 
 
-def _generate_node_id(node_name: str, project_id: str) -> str:
-    """根据节点名称+项目ID生成 node_id（4位哈希）。"""
+def generate_node_id(node_name: str, project_id: str) -> str:
+    """根据节点名称+项目ID生成 node_id（4位哈希）。
+
+    公开供 PeriodicNodeHandler 等调度 handler 复用，保证 node_id 生成规则一致。
+    """
     clean = re.sub(r'[^一-龥a-zA-Z0-9]', '', node_name)
     hash_part = hashlib.md5(f"{clean}:{project_id}".encode()).hexdigest()[:4].upper()
     return f"NODE-{hash_part}"

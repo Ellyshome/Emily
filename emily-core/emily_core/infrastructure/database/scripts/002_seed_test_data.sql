@@ -21,13 +21,13 @@ DELETE FROM company_info WHERE unified_code IN (
 -- ============================================================
 -- 2. 插入测试公司/单位数据
 -- ============================================================
-INSERT INTO company_info (id, company_name, unified_code, business_desc, project_leader_id, creator_id, type, status, scope, department, created_at, updated_at, is_deleted)
+INSERT INTO company_info (id, company_name, unified_code, business_desc, project_leader_id, creator_id, type, status, scope, department, is_admin, created_at, updated_at, is_deleted)
 VALUES
-(uuid_generate_v4()::text, 'XX地产建设集团',   '91310000MA1K3XXX01', '房地产开发与经营，项目投资管理', 'system_admin', 'system_admin', '建设单位', 'active', '["立项审批","投资控制"]',            '["总裁办", "工程部", "成本部"]', NOW()::text, NOW()::text, false),
-(uuid_generate_v4()::text, '上海建筑设计研究院', '91310000MA1K3XXX02', '建筑工程设计、规划设计、景观设计', 'system_admin', 'system_admin', '设计单位', 'active', '["方案设计","施工图设计"]',          '["建筑所", "结构所", "设备所"]', NOW()::text, NOW()::text, false),
-(uuid_generate_v4()::text, '中天建设集团',     '91310000MA1K3XXX03', '房屋建筑工程总承包、市政工程',     'system_admin', 'system_admin', '总包',     'active', '["主体施工","机电安装","装饰装修"]', '["项目部", "技术部", "安全部"]', NOW()::text, NOW()::text, false),
-(uuid_generate_v4()::text, '恒大监理有限公司',  '91310000MA1K3XXX04', '工程监理、项目管理、技术咨询',     'system_admin', 'system_admin', '监理',     'active', '["质量监理","进度监理","安全监理"]', '["监理一部", "监理二部"]',         NOW()::text, NOW()::text, false),
-(uuid_generate_v4()::text, '鑫达建材供应商',    '91310000MA1K3XXX05', '建筑材料供应、设备租赁',           'system_admin', 'system_admin', '供应商',   'active', '["钢材供应","混凝土供应"]',          '["销售部", "物流部"]',             NOW()::text, NOW()::text, false);
+(uuid_generate_v4()::text, '翠湖地产建设集团',   '91310000MA1K3XXX01', '房地产开发与经营，项目投资管理', 'system_admin', 'system_admin', '建设单位', 'active', '["立项审批","投资控制"]',            '["总裁办", "工程部", "成本部"]', true,  NOW()::text, NOW()::text, false),
+(uuid_generate_v4()::text, '上海建筑设计研究院', '91310000MA1K3XXX02', '建筑工程设计、规划设计、景观设计', 'system_admin', 'system_admin', '设计单位', 'active', '["方案设计","施工图设计"]',          '["建筑所", "结构所", "设备所"]', false, NOW()::text, NOW()::text, false),
+(uuid_generate_v4()::text, '中天建设集团',     '91310000MA1K3XXX03', '房屋建筑工程总承包、市政工程',     'system_admin', 'system_admin', '总包',     'active', '["主体施工","机电安装","装饰装修"]', '["项目部", "技术部", "安全部"]', false, NOW()::text, NOW()::text, false),
+(uuid_generate_v4()::text, '恒大监理有限公司',  '91310000MA1K3XXX04', '工程监理、项目管理、技术咨询',     'system_admin', 'system_admin', '监理',     'active', '["质量监理","进度监理","安全监理"]', '["监理一部", "监理二部"]',         false, NOW()::text, NOW()::text, false),
+(uuid_generate_v4()::text, '鑫达建材供应商',    '91310000MA1K3XXX05', '建筑材料供应、设备租赁',           'system_admin', 'system_admin', '供应商',   'active', '["钢材供应","混凝土供应"]',          '["销售部", "物流部"]',             false, NOW()::text, NOW()::text, false);
 
 -- ============================================================
 -- 3. 临时表存储公司 ID
@@ -48,7 +48,7 @@ INSERT INTO users (id, username, phone, email, status, is_admin, gender, id_card
 VALUES (
     uuid_generate_v4()::text,
     '王建国',
-    '13800000001', 'wangzong@xxestate.com',
+    '13800000001', 'wangzong@cuihuestate.com',
     'active', true, 1, '310101197001010001', '123456001', 'wx_王建国',
     '系统管理员，拥有所有权限',
     'system', false, '["*"]', 4, 6, NULL,
@@ -61,7 +61,7 @@ INSERT INTO users (id, username, phone, email, status, is_admin, gender, id_card
 VALUES (
     uuid_generate_v4()::text,
     '李景利',
-    '13800000002', 'lijingli@xxestate.com',
+    '13800000002', 'lijingli@cuihuestate.com',
     'active', false, 1, '310101197502020002', '123456002', 'wx_李景利',
     '甲方工程部经理，负责项目整体协调',
     '王建国', false, '["project.read","project.write","task.assign","review.approve"]',

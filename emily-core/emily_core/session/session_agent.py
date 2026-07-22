@@ -104,12 +104,48 @@ class SessionAgent:
         # ── 实时归档：Session 创建时写 md 文件头 ──
         self._archive_md_path = ""
         self._last_turn_workitems: list = []
+        self._turn_counter: int = 0
         if self._archive_writer is not None:
             try:
                 ctx_dict = {
+                    # 身份与组织
+                    "user_id": context.user_id,
                     "user_position": context.user_position,
                     "company_name": context.company_name,
+                    "company_type": context.company_type,
+                    "company_id": context.company_id,
+                    "department": list(context.department),
                     "level": context.level,
+                    "is_management_unit": context.is_management_unit,
+                    # 可见范围
+                    "authorized_node_ids": list(context.authorized_node_ids),
+                    "scopes": list(context.scopes),
+                    "project_ids": list(context.project_ids),
+                    "partner_ids": list(context.partner_ids),
+                    "info_level": context.info_level,
+                    "sop_allow": list(context.sop_allow),
+                    "permission_version": context.permission_version,
+                    "permissions_loaded_at": context.permissions_loaded_at,
+                    # 项目上下文
+                    "project_name": context.project_name,
+                    "project_type": context.project_type,
+                    "project_status": context.project_status,
+                    # 能力摘要
+                    "available_skills": list(context.available_skills),
+                    "available_tools": list(context.available_tools),
+                    "visible_files_count": context.visible_files_count,
+                    "rag_available": context.rag_available,
+                    "rag_collections": list(context.rag_collections),
+                    # 大文本字段（渲染时只显示「有 + 字符数」，不写全文）
+                    "project_world_book": context.project_world_book,
+                    "rule_book": context.rule_book,
+                    "system_description": context.system_description,
+                    "visible_schema_summary": context.visible_schema_summary,
+                    "visible_files_summary": context.visible_files_summary,
+                    "sop_catalog_summary": context.sop_catalog_summary,
+                    # prompt 元信息（模板原文；渲染后变量值已在上方快照字段覆盖）
+                    "prompt_name": "session.md" if _SESSION_SYSTEM_PROMPT else "",
+                    "prompt_chars": len(_SESSION_SYSTEM_PROMPT),
                 }
                 self._archive_md_path = self._archive_writer.ensure_header(
                     conversation_id=conversation_id,
@@ -473,14 +509,15 @@ class SessionAgent:
                 except Exception as e:
                     logger.warning("SessionArchive LLM log query failed: %s", e)
 
-            turn_idx = len(self.context.message_history) // 2
+            self._turn_counter += 1
+            turn_idx = self._turn_counter
 
             user_msg = (message.content or "")[:2000]
             reply_content = (reply.content or "")[:2000]
 
             self._archive_writer.append_turn(
                 path=self._archive_md_path,
-                turn_idx=max(turn_idx, 1),
+                turn_idx=turn_idx,
                 user_message=user_msg,
                 reply_content=reply_content,
                 workitems=workitems,

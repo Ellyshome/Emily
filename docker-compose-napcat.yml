@@ -64,6 +64,7 @@ services:
       - ./emily-data/attachments:/app/attachments
       - ./emily-data/user_memory:/app/user_memory
       - ./emily-data/journal:/app/journal
+      - ./emily-data/session_archives:/app/session_archives
       # ── 代码（只读，开发阶段可热更新）──
       - ./emily-core/emily_core:/app/emily_core:ro
       - ./emily-core/api:/app/api:ro

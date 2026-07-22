@@ -43,7 +43,7 @@ DELETE FROM permission_requests WHERE request_no LIKE 'PRQ-2026%';
 DELETE FROM user_feedback_signals WHERE signal_type IN ('repeat_request','explicit_correction','positive','abandonment');
 DELETE FROM rag_retrieval_logs WHERE query_text LIKE '【模拟】%';
 DELETE FROM sop_routing_logs WHERE message_content LIKE '【模拟】%';
-DELETE FROM scheduler_job_logs WHERE action_type IN ('create_task_node','morning_report','file_expiry_reminder');
+DELETE FROM scheduler_job_logs WHERE action_type IN ('create_task_node','morning_report','file_expiry_reminder','create_periodic_node','generate_morning_report','check_file_expiry');
 DELETE FROM scheduler_executions WHERE execution_no LIKE 'SEX-2026%';
 DELETE FROM scheduler_jobs WHERE job_no LIKE 'JOB-%';
 DELETE FROM evolution_patches WHERE patch_no LIKE 'EP-%';
@@ -148,9 +148,9 @@ SELECT uuid_generate_v4()::text AS id, 'JOB-001' AS job_no,
        '每周一09:00自动生成进度汇报待办任务' AS description,
        'CRON' AS job_type, '0 9 * * 1' AS cron_expression,
        0 AS interval_seconds, '' AS deadline_rule,
-       'create_task_node' AS action_type,
-       'emily_core.scheduler.handlers.task_handler' AS handler_module,
-       '{"task_title":"本周进度汇报","task_priority":2}' AS action_params,
+       'create_periodic_node' AS action_type,
+       'scheduler.jobs.periodic_node' AS handler_module,
+       '{"project_id":"' || (SELECT id FROM _sp LIMIT 1) || '","node_name":"本周进度汇报","owner_dept_id":"项目总","creator_id":"' || (SELECT id FROM _su WHERE username = '王建国' LIMIT 1) || '"}' AS action_params,
        'ACTIVE' AS status,
        '2026-07-14T09:00:00' AS last_executed_at,
        '2026-07-21T09:00:00' AS next_execution_at,
@@ -161,9 +161,9 @@ SELECT uuid_generate_v4()::text, 'JOB-002',
        '每日08:00自动汇总前一日项目动态并推送晨报',
        'CRON', '0 8 * * *',
        0, '',
-       'morning_report',
-       'emily_core.scheduler.handlers.report_handler',
-       '{"report_type":"daily","recipients":["李景利","王建国"]}',
+       'generate_morning_report',
+       'scheduler.jobs.morning_report',
+       '{"push_to_group":"项目群"}',
        'ACTIVE',
        '2026-07-20T08:00:00',
        '2026-07-21T08:00:00',
@@ -174,10 +174,10 @@ SELECT uuid_generate_v4()::text, 'JOB-003',
        '每24小时检查一次临近过期的许可/证照文件并发送提醒',
        'INTERVAL', '',
        86400, '文件有效期<30天时触发',
-       'file_expiry_reminder',
-       'emily_core.scheduler.handlers.file_handler',
+       'check_file_expiry',
+       'scheduler.jobs.file_expiry',
        '{"threshold_days":30,"check_categories":["PROJECT_LICENSE"]}',
-       'ACTIVE',
+       'INACTIVE',
        '2026-07-20T06:00:00',
        '2026-07-21T06:00:00',
        NOW()::text;

@@ -48,23 +48,12 @@ def _parse_position_json(position_raw: str) -> str:
     return ""
 
 
-def _resolve_display_name(user) -> str:
-    """优先取 IM 绑定的显示名（如"陈哲"），回退到 username（如"chen_zhe"）。
+def _resolve_user_name(user) -> str:
+    """取 users.username 作为人员姓名（如"孙建国"）。
 
-    user_name 会被注入 LLM prompt 的"姓名"字段，使用中文名更符合
-    QQ IM 场景下的用户预期。username 是登录 ID，不宜直接展示。
+    user_name 会被注入 LLM prompt 的"姓名"字段，并用于会话归档 md 文件命名/抬头。
+    用 username（系统档案姓名）而非 IM 绑定的 display_name（QQ 昵称，易变且可能为空）。
     """
-    # 优先从 im_bindings 取第一个有 display_name 的绑定
-    try:
-        bindings = getattr(user, "im_bindings", None)
-        if bindings:
-            for binding in bindings:
-                display = getattr(binding, "im_display_name", None)
-                if display:
-                    return display
-    except Exception as e:
-        logger.warning("resolve display_name failed: %s", e, exc_info=True)
-    # 回退到 username
     return getattr(user, "username", "") or ""
 
 
@@ -145,7 +134,7 @@ class SessionDataFetcher:
             return _empty_result(conversation_id, user_id, ["用户不存在"])
 
         # 优先取 IM 绑定的显示名（如"陈哲"），回退到 username（如"chen_zhe"）
-        user_name = _resolve_display_name(user)
+        user_name = _resolve_user_name(user)
         user_position = _parse_position_json(user.position or "")
 
         long_term_memory = user.long_term_memory or ""

@@ -137,6 +137,11 @@ class SessionContext:
         errors = data.get("errors", [])
 
         # 灌注用户属性
+        # 优先用 DB 解析的显示名（IM 绑定 display_name → username），回退构造时的 sender_name。
+        # 由 SessionDataFetcher._resolve_user_name() 解析；sentinel 时计入 errors，此时保留 sender_name。
+        resolved_name = snapshot.get("user_name", "")
+        if resolved_name and "user_name" not in errors:
+            ctx.user_name = resolved_name
         ctx.user_position = snapshot.get("user_position", "")
 
         # 灌注项目上下文

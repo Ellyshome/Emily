@@ -133,6 +133,7 @@ QQ → NapCat → AstrBot → emily_agent 薄插件
 | `emily-core/emily_core/services/node_batch.py` | `create_node_tree`：全景节点批量创建核心（CLI 和系统工具共享） |
 | `emily-core/emily_core/services/node_batch_update.py` | 批量更新/激活/废弃/进度更新核心（CLI 和系统工具共享） |
 | `emily-core/emily_core/scheduler/engine.py` | `SchedulerEngine`：系统调度引擎（tick 循环 + Advisory Lock + Hook + JobHandlerRegistry） |
+| `emily-core/emily_core/scheduler/next_execution.py` | `calc_next_execution`：reschedule 重算（croniter + 极简兜底，按北京时间解释 cron，输出 UTC-aware ISO） |
 | `emily-core/emily_core/scheduler/service.py` | `SchedulerService`：调度作业 CRUD + 执行记录 |
 | `emily-core/emily_core/scheduler/jobs/periodic_node.py` | `PeriodicNodeHandler`：定期创建 TASK 节点（替代旧 PlanTask 循环模板） |
 | `scripts/manage_nodes.py` | 全景节点管理 CLI 脚本（create/update/activate/discard/progress/query） |

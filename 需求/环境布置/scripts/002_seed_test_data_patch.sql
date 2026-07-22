@@ -42,7 +42,7 @@ INSERT INTO users (id, username, phone, email, status, is_admin, gender,
 VALUES (
     uuid_generate_v4()::text,
     '罗永强',
-    '13800000008', 'luoyongqiang@xxestate.com',
+    '13800000008', 'luoyongqiang@cuihuestate.com',
     'active', false, 1, '310101198801010008', '123456008', 'wx_it_luo',
     'IT系统管理员，负责系统运维和权限管理',
     '王建国', false, '["project.read","project.write","perm.manage","sop.manage"]',

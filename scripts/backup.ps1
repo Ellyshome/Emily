@@ -1,4 +1,4 @@
-# Emily 备份脚本
+﻿# Emily 备份脚本
 # 用法：.\scripts\backup.ps1
 # 输出：backups\YYYYMMDD_HHMMSS\ 目录，含数据库 SQL + 配置文件 + 附件
 

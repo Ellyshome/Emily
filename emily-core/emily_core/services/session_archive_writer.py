@@ -97,6 +97,148 @@ class SessionArchiveWriter:
     # ── 渲染函数（纯函数，无 I/O，可独立测试）──
 
     @staticmethod
+    def _join_list(items: list, sep: str = "、", limit: int = 10) -> str:
+        """列表拼接为字符串，超过 limit 截断并标注总数。
+
+        Args:
+            items: 待拼接的列表。
+            sep: 分隔符（默认顿号）。
+            limit: 最多展示的元素数，超出则尾部标注「等 N 项」。
+
+        Returns:
+            str: 拼接结果；空列表返回空字符串。
+        """
+        if not items:
+            return ""
+        cleaned = [str(x) for x in items if x is not None and x != ""]
+        if not cleaned:
+            return ""
+        if len(cleaned) <= limit:
+            return sep.join(cleaned)
+        return f"{sep.join(cleaned[:limit])} 等 {len(cleaned)} 项"
+
+    @staticmethod
+    def _render_snapshot(ctx: dict) -> list[str]:
+        """渲染拉起时会话快照（身份/可见范围/项目/能力）。
+
+        供管理员复查「该 Session 实际拉起时的运行上下文」。所有字段缺失则整行
+        跳过；大文本字段（世界书/规则书等）只显示「有 + 字符数」，不写全文
+        （避免归档正文膨胀；全文可回查 DB）。
+
+        Args:
+            ctx: SessionContext 拉起时字段构成的 dict。
+
+        Returns:
+            list[str]: 快照 markdown 行；无任何可写字段时返回空列表。
+        """
+        lines: list[str] = []
+
+        # ── 身份与组织 ──
+        identity: list[str] = []
+        user_id = ctx.get("user_id", "")
+        if user_id:
+            identity.append(f"- user_id: {user_id}")
+        pos = ctx.get("user_position", "")
+        dept = SessionArchiveWriter._join_list(ctx.get("department", []))
+        if pos or dept:
+            parts = [p for p in (f"职位: {pos}" if pos else "", f"部门: {dept}" if dept else "") if p]
+            identity.append(f"- {' · '.join(parts)}")
+        company = ctx.get("company_name", "")
+        if company:
+            parts = [company]
+            ctype = ctx.get("company_type", "")
+            if ctype:
+                parts.append(ctype)
+            cid = ctx.get("company_id", "")
+            if cid:
+                parts.append(f"id={cid}")
+            identity.append(f"- 企业: {' / '.join(parts)}")
+        level = ctx.get("level", 1)
+        is_mgmt = ctx.get("is_management_unit", False)
+        identity.append(f"- 权限: level {level}（{'管理单位' if is_mgmt else '非管理单位'}）")
+        if identity:
+            lines.append("**身份与组织**")
+            lines.extend(identity)
+            lines.append("")
+
+        # ── 可见范围 ──
+        scope: list[str] = []
+        nodes = SessionArchiveWriter._join_list(ctx.get("authorized_node_ids", []))
+        if nodes:
+            scope.append(f"- 授权节点: {nodes}")
+        scopes = SessionArchiveWriter._join_list(ctx.get("scopes", []), sep=" · ")
+        if scopes:
+            scope.append(f"- scopes: {scopes}")
+        proj_ids = SessionArchiveWriter._join_list(ctx.get("project_ids", []))
+        if proj_ids:
+            scope.append(f"- 可见项目: {proj_ids}")
+        partner_ids = SessionArchiveWriter._join_list(ctx.get("partner_ids", []))
+        if partner_ids:
+            scope.append(f"- 合作方: {partner_ids}")
+        info_level = ctx.get("info_level", "")
+        if info_level:
+            scope.append(f"- info_level: {info_level}")
+        sop_allow = ctx.get("sop_allow", [])
+        if sop_allow:
+            scope.append(f"- sop_allow: {SessionArchiveWriter._join_list(sop_allow)}")
+        perm_ver = ctx.get("permission_version", 0)
+        perm_loaded = ctx.get("permissions_loaded_at", "")
+        if perm_ver or perm_loaded:
+            scope.append(f"- 权限版本: v{perm_ver} @ {perm_loaded or '(未知)'}")
+        if scope:
+            lines.append("**可见范围**")
+            lines.extend(scope)
+            lines.append("")
+
+        # ── 项目上下文 ──
+        proj_parts = [p for p in (
+            ctx.get("project_name", ""),
+            ctx.get("project_type", ""),
+            ctx.get("project_status", ""),
+        ) if p]
+        if proj_parts:
+            lines.append(f"**项目**: {' / '.join(proj_parts)}")
+            lines.append("")
+
+        # ── 能力摘要 ──
+        cap: list[str] = []
+        skills = ctx.get("available_skills", [])
+        tools = ctx.get("available_tools", [])
+        files_count = ctx.get("visible_files_count", 0)
+        cap_parts = [p for p in (
+            f"技能 {len(skills)}" if skills else "",
+            f"工具 {len(tools)}" if tools else "",
+            f"可见文件 {files_count}" if files_count else "",
+        ) if p]
+        if cap_parts:
+            cap.append(f"- {' · '.join(cap_parts)}")
+        rag_avail = ctx.get("rag_available", False)
+        rag_cols = ctx.get("rag_collections", [])
+        if rag_avail:
+            cols = SessionArchiveWriter._join_list(rag_cols) or "默认知识库"
+            cap.append(f"- 知识库: 可用（{cols}）")
+        else:
+            cap.append("- 知识库: 不可用")
+        # 大文本字段：有/无 + 字符数（不写全文）
+        big_texts = [
+            ("项目世界书", ctx.get("project_world_book", "")),
+            ("规则书", ctx.get("rule_book", "")),
+            ("系统自我描述", ctx.get("system_description", "")),
+            ("可见库表摘要", ctx.get("visible_schema_summary", "")),
+            ("可见文件摘要", ctx.get("visible_files_summary", "")),
+            ("SOP目录摘要", ctx.get("sop_catalog_summary", "")),
+        ]
+        big_parts = [f"{label} {len(text)} 字" for label, text in big_texts if text]
+        if big_parts:
+            cap.append(f"- {' · '.join(big_parts)}")
+        if cap:
+            lines.append("**能力**")
+            lines.extend(cap)
+            lines.append("")
+
+        return lines
+
+    @staticmethod
     def _render_header(
         conversation_id: str,
         user_name: str,
@@ -109,7 +251,8 @@ class SessionArchiveWriter:
             conversation_id: 会话 ID。
             user_name: 用户姓名。
             started_at: 会话开始时间。
-            context: 可选上下文信息（职位、公司、level 等）。
+            context: 可选上下文信息。含身份/可见范围/项目/能力等拉起时快照字段，
+                以及 prompt_name/prompt_chars 元信息；缺字段自动跳过。
 
         Returns:
             str: 文件头部 markdown。
@@ -141,13 +284,30 @@ class SessionArchiveWriter:
         lines = [
             f"# Emily 会话归档：{user_name}",
             "",
-            f"> 自动生成，供人工复查。含对话、工具调用、LLM 调用记录。",
             f"> 会话ID: {conversation_id}  ·  开始: {start_display} (UTC+8)",
             f"> 人员: {persona}",
-            "",
-            "---",
-            "",
         ]
+
+        # prompt 元信息（模板原文字符数；渲染后变量值见下方快照区）
+        prompt_name = ctx.get("prompt_name", "")
+        prompt_chars = ctx.get("prompt_chars", 0)
+        if prompt_name:
+            lines.append(
+                f"> Session Prompt: {prompt_name} (模板 {prompt_chars} 字，变量见快照)"
+            )
+
+        # 会话快照（拉起时）——身份/可见范围/项目/能力
+        snapshot_lines = SessionArchiveWriter._render_snapshot(ctx)
+        if snapshot_lines:
+            lines.append("")
+            lines.append("## 会话快照（拉起时）")
+            lines.append("")
+            lines.extend(snapshot_lines)
+            # snapshot_lines 每个区块末尾自带空行，无需再补
+        else:
+            lines.append("")
+        lines.append("---")
+        lines.append("")
         return "\n".join(lines)
 
     @staticmethod

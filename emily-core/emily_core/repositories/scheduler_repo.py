@@ -195,7 +195,12 @@ class SchedulerRepo:
 
     @staticmethod
     def has_period_execution(job_id: str, period_key: str) -> bool:
-        """检查某周期是否已执行（幂等）。"""
+        """检查某周期是否已有 SUCCESS 执行记录（幂等：同周期成功后不重复触发）。
+
+        reschedule 落地后 next_execution_at 会推进到下个周期，是主闸门；
+        此处仅查 SUCCESS 作为兜底——允许同周期失败重试，PENDING/RUNNING
+        由 tick 串行 + advisory lock 保证不并发。
+        """
         if not period_key:
             return False
         with get_session() as session:
@@ -204,7 +209,7 @@ class SchedulerRepo:
                 .filter(
                     SchedulerExecution.job_id == job_id,
                     SchedulerExecution.period_key == period_key,
-                    SchedulerExecution.status.in_(["SUCCESS", "RUNNING"]),
+                    SchedulerExecution.status == "SUCCESS",
                 )
                 .first()
                 is not None

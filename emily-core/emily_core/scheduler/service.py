@@ -69,10 +69,16 @@ class SchedulerService:
         """获取所有 ACTIVE 作业（引擎用）。"""
         return await asyncio.to_thread(self._repo.list_active_jobs)
 
+    async def has_executed_in_period(self, job_id: str, period_key: str) -> bool:
+        """检查作业在指定周期是否已有执行记录（供引擎幂等去重）。"""
+        return await asyncio.to_thread(
+            self._repo.has_period_execution, job_id, period_key
+        )
+
     # ── 执行记录 ──
 
     async def create_execution(self, job_id: str, period_key: str = "") -> SchedulerOperationResult:
-        """创建执行记录。"""
+        """创建执行记录。回传 execution_id 供引擎状态流转。"""
         execution_no = self._repo.generate_execution_no()
         execution = await asyncio.to_thread(
             self._repo.create_execution,
@@ -81,7 +87,9 @@ class SchedulerService:
             period_key=period_key,
         )
         return SchedulerOperationResult(
-            success=True, execution_no=execution_no,
+            success=True,
+            execution_no=execution_no,
+            execution_id=getattr(execution, "id", ""),
         )
 
     async def update_execution_status(self, execution_id: str, status: str,
@@ -91,3 +99,15 @@ class SchedulerService:
             self._repo.update_execution_status,
             execution_id, status, error_message, result_summary,
         )
+
+    async def update_job_last_executed(self, job_id: str, last_executed_at: str,
+                                        next_execution_at: str = "") -> None:
+        """更新作业上次执行时间和下次执行时间（reschedule 用）。"""
+        await asyncio.to_thread(
+            self._repo.update_job_last_executed,
+            job_id, last_executed_at, next_execution_at,
+        )
+
+    async def update_job_status(self, job_id: str, status: str) -> None:
+        """更新作业状态（ONCE 执行后置 INACTIVE 等）。"""
+        await asyncio.to_thread(self._repo.update_job_status, job_id, status)

@@ -37,10 +37,14 @@ logger = logging.getLogger("emily.bus")
 class PipelineBUS:
     """系统级公共执行总线 —— 4 节点 + Hook 声明式横切。"""
 
-    def __init__(self, name: str = "emily_bus"):
+    def __init__(self, name: str = "emily_bus", outbound_bus=None):
         self.name = name
         self._nodes: list["PipelineNode"] = []
         self._hooks = HookRegistry()
+        # 出站事件总线：run() 据此为每个 BusContext 注入携带 conversation_id 的
+        # per-message progress_sender（供 ProgressHook 发前导消息），见 hook.py。
+        # 全局 _progress_sender 闭包无法捕获每条消息的 conv_id，故由 BUS 按消息补齐。
+        self._outbound_bus = outbound_bus
 
     # ── 节点管理 ──
 
@@ -146,6 +150,19 @@ class PipelineBUS:
             "BUS[%s] running WorkItem %s: %d nodes",
             self.name, wi.id if wi else "?", len(self._nodes),
         )
+
+        # 注入 per-message progress_sender（携带 conversation_id，供 ProgressHook 出站前导消息）。
+        # ProgressHook 优先从 baggage 取 sender（见 hook.py），回退到构建时注入的全局实例属性；
+        # 全局闭包缺 conversation_id 会导致插件 SSEListener 找不到会话 event 而静默丢弃，故在此按消息补齐。
+        # setdefault：若调用方已在 baggage 预设自定义 sender，则不覆盖。
+        if self._outbound_bus is not None and context.message is not None:
+            _bus = self._outbound_bus
+            _cid = context.message.conversation_id or ""
+
+            def _send_progress(text: str, _bus=_bus, _cid=_cid) -> None:
+                _bus.publish("progress", {"content": text, "conversation_id": _cid})
+
+            context.baggage.setdefault("progress_sender", _send_progress)
 
         try:
             for node in self._nodes:
@@ -255,20 +272,22 @@ class PipelineBUS:
     # ── 工厂方法 ──
 
     @classmethod
-    def build_default(cls, node_handlers: dict, name: str = "emily_bus") -> "PipelineBUS":
+    def build_default(cls, node_handlers: dict, name: str = "emily_bus", outbound_bus=None) -> "PipelineBUS":
         """构建默认 4 节点 BUS（蓝图 §5.4）。
 
         Args:
             node_handlers: {"wi_node1": handler, "wi_node2": ..., ...}，
                            每个 handler 为 async fn(BusContext) -> None。
             name: BUS 名称。
+            outbound_bus: OutboundEventBus，供 run() 为每条消息注入携带 conversation_id
+                          的 progress_sender 闭包（ProgressHook 据此发前导消息到正确会话）。
 
         Returns:
             PipelineBUS: 已装配 4 节点的总线（未注册 hook，需另行 register）。
         """
         from .node import PipelineNode
 
-        bus = cls(name=name)
+        bus = cls(name=name, outbound_bus=outbound_bus)
         bus.add_nodes([
             PipelineNode("wi_node1", "意图+拆分", node_handlers["wi_node1"], required=True),
             PipelineNode("wi_node2", "计划+标准", node_handlers["wi_node2"], required=True),

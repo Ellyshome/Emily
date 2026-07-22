@@ -22,8 +22,12 @@ param(
 )
 
 $ErrorActionPreference = "Continue"
+
+# ── 终端 & 环境 UTF-8 编码（避免 docker exec psql 中文乱码）──
+[Console]::OutputEncoding = [System.Text.Encoding]::UTF8
 $OutputEncoding = [System.Text.Encoding]::UTF8
 $env:PYTHONIOENCODING = "utf-8"
+$env:LESSCHARSET = "utf-8"
 
 # ── 路径常量（相对于项目根目录 d:\app\Emily）──
 $BASE = "emily-core/emily_core/infrastructure/database/scripts"
@@ -107,24 +111,34 @@ function Invoke-SeedData {
     Write-Host "[种子] 导入核心种子数据..." -ForegroundColor Yellow
 
     # [1] 公司 + 用户 (002)
-    Write-Host "  [1/6] 公司 + 用户 (002)..." -ForegroundColor DarkGray
+    Write-Host "  [1/8] 公司 + 用户 (002)..." -ForegroundColor DarkGray
     ExecSql "$BASE/002_seed_test_data.sql"
     Write-Host "    [OK] 5家公司 + 7名用户" -ForegroundColor Green
 
     # [2] 补用户 (002_patch)
     $patchPath = "$SEED_PATCH/002_seed_test_data_patch.sql"
     if (Test-Path $patchPath) {
-        Write-Host "  [2/6] 补充用户 (patch)..." -ForegroundColor DarkGray
+        Write-Host "  [2/8] 补充用户 (patch)..." -ForegroundColor DarkGray
         ExecSql $patchPath
         Write-Host "    [OK] 新增3名用户 (L5/L2/L2)" -ForegroundColor Green
     } else {
-        Write-Host "  [2/6] 补充用户 (patch)... 跳过 (文件不存在: $patchPath)" -ForegroundColor DarkGray
+        Write-Host "  [2/8] 补充用户 (patch)... 跳过 (文件不存在: $patchPath)" -ForegroundColor DarkGray
     }
 
-    # [3] 项目 + 文件元数据 (007)
+    # [3] 建设单位专业人员 (003)
+    $usersPath = "$SEED/003_seed_users_patch.sql"
+    if (Test-Path $usersPath) {
+        Write-Host "  [3/8] 建设单位专业人员 (003)..." -ForegroundColor DarkGray
+        ExecSql $usersPath
+        Write-Host "    [OK] 4名专业人员 (建筑/土建/安装/景观精装)" -ForegroundColor Green
+    } else {
+        Write-Host "  [3/8] 建设单位专业人员... 跳过 (文件不存在: $usersPath)" -ForegroundColor DarkGray
+    }
+
+    # [4] 项目 + 文件元数据 (007)
     $projPath = "$SEED_PATCH/007_seed_emerald_project.sql"
     if (Test-Path $projPath) {
-        Write-Host "  [3/6] 项目 + 文件元数据 (007)..." -ForegroundColor DarkGray
+        Write-Host "  [4/8] 项目 + 文件元数据 (007)..." -ForegroundColor DarkGray
         ExecSql $projPath
         Write-Host "    [OK] EMERALD-01 项目 + 5指标 + 18文件" -ForegroundColor Green
     } else {
@@ -132,10 +146,10 @@ function Invoke-SeedData {
         exit 1
     }
 
-    # [4] 节点树 (008 YAML -> manage_nodes.py)
+    # [5] 节点树 (008 YAML -> manage_nodes.py)
     $nodesYaml = "$SEED_PATCH/008_seed_emerald_nodes.yaml"
     if (Test-Path $nodesYaml) {
-        Write-Host "  [4/6] 全景节点树 (008 YAML)..." -ForegroundColor DarkGray
+        Write-Host "  [5/8] 全景节点树 (008 YAML)..." -ForegroundColor DarkGray
         $env:PYTHONPATH = "emily-core"
         $nodeResult = uv run python scripts/manage_nodes.py create --file $nodesYaml 2>&1
         if ($LASTEXITCODE -ne 0) {
@@ -149,10 +163,20 @@ function Invoke-SeedData {
         exit 1
     }
 
-    # [5] 业务数据 (009)
+    # [6] 节点责任人分配 (012)
+    $respPath = "$SEED/012_seed_node_responsible.sql"
+    if (Test-Path $respPath) {
+        Write-Host "  [6/8] 节点责任人分配 (012)..." -ForegroundColor DarkGray
+        ExecSql $respPath
+        Write-Host "    [OK] 24个节点按专业分配责任人" -ForegroundColor Green
+    } else {
+        Write-Host "  [6/8] 节点责任人分配... 跳过 (文件不存在: $respPath)" -ForegroundColor DarkGray
+    }
+
+    # [7] 业务数据 (009)
     $bizPath = "$SEED_PATCH/009_seed_emerald_business.sql"
     if (Test-Path $bizPath) {
-        Write-Host "  [5/6] 业务数据 (009)..." -ForegroundColor DarkGray
+        Write-Host "  [7/8] 业务数据 (009)..." -ForegroundColor DarkGray
         ExecSql $bizPath
         Write-Host "    [OK] 事件/任务/会议/流转单/指令单/计划/会话/消息" -ForegroundColor Green
     } else {
@@ -160,8 +184,8 @@ function Invoke-SeedData {
         exit 1
     }
 
-    # [6] 权限体系 (006)
-    Write-Host "  [6/6] 权限体系 (006)..." -ForegroundColor DarkGray
+    # [8] 权限体系 (006)
+    Write-Host "  [8/8] 权限体系 (006)..." -ForegroundColor DarkGray
     ExecSql "$BASE/006_seed_permission_data.sql"
     Write-Host "    [OK] 权限组 + SOP + 绑定 + 授权" -ForegroundColor Green
 
