@@ -45,3 +45,35 @@ class EvolutionLLMInteractionRepo:
             return _impl(session)
         with get_session() as sess:
             return _impl(sess)
+
+    @staticmethod
+    def list_by_conversation_id(
+        conversation_id: str,
+        *,
+        since: str = "",
+        session: Optional[Session] = None,
+    ) -> list[EvolutionLLMInteractionLog]:
+        """按 conversation_id 查询 LLM 交互日志（供归档收集意图识别阶段的日志）。
+
+        Args:
+            conversation_id: 会话 ID。
+            since: 可选 ISO8601 时间戳，仅返回此时间之后创建的日志（用于过滤本轮）。
+            session: 可选的数据库会话。
+
+        Returns:
+            list[EvolutionLLMInteractionLog]: 按 call_sequence 排序的日志列表。
+        """
+        def _impl(sess: Session) -> list[EvolutionLLMInteractionLog]:
+            if not conversation_id:
+                return []
+            q = sess.query(EvolutionLLMInteractionLog).filter(
+                EvolutionLLMInteractionLog.conversation_id == conversation_id
+            )
+            if since:
+                q = q.filter(EvolutionLLMInteractionLog.created_at >= since)
+            return q.order_by(EvolutionLLMInteractionLog.call_sequence).all()
+
+        if session is not None:
+            return _impl(session)
+        with get_session() as sess:
+            return _impl(sess)

@@ -9,7 +9,7 @@ import asyncio
 import json
 import logging
 import os
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
 logger = logging.getLogger("emily.rule_inductor")
@@ -194,7 +194,7 @@ class RuleInductor:
         yaml_lines.append(f"suggested_action: \"{rule.get('suggested_action', '')}\"")
         yaml_lines.append(f"impact_estimate: \"{rule.get('impact_estimate', '')}\"")
         yaml_lines.append(f"status: DRAFT")
-        yaml_lines.append(f"created_at: \"{datetime.now().isoformat()}\"")
+        yaml_lines.append(f"created_at: \"{datetime.now(timezone.utc).isoformat()}\"")
 
         filepath = rules_dir / f"{rule_no}.yaml"
         filepath.write_text("\n".join(yaml_lines), encoding="utf-8")

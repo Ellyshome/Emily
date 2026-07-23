@@ -457,7 +457,18 @@ class QueryService:
                 title = getattr(ev, "title", "") or ""
                 event_no = getattr(ev, "event_no", "") or ""
                 status = getattr(ev, "status", "") or ""
-                lines.append(f"  {event_no} [{status}] {title}")
+                event_date = getattr(ev, "event_date", "") or getattr(ev, "created_at", "") or ""
+                desc = getattr(ev, "description", "") or ""
+                # 格式化日期为 YYYY-MM-DD
+                date_str = ""
+                if event_date:
+                    date_str = event_date[:10] if len(event_date) >= 10 else event_date
+                line = f"  {event_no} [{status}] {title}"
+                if date_str:
+                    line += f" ({date_str})"
+                if desc and len(desc) <= 60:
+                    line += f" — {desc}"
+                lines.append(line)
             return "\n".join(lines)
 
         # ── task ──

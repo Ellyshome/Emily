@@ -41,6 +41,24 @@ class LLMInteractionLogger:
         cls._current_context = {}
 
     @classmethod
+    def set_stage(cls, stage: str) -> None:
+        """更新当前 pipeline 节点名称（不重置 pipeline_run_id 等其他字段）。
+
+        供 PipelineBUS.run() 在节点循环中调用，使 LLM 调用日志的
+        call_category 可按节点阶段 fallback 推断。
+        """
+        cls._current_context["current_stage"] = stage
+
+    @classmethod
+    def set_category(cls, category: str) -> None:
+        """临时 overlay call_category（供 Guardian 等独立调用方使用）。
+
+        与 set_context() 不同，此方法只更新 call_category 字段，不重置
+        pipeline_run_id / conversation_id / user_id / current_stage。
+        """
+        cls._current_context["call_category"] = category
+
+    @classmethod
     def make_callback(cls):
         """创建 trace callback 闭包。"""
         def callback(data: dict) -> None:
@@ -57,15 +75,23 @@ class LLMInteractionLogger:
 
         ctx = cls._current_context
         call_category = ctx.get("call_category", "")
-        # 从 call_type 推断 category（如果未设置）
+        # 未显式设置 call_category 时，优先按 pipeline 节点推断，再回退 call_type
         if not call_category:
-            call_type = data.get("call_type", "")
-            if "intent" in call_type or "json" in call_type:
+            stage = ctx.get("current_stage", "")
+            if stage == "wi_node1":
                 call_category = "intent"
-            elif "plan" in call_type:
+            elif stage == "wi_node2":
                 call_category = "planning"
-            else:
+            elif stage in ("wi_node3", "wi_node4"):
                 call_category = "execution"
+            else:
+                call_type = data.get("call_type", "")
+                if "intent" in call_type or "json" in call_type:
+                    call_category = "intent"
+                elif "plan" in call_type:
+                    call_category = "planning"
+                else:
+                    call_category = "execution"
 
         is_error = data.get("finish_reason") == "error" or data.get("response_type") == "error"
         error_summary = ""

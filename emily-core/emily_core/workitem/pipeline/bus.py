@@ -115,6 +115,9 @@ class PipelineBUS:
                 if "progress_template" in injected_services:
                     kwargs["progress_template"] = injected_services["progress_template"]
                 kwargs["enable_progress"] = spec.get("enabled", True)
+            elif hook_type == "archive":
+                if "archive_writer" in injected_services:
+                    kwargs["archive_writer"] = injected_services["archive_writer"]
             kwargs["name"] = hook_name
             kwargs["priority"] = spec.get("priority", 10)
             kwargs["enabled"] = spec.get("enabled", True)
@@ -167,6 +170,7 @@ class PipelineBUS:
         try:
             for node in self._nodes:
                 context.current_stage = node.name
+                LLMInteractionLogger.set_stage(node.name)
                 t_node = time.monotonic()
 
                 # ① before hook（可阻断）

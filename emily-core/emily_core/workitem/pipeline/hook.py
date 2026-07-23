@@ -294,6 +294,86 @@ class ProgressHook(Hook):
         return HookResult.allow()
 
 
+@dataclass
+class ArchiveHook(Hook):
+    """归档钩子 — after 阶段，逐段追加到 md 文件。
+
+    每个 BUS 节点完成后，实时追加该节点的执行记录（含 Prompt 注入信息）到
+    归档 md 文件。段落顺序自然等于执行顺序（node1 → node2 → node3 → node4），
+    不再依赖事后渲染的排列选择。fail-open，异常不阻断（与 AuditHook 同原则）。
+
+    数据来源：
+      - BusContext.work_item — sop_id / state / step_results / warnings / execution_plan
+      - BusContext.pipeline_run_id — 关联 LLM 日志查询
+      - BusContext.baggage["archive_md_path"] — 归档文件路径（跨节点传递）
+      - BusContext.baggage["prompt_info_nodeN"] — Prompt 注入信息（节点 handler 存入）
+
+    去重：node3/node4 都含 execution+guardian 日志，单按 call_category 过滤会让
+    node4 重复写入 node3 的日志。用 baggage 中累积的「已归档日志 ID 集合」排除
+    已写入的日志，确保每条日志只归档一次。
+    """
+    archive_writer: Any = None  # SessionArchiveWriter 实例（注入）
+
+    async def execute(self, context: "PipelineContext") -> HookResult:
+        """实时追加当前节点的归档段落（含 Prompt 注入信息）。"""
+        if self.archive_writer is None or not getattr(self.archive_writer, "enabled", False):
+            return HookResult.allow()
+
+        path = context.baggage.get("archive_md_path", "")
+        if not path:
+            return HookResult.allow()
+
+        try:
+            import asyncio
+            from ...repositories.evolution_llm_interaction_repo import EvolutionLLMInteractionRepo
+
+            # 查询本轮全部 LLM 日志（按 call_sequence 排序）
+            run_id = context.pipeline_run_id
+            llm_logs = await asyncio.to_thread(
+                EvolutionLLMInteractionRepo.list_by_pipeline_run_ids, [run_id]
+            )
+
+            # 按当前节点阶段过滤 + 排除已归档日志（跨节点去重）
+            stage = context.current_stage
+            category_map = {
+                "wi_node1": {"intent"},
+                "wi_node2": {"planning"},
+                "wi_node3": {"execution", "guardian"},
+                "wi_node4": {"execution", "guardian"},
+            }
+            expected_cats = category_map.get(stage, set())
+            archived_ids = context.baggage.setdefault("_archive_log_ids", set())
+            node_logs = [
+                l for l in llm_logs
+                if getattr(l, "call_category", "") in expected_cats
+                and getattr(l, "id", "") not in archived_ids
+            ]
+            for l in node_logs:
+                lid = getattr(l, "id", "")
+                if lid:
+                    archived_ids.add(lid)
+
+            # 读取本节点 Prompt 注入信息（由节点 handler 存入 baggage）
+            # 存储 key 为 prompt_info_node2/node3/node4（不含 wi_ 前缀），此处对齐
+            node_suffix = stage.replace("wi_", "")  # wi_node2 → node2
+            prompt_info = context.baggage.get(f"prompt_info_{node_suffix}", None)
+            prompt_info_guardian = None
+            if stage == "wi_node4":
+                prompt_info_guardian = context.baggage.get("prompt_info_node4_guardian", None)
+
+            content = self.archive_writer.render_node_section(
+                node_name=stage,
+                work_item=context.work_item,
+                llm_logs=node_logs,
+                prompt_info=prompt_info,
+                prompt_info_guardian=prompt_info_guardian,
+            )
+            self.archive_writer.append_section(path, content)
+        except Exception as e:
+            logger.warning("ArchiveHook[%s] failed (non-blocking): %s", self.name, e)
+        return HookResult.allow()
+
+
 # ════════════════════════════════════════════════════════════════════════════════
 # Hook 类型字符串 → 类映射表
 # ════════════════════════════════════════════════════════════════════════════════
@@ -302,4 +382,5 @@ HOOK_TYPE_MAP: dict[str, type[Hook]] = {
     "auth": AuthHook,
     "audit": AuditHook,
     "progress": ProgressHook,
+    "archive": ArchiveHook,
 }
