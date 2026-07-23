@@ -247,15 +247,34 @@ class WorkItemAgent:
         if hasattr(self.injector, 'get_context_text'):
             sop_text = self.injector.get_context_text()
 
-        # 构建可用工具列表（从 BusinessFlowToolRegistry 动态生成）
+        # 构建可用工具列表 —— 按 session_api_ids 过滤（权限可见性）
+        # 只列用户有权限的工具，避免未授权用户"观察到能力存在"
+        # session_api_ids 来自 SessionContext.available_tools（tool_registry 表权限过滤结果）
+        session_ctx = context.get_session_context() if context else None
+        session_api_ids = set()
+        if session_ctx:
+            for t in getattr(session_ctx, "available_tools", []) or []:
+                api_id = t.get("api_id") if isinstance(t, dict) else None
+                if api_id:
+                    session_api_ids.add(api_id)
+
         tools_text = ""
-        tool_entries: list[str] = []
-        if self._business_flow_tools:
+        tool_entries = []
+        if self._business_flow_tools and session_api_ids:
             for name in sorted(self._business_flow_tools.list_names()):
+                if name not in session_api_ids:
+                    continue  # 用户无权限，不暴露给 LLM
                 tool = self._business_flow_tools.get(name)
                 if tool:
                     tool_entries.append(f"- {name}: {tool.description}")
             tools_text = "\n".join(tool_entries) if tool_entries else "（无可用工具）"
+        elif not session_api_ids:
+            # fail-closed：session_api_ids 为空（tool_registry 表未填充）→ 不给 LLM 任何工具
+            # 避免表空时 LLM 看到全量工具绕过权限
+            tools_text = "（无可用工具——工具权限表未初始化，请联系管理员）"
+            logger.warning("_llm_plan: session_api_ids 为空，tool_registry 表可能未填充，tools_text 已 fail-closed")
+        else:
+            tools_text = "（无可用工具）"
 
         planner_prompt = _load_planner_prompt()
         system_prompt = planner_prompt.format(
@@ -421,6 +440,15 @@ class WorkItemAgent:
         对有 tool_name 且在 BusinessFlowToolRegistry 中注册的步骤，
         调用 handler(tool_params) 直接执行；其他步骤返回纯文本结果。
         """
+        # 构建 session_api_ids（权限可见性集合，来自 SessionContext.available_tools）
+        session_ctx = context.get_session_context() if context else None
+        session_api_ids = set()
+        if session_ctx:
+            for t in getattr(session_ctx, "available_tools", []) or []:
+                api_id = t.get("api_id") if isinstance(t, dict) else None
+                if api_id:
+                    session_api_ids.add(api_id)
+
         if self._business_flow_tools is None:
             logger.error("RealExecutor: no BusinessFlowToolRegistry available, returning empty results")
             return []
@@ -453,6 +481,34 @@ class WorkItemAgent:
 
             try:
                 if tool_name and tool_name in self._business_flow_tools:
+                    # 权限检查：工具必须在 session_api_ids 里（fail-closed）
+                    # 拦截时不暴露工具名，避免未授权用户得知能力存在
+                    if not session_api_ids:
+                        # fail-closed：session_api_ids 空（表未填充）→ 拒绝所有工具调用
+                        logger.warning(
+                            "Step %s: session_api_ids 为空，tool_registry 表可能未填充，工具调用 fail-closed",
+                            step.step_id,
+                        )
+                        sr = StepResult(
+                            step_id=step.step_id,
+                            success=False,
+                            output="该操作暂不可用，请联系管理员检查系统配置。",
+                        )
+                        results.append(sr)
+                        break
+                    if tool_name not in session_api_ids:
+                        # 用户无权限调用此工具——不暴露工具名
+                        logger.info(
+                            "Step %s: 工具调用被权限拦截（不在 session_api_ids，不暴露工具名）",
+                            step.step_id,
+                        )
+                        sr = StepResult(
+                            step_id=step.step_id,
+                            success=False,
+                            output="该操作无法执行，您可能没有相应权限。",
+                        )
+                        results.append(sr)
+                        break
                     # 框架直接调用 handler
                     tool = self._business_flow_tools.get(tool_name)
                     # 注入 user_id 和 message_id 到 handler 调用上下文

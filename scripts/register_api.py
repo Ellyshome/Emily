@@ -75,14 +75,52 @@ def _init_db():
 
 
 # ── 工具脚本索引 ──
-# 每个条目: (api_id, module_path, category, permission_flag)
+# 每个条目: (api_id, module_path, schema_var_or_None, display_name, category, permission_flag)
+# schema_var_or_None: 该工具的 schema 常量名（如 _EVENT_TOOL_SCHEMA）；无 schema 常量的工具填 None
+# category/permission_flag 与 register_all（tools/registry.py）保持一致
 _TOOL_SCRIPTS = [
-    ("search_files", "emily_core.tools.scripts.search_files", "base", "all"),
+    # base
+    ("query_data", "emily_core.tools.query_tool", "_QUERY_TOOL_SCHEMA", "查询项目数据", "base", "all"),
+    ("knowledge_search", "emily_core.tools.knowledge_search_tool", "_KNOWLEDGE_SEARCH_SCHEMA", "搜索知识库获取领域知识", "base", "all"),
+    # business — 4 个核心 CRUD
+    ("record_event", "emily_core.tools.event_tool", "_EVENT_TOOL_SCHEMA", "记录项目事件", "business", "write"),
+    ("record_task", "emily_core.tools.task_tool", "_TASK_TOOL_SCHEMA", "创建任务", "business", "write"),
+    ("record_meeting", "emily_core.tools.meeting_tool", "_MEETING_TOOL_SCHEMA", "归档会议纪要", "business", "write"),
+    ("record_file", "emily_core.tools.file_tool", "_FILE_TOOL_SCHEMA", "记录文件元数据", "business", "write"),
+    # business — 文件查询 + 分类
+    ("query_files", "emily_core.tools.file_tool", "_QUERY_FILES_SCHEMA", "按分类或关键词查询项目文件", "business", "all"),
+    ("update_file_category", "emily_core.tools.file_tool", "_UPDATE_CATEGORY_SCHEMA", "修改文件分类归属", "business", "write"),
+    # business — 用户记忆
+    ("write_user_memory", "emily_core.tools.memory_tool", None, "写入用户长期记忆", "business", "all"),
+    # business — 节点任务 5 个
+    ("create_task_node", "emily_core.tools.node_task_tool", None, "创建TASK类型叶子节点", "business", "write"),
+    ("submit_node_deliverable", "emily_core.tools.node_task_tool", None, "提交节点成果", "business", "write"),
+    ("confirm_node_deliverable", "emily_core.tools.node_task_tool", None, "确认节点成果", "business", "write"),
+    ("return_node_deliverable", "emily_core.tools.node_task_tool", None, "退回节点成果", "business", "write"),
+    ("query_my_nodes", "emily_core.tools.node_task_tool", None, "查询我负责的节点", "business", "write"),
+    # project — 全景节点 8 个
+    ("create_node", "emily_core.tools.node_tool", "_CREATE_NODE_SCHEMA", "创建全景节点", "project", "admin"),
+    ("query_node", "emily_core.tools.node_tool", "_QUERY_NODE_SCHEMA", "查询全景节点", "project", "admin"),
+    ("update_node_progress", "emily_core.tools.node_tool", "_UPDATE_PROGRESS_SCHEMA", "更新节点进度", "project", "admin"),
+    ("add_node_dependency", "emily_core.tools.node_tool", "_ADD_DEPENDENCY_SCHEMA", "添加节点依赖", "project", "admin"),
+    ("mount_child_node", "emily_core.tools.node_tool", "_MOUNT_CHILD_SCHEMA", "挂载子节点", "project", "admin"),
+    ("update_nodes", "emily_core.tools.node_tool", "_UPDATE_NODES_SCHEMA", "批量更新节点", "project", "admin"),
+    ("activate_nodes", "emily_core.tools.node_tool", "_ACTIVATE_NODES_SCHEMA", "批量激活节点", "project", "admin"),
+    ("discard_nodes", "emily_core.tools.node_tool", "_DISCARD_NODES_SCHEMA", "批量废弃节点", "project", "admin"),
+    # project — 邮箱 2 个
+    ("send_email", "emily_core.tools.project", "_SEND_EMAIL_SCHEMA", "发送邮件", "base", "all"),
+    ("fetch_inbox", "emily_core.tools.project", "_FETCH_INBOX_SCHEMA", "获取收件箱", "base", "all"),
+    # project — 其他
+    ("chat_archive", "emily_core.tools.project", "_CHAT_ARCHIVE_SCHEMA", "聊天归档查询", "base", "all"),
+    ("manage_pending_issues", "emily_core.tools.project", "_PENDING_ISSUE_SCHEMA", "管理待解决问题", "base", "all"),
+    ("voice_entry", "emily_core.tools.project", "_VOICE_ENTRY_SCHEMA", "语音入口", "base", "all"),
+    # tools/scripts 下的工具
+    ("search_files", "emily_core.tools.scripts.search_files", "SEARCH_FILES_SCHEMA", "搜索可见文件", "base", "all"),
 ]
 
 
 def do_register(api_id: str) -> bool:
-    """注册单个 API：代码注册 + DB 录入。
+    """注册单个 API：从模块取 schema 常量构建 signature，写入 tool_registry 表。
 
     Returns:
         True 注册成功，False 注册失败
@@ -100,55 +138,48 @@ def do_register(api_id: str) -> bool:
         print(f"[ERROR] Unknown API: {api_id}")
         return False
 
-    api_id, module_path, category, perm_flag = entry
+    api_id, module_path, schema_var, display_name, category, perm_flag = entry
 
-    # 1. 从工具脚本目录导入 register()
+    # 从模块 import schema 常量（构建 signature）
+    parameters = {"type": "object", "properties": {}}
+    handler_module = module_path
     try:
-        module = importlib.import_module(module_path)
-        register_fn = getattr(module, "register", None)
-        if register_fn is None:
-            print(f"[ERROR] {module_path} has no register() function")
-            return False
+        m = importlib.import_module(module_path)
+        if schema_var:
+            schema = getattr(m, schema_var, None)
+            if isinstance(schema, dict):
+                parameters = schema
+        # handler_module 取模块里 handle_xxx 函数的 __module__（若存在）
+        for attr_name in dir(m):
+            if attr_name.startswith("handle_") or attr_name == "register":
+                attr = getattr(m, attr_name)
+                if hasattr(attr, "__module__"):
+                    handler_module = attr.__module__
+                    break
     except Exception as e:
-        print(f"[ERROR] Import {module_path} failed: {e}")
-        return False
+        print(f"[WARN] import {module_path} failed: {e}（仍写入 DB，parameters 用空 schema）")
 
-    # 2. 调用 register() 获得 BusinessFlowTool
-    try:
-        bft = register_fn(core=None)
-    except Exception as e:
-        print(f"[ERROR] register() failed: {e}")
-        return False
-
-    # 3. 代码注册（如果 EmilyCore 已启动则写入，否则跳过）
-    # 独立脚本模式只做 DB 录入
-    print(f"  [code] Tool '{bft.name}' loaded from {module_path}")
-
-    # 4. DB 录入
+    # DB 录入
     from emily_core.repositories.tool_registry_repo import ToolRegistryRepo
 
     signature = json.dumps(
-        {"params": bft.parameters, "returns": "dict"},
+        {"params": parameters, "returns": "dict"},
         ensure_ascii=False,
     )
 
     ok = ToolRegistryRepo.upsert(
-        api_id=bft.name,
+        api_id=api_id,
         signature=signature,
-        display_name=(
-            bft.description.split("。")[0][:80]
-            if bft.description
-            else f"Tool: {bft.name}"
-        ),
+        display_name=display_name,
         category=category,
         permission_flag=perm_flag,
-        handler_module=getattr(bft.handler, "__module__", module_path),
+        handler_module=handler_module,
     )
 
     if ok:
-        print(f"  [DB]   Tool '{bft.name}' registered in tool_registry table")
+        print(f"  [DB]   Tool '{api_id}' registered ({category}/{perm_flag})")
     else:
-        print(f"  [DB]   Tool '{bft.name}' DB upsert FAILED")
+        print(f"  [DB]   Tool '{api_id}' DB upsert FAILED")
         return False
 
     return True

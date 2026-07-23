@@ -55,6 +55,7 @@ services:
     volumes:
       # ── 人类编辑（只读）──
       - ./emily-data/sops:/app/sops
+      - ./emily-data/skills:/app/skills:ro
       - ./emily-data/prompts:/app/prompts:ro
       - ./emily-data/config:/app/config:ro
       - ./emily-data/baseknowledge:/app/baseknowledge:ro

@@ -287,6 +287,7 @@ class PermissionService:
 
             sop_allow: list[str] = []
             denied_sop_ids: list[str] = []
+            logger.info("_compute_sop_allow: level=%s flows=%d", user.level, len(sop_flows))
             for flow in sop_flows:
                 flow_bindings = [b for b in bindings if b.sop_business_flow_id == flow.id]
 
@@ -302,7 +303,7 @@ class PermissionService:
                     continue
 
                 # 3. 树形继承级别检查
-                if not can_access(user.level, flow.min_level):
+                if flow.min_level is not None and not can_access(user.level, flow.min_level):
                     continue
 
                 sop_allow.append(flow.sop_id)
