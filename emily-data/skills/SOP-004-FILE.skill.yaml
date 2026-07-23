@@ -92,10 +92,6 @@ steps:
         source: prev_step
         path: project_id
         required: false
-      - name: description
-        source: prev_step
-        path: description
-        required: false
     output_key: file_record
 
   - id: step-08

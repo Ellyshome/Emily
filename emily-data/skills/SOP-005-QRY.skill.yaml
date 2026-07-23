@@ -7,7 +7,7 @@ instructions: |
 
 tools:
   - name: query_data
-    description: 结构化查询工具，支持10种query_type（events, tasks, meetings, files, messages, conversations, users, projects等），用于从目标数据库表查询数据。
+    description: 结构化查询工具，支持9种query_type（event/task/meeting/file/message/conversation/user/project/summary），用于从目标数据库表查询数据。
 
 steps:
   - id: step-01
@@ -16,44 +16,45 @@ steps:
     tool_params:
       - name: query_type
         source: user_input
-        extraction: 从用户消息中提取最匹配的查询类型，可选值包括events、tasks、meetings、files、messages、conversations、users、projects等。若不确定，根据语义推断选择最相关的。
+        extraction: 从用户消息中提取最匹配的查询类型。若不确定，根据语义推断选择最相关的。
         required: true
         enum:
-          - events
-          - tasks
-          - meetings
-          - files
-          - messages
-          - conversations
-          - users
-          - projects
-      - name: query_conditions
+          - event
+          - task
+          - meeting
+          - file
+          - message
+          - conversation
+          - user
+          - project
+          - summary
+      - name: time_range
         source: user_input
-        extraction: 从用户消息中提取查询条件，如时间范围、项目名称、负责人、状态等过滤条件。若无明确条件，则查询全部。
+        extraction: 从用户消息中提取时间范围，如"今天/本周/本月/全部"
         required: false
-        default: ""
+        default: all
+      - name: project_name
+        source: user_input
+        extraction: 从用户消息中提取项目名称过滤条件
+        required: false
     output_key: query_result
 
   - id: step-02
     description: 提炼查询结果为自然语言摘要
-    tool_name: query_data
+    tool_name: null
     tool_params:
-      - name: raw_data
-        source: prev_step
-        path: query_result
+      - name: summary
+        source: user_input
+        extraction: 基于 query_result 提炼自然语言摘要，150字以内
         required: true
     output_key: summary
 
   - id: step-03
     description: 返回简洁的自然语言回复
-    tool_name: query_data
+    tool_name: null
     tool_params:
-      - name: summary
+      - name: final_response
         source: prev_step
         path: summary
-        required: true
-      - name: max_length
-        source: fixed
-        value: 150
         required: true
     output_key: final_response

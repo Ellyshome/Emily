@@ -104,6 +104,18 @@ def self_check(*, db_url: str = "", dry_run: bool = False) -> dict:
             pass
         result["knowledge"] = {"sop_count": sop_count}
 
+    # 工具一致性快速检查（方案 B：复用 self_check 启动链路）
+    try:
+        from emily_core.infrastructure.tools_consistency import check_quick
+        skill_dir = "/app/skills"
+        if not Path(skill_dir).exists():
+            dev_dir = str(Path(__file__).resolve().parent.parent / "emily-data" / "skills")
+            if Path(dev_dir).exists():
+                skill_dir = dev_dir
+        result["tools_consistency"] = check_quick(skill_dir)
+    except Exception as e:
+        result["tools_consistency"] = {"ok": False, "error": str(e)}
+
     return result
 
 
@@ -129,6 +141,11 @@ def _format_self_check(result: dict) -> str:
 
     k = result.get("knowledge", {})
     lines.append(f"知识库：{k.get('sop_count', 0)} 个 SOP")
+
+    tc = result.get("tools_consistency", {})
+    if tc:
+        status = "✅" if tc.get("ok") else "❌"
+        lines.append(f"工具一致性：{status} Skill {tc.get('skills', 0)} 个，问题 {tc.get('issues', 0)} 处 (fatal {tc.get('fatal', 0)})")
 
     return "\n".join(lines)
 

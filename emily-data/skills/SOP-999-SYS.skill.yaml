@@ -35,10 +35,20 @@ steps:
     description: 如果用户提到具体项目，查询项目信息作为上下文
     tool_name: query_data
     tool_params:
-      - name: query
+      - name: query_type
         source: user_input
-        extraction: 从用户消息中提取项目查询请求
-        required: false
+        extraction: 从用户消息中推断查询类型（project/summary等）
+        required: true
+        enum:
+          - event
+          - task
+          - meeting
+          - file
+          - message
+          - conversation
+          - user
+          - project
+          - summary
     output_key: project_info
 
   - id: step-03
