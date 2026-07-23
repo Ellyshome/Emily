@@ -174,3 +174,19 @@ class RealGuardian:
             user_input=user_input,
             steps_summary=steps_summary[:1500],
         )
+
+    # ── prompt 字符数追踪（供归档使用）──
+
+    def step_prompt_chars(self, sr: Any) -> int:
+        """返回 step 审核 prompt 渲染后字符数（供归档追踪，不暴露 prompt 内容）。"""
+        try:
+            return len(self._build_step_prompt(sr))
+        except Exception:
+            return 0
+
+    def reply_prompt_chars(self, draft: str, wi: Any) -> int:
+        """返回 reply 审核 prompt 渲染后字符数。"""
+        try:
+            return len(self._build_reply_prompt(draft, wi))
+        except Exception:
+            return 0

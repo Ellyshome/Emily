@@ -68,6 +68,10 @@ def _ensure_columns(engine) -> list[dict]:
         "session_archives": [
             ("md_file_path", "VARCHAR(500)", "''"),
         ],
+        "evolution_llm_interaction_logs": [
+            ("response_full", "TEXT", "''"),
+            ("reasoning_content", "TEXT", "''"),
+        ],
     }
 
     from sqlalchemy import text as sa_text

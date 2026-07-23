@@ -390,7 +390,7 @@ class SessionArchiveWriter:
                     name = getattr(tc, "tool_name", "?") or "?"
                     success = "✓" if getattr(tc, "is_success", True) else "✗"
                     elapsed = getattr(tc, "elapsed_ms", 0) or 0
-                    args = getattr(tc, "tool_arguments", "{}") or "{}"
+                    args = getattr(tc, "tool_input", "{}") or "{}"
                     arg_preview = (str(args)[:120] + "...") if len(str(args)) > 120 else str(args)
                     lines.append(f"  - {success} {name} ({elapsed}ms)  参数: {arg_preview}")
 
@@ -408,10 +408,16 @@ class SessionArchiveWriter:
                 summary = getattr(log, "response_summary", "") or ""
                 json_mode = getattr(log, "json_mode", False)
                 mode_tag = "[json]" if json_mode else ""
+                full = getattr(log, "response_full", "") or ""
+                display = full or summary
                 lines.append(
                     f"  - #{i} {category} {mode_tag} {model} · {latency}ms · {tokens} tok"
-                    + (f" · 摘要: {summary[:200]}" if summary else "")
+                    + (f" · 摘要: {display[:2000]}{'…(共%d字)' % len(display) if len(display) > 2000 else ''}" if display else "")
                 )
+                reasoning = getattr(log, "reasoning_content", "") or ""
+                if reasoning:
+                    reasoning_flat = reasoning.replace("\n", " ").replace("\r", " ")
+                    lines.append(f"    💭 思维链(共{len(reasoning)}字): {reasoning_flat[:2000]}{'…' if len(reasoning) > 2000 else ''}")
 
         # 错误信息
         error = getattr(wi, "error_message", "") or ""
@@ -462,8 +468,14 @@ class SessionArchiveWriter:
         json_mode = getattr(log, "json_mode", False)
         mode_tag = "[json]" if json_mode else ""
         lines = [f"  - #{idx} {category} {mode_tag} {model} · {latency}ms · {tokens} tok"]
-        if summary:
-            lines.append(f"    摘要: {summary[:200]}")
+        full = getattr(log, "response_full", "") or ""
+        display = full or summary
+        if display:
+            lines.append(f"    摘要: {display[:2000]}{'…(共%d字)' % len(display) if len(display) > 2000 else ''}")
+        reasoning = getattr(log, "reasoning_content", "") or ""
+        if reasoning:
+            reasoning_flat = reasoning.replace("\n", " ").replace("\r", " ")
+            lines.append(f"    💭 思维链(共{len(reasoning)}字): {reasoning_flat[:2000]}{'…' if len(reasoning) > 2000 else ''}")
         return lines
 
     @staticmethod
@@ -491,13 +503,13 @@ class SessionArchiveWriter:
                     session_vars = value
                     continue
                 val_str = str(value)
-                if len(val_str) > 80:
-                    val_str = val_str[:77] + "..."
+                if len(val_str) > 300:
+                    val_str = val_str[:297] + "..."
                 var_parts.append(f"{key}={val_str}")
             if var_parts:
                 lines.append(f"  - 关键变量: {' · '.join(var_parts)}")
             if session_vars:
-                sv_parts = [f"{sk}={str(sv)[:40]}" for sk, sv in session_vars.items()]
+                sv_parts = [f"{sk}={str(sv)[:120]}" for sk, sv in session_vars.items()]
                 lines.append(f"  - Session级: {' · '.join(sv_parts)}")
         return lines
 
@@ -586,9 +598,9 @@ class SessionArchiveWriter:
                         name = getattr(tc, "tool_name", "?") or "?"
                         success = "✓" if getattr(tc, "is_success", True) else "✗"
                         elapsed = getattr(tc, "elapsed_ms", 0) or 0
-                        args = getattr(tc, "tool_arguments", "{}") or "{}"
-                        arg_preview = (str(args)[:120] + "...") if len(str(args)) > 120 else str(args)
-                        lines.append(f"  - {success} {name} ({elapsed}ms)  参数: {arg_preview}")
+                        args = getattr(tc, "tool_input", "{}") or "{}"
+                    arg_preview = (str(args)[:120] + "...") if len(str(args)) > 120 else str(args)
+                    lines.append(f"  - {success} {name} ({elapsed}ms)  参数: {arg_preview}")
             # Guardian 并进审核
             guardian_notes: list[str] = []
             for sr in step_results:
