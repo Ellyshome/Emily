@@ -41,6 +41,8 @@ services:
       - EMILY_LLM_BASE_URL=${EMILY_LLM_BASE_URL:-https://api.deepseek.com}
       - EMILY_LLM_MODEL=${EMILY_LLM_MODEL:-deepseek-chat}
       - EMILY_MAXKB_URL=http://maxkb:8080
+      - EMILY_KB_ENABLED=true
+      - EMILY_MAXKB_ADMIN_PASSWORD=maxkb123
       - EMILY_STORAGE_ROOT=/app/attachments
       - EMILY_HOOK_CONFIG_PATH=/app/config/hook_config.json
       - EMILY_SOP_REPOSITORY_DIR=/app/sops

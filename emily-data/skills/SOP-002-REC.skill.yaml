@@ -43,22 +43,24 @@ steps:
     output_key: title
 
   - id: step-03
-    description: 提取事件类型（event_type）。从用户消息中语义推断事件类型，枚举值：construction_progress / quality_issue / safety_incident / material_arrival / inspection / decision / other。如果无法推断，则询问用户。
+    description: 提取事件类型（event_type）。从用户消息中语义推断事件类型，枚举值：construction_progress / quality_issue / safety_issue / material_arrival / inspection / decision / weather / design_change / general。如果无法推断，则询问用户。
     tool_name: null
     tool_params:
       - name: event_type
         source: user_input
-        extraction: 从用户消息中语义推断事件类型，枚举值：construction_progress / quality_issue / safety_incident / material_arrival / inspection / decision / other。如果无法推断，则询问用户。
+        extraction: 从用户消息中语义推断事件类型。如果无法推断，则询问用户。
         required: false
-        default: other
+        default: general
         enum:
           - construction_progress
           - quality_issue
-          - safety_incident
+          - safety_issue
           - material_arrival
           - inspection
           - decision
-          - other
+          - weather
+          - design_change
+          - general
     output_key: event_type
 
   - id: step-04
@@ -86,9 +88,9 @@ steps:
     description: 提取关联项目（project_id）。首先尝试从用户消息中推断项目名称或 ID。如果无法推断，使用 query_data 工具查询当前用户的项目列表进行匹配。如果仍无法确定，则询问用户。
     tool_name: query_data
     tool_params:
-      - name: query
+      - name: query_type
         source: fixed
-        value: "查询当前用户的项目列表"
+        value: project
         required: true
     output_key: project_list
 

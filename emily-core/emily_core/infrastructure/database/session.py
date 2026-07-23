@@ -44,7 +44,7 @@ def _create_pg_engine(
     )
 
 
-def _ensure_columns(engine) -> None:
+def _ensure_columns(engine) -> list[dict]:
     """检查已有表是否缺少 ORM 定义的列，自动 ALTER TABLE 补齐。
 
     create_all() 只创建不存在的表，不会为已有表添加新列。
@@ -52,6 +52,10 @@ def _ensure_columns(engine) -> None:
     缺失的列自动 ALTER TABLE ADD COLUMN。
 
     每次启动执行一次，幂等（已有列跳过）。
+
+    Returns:
+        本次实际新增的列清单（已存在的列跳过不记），格式：
+        [{"table": "hook_execution_logs", "column": "user_id"}, ...]
     """
     # 已知需要补齐的表→列映射（表名: [(列名, SQL类型, 默认值), ...]）
     _PENDING_COLUMNS = {
@@ -67,6 +71,8 @@ def _ensure_columns(engine) -> None:
     }
 
     from sqlalchemy import text as sa_text
+
+    migrations: list[dict] = []
 
     with engine.connect() as conn:
         for table_name, columns in _PENDING_COLUMNS.items():
@@ -113,6 +119,9 @@ def _ensure_columns(engine) -> None:
                     "Schema migration: added column %s to %s",
                     col_name, table_name,
                 )
+                migrations.append({"table": table_name, "column": col_name})
+
+    return migrations
 
 
 def init_db(
@@ -123,7 +132,7 @@ def init_db(
     pg_db: str = _DEFAULT_PG_DB,
     pg_user: str = _DEFAULT_PG_USER,
     pg_password: str = _DEFAULT_PG_PASSWORD,
-) -> None:
+) -> list[dict]:
     """初始化 PostgreSQL 数据库连接，自动建表（幂等）。
 
     Args:
@@ -134,11 +143,14 @@ def init_db(
         pg_db: PG 数据库名。
         pg_user: PG 用户名。
         pg_password: PG 密码。
+
+    Returns:
+        本次初始化过程中新增的数据库列迁移清单（空列表表示无迁移或幂等短路）。
     """
     global _engine, _SessionLocal
 
     if _engine is not None:
-        return
+        return []
 
     if db_url:
         _engine = create_engine(
@@ -165,12 +177,14 @@ def init_db(
     Base.metadata.create_all(bind=_engine)
 
     # 补齐已有表的新增列（create_all 不 ALTER 已有表）
-    _ensure_columns(_engine)
+    migrations = _ensure_columns(_engine)
 
     logger.info(
         "Database initialized (PostgreSQL): %d tables",
         len(Base.metadata.tables),
     )
+
+    return migrations
 
 
 @contextmanager

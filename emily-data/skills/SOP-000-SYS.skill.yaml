@@ -15,22 +15,12 @@ instructions: |
   6.  **异常处理原则**：遵循“宁慢不错”、“有据可查”、“不替用户做判断”的原则。信息不完整或有歧义时，优先向用户确认。
   7.  **对话风格**：与用户沟通时简洁直接，使用业务语言，避免技术术语。展示信息时使用表格或编号列表。
 
-tools:
-  - name: 文件写入
-    description: 系统基础能力，将起草完成的Markdown文档保存到`SOPrepository/`目录。
-  - name: IntentRegistry 加载
-    description: 系统启动组件，扫描SOPrepository目录，解析意图判定章节并注入路由Agent。
-  - name: 内容自检
-    description: 按章节模板和质量清单逐条核对起草质量。
-  - name: inspect_existing_tables
-    description: 数据库表结构检查工具，读取 `emily_core/infrastructure/database/models.py`，列出所有已定义的表名、字段名、字段类型、主键/外键信息。
-  - name: generate_table_schema
-    description: 表结构建议生成工具，根据业务需求描述生成建议的表结构（表名、字段名、字段类型、主键/外键设计、索引建议）。
+tools: []
 
 steps:
   - id: step-01
     description: 权限检查。读取本SOP第1章的"权限控制"字段，校验当前用户角色是否在允许列表中。
-    tool_name: 内容自检
+    tool_name: null
     tool_params:
       - name: user_role
         source: context
@@ -68,7 +58,7 @@ steps:
 
   - id: step-03
     description: 分配编号。在SOPrepository目录中查找当前最大序号，分配新的三位数序号。
-    tool_name: 文件写入
+    tool_name: null
     tool_params:
       - name: action
         source: fixed
@@ -154,7 +144,7 @@ steps:
 
   - id: step-08
     description: 起草：第3章 · 业务流描述。包括目标数据库表、使用的系统工具/API和处理流程。
-    tool_name: inspect_existing_tables
+    tool_name: null
     tool_params:
       - name: action
         source: fixed
@@ -178,7 +168,7 @@ steps:
 
   - id: step-10
     description: 确定目标数据库表。根据评估结果，决定复用、扩展或新建表。如需新建，调用`generate_table_schema`。
-    tool_name: generate_table_schema
+    tool_name: null
     tool_params:
       - name: decision
         source: prev_step
@@ -292,7 +282,7 @@ steps:
 
   - id: step-17
     description: 自检。对照自检清单逐条核对起草质量。
-    tool_name: 内容自检
+    tool_name: null
     tool_params:
       - name: full_draft
         source: context
@@ -314,7 +304,7 @@ steps:
 
   - id: step-18
     description: 确认与写入。自检通过后，将文档保存至 SOPrepository/ 目录；若自检不通过，返回修改对应章节。
-    tool_name: 文件写入
+    tool_name: null
     tool_params:
       - name: file_path
         source: prev_step
@@ -332,7 +322,7 @@ steps:
 
   - id: step-19
     description: 通知系统加载。提示新SOP已起草完成，系统重启或IntentRegistry动态加载后生效。
-    tool_name: IntentRegistry 加载
+    tool_name: null
     tool_params:
       - name: sop_file_path
         source: prev_step
