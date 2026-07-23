@@ -95,7 +95,7 @@ QQ → NapCat → AstrBot → emily_agent 薄插件
 | 5 | **M14 结构化输出优先** | 命中 SOP → LLM chat_json → `{tool, params}` → 框架直调 `BusinessFlowTool.handler(params)`。不暴露为 LLM function-calling。Unmatched → SkillExecutor 兜底 |
 | 6 | **Sync repo + `asyncio.to_thread`** | Repository 全 sync，async Service 用 `asyncio.to_thread()` 包裹 |
 | 7 | **Hook 三态 deny-wins** | ALLOW/WARN/BLOCK。before 异常=BLOCK；after 异常不阻断 |
-| 8 | **`agent/` 仅保留 sop_parser** | 原 MasterAgent/BusinessFlowAgent 等已提取到 SessionAgent/WorkItemAgent。SOPIntentRegistry 和 ToolRegistry 已废弃删除，`agent/` 仅保留 sop_parser 工具模块 |
+| 8 | **`agent/` 已删除** | 原 MasterAgent/BusinessFlowAgent 等已提取到 SessionAgent/WorkItemAgent。SOPIntentRegistry 和 ToolRegistry 已废弃删除，`agent/sop_parser.py`（SOP §3.2 白名单提取，已无调用者）随之清理，整个 `agent/` 目录移除。工具白名单现由 Skill YAML 的 tools 字段声明，SkillExecutor 执行时校验 |
 | 9 | **M15 WorkOrder 已弃用** | 旧 M15 8 阶段 WorkOrder 管道已完全移除，当前唯一路径是 `WorkItem` + `BusContext` + 4 节点 `PipelineBUS` |
 
 ---
