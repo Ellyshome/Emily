@@ -12,7 +12,7 @@ dist/
 # IDE
 .vscode/
 .idea/
-
+data/cmd_config.json
 # 历史开发文档（审计发现，旧架构描述，非当前版本内容）
 tem/
 
