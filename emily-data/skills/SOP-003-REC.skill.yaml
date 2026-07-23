@@ -63,9 +63,9 @@ steps:
     description: 查询现有项目数据，自动匹配关联项目（project_id）
     tool_name: query_data
     tool_params:
-      - name: query
+      - name: query_type
         source: fixed
-        value: "SELECT id, name FROM projects WHERE name LIKE '%{project_name}%'"
+        value: project
         required: true
       - name: project_name
         source: user_input
@@ -77,17 +77,17 @@ steps:
     description: 检查是否存在重复任务
     tool_name: query_data
     tool_params:
-      - name: query
+      - name: query_type
         source: fixed
-        value: "SELECT task_no, title FROM tasks WHERE title = '{title}' AND owner_id = '{owner}' AND status != 'completed'"
+        value: task
         required: true
-      - name: title
-        source: prev_step
-        path: title
-        required: true
-      - name: owner
+      - name: assignee
         source: prev_step
         path: owner
+        required: false
+      - name: status_filter
+        source: fixed
+        value: todo
         required: false
     output_key: duplicate_check
 
@@ -105,7 +105,7 @@ steps:
         source: prev_step
         path: title
         required: true
-      - name: owner
+      - name: assignee
         source: prev_step
         path: owner
         required: false
@@ -116,10 +116,6 @@ steps:
       - name: description
         source: prev_step
         path: description
-        required: false
-      - name: priority
-        source: prev_step
-        path: priority
         required: false
       - name: project_id
         source: prev_step

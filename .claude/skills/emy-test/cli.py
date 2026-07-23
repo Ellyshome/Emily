@@ -7,6 +7,10 @@
   - 用 QQ 号作为 sender_id（与 AstrBot 行为一致）
   - platform 默认 "napcat"
   - 私聊 conversation_id = QQ号（与 AstrBot 行为一致）
+
+用例：
+uv run python .claude/skills/emy-test/cli.py --managed --llm --message "帮我查一下翠湖庭院项目的整体进度情况" --sender "李景利"
+
 """
 from __future__ import annotations
 
