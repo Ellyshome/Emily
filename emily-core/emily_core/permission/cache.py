@@ -1,4 +1,4 @@
-﻿"""PermissionCache —— 权限矩阵两级缓存（设计文档 §六-B）。
+"""PermissionCache —— 权限矩阵两级缓存（设计文档 §六-B）。
 
 层级：
   L1 矩阵: PermissionGroup × SOPBusinessFlow × SOPPermissionBinding 全量结果集
@@ -102,12 +102,12 @@ class PermissionCache:
                 sop_flows = (
                     session.query(SOPBusinessFlow)
                     .filter(SOPBusinessFlow.is_active == True,
-                            SOPBusinessFlow.is_deleted == False)
+                            SOPBusinessFlow.is_deleted.isnot(True))
                     .all()
                 )
                 bindings = (
                     session.query(SOPPermissionBinding)
-                    .filter(SOPPermissionBinding.is_deleted == False)
+                    .filter(SOPPermissionBinding.is_deleted.isnot(True))
                     .all()
                 )
 
@@ -214,6 +214,9 @@ class PermissionCache:
         sop_allow: list[str] = []
         denied_sop_ids: list[str] = []
 
+        logger.info("_compute_user_whitelist: level=%s company=%s dept=%s flows=%d",
+                     user_level, company_type, department, len(matrix.sop_flows))
+
         for flow in matrix.sop_flows:
             flow_bindings = [b for b in matrix.bindings
                              if b.sop_business_flow_id == flow.id]
@@ -230,7 +233,7 @@ class PermissionCache:
                 continue
 
             # 3. 树形继承级别检查
-            if not can_access(user_level, flow.min_level):
+            if flow.min_level is not None and not can_access(user_level, flow.min_level):
                 continue
 
             # 4. 企业类型匹配（阶段二新增）
@@ -249,6 +252,8 @@ class PermissionCache:
 
             sop_allow.append(flow.sop_id)
 
+        logger.info("_compute_user_whitelist result: allow=%d deny=%d",
+                     len(sop_allow), len(denied_sop_ids))
         return sop_allow, denied_sop_ids
 
     def invalidate_user(self, user_id: str) -> None:

@@ -146,6 +146,10 @@ class AuthHook(Hook):
         intent = context.intent
         sop_id = getattr(intent, "sop_id", None) if intent else None
         if sop_id and session_ctx is not None:
+            logger.info(
+                "AuthHook[%s] check: user=%s sop=%s sop_allow=%s",
+                self.name, user_id, sop_id, session_ctx.sop_allow,
+            )
             if sop_id not in session_ctx.sop_allow and "all" not in session_ctx.sop_allow:
                 logger.info(
                     "AuthHook[%s] blocking: user %s no access to SOP %s",
