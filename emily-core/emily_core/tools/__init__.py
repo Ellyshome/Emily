@@ -2,7 +2,7 @@
 
 目录结构（按工具的可见范围和使用权限分层）：
   base/         基座能力 — 对所有 SOP 开放，无需权限审核（knowledge_search / query_data）
-  business/     业务工具 — 受 SOP 约束，按 SOP §3.2 白名单调用（record_event / task / meeting / file / memory）
+  business/     业务工具（record_event / task / meeting / file / memory）
   project/      项目级工具 — 管理员或 ProjectAgent 专用（node / voice_entry / email / pending_issue / chat_archive）
   registry.py   统一注册入口 register_all(core) → 一站式填充 BusinessFlowToolRegistry
 

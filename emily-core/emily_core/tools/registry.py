@@ -27,7 +27,14 @@ logger = logging.getLogger("emily.tool.registry")
 
 
 def register_all(core: "EmilyCore") -> None:
-    """将所有工具注册到 core._business_flow_tools。此函数是唯一的注册入口。"""
+    """将所有工具注册到 core._business_flow_tools。此函数是唯一的注册入口。
+
+    Args:
+        core: EmilyCore 实例，其 _business_flow_tools 属性承载注册表，并向外暴露各 service/app 依赖。
+
+    Returns:
+        None — 注册结果通过副作用写入 core._business_flow_tools。
+    """
     reg = getattr(core, "_business_flow_tools", None)
     if reg is None:
         logger.warning("register_all: _business_flow_tools is None — skip")
@@ -44,6 +51,19 @@ _bc, _buc, _pjc = 0, 0, 0
 
 
 def _tool(name: str, desc: str, params: dict, handler, category: str = "base", permission_flag: str = "all"):
+    """快捷构造 BusinessFlowTool 实例。
+
+    Args:
+        name: 工具名称，与 Skill YAML 的 tools 声明一致。
+        desc: 工具描述，注入 LLM prompt 辅助参数提取。
+        params: JSON Schema 参数定义。
+        handler: 异步处理函数，签名为 async fn(params: dict) -> dict。
+        category: 工具分类，base/business/project。
+        permission_flag: 权限标识，all/admin/write。
+
+    Returns:
+        BusinessFlowTool 实例，可直接注册到 BusinessFlowToolRegistry。
+    """
     from .business_flow_tools import BusinessFlowTool
     return BusinessFlowTool(name=name, description=desc, parameters=params, handler=handler,
                             category=category, permission_flag=permission_flag)
@@ -54,6 +74,15 @@ def _tool(name: str, desc: str, params: dict, handler, category: str = "base", p
 # ══════════════════════════════════════════════════════════════════════════════
 
 def _register_base(core, reg):
+    """注册基座能力工具（query_data、knowledge_search），对所有 SOP 开放。
+
+    Args:
+        core: EmilyCore 实例，取其 _query_service 和 _rag_provider 注入 handler。
+        reg: BusinessFlowToolRegistry 注册表实例。
+
+    Returns:
+        None — 通过 reg.register() 副作用写入注册表，同时更新全局变量 _bc。
+    """
     global _bc
     _bc = 0
 
@@ -94,10 +123,20 @@ def _register_base(core, reg):
 
 
 # ══════════════════════════════════════════════════════════════════════════════
-# 业务工具 — SOP §3.2 白名单约束
+# 业务工具 
 # ══════════════════════════════════════════════════════════════════════════════
 
 def _register_business(core, reg):
+    """注册业务工具（CRUD 核心操作、文件管理、用户记忆等）。
+
+    Args:
+        core: EmilyCore 实例，取其 _event_app、_task_app、_meeting_app、_file_app
+            和 _user_memory_service 注入各 handler。
+        reg: BusinessFlowToolRegistry 注册表实例。
+
+    Returns:
+        None — 通过 _reg_biz() 副作用写入注册表，同时更新全局变量 _buc。
+    """
     global _buc
     _buc = 0
     cfg = core.config
@@ -137,7 +176,19 @@ def _register_business(core, reg):
 
 
 def _reg_biz(reg, name, desc, handler, category="business", permission_flag="write"):
-    """注册一个业务工具（fail-safe）。"""
+    """注册一个业务工具（fail-safe），异常时仅打日志不抛错。
+
+    Args:
+        reg: BusinessFlowToolRegistry 注册表实例。
+        name: 工具名称。
+        desc: 工具描述。
+        handler: 异步处理函数。
+        category: 工具分类，默认 business。
+        permission_flag: 权限标识，默认 write。
+
+    Returns:
+        int — 成功返回 1，失败返回 0，方便累加计数。
+    """
     try:
         reg.register(_tool(name, desc, {"type": "object", "properties": {}}, handler,
                           category=category, permission_flag=permission_flag))
@@ -148,7 +199,15 @@ def _reg_biz(reg, name, desc, handler, category="business", permission_flag="wri
 
 
 def _h(mod, fn):
-    """运行时从原始平铺 .py 文件导入 handler。"""
+    """运行时从原始平铺 .py 文件导入 handler。
+
+    Args:
+        mod: 模块名（如 "event_tool"），对应 emily_core.tools 下的 .py 文件。
+        fn: 函数名，目标模块中导出的 handler 函数名。
+
+    Returns:
+        callable — 导入的 handler 函数对象。
+    """
     import importlib
     m = importlib.import_module(f".{mod}", package="emily_core.tools")
     return getattr(m, fn)
@@ -159,6 +218,16 @@ def _h(mod, fn):
 # ══════════════════════════════════════════════════════════════════════════════
 
 def _register_project(core, reg):
+    """注册项目级工具（全景节点、邮箱、聊天归档、语音录入等），仅管理员/ProjectAgent 可用。
+
+    Args:
+        core: EmilyCore 实例，取其 _node_app、_node_service、_email_service、
+            _chat_archive_service、_pending_issues_service 等注入各 handler。
+        reg: BusinessFlowToolRegistry 注册表实例。
+
+    Returns:
+        None — 通过子注册函数及 reg.register() 副作用写入注册表，同时更新全局变量 _pjc。
+    """
     global _pjc
     _pjc = 0
 
@@ -246,6 +315,16 @@ def _register_project(core, reg):
 
 
 def _reg_email(reg, es, config):
+    """注册邮箱工具（send_email、fetch_inbox）。
+
+    Args:
+        reg: BusinessFlowToolRegistry 注册表实例。
+        es: EmailService 实例，处理邮件收发。
+        config: EmilyCore 配置对象，提供 SMTP/IMAP 等邮箱参数。
+
+    Returns:
+        int — 注册成功的工具数量（0 或 2），方便累加计数。
+    """
     try:
         from .email_tool import create_send_email_tool, create_fetch_inbox_tool
         from .project import (_SEND_EMAIL_SCHEMA, _SEND_EMAIL_DESCRIPTION,
@@ -262,6 +341,15 @@ def _reg_email(reg, es, config):
 
 
 def _reg_chat_archive(reg, ca):
+    """注册聊天归档工具（chat_archive）。
+
+    Args:
+        reg: BusinessFlowToolRegistry 注册表实例。
+        ca: ChatArchiveService 实例，处理聊天记录归档。
+
+    Returns:
+        int — 注册成功的工具数量（0 或 1），方便累加计数。
+    """
     try:
         from .chat_archive_tool import create_chat_archive_tool
         from .project import _CHAT_ARCHIVE_SCHEMA, _CHAT_ARCHIVE_DESCRIPTION, handle_chat_archive
@@ -274,6 +362,15 @@ def _reg_chat_archive(reg, ca):
 
 
 def _reg_pending(reg, pi):
+    """注册待办事项管理工具（manage_pending_issues）。
+
+    Args:
+        reg: BusinessFlowToolRegistry 注册表实例。
+        pi: PendingIssuesService 实例，处理待办事项的增删改查。
+
+    Returns:
+        int — 注册成功的工具数量（0 或 1），方便累加计数。
+    """
     try:
         from .pending_issue_tool import create_pending_issue_tool
         from .project import _PENDING_ISSUE_SCHEMA, _PENDING_ISSUE_DESCRIPTION, handle_manage_pending_issues
