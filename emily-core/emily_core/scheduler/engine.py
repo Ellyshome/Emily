@@ -141,16 +141,22 @@ class SchedulerEngine:
         - 带 offset/Z 的 aware 字符串（_utc_now() 产出的 +00:00）→ 直接比
         - 无 offset 的 naive 北京时间字符串（db_seeds 的 2026-07-21T09:00:00）
           → 按北京时间解释后再与 UTC now 比较；否则 aware/naive 比较会抛 TypeError
+        - ORM 可能返回 datetime 对象（非字符串）
         """
         next_exec = getattr(job, 'next_execution_at', '')
         if not next_exec:
             return True  # 无下次执行时间，立即执行
         try:
-            next_dt = datetime.fromisoformat(next_exec.replace("Z", "+00:00"))
+            if isinstance(next_exec, datetime):
+                next_dt = next_exec
+            else:
+                next_dt = datetime.fromisoformat(str(next_exec).replace("Z", "+00:00"))
             if next_dt.tzinfo is None:
                 next_dt = next_dt.replace(tzinfo=_BEIJING_TZ)
+            if now.tzinfo is None:
+                now = now.replace(tzinfo=timezone.utc)
             return now >= next_dt
-        except (ValueError, AttributeError):
+        except (ValueError, AttributeError, TypeError):
             return True
 
     async def _execute_job(self, job):

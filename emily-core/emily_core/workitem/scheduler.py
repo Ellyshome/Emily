@@ -112,6 +112,12 @@ class SessionScheduler:
             # 回填 pipeline_run_id 到 WorkItem，供 Session 归档回查 LLM 日志
             wi.pipeline_run_id = context.pipeline_run_id
 
+            # 归档：注入归档文件路径到 baggage，供 ArchiveHook 逐段追加
+            # archive_md_path 由 SessionAgent 在 __init__ 中设置到 scheduler 实例
+            archive_md_path = getattr(self, "archive_md_path", "")
+            if archive_md_path:
+                context.baggage["archive_md_path"] = archive_md_path
+
             # 文件上传链路：确保 context.message 携带原始消息附件
             # 回退路径——从 WorkItem 上存储的原始消息对象恢复
             if context.message is None:

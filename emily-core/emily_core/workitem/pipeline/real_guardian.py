@@ -77,6 +77,9 @@ class RealGuardian:
         if not self._llm:
             return None
         prompt = self._build_step_prompt(step_result)
+        from ...infrastructure.logging.llm_logger import LLMInteractionLogger
+        prev_category = LLMInteractionLogger._current_context.get("call_category", "")
+        LLMInteractionLogger.set_category("guardian")
         try:
             data = await self._llm.chat_json(
                 prompt,
@@ -92,6 +95,8 @@ class RealGuardian:
         except Exception as e:
             logger.debug("Guardian review_step failed (silent skip): %s", e)
             return None
+        finally:
+            LLMInteractionLogger.set_category(prev_category)
 
     # ── node4 出站：审核最终回复 ──
 
@@ -103,6 +108,9 @@ class RealGuardian:
         if not self._llm or not draft_reply:
             return None
         prompt = self._build_reply_prompt(draft_reply, work_item)
+        from ...infrastructure.logging.llm_logger import LLMInteractionLogger
+        prev_category = LLMInteractionLogger._current_context.get("call_category", "")
+        LLMInteractionLogger.set_category("guardian")
         try:
             data = await self._llm.chat_json(
                 prompt,
@@ -115,6 +123,8 @@ class RealGuardian:
         except Exception as e:
             logger.debug("Guardian review_reply failed (silent skip): %s", e)
             return None
+        finally:
+            LLMInteractionLogger.set_category(prev_category)
 
     # ── prompt 构建 ──
 

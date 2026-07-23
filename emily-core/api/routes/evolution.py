@@ -6,7 +6,7 @@
 from __future__ import annotations
 
 import logging
-from datetime import datetime
+from datetime import datetime, timezone
 
 from fastapi import APIRouter, HTTPException, Query
 
@@ -26,7 +26,7 @@ async def generate_insight(
 ):
     """手动触发生成洞察。"""
     if not date:
-        date = datetime.now().strftime("%Y-%m-%d")
+        date = datetime.now(timezone.utc).strftime("%Y-%m-%d")
 
     try:
         from emily_core.services.evolution.insight_generator import InsightGenerator
@@ -72,7 +72,7 @@ async def induct_rules(
 ):
     """手动触发规则归纳。"""
     if not end_date:
-        end_date = datetime.now().strftime("%Y-%m-%d")
+        end_date = datetime.now(timezone.utc).strftime("%Y-%m-%d")
 
     try:
         from emily_core.services.evolution.rule_inductor import RuleInductor
@@ -119,7 +119,7 @@ async def confirm_rule(rule_no: str):
         EvolutionRepo.update_rule_status,
         rule_no,
         "CONFIRMED",
-        confirmed_at=datetime.now().isoformat(),
+        confirmed_at=datetime.now(timezone.utc).isoformat(),
     )
     if not success:
         raise HTTPException(status_code=404, detail=f"规则 {rule_no} 不存在")

@@ -8,7 +8,7 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 
 logger = logging.getLogger("emily.patch_validator")
 
@@ -38,7 +38,7 @@ class PatchValidator:
         else:
             all_applied = await asyncio.to_thread(EvolutionRepo.get_patches_by_status, "APPLIED")
             # 筛选 applied >= 7 天的
-            cutoff = (datetime.now() - timedelta(days=7)).isoformat()
+            cutoff = (datetime.now(timezone.utc) - timedelta(days=7)).isoformat()
             patches = [p for p in all_applied if p.applied_at and p.applied_at < cutoff]
 
         if not patches:
@@ -107,7 +107,7 @@ class PatchValidator:
                     except Exception as e:
                         logger.error("Failed to auto-rollback patch %s: %s", patch.patch_no, e)
 
-                now_str = datetime.now().isoformat()
+                now_str = datetime.now(timezone.utc).isoformat()
                 validation_result = json.dumps({
                     "decision": decision,
                     "avg_health_before": round(avg_before, 1),
