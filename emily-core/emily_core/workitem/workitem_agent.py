@@ -58,6 +58,32 @@ def _fallback_steps() -> list[PlanStep]:
     ]
 
 
+def _build_params_summary(parameters: dict) -> str:
+    """从 JSON Schema 中提取参数摘要，帮助 LLM 规划时了解合法参数值。
+
+    只展示 required 标记和 enum 约束，避免过多细节干扰 LLM 规划。
+    """
+    if not parameters or not isinstance(parameters, dict):
+        return ""
+    props = parameters.get("properties", {})
+    required_fields = parameters.get("required", [])
+    if not props:
+        return ""
+    parts = []
+    for name, schema in props.items():
+        if not isinstance(schema, dict):
+            continue
+        enum_vals = schema.get("enum")
+        is_required = name in required_fields
+        if enum_vals:
+            vals = "|".join(str(v) for v in enum_vals)
+            marker = "*" if is_required else ""
+            parts.append(f"{name}{marker}({vals})")
+    if not parts:
+        return ""
+    return "\n    参数: " + ", ".join(parts)
+
+
 class WorkItemAgent:
     """全局单例 WorkItem-Agent —— 提供公共 BUS 的 4 节点 handler。"""
 
@@ -266,7 +292,8 @@ class WorkItemAgent:
                     continue  # 用户无权限，不暴露给 LLM
                 tool = self._business_flow_tools.get(name)
                 if tool:
-                    tool_entries.append(f"- {name}: {tool.description}")
+                    schema_summary = _build_params_summary(tool.parameters)
+                    tool_entries.append(f"- {name}: {tool.description}{schema_summary}")
             tools_text = "\n".join(tool_entries) if tool_entries else "（无可用工具）"
         elif not session_api_ids:
             # fail-closed：session_api_ids 为空（tool_registry 表未填充）→ 不给 LLM 任何工具
@@ -290,7 +317,7 @@ class WorkItemAgent:
                 "rendered_chars": len(system_prompt),
                 "variables": {
                     "sop_text": f"{len(sop_text)}字" if len(sop_text) > 80 else sop_text[:80],
-                    "user_input": (wi.user_input or "")[:80],
+                    "user_input": (wi.user_input or "")[:300],
                     "available_tools": f"{len(tool_entries)}个",
                 },
             })
@@ -409,7 +436,7 @@ class WorkItemAgent:
                         rag_info_str += getattr(chunk, "content", "") or ""
                 guardian_prompt_info.append({
                     "template": "guardian_step.md",
-                    "rendered_chars": 0,
+                    "rendered_chars": self._guardian.step_prompt_chars(sr) if self._guardian else 0,
                     "variables": {
                         "step_id": getattr(sr, "step_id", "?"),
                         "output": f"{len(output)}字",
@@ -647,10 +674,10 @@ class WorkItemAgent:
                 )
             context.set("prompt_info_node4_guardian", {
                 "template": "guardian_reply.md",
-                "rendered_chars": 0,
+                "rendered_chars": self._guardian.reply_prompt_chars(draft, wi) if self._guardian else 0,
                 "variables": {
                     "draft_reply": f"{len(draft)}字",
-                    "user_input": (wi.user_input or "")[:80],
+                    "user_input": (wi.user_input or "")[:300],
                     "sop_id": wi.sop_id or "unknown",
                     "steps_summary": f"{len(steps_summary_text)}字",
                 },
@@ -740,14 +767,14 @@ class WorkItemAgent:
                         node4_vars = {
                             "available_tools": f"{len(wi_vars.get('{available_tools}', ''))}字",
                             "sop_text": f"{len(wi_vars.get('{sop_text}', ''))}字",
-                            "user_input": (getattr(wi, "user_input", "") or "")[:80],
+                            "user_input": (getattr(wi, "user_input", "") or "")[:300],
                             "step_results": f"{len(steps_text)}字",
                             "warnings": f"{len(warnings_text)}字" if getattr(wi, "warnings", None) else "（无）",
                         }
                         if session_ctx is not None:
                             node4_vars["session_vars"] = {
-                                "user_name": (getattr(session_ctx, "user_name", "") or "")[:40],
-                                "project_name": (getattr(session_ctx, "project_name", "") or "")[:40],
+                                "user_name": (getattr(session_ctx, "user_name", "") or "")[:120],
+                                "project_name": (getattr(session_ctx, "project_name", "") or "")[:120],
                                 "level": f"L{getattr(session_ctx, 'level', 0)}",
                             }
                         context.set("prompt_info_node4", {

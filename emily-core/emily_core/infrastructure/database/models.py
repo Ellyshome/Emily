@@ -1332,6 +1332,8 @@ class EvolutionLLMInteractionLog(Base):
     json_mode = Column(Boolean, default=False)
     response_type = Column(String(20), default="")       # text/json/tool_call
     response_summary = Column(String(500), default="")
+    response_full = Column(Text, default="")   # 完整响应（截断到 5000 字），response_summary 保留作快速摘要
+    reasoning_content = Column(Text, default="")  # R1 类模型思维链（deepseek-chat 为空）
     finish_reason = Column(String(50), default="")
     prompt_tokens = Column(Integer, default=0)
     completion_tokens = Column(Integer, default=0)

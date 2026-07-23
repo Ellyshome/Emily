@@ -28,7 +28,7 @@ class EvolutionLogWriter:
     _LONG_FIELD_SUFFIXES = ("_json", "_summary", "_detail", "_text")
     _LONG_FIELD_NAMES = ("detail_json", "results_summary", "tool_calls_json",
                          "step_results_json", "hook_decisions_json", "error_detail",
-                         "params_json", "context_summary")
+                         "params_json", "context_summary", "response_full", "reasoning_content")
 
     @staticmethod
     async def write(model_class, **kwargs):
