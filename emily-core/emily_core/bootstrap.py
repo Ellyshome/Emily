@@ -66,10 +66,15 @@ def _config_from_env(config_data: dict | None) -> dict:
         "EMILY_KB_ENABLED": "kb_enabled",
         "EMILY_PROMPTS_DIR": "prompts_dir",
     }
+    # 布尔字段：环境变量为字符串，需显式转换
+    bool_fields = {"llm_console_trace_enabled", "kb_enabled"}
     for env_key, cfg_key in env_map.items():
         val = os.environ.get(env_key)
         if val and not data.get(cfg_key):
-            data[cfg_key] = val
+            if cfg_key in bool_fields:
+                data[cfg_key] = val.strip().lower() in ("1", "true", "yes", "on")
+            else:
+                data[cfg_key] = val
     return data
 
 

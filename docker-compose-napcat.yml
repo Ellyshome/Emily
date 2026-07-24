@@ -52,12 +52,17 @@ services:
       # NAPCAT_WEBUI_TOKEN 现已动态从 NapCat 容器读取（docker/client.py _fetch_napcat_webui_token），
       # 不再依赖环境变量硬编码。保留此行仅当 Docker API 不可用时回退使用：
       - NAPCAT_WEBUI_TOKEN=${NAPCAT_WEBUI_TOKEN:-}
+      # ── LLM 流量代理（mitmproxy）── 关闭时注释这 3 行 + 重启即可
+      - HTTPS_PROXY=http://mitmproxy:8888
+      - SSL_CERT_FILE=/app/certs/mitmproxy-ca-cert.pem
+      - NO_PROXY=localhost,127.0.0.1,emily-postgres,maxkb,mitmproxy
     volumes:
       # ── 人类编辑（只读）──
       - ./emily-data/sops:/app/sops
       - ./emily-data/skills:/app/skills:ro
       - ./emily-data/prompts:/app/prompts:ro
       - ./emily-data/config:/app/config:ro
+      - ./emily-data/mitmproxy/mitmproxy-ca-cert.pem:/app/certs/mitmproxy-ca-cert.pem:ro
       - ./emily-data/baseknowledge:/app/baseknowledge:ro
       - ./emily-data/tools:/app/tools:ro
       - ./emily-data/db_seeds:/app/db_seeds:ro
@@ -106,6 +111,39 @@ services:
       - POSTGRES_DB=emily
     volumes:
       - D:\app\Emily\emily-data\db_seeds:/var/lib/postgresql/data
+    networks:
+      - emily_network
+    restart: always
+
+  mitmproxy:                   # LLM 流量代理（抓包 emily-core ↔ DeepSeek）
+    build:
+      context: ./docker/mitmproxy
+      dockerfile: Dockerfile
+    image: emily-mitmproxy:latest
+    container_name: mitmproxy
+    environment:
+      - LLM_TRACE_ENABLED=1           # 注释此行关闭 jsonl 落盘
+    command:
+      - --web-host
+      - 0.0.0.0
+      - --web-port
+      - "8081"
+      - --listen-host
+      - 0.0.0.0
+      - --listen-port
+      - "8888"
+      - --scripts
+      - /app/trace_addon.py
+      - --set
+      - web_password=emily_proxy_2026
+      - --set
+      - view_filter=~d api.deepseek.com
+    ports:
+      - "127.0.0.1:8081:8081"   # mitmweb UI（仅宿主机访问，含明文 API key）
+      - "8888:8888"             # 代理端口（容器间访问）
+    volumes:
+      - ./emily-data/mitmproxy:/root/.mitmproxy
+      - ./emily-data/logs:/app/logs       # jsonl 落盘目录（与 emily-core 共享）
     networks:
       - emily_network
     restart: always
