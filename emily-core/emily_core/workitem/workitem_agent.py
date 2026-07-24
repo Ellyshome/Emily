@@ -394,10 +394,21 @@ class WorkItemAgent:
             step_results = await self._real_execute(wi.execution_plan, context)
 
         # Guardian 并进审核：每个 step 的 review 作为后台 Task，
-        # 在全部步骤执行完后 gather() 汇合，不阻塞主链路
+        # 在全部步骤执行完后 gather() 汇合，不阻塞主链路。
+        # 守门：只审计有实质数据（工具调用/RAG/DB 结果）的 step；
+        # 纯指令/参数提取步骤无可审计数据，guardian 必然返回空，跳过省 token。
         guardian_tasks: list[asyncio.Task] = []
+        audited_steps: list[Any] = []
         if self._guardian:
             for sr in step_results:
+                has_data = (
+                    getattr(sr, "tool_calls", None)
+                    or getattr(sr, "rag_results", None)
+                    or getattr(sr, "db_results", None)
+                )
+                if not has_data:
+                    continue
+                audited_steps.append(sr)
                 task = asyncio.create_task(
                     self._guardian.review_step(sr),
                     name=f"guardian_step_{sr.step_id}",
@@ -408,7 +419,7 @@ class WorkItemAgent:
         if guardian_tasks:
             try:
                 notes = await asyncio.gather(*guardian_tasks, return_exceptions=True)
-                for sr, note in zip(step_results, notes):
+                for sr, note in zip(audited_steps, notes):
                     if isinstance(note, GuardianNote) and note.issues:
                         for issue in note.issues:
                             wi.add_warning(f"[{note.source}] {issue}")

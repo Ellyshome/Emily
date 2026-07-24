@@ -76,6 +76,13 @@ class RealGuardian:
         """
         if not self._llm:
             return None
+        # 无实质数据则跳过——guardian 三维度（虚构数据/错误引用/逻辑矛盾）
+        # 全部依赖工具返回或 RAG 引用，无数据时必然返回空列表，徒耗 token。
+        # 此兜底与 node3_execute 调用点过滤逻辑一致，双重守门。
+        if not (getattr(step_result, "tool_calls", None)
+                or getattr(step_result, "rag_results", None)
+                or getattr(step_result, "db_results", None)):
+            return None
         prompt = self._build_step_prompt(step_result)
         from ...infrastructure.logging.llm_logger import LLMInteractionLogger
         prev_category = LLMInteractionLogger._current_context.get("call_category", "")

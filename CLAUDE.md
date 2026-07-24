@@ -31,7 +31,7 @@ Emily V1.0 是面向企业的 AI Agent 工具，通过 IM（QQ）与员工交互
 | **数据库** | PostgreSQL + SQLAlchemy 2.0 sync | 53 表，esmily-postgres 容器 |
 | **AI/LLM** | DeepSeek API（OpenAI 兼容） | chat / chat_json / chat_with_tools |
 | **RAG** | MaxKB hit_test API | Qwen3-Embedding-0.6B 向量检索，可选本地关键词回退 |
-| **部署** | Docker Compose | 5 容器：napcat / astrbot / emily-core / maxkb / emily-postgres |
+| **部署** | Docker Compose | 6 容器：napcat / astrbot / emily-core / maxkb / emily-postgres / mitmproxy（LLM 流量代理） |
 
 ---
 
@@ -56,6 +56,7 @@ QQ → NapCat → AstrBot → emily_agent 薄插件
 | emily-core | 18080 | **业务内核** — FastAPI + emily_core 包 |
 | maxkb | 8080 | 知识库 RAG（Qwen3-Embedding-0.6B + pgvector） |
 | emily-postgres | 5432 | 独立 PostgreSQL（emily 库） |
+| mitmproxy | 8081 (WebUI), 8888 (代理) | LLM 流量代理抓包（拦截 emily-core ↔ DeepSeek HTTPS） |
 
 ---
 
@@ -106,8 +107,15 @@ QQ → NapCat → AstrBot → emily_agent 薄插件
 |------|------|------|
 | **CodeGraph MCP** | 代码知识图谱索引（169 文件 / 2,110 符号 / 4,051 边），SQLite 后端，文件变更秒级热更新 | `codegraph_explore` 理解代码/架构/流程；`codegraph_search` 搜符号；`codegraph_callers/callees` 查调用链；`codegraph_impact` 评估改动影响 |
 | **emy-test** | Docker 内 emily-core 生产实战测试（HTTP + SSE） | `uv run python .claude/skills/emy-test/cli.py --managed --llm --message "..." --sender "真实用户名" --sender-id "真实UUID"` |
+| **LLM 流量代理** | mitmproxy 拦截 emily-core ↔ DeepSeek HTTPS 通讯，AI 友好接口 | 两种方式：① mitmweb UI `http://localhost:8081`（密码 `emily_proxy_2026`）② jsonl 日志 `emily-data\logs\llm_trace.jsonl`（逐行完整 request/response） |
 
 **emy-test 强制规则**：`--sender-id` 必须使用 `users` 表中真实存在的用户 UUID。随便编一个不存在的 ID 会导致：系统自动创建用户（污染 users 表）+ 权限降级到 level 1（测试的是访客降级路径，结果完全不可信）。每次测试前先查：`docker exec emily-postgres psql -U emily -d emily -c "SELECT id, username, permission_level FROM users WHERE status = 'active' ORDER BY permission_level LIMIT 10;"`
+
+**LLM 流量代理使用规则**：
+- **jsonl 优先**：AI 工具排查问题时直接用 `emily-data\logs\llm_trace.jsonl`，每行一条 DeepSeek API 调用（含 messages 全文、响应 JSON、model、usage、finish_reason；已过滤 url/method/status_code/headers 等 SDK 噪音字段，不再记录 Authorization API key），支持 `tail` / `head` / Grep 逐行读取。过滤规则见 `docker/mitmproxy/trace_addon.py`
+- **mitmweb UI**：需要实时观察流量时打开 `http://localhost:8081`（密码 `emily_proxy_2026`），已过滤仅显示 `api.deepseek.com`。注意 UI 含明文 API key，端口已绑 `127.0.0.1` 仅宿主机访问
+- **关闭 jsonl 落盘**：注释 `docker-compose-napcat.yml` 中 mitmproxy 的 `LLM_TRACE_ENABLED=1` 环境变量，`docker compose up -d mitmproxy`（不影响代理功能，mitmweb UI 仍可用）
+- **关闭代理**：注释 `docker-compose-napcat.yml` 中 emily-core 的 `HTTPS_PROXY` 和 `SSL_CERT_FILE` 两行，`docker compose restart emily-core`
 
 **CodeGraph 优先原则**：代码探索类问题（"X 怎么工作"、"谁调用了 Y"、"改动 Z 会影响什么"）优先用 CodeGraph，一句 `codegraph_explore("SessionAgent handle_message")` 替代多轮 Grep+Read。日常写代码前先用 `codegraph_explore` 了解相关模块，而非全量通读文件。
 
@@ -192,6 +200,15 @@ docker exec -it emily-postgres psql -U emily -d emily -c "\dt"
 
 # 清除 pycache（bind-mount 不自动刷新！）
 docker exec emily-core find /app/emily_core -name '__pycache__' -type d -exec rm -rf {} +
+
+# 查看 LLM 流量代理状态
+docker compose -f docker-compose-napcat.yml ps mitmproxy
+
+# 查看最近 LLM 流量（jsonl，逐行含完整 request/response）
+docker exec mitmproxy tail -5 /app/logs/llm_trace.jsonl
+
+# 在日志文件内搜索特定关键词（如 "Authorization", "error", "tool_registry"）
+docker exec mitmproxy grep -c "" /app/logs/llm_trace.jsonl  # 总行数
 ```
 
 ---

@@ -109,6 +109,16 @@ def init(config_data: dict | None = None, rag_provider=None) -> "EmilyCore":
         _logger.error("Database init failed: %s", e)
     _logger.info("Database ready: %s", get_db_path())
 
+    # 自动种子 tool_registry 表（空表时从 TOOL_META_MAP 同步，fail-open）
+    if db_ready:
+        try:
+            from .infrastructure.tools_consistency import _ensure_tool_registry_seed
+            seed_result = _ensure_tool_registry_seed()
+            if seed_result.get("seeded", 0) > 0:
+                _logger.info("tool_registry auto-seeded: %d tools", seed_result["seeded"])
+        except Exception as e:
+            _logger.warning("tool_registry auto-seed failed: %s", e)
+
     # 初始化 RAG Provider（如果 kb_enabled + maxkb 配置了）
     if rag_provider is None and config.kb_enabled:
         try:
