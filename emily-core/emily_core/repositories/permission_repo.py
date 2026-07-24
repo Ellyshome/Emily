@@ -82,7 +82,7 @@ class PermissionRepository:
         def _impl(sess: Session):
             return sess.query(SOPBusinessFlow).filter(
                 SOPBusinessFlow.is_active == True,
-                SOPBusinessFlow.is_deleted == False,
+                SOPBusinessFlow.is_deleted.isnot(True),
             ).all()
 
         if session is not None:
@@ -95,7 +95,7 @@ class PermissionRepository:
         """所有 SOP-权限组绑定（含 allow/deny）。"""
         def _impl(sess: Session):
             return sess.query(SOPPermissionBinding).filter(
-                SOPPermissionBinding.is_deleted == False,
+                SOPPermissionBinding.is_deleted.isnot(True),
             ).all()
 
         if session is not None:

@@ -111,9 +111,11 @@ class LLMClient:
         kwargs = dict(
             model=self.model,
             messages=messages,
-            temperature=temperature if temperature is not None else self.temperature,
             max_tokens=max_tokens if max_tokens is not None else self.max_tokens,
         )
+        # deepseek-reasoner 不支持 temperature 等采样参数（传了会 400），仅 chat 类模型传
+        if "reasoner" not in (self.model or ""):
+            kwargs["temperature"] = temperature if temperature is not None else self.temperature
         if json_mode:
             kwargs["response_format"] = {"type": "json_object"}
         if tools:
@@ -160,8 +162,11 @@ class LLMClient:
                 try:
                     self._trace_callback({
                         "phase": "end", "call_type": call_type, "call_sequence": call_seq,
+                        "model": self.model, "json_mode": json_mode,
                         "response_type": "tool_call",
                         "response_summary": f"{tc.function.name}({str(arguments)[:200]})",
+                        "response_full": f"{tc.function.name}({arguments})",
+                        "reasoning_content": reasoning_content,
                         "finish_reason": finish_reason,
                         "prompt_tokens": getattr(response.usage, "prompt_tokens", 0) if response.usage else 0,
                         "completion_tokens": getattr(response.usage, "completion_tokens", 0) if response.usage else 0,
@@ -189,8 +194,11 @@ class LLMClient:
             try:
                 self._trace_callback({
                     "phase": "end", "call_type": call_type, "call_sequence": call_seq,
+                    "model": self.model, "json_mode": json_mode,
                     "response_type": "json" if json_mode else "text",
                     "response_summary": content[:500],
+                    "response_full": content,
+                    "reasoning_content": reasoning_content,
                     "finish_reason": finish_reason,
                     "prompt_tokens": getattr(response.usage, "prompt_tokens", 0) if response.usage else 0,
                     "completion_tokens": getattr(response.usage, "completion_tokens", 0) if response.usage else 0,
