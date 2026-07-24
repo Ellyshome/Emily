@@ -44,6 +44,41 @@ REGISTERED_TOOLS: set[str] = {
     "send_email", "fetch_inbox", "chat_archive", "manage_pending_issues", "voice_entry",
 }
 
+# ── 工具名 → (display_name, category, permission_flag) ──────────────
+# 供 _ensure_tool_registry_seed() 自动种子与 register_api.py 保持一致
+TOOL_META_MAP: dict[str, tuple[str, str, str]] = {
+    # base
+    "query_data":         ("查询项目数据",          "base",     "all"),
+    "knowledge_search":   ("搜索知识库获取领域知识", "base",     "all"),
+    "send_email":         ("发送邮件",              "base",     "all"),
+    "fetch_inbox":        ("获取收件箱",            "base",     "all"),
+    "chat_archive":       ("聊天归档查询",          "base",     "all"),
+    "manage_pending_issues": ("管理待解决问题",     "base",     "all"),
+    "voice_entry":        ("语音入口",              "base",     "all"),
+    # business
+    "record_event":       ("记录项目事件",   "business", "write"),
+    "record_task":        ("创建任务",       "business", "write"),
+    "record_meeting":     ("归档会议纪要",   "business", "write"),
+    "record_file":        ("记录文件元数据", "business", "write"),
+    "query_files":        ("按分类查询项目文件", "business", "all"),
+    "update_file_category": ("修改文件分类归属", "business", "write"),
+    "write_user_memory":  ("写入用户长期记忆",   "business", "all"),
+    "create_task_node":        ("创建TASK类型叶子节点", "business", "write"),
+    "submit_node_deliverable": ("提交节点成果",   "business", "write"),
+    "confirm_node_deliverable":("确认节点成果",   "business", "write"),
+    "return_node_deliverable": ("退回节点成果",   "business", "write"),
+    "query_my_nodes":          ("查询我负责的节点","business", "write"),
+    # project
+    "create_node":           ("创建全景节点",   "project", "admin"),
+    "query_node":            ("查询全景节点",   "project", "admin"),
+    "update_node_progress":  ("更新节点进度",   "project", "admin"),
+    "add_node_dependency":   ("添加节点依赖",   "project", "admin"),
+    "mount_child_node":      ("挂载子节点",     "project", "admin"),
+    "update_nodes":          ("批量更新节点",   "project", "admin"),
+    "activate_nodes":        ("批量激活节点",   "project", "admin"),
+    "discard_nodes":         ("批量废弃节点",   "project", "admin"),
+}
+
 # ── 工具名 → (模块路径, schema 变量名) ─────────────────────────────
 # 无 schema 常量的工具（write_user_memory / node_task 5 个）不在此映射，V12 对其跳过。
 TOOL_SCHEMA_MAP: dict[str, tuple[str, str]] = {
@@ -239,14 +274,47 @@ def check_all(skill_dir: str, check_tool_registry: bool = True) -> dict:
     }
 
 
+def _ensure_tool_registry_seed() -> dict:
+    """自动种子：tool_registry 表为空时，从 TOOL_META_MAP 同步写入。
+
+    fail-open：任何异常不阻断启动，返回 {"seeded": N, "error": ...}。
+    """
+    try:
+        from emily_core.repositories.tool_registry_repo import ToolRegistryRepo
+        active = ToolRegistryRepo.get_all_active()
+        if len(active) >= len(TOOL_META_MAP):
+            return {"seeded": 0, "total": len(active)}
+
+        seeded = 0
+        for tool_name, (display_name, category, perm_flag) in TOOL_META_MAP.items():
+            if any(r["api_id"] == tool_name for r in active):
+                continue
+            ok = ToolRegistryRepo.upsert(
+                api_id=tool_name,
+                display_name=display_name,
+                category=category,
+                permission_flag=perm_flag,
+            )
+            if ok:
+                seeded += 1
+        if seeded:
+            logger.info("_ensure_tool_registry_seed: seeded %d tools", seeded)
+        return {"seeded": seeded, "total": len(active) + seeded}
+    except Exception as e:
+        logger.warning("_ensure_tool_registry_seed failed: %s", e)
+        return {"seeded": 0, "error": str(e)}
+
+
 def check_quick(skill_dir: str) -> dict:
-    """快速检查（供 self_check 启动集成）。只做 Skill YAML 一致性，不查 DB。
+    """快速检查（供 self_check 启动集成）。启动时自动种子 tool_registry + Skill YAML 一致性。
 
     fail-open：任何异常返回 {"ok": False, "error": ...}，不阻断 self_check。
 
     Returns:
         {"skills": N, "issues": M, "fatal": K, "ok": bool}
     """
+    # 自动种子（即使 check_quick 后续失败，种子也已写入）
+    seed_result = _ensure_tool_registry_seed()
     try:
         tool_schemas = _load_tool_schemas()
         skills = _load_skills(skill_dir)
@@ -258,7 +326,8 @@ def check_quick(skill_dir: str) -> dict:
             "issues": len(issues),
             "fatal": fatal,
             "ok": fatal == 0,
+            "seed": seed_result,
         }
     except Exception as e:
         logger.warning("check_quick failed: %s", e)
-        return {"skills": 0, "issues": 0, "fatal": 0, "ok": False, "error": str(e)}
+        return {"skills": 0, "issues": 0, "fatal": 0, "ok": False, "error": str(e), "seed": seed_result}
