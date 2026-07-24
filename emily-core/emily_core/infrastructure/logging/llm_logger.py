@@ -111,6 +111,8 @@ class LLMInteractionLogger:
             json_mode=data.get("json_mode", False),
             response_type=data.get("response_type", ""),
             response_summary=(data.get("response_summary", "") or "")[:500],
+            response_full=(data.get("response_full", "") or ""),
+            reasoning_content=(data.get("reasoning_content", "") or ""),
             finish_reason=data.get("finish_reason", ""),
             prompt_tokens=data.get("prompt_tokens", 0),
             completion_tokens=data.get("completion_tokens", 0),

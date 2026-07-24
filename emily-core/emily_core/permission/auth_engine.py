@@ -1,4 +1,4 @@
-﻿"""PermissionAuthEngine —— 三维树形鉴权引擎（需求 §4 + §14）。
+"""PermissionAuthEngine —— 三维树形鉴权引擎（需求 §4 + §14）。
 
 三维鉴权 = 主体属性(权限层级) × 资源属性(密级/企业类型/部门/节点) × 授权形式(临时/永久/deny)
 
@@ -210,7 +210,7 @@ class PermissionAuthEngine:
             )
 
         # 3.2 树形继承级别检查
-        if not can_access(perm_level, sop_flow.min_level):
+        if sop_flow.min_level is not None and not can_access(perm_level, sop_flow.min_level):
             user_level_name = LEVEL_NAME.get(perm_level, f"L{perm_level}")
             required_name = LEVEL_NAME.get(sop_flow.min_level, f"L{sop_flow.min_level}")
             return AccessCheckResult(
