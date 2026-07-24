@@ -25,6 +25,8 @@ notebooks/
 attachments/
 user_memory/
 journal/
+
+# session归档
 emily-data/session_archives
 # Docker
 *.pid
