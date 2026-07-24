@@ -215,10 +215,10 @@ def dump_session_prompt(user_id: str) -> dict:
     # 阶段1：sop_catalog + current_datetime
     system_prompt = system_prompt.replace("{sop_catalog}", ctx.sop_catalog_summary)
     system_prompt = system_prompt.replace("{current_datetime}", ctx.current_datetime)
-    # 阶段2：Session 级变量
+    # 阶段2：Session 级变量（始终替换，空值→"（无）"，与生产逻辑一致）
     for key, value in prompt_vars.items():
-        if value:
-            system_prompt = system_prompt.replace(key, str(value))
+        replacement = str(value) if value else "（无）"
+        system_prompt = system_prompt.replace(key, replacement)
 
     # 6. 收集消息历史
     message_history: list[dict] = []

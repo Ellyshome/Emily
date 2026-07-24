@@ -266,10 +266,11 @@ class SessionAgent:
             .replace("{current_datetime}", _beijing_now_str()))
 
         # 注入 Session 级变量（D5：两阶段 format）
+        # 始终替换（空值替换为"（无）"），避免 {xxx} 占位符原样残留到 prompt 里
         prompt_vars = self.context.get_prompt_variables()
         for key, value in prompt_vars.items():
-            if value:
-                system_prompt = system_prompt.replace(key, str(value))
+            replacement = str(value) if value else "（无）"
+            system_prompt = system_prompt.replace(key, replacement)
 
         # 组装 messages
         full_messages = [{"role": "system", "content": system_prompt}]
