@@ -37,7 +37,9 @@ class RuleBookLoader:
             candidates.append(str(Path(env_dir) / "规则书.md"))
 
         # 3. 宿主机开发路径
-        dev_path = Path(__file__).resolve().parents[2] / "emily-data" / "rules" / "规则书.md"
+        # __file__ = emily-core/emily_core/services/rule_book_loader.py
+        # parents[3] = 项目根（emily-core/ 的父目录），指向 emily-data/rules/规则书.md
+        dev_path = Path(__file__).resolve().parents[3] / "emily-data" / "rules" / "规则书.md"
         candidates.append(str(dev_path))
 
         for path in candidates:

@@ -316,11 +316,12 @@ class SessionContext:
             OpenAI 格式 messages 列表
         """
         # 两阶段 format：Session 级变量替换
+        # 始终替换（空值替换为"（无）"），避免 {xxx} 占位符原样残留到 prompt 里
         prompt_vars = self.get_prompt_variables()
         system_prompt = system_prompt_template
         for key, value in prompt_vars.items():
-            if value:
-                system_prompt = system_prompt.replace(key, str(value))
+            replacement = str(value) if value else "（无）"
+            system_prompt = system_prompt.replace(key, replacement)
 
         full_messages: list[dict] = [{"role": "system", "content": system_prompt}]
         full_messages.extend(self.message_history)

@@ -766,8 +766,8 @@ class WorkItemAgent:
                 if session_ctx is not None:
                     session_vars = session_ctx.get_prompt_variables()
                     for key, value in session_vars.items():
-                        if value:
-                            system_prompt = system_prompt.replace(key, str(value))
+                        replacement = str(value) if value else "（无）"
+                        system_prompt = system_prompt.replace(key, replacement)
 
                 # 清除未替换的 {xxx} 占位符（防止残留模板语法泄露到 LLM）
                 system_prompt = re.sub(r'\{[a-z_]+\}', '', system_prompt)
