@@ -70,9 +70,14 @@ def _get_rag_provider():
         logger.warning("tei_url 未配置（请设 EMILY_TEI_URL）")
         return None, config
 
+    from emily_core.infrastructure.database.session import init_db
     from emily_core.infrastructure.embedding.tei_client import TeiClient
     from emily_core.repositories.knowledge_chunk_repo import KnowledgeChunkRepo
     from emily_core.providers.rag.pgvector_provider import PgVectorRagProvider
+
+    # 必须先初始化 DB 连接，否则 repo 惰性 init_db() 会用默认的 emily-postgres 主机名
+    db_url = config.database_url if config.database_url else None
+    init_db(db_url)
 
     tei = TeiClient(config.tei_url)
     repo = KnowledgeChunkRepo()

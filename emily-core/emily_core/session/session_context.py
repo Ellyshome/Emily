@@ -152,9 +152,8 @@ class SessionContext:
         ctx.project_type = snapshot.get("project_type", "")
         ctx.project_status = snapshot.get("project_status", "")
 
-        # 灌注记忆
+        # 灌注记忆（仅长期记忆全量载入；往期对话历史由 Agent 通过 chat_archive 工具按需检索）
         ctx.long_term_memory = snapshot.get("long_term_memory", "")
-        ctx.conversation_summary = snapshot.get("conversation_summary", "")
 
         # 灌注权限（扁平化 snapshot，直接从顶层取值）
         ctx.level = snapshot.get("level", 1)
@@ -203,16 +202,9 @@ class SessionContext:
         ctx.rule_book = snapshot.get("rule_book", "")
         ctx.system_description = snapshot.get("system_description", "")
 
-        # 灌注最近对话 → message_history
-        recent_turns = runtime.get("recent_turns", [])
-        for turn in recent_turns:
-            role = turn.get("role", "user")
-            name = turn.get("sender_name", "") if role == "user" else None
-            ctx.message_history.append({
-                "role": role if role in ("user", "assistant") else "user",
-                "content": turn.get("content", "") or "",
-                "name": name if name else None,
-            })
+        # （已关闭）最近对话不再在 Session 拉起时注入 message_history
+        # message_history 仅在本 Session 生命周期内累积（record_turn），
+        # Agent 需要跨 Session 历史时通过 chat_archive 工具按需检索
 
         # SOP 目录摘要（从 SkillRegistry 获取）
         if core is not None:
@@ -381,7 +373,6 @@ class SessionContext:
             "{user_level}": _level_label(self.level),
             "{user_permission_level}": _level_label(self.level),
             "{current_node_ids}": "、".join(self.authorized_node_ids),
-            "{conversation_summary}": self.conversation_summary,
             "{user_memory}": self.long_term_memory,
             "{sop_catalog}": self.sop_catalog_summary,
             "{node_template_catalog}": self.node_template_catalog,
