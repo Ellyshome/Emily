@@ -3,7 +3,12 @@ FROM python:3.12-slim
 
 WORKDIR /app
 
-# 安装依赖
+# 系统依赖（camelot 需要 ghostscript，pdf2image 需要 poppler-utils）
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    ghostscript poppler-utils \
+    && rm -rf /var/lib/apt/lists/*
+
+# 安装 Python 依赖
 COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 

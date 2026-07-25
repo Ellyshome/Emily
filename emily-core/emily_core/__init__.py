@@ -65,6 +65,13 @@ class EmilyCore:
         # 执行依赖
         self._business_flow_tools = None
 
+        # ToolManager 聚合层
+        self._tool_manager = None
+
+        # ScriptManager 聚合层（开发者/维护脚本）
+        self._script_registry = None
+        self._script_manager = None
+
         # 系统调度器
         self._scheduler_service = None
         self._scheduler_engine = None
@@ -138,6 +145,8 @@ class EmilyCore:
                     model=self.config.llm_model,
                     temperature=self.config.llm_temperature,
                     max_tokens=self.config.llm_max_tokens,
+                    router_model=getattr(self.config, "llm_router_model", "") or self.config.llm_model,
+                    guardian_model=getattr(self.config, "llm_guardian_model", "") or self.config.llm_model,
                 )
                 # ── 进化日志：接入 LLM trace callback ──
                 try:
@@ -209,6 +218,18 @@ class EmilyCore:
         if self._business_flow_tools is not None:
             from .tools.registry import register_all
             register_all(self)
+
+            # ── ToolManager 聚合层 ──
+            from .tools.manager import ToolManager
+            self._tool_manager = ToolManager(self._business_flow_tools)
+            logger.info("tool_manager: ready (%d tools)", len(self._business_flow_tools))
+
+            # ── ScriptManager 聚合层 ──
+            from .scripts.registry import load_registry
+            from .scripts.manager import ScriptManager
+            self._script_registry = load_registry()
+            self._script_manager = ScriptManager(self._script_registry)
+            logger.info("script_manager: ready (%d scripts)", len(self._script_registry))
 
         # ── 公共 Pipeline BUS ──
         self._build_pipeline_bus()
@@ -951,6 +972,21 @@ class EmilyCore:
                 "content": reply.content,
                 "reply_to_message_id": reply.reply_to_message_id,
             })
+            # 持久化 agent 回复到 messages 表（非阻断，fail-open）
+            if self._chat_archive_service is not None:
+                try:
+                    await asyncio.to_thread(
+                        self._chat_archive_service.record_outbound_reply,
+                        conversation_id=message.conversation_id,
+                        content=reply.content,
+                        reply_to_message_id=reply.reply_to_message_id,
+                    )
+                    logger.info(
+                        "Outbound reply persisted: conv=%s len=%d",
+                        message.conversation_id, len(reply.content),
+                    )
+                except Exception as e:
+                    logger.warning("Outbound reply persist failed (non-blocking): %s", e)
         return reply
 
     async def terminate_session(self, conversation_id: str) -> bool:

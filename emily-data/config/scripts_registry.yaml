@@ -1,0 +1,529 @@
+﻿prologue: |
+  > 本文档收录 `scripts/` 目录下全部脚本，按功能域分组，说明职责、聚合归属、典型用法、调度归属。
+  >
+  > **设计约定**：每个功能以独立可执行脚本交付，聚合薄壳仅串联入口不含业务逻辑。独立脚本提供双通道：① CLI 可独立执行 + `--dry-run` 预览；② 核心函数可被系统 import 调用返回 dict。
+  >
+  > **由 `scriptmgr export` 自动生成，请勿手动编辑。**
+
+scripts:
+  build_system_description:
+    description: "build_system_description.py — 构建/重建/检测认知书（系统自我描述）。"
+    category: system_maintenance
+    source_path: scripts/build_system_description.py
+    invocation: uv run python scripts/build_system_description.py {args}
+    check_arg: --dry-run
+    run_args: []
+    auto_run: null
+    auto_run_args: []
+    writes_db: true
+    aggregation_parent: null
+    status: active
+    entrypoint: null
+    timeout_seconds: 60
+    scheduling_note: "纯手动"
+
+  build_world_book:
+    description: "build_world_book.py — 构建/重建单个项目的世界书。"
+    category: cold_start
+    source_path: scripts/build_world_book.py
+    invocation: uv run python scripts/build_world_book.py {args}
+    check_arg: --dry-run
+    run_args: []
+    auto_run: null
+    auto_run_args: []
+    writes_db: true
+    aggregation_parent: cold_start.py
+    status: active
+    entrypoint: null
+    timeout_seconds: 60
+    scheduling_note: "纯手动"
+
+  check_initialization:
+    description: "check_initialization.py — 检查项目初始化层级和缺失项。"
+    category: cold_start
+    source_path: scripts/check_initialization.py
+    invocation: uv run python scripts/check_initialization.py {args}
+    check_arg: --dry-run
+    run_args: []
+    auto_run: null
+    auto_run_args: []
+    writes_db: false
+    aggregation_parent: cold_start.py
+    status: active
+    entrypoint: null
+    timeout_seconds: 60
+    scheduling_note: "纯手动"
+
+  check_tools_consistency:
+    description: "check_tools_consistency.py — BusinessFlowToolRegistry 一致性检查 CLI。"
+    category: system_maintenance
+    source_path: scripts/check_tools_consistency.py
+    invocation: uv run python scripts/check_tools_consistency.py {args}
+    check_arg: null
+    run_args: []
+    auto_run: null
+    auto_run_args: []
+    writes_db: false
+    aggregation_parent: null
+    status: active
+    entrypoint: null
+    timeout_seconds: 60
+    scheduling_note: "纯手动"
+
+  cognition_cycle:
+    description: "cognition_cycle.py — 认知进化周期执行薄聚合脚本。"
+    category: cognition_cycle
+    source_path: scripts/cognition_cycle.py
+    invocation: uv run python scripts/cognition_cycle.py {args}
+    check_arg: --dry-run
+    run_args: []
+    auto_run: null
+    auto_run_args: []
+    writes_db: true
+    aggregation_parent: null
+    status: active
+    entrypoint: null
+    timeout_seconds: 60
+    scheduling_note: "纯手动"
+
+  cold_start:
+    description: "cold_start.py — 冷启动流程薄聚合脚本。"
+    category: cold_start
+    source_path: scripts/cold_start.py
+    invocation: uv run python scripts/cold_start.py {args}
+    check_arg: --dry-run
+    run_args: []
+    auto_run: null
+    auto_run_args: []
+    writes_db: true
+    aggregation_parent: null
+    status: active
+    entrypoint: null
+    timeout_seconds: 60
+    scheduling_note: "纯手动"
+
+  collect_session_data:
+    description: "collect_session_data.py — Session 聚合根数据收集脚本（薄壳）"
+    category: data_collection
+    source_path: scripts/collect_session_data.py
+    invocation: uv run python scripts/collect_session_data.py {args}
+    check_arg: null
+    run_args: []
+    auto_run: null
+    auto_run_args: []
+    writes_db: false
+    aggregation_parent: null
+    status: active
+    entrypoint: null
+    timeout_seconds: 60
+    scheduling_note: "纯手动"
+
+  detect_cognition_drift:
+    description: "detect_cognition_drift.py — 检测项目世界书与实际数据的偏差。"
+    category: cognition_cycle
+    source_path: scripts/detect_cognition_drift.py
+    invocation: uv run python scripts/detect_cognition_drift.py {args}
+    check_arg: --dry-run
+    run_args: []
+    auto_run: null
+    auto_run_args: []
+    writes_db: false
+    aggregation_parent: cognition_cycle.py
+    status: active
+    entrypoint: null
+    timeout_seconds: 60
+    scheduling_note: "纯手动"
+
+  dump_session_prompt:
+    description: "导出 Session Prompt 完整内容（含记忆/SOP/系统描述）"
+    category: system_maintenance
+    source_path: scripts/dump_session_prompt.py
+    invocation: uv run python scripts/dump_session_prompt.py {args}
+    check_arg: null
+    run_args: []
+    auto_run: null
+    auto_run_args: []
+    writes_db: false
+    aggregation_parent: null
+    status: active
+    entrypoint: null
+    timeout_seconds: 60
+    scheduling_note: "纯手动"
+
+  evolution:
+    description: "evolution.py — 进化闭环薄聚合脚本。"
+    category: evolution_pipeline
+    source_path: scripts/evolution.py
+    invocation: uv run python scripts/evolution.py {args}
+    check_arg: --dry-run
+    run_args: []
+    auto_run: null
+    auto_run_args: []
+    writes_db: false
+    aggregation_parent: null
+    status: active
+    entrypoint: null
+    timeout_seconds: 60
+    scheduling_note: "纯手动"
+
+  evolution_anomaly:
+    description: "evolution_anomaly.py — 硬规则异常检测脚本。"
+    category: evolution_pipeline
+    source_path: scripts/evolution_anomaly.py
+    invocation: uv run python scripts/evolution_anomaly.py {args}
+    check_arg: null
+    run_args: []
+    auto_run: null
+    auto_run_args: []
+    writes_db: false
+    aggregation_parent: evolution.py
+    status: active
+    entrypoint: null
+    timeout_seconds: 60
+    scheduling_note: "双重（调度器+手动）"
+
+  evolution_apply:
+    description: "evolution_apply.py — 补丁审批/应用/回滚脚本。"
+    category: evolution_pipeline
+    source_path: scripts/evolution_apply.py
+    invocation: uv run python scripts/evolution_apply.py {args}
+    check_arg: --dry-run
+    run_args: []
+    auto_run: null
+    auto_run_args: []
+    writes_db: true
+    aggregation_parent: evolution.py
+    status: active
+    entrypoint: null
+    timeout_seconds: 60
+    scheduling_note: "纯手动"
+
+  evolution_insight:
+    description: "evolution_insight.py — 日洞察生成脚本。"
+    category: evolution_pipeline
+    source_path: scripts/evolution_insight.py
+    invocation: uv run python scripts/evolution_insight.py {args}
+    check_arg: --preview
+    run_args: []
+    auto_run: null
+    auto_run_args: []
+    writes_db: true
+    aggregation_parent: evolution.py
+    status: active
+    entrypoint: null
+    timeout_seconds: 60
+    scheduling_note: "纯手动"
+
+  evolution_metrics:
+    description: "evolution_metrics.py — 指标聚合脚本。"
+    category: evolution_pipeline
+    source_path: scripts/evolution_metrics.py
+    invocation: uv run python scripts/evolution_metrics.py {args}
+    check_arg: --preview
+    run_args: []
+    auto_run: null
+    auto_run_args: []
+    writes_db: false
+    aggregation_parent: evolution.py
+    status: active
+    entrypoint: null
+    timeout_seconds: 60
+    scheduling_note: "双重（调度器+手动）"
+
+  evolution_morning:
+    description: "evolution_morning.py — 晨报生成脚本。"
+    category: evolution_pipeline
+    source_path: scripts/evolution_morning.py
+    invocation: uv run python scripts/evolution_morning.py {args}
+    check_arg: --preview
+    run_args: []
+    auto_run: null
+    auto_run_args: []
+    writes_db: true
+    aggregation_parent: evolution.py
+    status: active
+    entrypoint: null
+    timeout_seconds: 60
+    scheduling_note: "纯手动"
+
+  evolution_node_close:
+    description: "evolution_node_close.py — 节点闭合总结脚本。"
+    category: evolution_pipeline
+    source_path: scripts/evolution_node_close.py
+    invocation: uv run python scripts/evolution_node_close.py {args}
+    check_arg: --preview
+    run_args: []
+    auto_run: null
+    auto_run_args: []
+    writes_db: false
+    aggregation_parent: evolution.py
+    status: active
+    entrypoint: null
+    timeout_seconds: 60
+    scheduling_note: "纯手动"
+
+  evolution_patch:
+    description: "evolution_patch.py — 补丁生成脚本。"
+    category: evolution_pipeline
+    source_path: scripts/evolution_patch.py
+    invocation: uv run python scripts/evolution_patch.py {args}
+    check_arg: --preview
+    run_args: []
+    auto_run: null
+    auto_run_args: []
+    writes_db: true
+    aggregation_parent: evolution.py
+    status: active
+    entrypoint: null
+    timeout_seconds: 60
+    scheduling_note: "纯手动"
+
+  evolution_rules:
+    description: "evolution_rules.py — 规则归纳脚本。"
+    category: evolution_pipeline
+    source_path: scripts/evolution_rules.py
+    invocation: uv run python scripts/evolution_rules.py {args}
+    check_arg: --preview
+    run_args: []
+    auto_run: null
+    auto_run_args: []
+    writes_db: true
+    aggregation_parent: evolution.py
+    status: active
+    entrypoint: null
+    timeout_seconds: 60
+    scheduling_note: "纯手动"
+
+  evolution_validate:
+    description: "evolution_validate.py — 补丁效果验证脚本。"
+    category: evolution_pipeline
+    source_path: scripts/evolution_validate.py
+    invocation: uv run python scripts/evolution_validate.py {args}
+    check_arg: --preview
+    run_args: []
+    auto_run: null
+    auto_run_args: []
+    writes_db: false
+    aggregation_parent: evolution.py
+    status: active
+    entrypoint: null
+    timeout_seconds: 60
+    scheduling_note: "纯手动"
+
+  fix_code_fences:
+    description: "修复 程序鉴别材料_完整版.md 中缺少代码围栏的问题。"
+    category: one_shot
+    source_path: scripts/fix_code_fences.py
+    invocation: uv run python scripts/fix_code_fences.py {args}
+    check_arg: null
+    run_args: []
+    auto_run: null
+    auto_run_args: []
+    writes_db: true
+    aggregation_parent: null
+    status: one_shot
+    entrypoint: null
+    timeout_seconds: 60
+    scheduling_note: "一次性"
+
+  generate_session_prompt:
+    description: "generate_session_prompt.py — 为指定用户生成 Session prompt（世界书+规则书）。"
+    category: system_maintenance
+    source_path: scripts/generate_session_prompt.py
+    invocation: uv run python scripts/generate_session_prompt.py {args}
+    check_arg: --dry-run
+    run_args: []
+    auto_run: null
+    auto_run_args: []
+    writes_db: false
+    aggregation_parent: null
+    status: active
+    entrypoint: null
+    timeout_seconds: 60
+    scheduling_note: "纯手动"
+
+  maintain_node_template_index:
+    description: "扫描 node_templates/*.md 模板，生成/更新 index.yaml 索引"
+    category: system_maintenance
+    source_path: scripts/maintain_node_template_index.py
+    invocation: uv run python scripts/maintain_node_template_index.py {args}
+    check_arg: --check
+    run_args: []
+    auto_run: bootstrap
+    auto_run_args: ['--auto']
+    writes_db: false
+    aggregation_parent: null
+    status: active
+    entrypoint: null
+    timeout_seconds: 30
+    scheduling_note: "bootstrap 自动"
+
+  manage_nodes:
+    description: "manage_nodes.py — 全景节点图管理 CLI 脚本（创建 + 更新 + 查询）。"
+    category: node_management
+    source_path: scripts/manage_nodes.py
+    invocation: uv run python scripts/manage_nodes.py {args}
+    check_arg: --dry-run
+    run_args: []
+    auto_run: null
+    auto_run_args: []
+    writes_db: true
+    aggregation_parent: null
+    status: active
+    entrypoint: null
+    timeout_seconds: 60
+    scheduling_note: "纯手动"
+
+  rag_dry_run:
+    description: "rag_dry_run.py — RAG 基座 dry-run 测试脚本。"
+    category: system_maintenance
+    source_path: scripts/rag_dry_run.py
+    invocation: uv run python scripts/rag_dry_run.py {args}
+    check_arg: --probe
+    run_args: []
+    auto_run: null
+    auto_run_args: []
+    writes_db: false
+    aggregation_parent: null
+    status: active
+    entrypoint: null
+    timeout_seconds: 60
+    scheduling_note: "纯手动"
+
+  register_api:
+    description: "register_api.py — API 注册器。"
+    category: file_api_manage
+    source_path: scripts/register_api.py
+    invocation: uv run python scripts/register_api.py {args}
+    check_arg: null
+    run_args: []
+    auto_run: null
+    auto_run_args: []
+    writes_db: true
+    aggregation_parent: null
+    status: active
+    entrypoint: null
+    timeout_seconds: 60
+    scheduling_note: "纯手动"
+
+  rescan_files:
+    description: "rescan_files.py — 扫描本地文件目录，对照 files 表补录缺失记录。"
+    category: file_api_manage
+    source_path: scripts/rescan_files.py
+    invocation: uv run python scripts/rescan_files.py {args}
+    check_arg: --dry-run
+    run_args: []
+    auto_run: null
+    auto_run_args: []
+    writes_db: true
+    aggregation_parent: null
+    status: active
+    entrypoint: null
+    timeout_seconds: 60
+    scheduling_note: "纯手动"
+
+  self_check:
+    description: "self_check.py — 系统级自检（复用 V1）。"
+    category: cold_start
+    source_path: scripts/self_check.py
+    invocation: uv run python scripts/self_check.py {args}
+    check_arg: --dry-run
+    run_args: []
+    auto_run: null
+    auto_run_args: []
+    writes_db: false
+    aggregation_parent: cold_start.py
+    status: active
+    entrypoint: null
+    timeout_seconds: 60
+    scheduling_note: "纯手动"
+
+  sop_to_skill:
+    description: "SOP-to-Skill 转换器 —— 用 LLM 将 SOP .md 转换为 Skill YAML。"
+    category: file_api_manage
+    source_path: scripts/sop_to_skill.py
+    invocation: uv run python scripts/sop_to_skill.py {args}
+    check_arg: --dry-run
+    run_args: []
+    auto_run: null
+    auto_run_args: []
+    writes_db: true
+    aggregation_parent: null
+    status: active
+    entrypoint: null
+    timeout_seconds: 60
+    scheduling_note: "纯手动"
+
+  toolmgr:
+    description: "ToolManager CLI — 业务工具 smoke 测试与调试"
+    category: system_maintenance
+    source_path: scripts/toolmgr.py
+    invocation: uv run python scripts/toolmgr.py {args}
+    check_arg: null
+    run_args: []
+    auto_run: null
+    auto_run_args: []
+    writes_db: false
+    aggregation_parent: null
+    status: active
+    entrypoint: null
+    timeout_seconds: 60
+    scheduling_note: "纯手动"
+
+  update_world_book:
+    description: "update_world_book.py — 根据偏差增量更新世界书。"
+    category: cognition_cycle
+    source_path: scripts/update_world_book.py
+    invocation: uv run python scripts/update_world_book.py {args}
+    check_arg: --dry-run
+    run_args: []
+    auto_run: null
+    auto_run_args: []
+    writes_db: true
+    aggregation_parent: cognition_cycle.py
+    status: active
+    entrypoint: null
+    timeout_seconds: 60
+    scheduling_note: "纯手动"
+
+  backup:
+    description: "PostgreSQL 数据备份 PowerShell 脚本"
+    category: one_shot
+    source_path: scripts/backup.ps1
+    invocation: .\scripts\backup.ps1
+    check_arg: null
+    run_args: []
+    auto_run: null
+    auto_run_args: []
+    writes_db: false
+    aggregation_parent: null
+    status: one_shot
+    entrypoint: null
+    timeout_seconds: 120
+    scheduling_note: "一次性"
+
+aggregations:
+  evolution.py:
+    description: 进化闭环薄聚合壳（daily / weekly / morning / validate / full）
+    children:
+      - evolution_metrics
+      - evolution_anomaly
+      - evolution_insight
+      - evolution_rules
+      - evolution_patch
+      - evolution_apply
+      - evolution_validate
+      - evolution_morning
+      - evolution_node_close
+  cold_start.py:
+    description: 冷启动薄聚合壳
+    children:
+      - self_check
+      - check_initialization
+      - build_world_book
+  cognition_cycle.py:
+    description: 认知周期薄聚合壳
+    children:
+      - detect_cognition_drift
+      - update_world_book
+

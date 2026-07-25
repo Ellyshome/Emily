@@ -19,12 +19,20 @@ tem/
 # 运行时数据
 pgdata/
 emily-data/db_seeds/
+emily-data/hf_cache/
+emily-data/tmp_*.json
 *.log
 logs/
 notebooks/
 attachments/
 user_memory/
 journal/
+
+# SQLite WAL/SHM
+data/*.db-shm
+data/*.db-wal
+data/*/*.db-shm
+data/*/*.db-wal
 
 # session归档
 emily-data/session_archives

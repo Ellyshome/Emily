@@ -98,6 +98,11 @@ _QUERY_TYPE_TO_TABLE = {
     "summary": "summary",
 }
 
+# db_perms 管控的核心表 key（单数，与 permission_service._derive_db_perms 对齐）
+# 未列入的 query_type（summary/file/message/conversation/user）不受表级权限管控，
+# 由 query_service 内部按 project_ids / 行级安全过滤
+_DB_PERM_MANAGED_KEYS = frozenset({"project", "event", "task", "meeting", "financial"})
+
 
 async def handle_query_data(
     params: dict,
@@ -109,12 +114,16 @@ async def handle_query_data(
         session_scope = params.pop("_session_scope", None) or {}
 
         # 1. db_perms 检查
+        # db_perms 的 key 为单数（与 permission_service._derive_db_perms 对齐）。
+        # 仅对核心表做表级权限校验；journal 查 events 表，映射到 event；
+        # 其他 query_type（summary/file/message 等）不受表级权限管控，
+        # 由 query_service 内部按 project_ids / 行级安全过滤
         query_type = params.get("query_type", "event")
-        target_table = _QUERY_TYPE_TO_TABLE.get(query_type, "")
+        perm_key = "event" if query_type == "journal" else query_type
         db_perms = session_scope.get("db_perms", {})
-        if db_perms and target_table and target_table not in db_perms:
-            logger.info("query_data: db_perms denied table=%s for query_type=%s", target_table, query_type)
-            return {"success": False, "reply": f"无权限查询{target_table}", "total": 0}
+        if db_perms and perm_key in _DB_PERM_MANAGED_KEYS and perm_key not in db_perms:
+            logger.info("query_data: db_perms denied perm_key=%s for query_type=%s", perm_key, query_type)
+            return {"success": False, "reply": f"无权限查询{query_type}", "total": 0}
 
         # 2. project_ids 自动注入
         project_ids = session_scope.get("project_ids", [])

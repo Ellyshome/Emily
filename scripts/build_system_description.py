@@ -1,4 +1,4 @@
-"""build_system_description.py — 构建/重建/检测系统自我描述。
+"""build_system_description.py — 构建/重建/检测认知书（系统自我描述）。
 
 参照模式：scripts/build_world_book.py（sys.path + _init_db + 核心函数 + CLI）。
 
@@ -72,7 +72,7 @@ def _init_db(db_url: str = "") -> None:
 
 
 def build_system_description(*, generated_by: str = "manual", db_url: str = "", dry_run: bool = False) -> dict:
-    """构建系统自我描述（脚本入口）。"""
+    """构建认知书（系统自我描述）（脚本入口）。"""
     _init_db(db_url)
 
     from emily_core.services.system_description_builder import SystemDescriptionBuilder
@@ -93,7 +93,7 @@ def main():
     sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding='utf-8', errors='replace')
     sys.stderr = io.TextIOWrapper(sys.stderr.buffer, encoding='utf-8', errors='replace')
 
-    parser = argparse.ArgumentParser(description="构建/重建/检测系统自我描述")
+    parser = argparse.ArgumentParser(description="构建/重建/检测认知书（系统自我描述）")
     parser.add_argument("--dry-run", action="store_true", help="预览模式（不写 DB）")
     parser.add_argument("--check-only", action="store_true", help="仅检测偏差（不构建）")
     parser.add_argument("--force", action="store_true", help="强制重建（无视偏差检测）")

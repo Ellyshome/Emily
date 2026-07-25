@@ -157,7 +157,7 @@ class SessionDataFetcher:
         visible_files = _sub_fetch_visible_files(user_id)
         rag_info = _sub_fetch_rag_info(core)
 
-        # ── 步骤 5b: 系统自我描述 ──
+        # ── 步骤 5b: 认知书 ──
         system_description = _sub_fetch_system_description(perms)
 
         # ── 组装输出 ──
@@ -377,7 +377,7 @@ def _empty_result(conversation_id: str, user_id: str, errors: list[str]) -> dict
 
 
 def _sub_fetch_system_description(perms: dict) -> str:
-    """获取系统自我描述文本（按用户权限裁剪）。委托给 fetchers 子模块。"""
+    """获取认知书文本（按用户权限裁剪）。委托给 fetchers 子模块。"""
     from .fetchers.fetch_system_description import fetch
     return fetch(perms=perms)
 

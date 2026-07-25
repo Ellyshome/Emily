@@ -17,6 +17,14 @@ import uuid
 from sqlalchemy import Column, String, Integer, BigInteger, Float, ForeignKey, UniqueConstraint, Boolean, Text, Index, text
 from sqlalchemy.orm import DeclarativeBase, relationship
 
+# pgvector 向量类型（条件导入，兼容未装 pgvector 的环境）
+try:
+    from pgvector.sqlalchemy import Vector
+    _VECTOR_AVAILABLE = True
+except ImportError:
+    Vector = None       # type: ignore
+    _VECTOR_AVAILABLE = False
+
 
 class Base(DeclarativeBase):
     pass
@@ -1357,7 +1365,7 @@ class RAGRetrievalLog(Base):
     conversation_id = Column(String, default="")
     user_id = Column(String, default="")
     query_text = Column(String(500), default="")
-    provider = Column(String(30), default="")             # maxkb/local_fallback/unavailable
+    provider = Column(String(30), default="")             # pgvector/local_fallback/unavailable
     hit_count = Column(Integer, default=0)
     top_score = Column(Float, default=0.0)
     avg_score = Column(Float, default=0.0)
@@ -1370,6 +1378,33 @@ class RAGRetrievalLog(Base):
     __table_args__ = (
         Index("idx_rrl_run_id", "pipeline_run_id"),
         Index("idx_rrl_provider_created", "provider", "created_at"),
+    )
+
+
+class KnowledgeChunk(Base):
+    """知识库文档分块 —— pgvector 向量检索主表。
+
+    每个 chunk 关联一个源文档（doc_id），存储原文 + BGE-m3 密集向量。
+    """
+    __tablename__ = "knowledge_chunks"
+
+    id = Column(String, primary_key=True, default=_new_uuid)       # UUID
+    doc_id = Column(String, index=True, comment="文档 ID（同文档多 chunk）")
+    doc_name = Column(String, default="", comment="源文档名")
+    chunk_index = Column(Integer, default=0, comment="chunk 序号")
+    chunk_text = Column(Text, default="", comment="chunk 原文")
+    embedding = Column(
+        Vector(1024) if _VECTOR_AVAILABLE else Text,
+        default=None,
+        nullable=True,
+        comment="BGE-m3 密集向量（1024 维）",
+    )
+    metadata_ = Column("metadata", Text, default="{}", comment="JSON: {stage, role, doc_type, ...}")
+    created_at = Column(String, default=_utc_now)
+
+    __table_args__ = (
+        Index("idx_kc_doc_id", "doc_id"),
+        Index("idx_kc_created", "created_at"),
     )
 
 
@@ -1568,12 +1603,12 @@ class ProjectWorldBook(Base):
 
 
 # ══════════════════════════════════════════════════════════════════════════════
-# 元认知模块 — 系统自我描述表（SD1 数据模型）
+# 元认知模块 — 认知书（系统自我描述表，SD1 数据模型）
 # ══════════════════════════════════════════════════════════════════════════════
 
 
 class SystemDescription(Base):
-    """系统自我描述表 —— 元认知模块第三类知识（与规则书/世界书并列）。
+    """认知书（系统自我描述表）—— 元认知模块第三类知识（与规则书/世界书并列）。
 
     全局唯一，存储系统自身结构与能力描述（代码驱动的自我认知）。
     三域：数据库认知(D1) / 文件认知(D2) / 权限认知(D3)。

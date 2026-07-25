@@ -52,13 +52,13 @@ class RagResult:
 
     Attributes:
         query: 检索查询文本
-        provider: 检索提供者（maxkb/local_fallback）
+        provider: 检索提供者（pgvector/local_fallback）
         chunks: 检索到的文档片段列表
         hit_count: 命中数
         elapsed_ms: 耗时（毫秒）
     """
     query: str
-    provider: str = ""           # "maxkb" | "local_fallback"
+    provider: str = ""           # "pgvector" | "local_fallback"
     chunks: list[RagChunk] = field(default_factory=list)
     hit_count: int = 0
     elapsed_ms: int = 0
@@ -118,6 +118,47 @@ class StepResult:
     db_results: list[DbResult] = field(default_factory=list)
     business_data: dict = field(default_factory=dict)
     guardian: GuardianStepVerdict | None = None
+
+
+@dataclass
+class StructuredResult:
+    """WorkItem 回传给 Session 的结构化成果（M2: 分层合成）。
+
+    WorkItem node4 规则提炼产出，Session 据此组织最终回复。
+    WorkItem 不做任何语言组织。
+    """
+    # ── 状态 ──
+    status: str = ""               # success | partial | failed
+    intent: str = ""               # 任务意图（来自 output_spec.intent）
+    sop_id: str = ""
+    risk_level: str = ""           # L1/L2/L3（影响 Session 措辞和审核严格度）
+
+    # ── 数据 ──
+    data: dict = field(default_factory=dict)
+    """结构化数据，按 output_spec.data_fields 从 step_results.business_data 提取"""
+
+    summary_facts: list[str] = field(default_factory=list)
+    """规则提炼的关键事实（Session 组织回复的要点）"""
+
+    rag_sources: list[str] = field(default_factory=list)
+    """RAG 命中的文档名列表（cite_source=true 时 Session 格式化引用）"""
+
+    business_object_no: str = ""
+    """录入类产生的业务编号（如 event_no，Session 明确告知用户）"""
+
+    # ── 问题与确认 ──
+    issues: list[str] = field(default_factory=list)
+    """执行问题 / Guardian issues（要告诉用户的）"""
+
+    needs_confirm: bool = False
+    """是否需要用户确认（对接 ConfirmQueue）"""
+
+    error_category: str = ""
+    """失败分类：param_error | permission | system | not_found（空 if success）"""
+
+    # ── 体验 ──
+    suggested_followup: str = ""
+    """建议后续动作（可空，如"要不要看详情？"）"""
 
 
 class WorkAgent(ABC):

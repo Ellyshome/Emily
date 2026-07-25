@@ -35,6 +35,7 @@ class SkillExecutionContext:
     business_flow_tools: BusinessFlowToolRegistry
     llm_client: Any = None         # ParamExtractor 用
     session_available_tools: list[dict] = field(default_factory=list)
+    prefilled_params: dict = field(default_factory=dict)  # M2: 路由派生的预填参数
 
 
 class SkillExecutor:
@@ -100,9 +101,18 @@ class SkillExecutor:
                 # 3. 解析参数 —— 区分 Skill 推荐路径 vs 元能力路径
                 if step.tool_name in allowed_tools:
                     # Skill 推荐路径：有 ParamMapping，走现有逻辑
-                    tool_params = await self._param_extractor.resolve_params(
-                        step.tool_params, ctx.user_input, ctx.session_context, ctx.step_results,
-                    )
+                    # M2: 先剥离路由预填的参数，剩余参数才走 ParamExtractor
+                    prefilled = ctx.prefilled_params or {}
+                    pending_mappings = {
+                        pname: m for pname, m in step.tool_params.items()
+                        if pname not in prefilled
+                    }
+                    tool_params = dict(prefilled)  # 预填参数直接注入
+                    if pending_mappings:
+                        resolved = await self._param_extractor.resolve_params(
+                            pending_mappings, ctx.user_input, ctx.session_context, ctx.step_results,
+                        )
+                        tool_params.update(resolved)
                 else:
                     # 元能力路径：Skill YAML 没定义 ParamMapping，LLM 动态推导
                     tool_params = await self._llm_resolve_params(step.tool_name, tool, ctx)

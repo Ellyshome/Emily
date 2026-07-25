@@ -223,7 +223,7 @@ class SessionArchiveWriter:
         big_texts = [
             ("项目世界书", ctx.get("project_world_book", "")),
             ("规则书", ctx.get("rule_book", "")),
-            ("系统自我描述", ctx.get("system_description", "")),
+            ("认知书", ctx.get("system_description", "")),
             ("可见库表摘要", ctx.get("visible_schema_summary", "")),
             ("可见文件摘要", ctx.get("visible_files_summary", "")),
             ("SOP目录摘要", ctx.get("sop_catalog_summary", "")),
