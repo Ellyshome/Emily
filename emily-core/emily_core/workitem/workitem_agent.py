@@ -22,7 +22,7 @@ from .injector import KnowledgeInjector
 from .pipeline.context import BusContext
 from .pipeline.interfaces.routing import RouteDecision, SubTask
 from .pipeline.interfaces.planning import ExecutionPlan, PlanStep
-from .pipeline.interfaces.execution import StepResult, ToolCallRecord, DbResult, RagResult, RagChunk, GuardianStepVerdict
+from .pipeline.interfaces.execution import StepResult, ToolCallRecord, DbResult, RagResult, RagChunk, GuardianStepVerdict, StructuredResult
 from .pipeline.interfaces.auth import AuthResult, AuthDecision
 from .pipeline.real_guardian import RealGuardian, GuardianNote
 from ..session.session_context import format_message_history
@@ -148,13 +148,37 @@ class WorkItemAgent:
             for s in skill.steps
         ]
 
+        # M3: 按工具类型判定风险等级
+        # L1(查询类): 只调 query_*/knowledge_search/chat_archive/query_files
+        # L2(录入类): 调 record_*/create_*/update_*/submit_*/confirm_*/mount_*/activate_*
+        # L3(高风险): 调 discard_*/return_*/delete_*
+        tool_names = {s.tool_name for s in skill.steps if s.tool_name}
+        risk_level = WorkItemAgent._grade_skill_risk(tool_names)
+
         return ExecutionPlan(
-            risk_level="L2",
+            risk_level=risk_level,
             steps=steps,
             acceptance_criteria=[],
             estimated_steps=len(steps),
             _source="skill_definition",
         )
+
+    @staticmethod
+    def _grade_skill_risk(tool_names: set[str]) -> str:
+        """根据 Skill 涉及的工具集合判定风险等级。"""
+        if not tool_names:
+            return "L1"  # 纯逻辑步骤（如 SOP-005 step-02/03），视为查询类
+        l1_tools = {"query_data", "query_files", "query_node", "query_my_nodes",
+                    "knowledge_search", "chat_archive", "fetch_inbox"}
+        l3_tools = {"discard_nodes", "return_node_deliverable"}
+        # 任一工具是 L3 → 整体 L3
+        if tool_names & l3_tools:
+            return "L3"
+        # 全部工具都是 L1 → L1
+        if tool_names <= l1_tools:
+            return "L1"
+        # 含 record_*/create_*/update_*/submit_*/confirm_*/mount_*/activate_* → L2
+        return "L2"
 
     async def _execute_skill(self, wi, context: BusContext) -> list[StepResult]:
         """通过 SkillExecutor 执行 Skill 定义。"""
@@ -193,6 +217,8 @@ class WorkItemAgent:
             business_flow_tools=self._business_flow_tools,
             llm_client=self._llm,
             session_available_tools=session_available_tools,
+            # M2: 从 WorkItem 读取路由派生的预填参数
+            prefilled_params=dict(getattr(wi, "_prefilled_params", {}) or {}),
         )
 
         return await self._skill_executor.execute(skill_ctx)
@@ -646,89 +672,134 @@ class WorkItemAgent:
     # ── Node 4 成果总结 ──
 
     async def node4_summary(self, context: BusContext) -> None:
-        """Node 4 [成果总结] —— LLM 回复合成 + Guardian 出站审核（追加标记）。
+        """Node 4 [成果总结] —— M3: 规则提炼 structured_result，不做语言组织。
 
-        优先使用 LLM 根据 workitem.md prompt + 步骤结果生成自然语言回复；
-        LLM 不可用时回退到硬编码拼串。
+        语言组织由 Session 层 _synthesize_final_reply 完成（M4）。
+        review_reply 审核迁移到 Session（M4），本节点不再调 Guardian.review_reply。
         """
         wi = context.work_item
-        summary = wi.to_summary()
-        steps = summary.get("steps_executed", 0)
-        tool_calls = summary.get("tool_calls", 0)
-
-        # ---- LLM 回复合成（传入对话历史 + SessionContext）----
-        session_ctx = context.get_session_context() if context else None
-        message_history = getattr(session_ctx, 'message_history', []) if session_ctx else []
-        draft = await self._llm_synthesize_reply(wi,
-                                                   message_history=message_history if message_history else None,
-                                                   session_ctx=session_ctx,
-                                                   context=context)
-
-        # Guardian 出站审核 —— 只标记不拦截
-        if self._guardian:
-            try:
-                note = await self._guardian.review_reply(draft, wi)
-                if note and note.issues:
-                    for issue in note.issues:
-                        wi.add_warning(f"[reply] {issue}")
-            except Exception as e:
-                logger.debug("Guardian review_reply failed (silent skip): %s", e)
-
-        # ── 归档：存储 Node4 Guardian (reply) Prompt 注入信息到 baggage ──
-        # Guardian prompt 在 RealGuardian 内构建，渲染后字符数未追踪（标 0）。
-        try:
-            steps_summary_text = ""
-            for sr in getattr(wi, "step_results", []) or []:
-                steps_summary_text += (
-                    f"[{getattr(sr, 'step_id', '?')}] "
-                    f"{(getattr(sr, 'output', '') or '')[:200]}\n"
-                )
-            context.set("prompt_info_node4_guardian", {
-                "template": "guardian_reply.md",
-                "rendered_chars": self._guardian.reply_prompt_chars(draft, wi) if self._guardian else 0,
-                "variables": {
-                    "draft_reply": f"{len(draft)}字",
-                    "user_input": (wi.user_input or "")[:300],
-                    "sop_id": wi.sop_id or "unknown",
-                    "steps_summary": f"{len(steps_summary_text)}字",
-                },
-            })
-        except Exception as e:
-            logger.debug("node4 guardian prompt_info storage failed: %s", e)
-
-        # 将 warnings 追加到回复末尾（只标记，不替换）
-        if wi.warnings:
-            warning_text = (
-                "\n\n⚠️ Emily 提醒（系统自动审核标记，供参考）：\n"
-                + "\n".join(f"  • {w}" for w in wi.warnings[-5:])
-            )
-            wi.result_text = draft + warning_text
-        else:
-            wi.result_text = draft
-
-        wi.llm_call_count += 1
-        context.verified_reply = wi.result_text
+        wi.structured_result = self._extract_structured_result(wi, context)
+        # result_text 留空（Session 合成正常路径不用，兜底降级时填）
+        wi.result_text = ""
+        context.verified_reply = ""  # M4 后由 Session 填
         logger.debug(
-            "WI %s node4: reply_len=%d guardian=%s warnings=%d",
-            wi.id, len(wi.result_text),
-            "enabled" if self._guardian else "disabled",
-            len(wi.warnings),
+            "WI %s node4: structured_result status=%s facts=%d",
+            wi.id, wi.structured_result.status, len(wi.structured_result.summary_facts),
+        )
+
+    def _extract_structured_result(self, wi, context: BusContext) -> StructuredResult:
+        """M3: 规则提炼——从 step_results + output_spec 提取 StructuredResult。零 LLM。"""
+        spec = getattr(wi, "output_spec", {}) or {}
+        step_results = getattr(wi, "step_results", []) or []
+
+        # status：任一 step 失败 → partial/failed
+        failed_steps = [sr for sr in step_results if not getattr(sr, "success", True)]
+        if not step_results:
+            status = "failed"
+        elif failed_steps and len(failed_steps) == len(step_results):
+            status = "failed"
+        elif failed_steps:
+            status = "partial"
+        else:
+            status = "success"
+
+        # data：按 output_spec.data_fields 从 business_data 取
+        data = {}
+        for sr in step_results:
+            bd = getattr(sr, "business_data", {}) or {}
+            for field in spec.get("data_fields", []):
+                if field in bd and field not in data:
+                    data[field] = bd[field]
+
+        # summary_facts：规则提炼（从 step_results.output 取关键句，截断）
+        summary_facts = []
+        for sr in step_results:
+            output = (getattr(sr, "output", "") or "").strip()
+            if output and len(summary_facts) < 8:
+                summary_facts.append(output[:200])
+
+        # rag_sources：从 rag_results 收集 doc_name
+        rag_sources = []
+        for sr in step_results:
+            for rr in getattr(sr, "rag_results", []) or []:
+                for chunk in getattr(rr, "chunks", []) or []:
+                    doc = getattr(chunk, "doc_name", "") or ""
+                    if doc and doc not in rag_sources:
+                        rag_sources.append(doc)
+        # RAG 内容截断后并入 summary_facts（供 Session 消化）
+        for sr in step_results:
+            for rr in getattr(sr, "rag_results", []) or []:
+                for chunk in getattr(rr, "chunks", []) or []:
+                    content = (getattr(chunk, "content", "") or "")[:500]
+                    if content:
+                        summary_facts.append(f"〔{getattr(chunk, 'doc_name', '?')}〕{content}")
+
+        # business_object_no：录入类从 business_data 取
+        business_object_no = ""
+        for sr in step_results:
+            bd = getattr(sr, "business_data", {}) or {}
+            for key in ("event_no", "task_no", "meeting_no", "object_id"):
+                val = bd.get(key, "")
+                if val:
+                    business_object_no = str(val)
+                    break
+            if business_object_no:
+                break
+
+        # issues：汇聚 Guardian issues（来自 node3 review_step）+ warnings
+        issues = list(getattr(wi, "warnings", []) or [])
+        for sr in step_results:
+            guardian = getattr(sr, "guardian", None)
+            if guardian and getattr(guardian, "reason", ""):
+                issues.append(f"[{getattr(sr, 'step_id', '?')}] {guardian.reason}")
+
+        # needs_confirm：从 step_results 推断（如 handler 返回 needs_confirm）
+        needs_confirm = any(
+            getattr(getattr(sr, "business_data", {}), "needs_confirm", False)
+            for sr in step_results
+        )
+
+        # error_category：失败分类
+        error_category = ""
+        if status == "failed":
+            for sr in failed_steps:
+                output = (getattr(sr, "output", "") or "")
+                if "权限" in output or "permission" in output:
+                    error_category = "permission"; break
+                if "参数" in output or "param" in output:
+                    error_category = "param_error"; break
+                if "不存在" in output or "未找到" in output:
+                    error_category = "not_found"; break
+            error_category = error_category or "system"
+
+        # suggested_followup：规则填（可空）
+        suggested_followup = ""
+        if status == "success" and spec.get("intent", "").startswith("query"):
+            suggested_followup = "需要看详情吗？"
+
+        return StructuredResult(
+            status=status,
+            intent=spec.get("intent", wi.sop_id or "fallback"),
+            sop_id=wi.sop_id or "",
+            risk_level=getattr(wi, "risk_level", "L2") or "L2",
+            data=data,
+            summary_facts=summary_facts,
+            rag_sources=rag_sources,
+            business_object_no=business_object_no,
+            issues=issues,
+            needs_confirm=needs_confirm,
+            error_category=error_category,
+            suggested_followup=suggested_followup,
         )
 
     async def _llm_synthesize_reply(self, wi,
                                       message_history: list[dict] | None = None,
                                       session_ctx=None,
                                       context: BusContext | None = None) -> str:
-        """用 LLM 根据 workitem.md prompt + 步骤结果 + 对话历史合成自然语言回复。
+        """M3 起：node4 不再调用本方法。保留作为 Session 合成 LLM 不可用时的兜底降级（M4）。
 
-        使用 chat_messages() 传入完整 message_history，利用 KV cache 复用。
+        LLM 合成已上移到 SessionAgent._synthesize_final_reply。
         回退链：LLM chat_messages json → 硬编码拼串。
-
-        Args:
-            wi: WorkItem 实例
-            message_history: 对话历史，由 node4_summary 从 BusContext 提取后传入
-            session_ctx: SessionContext 实例，用于填充 prompt 中的用户/项目变量
-            context: BusContext，用于存储 Node4 Prompt 注入信息到 baggage（归档用）
         """
         # 组装步骤结果摘要
         steps_text = ""

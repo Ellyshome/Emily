@@ -1,4 +1,4 @@
-"""SystemDescriptionBuilder —— 系统自我描述构建服务。
+"""SystemDescriptionBuilder —— 认知书（系统自我描述）构建服务。
 
 查询 ORM 元数据 + 权限定义 + 文件分类，生成三域结构化 JSON + 纯文本摘要。
 纯数据驱动，无需 LLM。
@@ -85,10 +85,10 @@ _KEY_RELATIONS = [
 
 
 class SystemDescriptionBuilder:
-    """系统自我描述构建器——构建 D1/D2/D3 三域内容。"""
+    """认知书（系统自我描述）构建器——构建 D1/D2/D3 三域内容。"""
 
     def build(self, *, generated_by: str = "manual", dry_run: bool = False) -> dict:
-        """构建/重建系统自我描述。
+        """构建/重建认知书（系统自我描述）。
 
         Args:
             generated_by: 生成来源标记

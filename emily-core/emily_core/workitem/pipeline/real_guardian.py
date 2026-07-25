@@ -88,9 +88,11 @@ class RealGuardian:
         prev_category = LLMInteractionLogger._current_context.get("call_category", "")
         LLMInteractionLogger.set_category("guardian")
         try:
+            guardian_model = getattr(self._llm, "guardian_model", None) or getattr(self._llm, "model", None)
             data = await self._llm.chat_json(
                 prompt,
                 f"审核步骤: {getattr(step_result, 'step_id', '?')}",
+                model=guardian_model,
             )
             issues: list[str] = data.get("issues", []) if isinstance(data, dict) else []
             if issues:
@@ -119,9 +121,11 @@ class RealGuardian:
         prev_category = LLMInteractionLogger._current_context.get("call_category", "")
         LLMInteractionLogger.set_category("guardian")
         try:
+            guardian_model = getattr(self._llm, "guardian_model", None) or getattr(self._llm, "model", None)
             data = await self._llm.chat_json(
                 prompt,
                 f"审核回复: {draft_reply[:100]}",
+                model=guardian_model,
             )
             issues: list[str] = data.get("issues", []) if isinstance(data, dict) else []
             if issues:

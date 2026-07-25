@@ -31,11 +31,15 @@ class LLMClient:
         self,
         api_key: str,
         base_url: str = "https://api.deepseek.com",
-        model: str = "deepseek-chat",
+        model: str = "deepseek-v4-flash",
         temperature: float = 0.1,
         max_tokens: int = 1024,
+        router_model: str = "",
+        guardian_model: str = "",
     ):
         self.model = model
+        self.router_model = router_model or model
+        self.guardian_model = guardian_model or model
         self.temperature = temperature
         self.max_tokens = max_tokens
         self._client = AsyncOpenAI(
@@ -45,8 +49,8 @@ class LLMClient:
         # M11: LLM 交互追踪回调
         self._trace_callback: Callable | None = None
         logger.info(
-            "LLMClient initialized: model=%s, base_url=%s, temperature=%.2f",
-            model, base_url, temperature,
+            "LLMClient initialized: model=%s, router_model=%s, guardian_model=%s, base_url=%s, temperature=%.2f",
+            model, self.router_model, self.guardian_model, base_url, temperature,
         )
 
     # ── M11: Trace callback ──
@@ -69,6 +73,7 @@ class LLMClient:
         tools: list[dict] | None = None,
         temperature: float | None = None,
         max_tokens: int | None = None,
+        model: str | None = None,
     ) -> dict:
         """多轮对话主入口 —— 接受完整 OpenAI 格式 messages 列表。
 
@@ -81,6 +86,8 @@ class LLMClient:
             tools: 工具定义列表（可选）
             temperature: 采样温度（None 则用默认值）
             max_tokens: 最大输出 token（None 则用默认值）
+            model: 按调用覆盖模型（None 则用 self.model）。用于路由/审核等
+                   轻量节点切换到 chat 模型，合成/摘要保留 reasoner
 
         Returns:
             dict:
@@ -92,13 +99,14 @@ class LLMClient:
         call_seq = getattr(self, "_trace_call_seq", 0) + 1
         self._trace_call_seq = call_seq
         call_type = "chat_messages" + ("_json" if json_mode else "")
+        effective_model = model or self.model
         if self._trace_callback:
             try:
                 self._trace_callback({
                     "phase": "start",
                     "call_type": call_type,
                     "call_sequence": call_seq,
-                    "model": self.model,
+                    "model": effective_model,
                     "message_count": len(messages),
                     "tool_count": len(tools) if tools else 0,
                     "json_mode": json_mode,
@@ -109,12 +117,14 @@ class LLMClient:
         t0 = time.time()
 
         kwargs = dict(
-            model=self.model,
+            model=effective_model,
             messages=messages,
             max_tokens=max_tokens if max_tokens is not None else self.max_tokens,
         )
-        # deepseek-reasoner 不支持 temperature 等采样参数（传了会 400），仅 chat 类模型传
-        if "reasoner" not in (self.model or ""):
+        # 推理类模型（deepseek-reasoner / deepseek-v4-pro）不支持 temperature 等采样参数
+        # （传了会 400），仅 chat 类模型（deepseek-chat / deepseek-v4-flash）传
+        _model_name = (effective_model or "").lower()
+        if "reasoner" not in _model_name and "v4-pro" not in _model_name:
             kwargs["temperature"] = temperature if temperature is not None else self.temperature
         if json_mode:
             kwargs["response_format"] = {"type": "json_object"}
@@ -162,7 +172,7 @@ class LLMClient:
                 try:
                     self._trace_callback({
                         "phase": "end", "call_type": call_type, "call_sequence": call_seq,
-                        "model": self.model, "json_mode": json_mode,
+                        "model": effective_model, "json_mode": json_mode,
                         "response_type": "tool_call",
                         "response_summary": f"{tc.function.name}({str(arguments)[:200]})",
                         "response_full": f"{tc.function.name}({arguments})",
@@ -189,12 +199,20 @@ class LLMClient:
         logger.debug("LLM chat_messages: %d chars, finish=%s, elapsed=%dms",
                      len(content), finish_reason, elapsed_ms)
 
+        # 防御性日志：json_mode 下 content 空白（reasoner 可能把输出放进 reasoning_content）
+        if json_mode and not content.strip() and reasoning_content:
+            logger.warning(
+                "LLM json_mode returned empty content (model=%s, finish=%s, reasoning_len=%d) — "
+                "output may be in reasoning_content",
+                effective_model, finish_reason, len(reasoning_content),
+            )
+
         # M11: trace callback — end
         if self._trace_callback:
             try:
                 self._trace_callback({
                     "phase": "end", "call_type": call_type, "call_sequence": call_seq,
-                    "model": self.model, "json_mode": json_mode,
+                    "model": effective_model, "json_mode": json_mode,
                     "response_type": "json" if json_mode else "text",
                     "response_summary": content[:500],
                     "response_full": content,
@@ -240,12 +258,12 @@ class LLMClient:
         ])
         return result["content"]
 
-    async def chat_json(self, system_prompt: str, user_message: str) -> dict:
+    async def chat_json(self, system_prompt: str, user_message: str, model: str | None = None) -> dict:
         """单轮对话，强制 JSON 输出，返回解析后的 dict。"""
         result = await self.chat_messages([
             {"role": "system", "content": system_prompt},
             {"role": "user", "content": user_message},
-        ], json_mode=True)
+        ], json_mode=True, model=model)
         return result["data"]
 
     # ── M7: Tool Calling ──

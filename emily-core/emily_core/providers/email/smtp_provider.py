@@ -3,7 +3,7 @@
 设计原则：
   - 每次调用独立建连、发送、断开。不维护连接池。
   - 内部不抛异常：所有错误路径返回 SendResult(success=False, error=...)
-  - 参照 maxkb_provider.py 的实现模式（is_available 三态缓存 + 结构化日志）
+  - 参照 pgvector_provider.py 的实现模式（is_available 三态缓存 + 结构化日志）
 """
 
 from __future__ import annotations

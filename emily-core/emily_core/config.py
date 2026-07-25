@@ -32,7 +32,7 @@ class Config:
     llm_base_url: str = "https://api.deepseek.com"
     """LLM API 基础 URL（兼容 DeepSeek / OpenAI 等）"""
 
-    llm_model: str = "deepseek-chat"
+    llm_model: str = "deepseek-v4-flash"
     """LLM 模型名称"""
 
     llm_temperature: float = 0.1
@@ -41,9 +41,15 @@ class Config:
     llm_max_tokens: int = 1024
     """LLM 最大输出 token 数"""
 
+    llm_router_model: str = "deepseek-v4-flash"
+    """路由/意图识别用模型（轻量结构化任务，用 flash 而非 pro，快且省）"""
+
+    llm_guardian_model: str = "deepseek-v4-flash"
+    """Guardian 审核用模型（轻量结构化任务，用 flash 而非 pro）"""
+
     # ---- 数据库 (PostgreSQL) ----
     database_url: str = ""
-    """PostgreSQL 连接 URL（为空时使用默认参数连接 maxkb:5432/team_brain）。
+    """PostgreSQL 连接 URL（为空时使用默认参数连接 emily-postgres:5432/emily）。
     格式: postgresql://user:password@host:port/database"""
 
     # ---- 文件存储 ----
@@ -93,18 +99,15 @@ class Config:
     sop_repository_dir: str = ""
     """SOP 仓库目录路径（为空时默认 SOPrepository/）"""
 
-    # ---- Ex3/Ex4: RAG / MaxKB 知识库 ----
+    # ---- RAG / pgvector 知识库 ----
     kb_enabled: bool = False
     """是否启用知识库 RAG 功能"""
 
-    maxkb_url: str = "http://maxkb:8080"
-    """MaxKB 服务地址（Docker 内部用服务名）"""
+    tei_url: str = "http://tei:80"
+    """TEI embedding 服务地址"""
 
-    maxkb_api_key: str = ""
-    """MaxKB API 密钥（在 MaxKB Web UI 中创建）"""
-
-    maxkb_app_id: str = ""
-    """MaxKB 应用 ID（关联了知识库的应用）"""
+    rag_similarity_threshold: float = 0.3
+    """RAG 检索相似度阈值（0.0-1.0）"""
 
     kb_top_k: int = 5
     """RAG 检索返回的最大结果数"""
@@ -112,18 +115,15 @@ class Config:
     kb_local_fallback_dir: str = ""
     """本地知识库目录（为空时默认 项目资料/）"""
 
-    # ---- Ex4: MaxKB Admin hit_test 检索 ----
-    maxkb_admin_password: str = ""
-    """MaxKB 管理员密码（用于 hit_test API 登录，默认账号 admin）"""
+    # ---- VLM 视觉大模型（OCR）----
+    vlm_api_url: str = "https://api.siliconflow.cn/v1/chat/completions"
+    """VLM API 地址"""
 
-    maxkb_knowledge_id: str = ""
-    """MaxKB 知识库 ID（hit_test 目标知识库 UUID）"""
+    vlm_api_key: str = ""
+    """VLM API 密钥"""
 
-    maxkb_search_mode: str = "embedding"
-    """hit_test 搜索模式: embedding / keywords / blend"""
-
-    maxkb_similarity_threshold: float = 0.3
-    """hit_test 相似度阈值（0.0-1.0）"""
+    vlm_model: str = "Qwen/Qwen3-VL-8B-Instruct"
+    """VLM 模型名称"""
 
     # ---- 前导信息机制 ----
     enable_progress_message: bool = True

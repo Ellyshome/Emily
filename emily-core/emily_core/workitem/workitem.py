@@ -41,6 +41,10 @@ class WorkItem:
     # ── Node 1（意图+拆分）产出 ──
     route_decision: Any = None           # RouteDecision | None
 
+    # ── Node 0（Session 下发）产出 ──
+    output_spec: dict = field(default_factory=dict)
+    """M1: Session 下发的成果规格：intent/detail/format/cite_source/max_length/data_fields"""
+
     # ── Node 2（计划+标准）产出 ──
     execution_plan: Any = None           # ExecutionPlan | None
     risk_level: str = ""
@@ -50,7 +54,8 @@ class WorkItem:
     step_results: list[Any] = field(default_factory=list)  # list[StepResult]
 
     # ── Node 4（成果总结）产出 ──
-    result_text: str = ""                # 人类可读的最终成果
+    result_text: str = ""                # 人类可读的最终成果（M3 后仅兜底用，正常路径由 Session 合成）
+    structured_result: Any = None        # M2: StructuredResult，回传给 Session 做语言组织
 
     # ── 增量灌注记录（KnowledgeInjector 写入）──
     injected_sops: set[str] = field(default_factory=set)

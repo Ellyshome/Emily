@@ -14,7 +14,9 @@ SessionAgent 只保留决策职责。
 from __future__ import annotations
 
 import asyncio
+import json
 import logging
+import re
 from datetime import datetime, timezone, timedelta
 from typing import TYPE_CHECKING
 
@@ -232,11 +234,9 @@ class SessionAgent:
         if pending:
             return self._reply(message, pending)
 
-        # ④ 汇总
-        replies = [wi.result_text for wi in done if wi.result_text]
-        if not replies:
-            return self._reply(message, "Emily 已处理完毕。")
-        return self._reply(message, "\n\n".join(replies))
+        # ④ M4: Session 合成最终回复（替代 join 拼接）
+        final_reply = await self._synthesize_final_reply(message, done)
+        return self._reply(message, final_reply)
 
     # ── 意图识别 + WorkItem 拆分 ──
 
@@ -323,6 +323,9 @@ class SessionAgent:
             call_category="intent",
         )
         try:
+            # 意图识别 prompt 较大（含 SOP catalog + 对话历史），router_model（v4-flash）
+            # 在大 prompt 上可能把输出放进 reasoning_content 而返回空白 content；
+            # 用主模型（v4-pro）更可靠
             result = await self._llm.chat_messages(full_messages, json_mode=True)
             data = result.get("data", {})
             logger.debug("SessionAgent intent for '%s': sop=%s conf=%s compound=%s",
@@ -381,14 +384,16 @@ class SessionAgent:
                 )]
 
         if fallback or not sop_id:
-            return [WorkItem(
+            wi = WorkItem(
                 session_id=self.conversation_id,
                 user_input=content,
                 user_id=self.context.user_id,
                 sop_id=None,
                 intent_type="fallback",
                 priority=1,
-            )]
+            )
+            wi.output_spec = self._derive_output_spec(intent, None)  # M1
+            return [wi]
 
         if is_compound and sub_tasks:
             items = []
@@ -401,17 +406,160 @@ class SessionAgent:
                     intent_type="sop",
                     priority=st.get("priority", 1) if isinstance(st, dict) else 1,
                 )
+                wi.output_spec = self._derive_output_spec(st if isinstance(st, dict) else intent,
+                                                          wi.sop_id)  # M1
                 items.append(wi)
             return items
 
-        return [WorkItem(
+        wi = WorkItem(
             session_id=self.conversation_id,
             user_input=content,
             user_id=self.context.user_id,
             sop_id=sop_id,
             intent_type="sop",
             priority=1,
-        )]
+        )
+        wi.output_spec = self._derive_output_spec(intent, sop_id)  # M1
+        # M2: 路由派生的 query_type 预填给 SkillExecutor，省掉 step-01 的 LLM 参数提取
+        query_type = intent.get("query_type")
+        if sop_id == "SOP-005-QRY" and query_type:
+            setattr(wi, "_prefilled_params", {"query_type": query_type})
+            logger.debug("Session[%s] prefilled query_type=%s for SOP-005-QRY",
+                         self.conversation_id, query_type)
+        return [wi]
+
+    def _derive_output_spec(self, intent: dict, sop_id: str | None) -> dict:
+        """M1: 从路由 LLM 输出解析 output_spec，代码补全 max_length/data_fields。"""
+        spec = dict(intent.get("output_spec") or {})
+        # LLM 判的 4 个语义字段，缺字段兜底
+        spec.setdefault("intent", sop_id or "fallback")
+        spec.setdefault("detail", "standard")
+        spec.setdefault("format", "natural")
+        spec.setdefault("cite_source", False)
+        # 代码兜底：max_length 按 detail 映射
+        detail_to_len = {"brief": 150, "standard": 300, "detailed": 500}
+        spec["max_length"] = detail_to_len.get(spec["detail"], 300)
+        # 代码兜底：data_fields 按 sop_id + query_type 映射
+        spec["data_fields"] = SessionAgent._map_data_fields(sop_id, intent.get("query_type"))
+        return spec
+
+    @staticmethod
+    def _map_data_fields(sop_id: str | None, query_type: str | None) -> list[str]:
+        """M1: 按 SOP + query_type 映射要回传的数据字段（结构化、可枚举）。"""
+        if sop_id == "SOP-005-QRY":
+            return {
+                "event": ["events"], "task": ["tasks"], "meeting": ["meetings"],
+                "file": ["files"], "summary": ["events", "tasks", "node_progress"],
+                "project": ["project_info"], "user": ["user_info"],
+            }.get(query_type or "", ["events"])
+        if sop_id and sop_id.startswith("SOP-002"):
+            return ["event_no", "status"]
+        # 默认：让 WorkItem 自行决定
+        return []
+
+    # ── M4: Session 回复合成层 ──
+
+    async def _synthesize_final_reply(self, message: "StandardMessage",
+                                      done_workitems: list) -> str:
+        """M4: 基于 WorkItem 的 structured_result 调 LLM 组织最终回复。
+
+        单 WI / 多 WI 统一走本方法。review_reply 审核在合成后做（M4）。
+        LLM 不可用时回退到规则拼串兜底（保留 fail-open）。
+        """
+        if not done_workitems:
+            return "Emily 已处理完毕。"
+
+        # 渲染 wi_results 文本
+        wi_results_text = self._render_wi_results(done_workitems)
+
+        # 加载 + format prompt
+        from ..infrastructure.llm.prompt_loader import load_prompt
+        prompt_template = load_prompt("session_reply")
+        prompt_vars = self.context.get_prompt_variables()
+        system_prompt = prompt_template.replace("{wi_results}", wi_results_text)
+        system_prompt = system_prompt.replace("{user_input}", (message.content or "")[:500])
+        system_prompt = system_prompt.replace("{current_datetime}", _beijing_now_str())
+        for key, value in prompt_vars.items():
+            replacement = str(value) if value else "（无）"
+            system_prompt = system_prompt.replace(key, replacement)
+        system_prompt = re.sub(r'\{[a-z_]+\}', '', system_prompt)
+
+        full_messages = [{"role": "system", "content": system_prompt}]
+        full_messages.extend(self.context.message_history)
+        full_messages.append({"role": "user", "content": message.content or ""})
+
+        # LLM 合成 —— 用主模型（reasoner）合成最终回复
+        # router_model（v4-flash）在长 prompt 下可能把内容放进 reasoning_content
+        # 而返回空白 content，导致 JSON 解析失败；主模型（v4-pro）更可靠
+        if self._llm:
+            try:
+                result = await self._llm.chat_messages(full_messages, json_mode=True)
+                data = result.get("data", {})
+                reply = data.get("reply", "") if isinstance(data, dict) else ""
+                if reply and len(reply) > 10:
+                    # M4: review_reply 上移——审核合适性
+                    await self._review_final_reply(reply, done_workitems)
+                    return reply
+                logger.warning("M4: Session 合成 reply 不可用 %r，回退拼串", reply[:80])
+            except Exception as e:
+                logger.warning("M4: Session 合成失败 %s，回退拼串", e)
+
+        # 兜底拼串（fail-open）
+        return self._fallback_join_results(done_workitems)
+
+    def _render_wi_results(self, done_workitems: list) -> str:
+        """M4: 把多个 WI 的 structured_result 渲染成 prompt 文本。"""
+        parts = []
+        for idx, wi in enumerate(done_workitems, 1):
+            sr = getattr(wi, "structured_result", None)
+            if sr is None:
+                parts.append(f"### 任务 {idx}\n（无结构化结果）")
+                continue
+            parts.append(
+                f"### 任务 {idx}\n"
+                f"- intent: {sr.intent}\n"
+                f"- status: {sr.status}\n"
+                f"- risk_level: {sr.risk_level}\n"
+                f"- data: {json.dumps(sr.data, ensure_ascii=False, default=str)}\n"
+                f"- summary_facts: {json.dumps(sr.summary_facts, ensure_ascii=False)}\n"
+                f"- rag_sources: {json.dumps(sr.rag_sources, ensure_ascii=False)}\n"
+                f"- business_object_no: {sr.business_object_no}\n"
+                f"- issues: {json.dumps(sr.issues, ensure_ascii=False)}\n"
+                f"- needs_confirm: {sr.needs_confirm}\n"
+                f"- error_category: {sr.error_category}\n"
+                f"- suggested_followup: {sr.suggested_followup}\n"
+            )
+        return "\n".join(parts)
+
+    async def _review_final_reply(self, reply: str, done_workitems: list) -> None:
+        """M4: review_reply 上移——审回复合适性，只标记不拦截（沿用 RealGuardian 语义）。"""
+        if not done_workitems:
+            return
+        from ..workitem.pipeline.real_guardian import RealGuardian
+        guardian = RealGuardian(llm_client=self._llm, config=None)
+        for wi in done_workitems:
+            try:
+                note = await guardian.review_reply(reply, wi)
+                if note and note.issues:
+                    logger.info("M4 review_reply issues: %s", note.issues)
+            except Exception as e:
+                logger.debug("M4 review_reply failed (silent skip): %s", e)
+
+    def _fallback_join_results(self, done_workitems: list) -> str:
+        """M4: LLM 不可用时的兜底拼串（fail-open）。"""
+        parts = []
+        for wi in done_workitems:
+            sr = getattr(wi, "structured_result", None)
+            if sr is None:
+                continue
+            if sr.status == "success":
+                facts = "；".join(sr.summary_facts[:3])
+                parts.append(facts or "操作完成")
+            elif sr.status == "failed":
+                parts.append(f"处理失败：{sr.issues[0] if sr.issues else '未知原因'}")
+            else:
+                parts.append("；".join(sr.summary_facts[:3]) or "部分完成")
+        return "\n\n".join(parts) if parts else "Emily 已处理完毕。"
 
     # ── Pending / Confirm ──
 
@@ -626,8 +774,8 @@ class SessionAgent:
         if text in _SIMPLE_FAREWELLS:
             return "再见，有事随时找我！"
         if text in _SIMPLE_SELF_INTRO or any(k in text for k in ["你是谁", "你叫什么"]):
-            return ("我是 Emily，你的工程项目管理助手。可以帮你记录事件、管理任务、"
-                    "归档会议、查询项目数据，随时吩咐！")
+            return ("我是艾米（Emily），Emily 系统中负责与你对话的服务 AI。"
+                    "可以帮你记录事件、管理任务、归档会议、查询项目数据，随时吩咐！")
         return None
 
 

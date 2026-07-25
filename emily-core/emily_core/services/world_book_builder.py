@@ -482,9 +482,16 @@ class ProjectWorldBookBuilder:
             ppl_str = " / ".join(f"{u['name']}({u['role']})" for u in kp[:4])
             lines.append(f"👥 {ppl_str}")
 
-        # 层3：结构
+        # 层3：结构（全景节点）
         s = content_json.get("structure", {})
         if s.get("total_nodes", 0) > 0:
+            lines.append(
+                "项目工作以“全景节点”树组织，每个节点是项目的一项任务或阶段性成果。"
+                "节点分三级：里程碑（MILESTONE，关键节点/阶段性成果）、"
+                "工作包（WORK_PACKAGE，可分解的工作分组，默认类型）、"
+                "任务（TASK，最小可执行单元，不再分解）。"
+                "用户通过加入某个节点参与项目协作，所有工作（事件、任务、文件）挂在具体节点下。"
+            )
             lines.append(
                 f"📊 {s['total_nodes']}节点：{s.get('completed', 0)}完成 / "
                 f"{s.get('in_progress', 0)}进行中 / {s.get('overdue', 0)}逾期 ｜ "

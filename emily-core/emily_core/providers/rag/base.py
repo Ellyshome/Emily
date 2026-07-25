@@ -27,7 +27,7 @@ class RagSearchResponse:
 class RagProvider(ABC):
     """知识库检索提供者抽象基类。
 
-    所有 RAG 实现（MaxKB / 本地关键词）必须实现此接口。
+    所有 RAG 实现（pgvector / 本地关键词）必须实现此接口。
     """
 
     @abstractmethod

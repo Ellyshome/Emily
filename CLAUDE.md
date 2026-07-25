@@ -81,7 +81,7 @@ QQ → NapCat → AstrBot → emily_agent 薄插件
 | [docs/数据库设计.md](docs/数据库设计.md) | 53 表速查 + 每表完整字段架构 + ER 关系图 + 维护注意事项 | 改模型、加表/字段、排查数据问题 |
 | [docs/开发记录.md](docs/开发记录.md) | EmyBot M1-M15→Emily Phase 0/A/B/C 演进 + 7 项架构决策 + 权威文档索引 | 了解历史决策原因、查阅原始设计文档 |
 | [docs/技术踩坑备忘录.md](docs/技术踩坑备忘录.md) | 按类别的 20+ 踩坑（容器/DB/AstrBot/异步/Hook/RAG/模式切换），每条现象+原因+解决 | 遇到问题先查、写新代码避坑 |
-| [docs/脚本工具目录.md](docs/脚本工具目录.md) | 25 个脚本按 4 大功能域分组：职责、聚合归属、典型用法、调度归属、速查表 | 手动执行脚本前查用法、了解脚本间聚合关系 |
+| [docs/脚本工具目录.md](docs/脚本工具目录.md) | 31 个脚本按功能域分组，由 `scriptmgr export` 从 `emily-data/config/scripts_registry.yaml` 自动生成 | 手动执行脚本前查用法、了解脚本间聚合关系 |
 
 ---
 
@@ -98,6 +98,7 @@ QQ → NapCat → AstrBot → emily_agent 薄插件
 | 7 | **Hook 三态 deny-wins** | ALLOW/WARN/BLOCK。before 异常=BLOCK；after 异常不阻断 |
 | 8 | **`agent/` 已删除** | 原 MasterAgent/BusinessFlowAgent 等已提取到 SessionAgent/WorkItemAgent。SOPIntentRegistry 和 ToolRegistry 已废弃删除，`agent/sop_parser.py`（SOP §3.2 白名单提取，已无调用者）随之清理，整个 `agent/` 目录移除。工具白名单现由 Skill YAML 的 tools 字段声明，SkillExecutor 执行时校验 |
 | 9 | **M15 WorkOrder 已弃用** | 旧 M15 8 阶段 WorkOrder 管道已完全移除，当前唯一路径是 `WorkItem` + `BusContext` + 4 节点 `PipelineBUS` |
+| 10 | **ToolManager vs ScriptManager 边界** | ToolManager 管 LLM 运行时工具（`BusinessFlowTool.handler`，进程内 async）；ScriptManager 管 `scripts/` 开发者脚本（subprocess CLI），共享 service 层，互不调用。脚本元信息声明在 `emily-data/config/scripts_registry.yaml`，目录由 `scriptmgr export` 生成。 |
 
 ---
 
@@ -112,9 +113,10 @@ QQ → NapCat → AstrBot → emily_agent 薄插件
 **emy-test 强制规则**：`--sender-id` 必须使用 `users` 表中真实存在的用户 UUID。随便编一个不存在的 ID 会导致：系统自动创建用户（污染 users 表）+ 权限降级到 level 1（测试的是访客降级路径，结果完全不可信）。每次测试前先查：`docker exec emily-postgres psql -U emily -d emily -c "SELECT id, username, permission_level FROM users WHERE status = 'active' ORDER BY permission_level LIMIT 10;"`
 
 **LLM 流量代理使用规则**：
-- **jsonl 优先**：AI 工具排查问题时直接用 `emily-data\logs\llm_trace.jsonl`，每行一条 DeepSeek API 调用（含 messages 全文、响应 JSON、model、usage、finish_reason；已过滤 url/method/status_code/headers 等 SDK 噪音字段，不再记录 Authorization API key），支持 `tail` / `head` / Grep 逐行读取。过滤规则见 `docker/mitmproxy/trace_addon.py`
+- **jsonl（机器读）**：AI 工具排查问题时直接用 `emily-data\logs\llm_trace.jsonl`，每行一条 DeepSeek API 调用（含 messages 全文、响应 JSON、model、usage、finish_reason；已过滤 url/method/status_code/headers 等 SDK 噪音字段，不再记录 Authorization API key），支持 `tail` / `head` / Grep 逐行读取
+- **md（人读，全量）**：开发者阅读用 `emily-data\logs\llm_trace.md`，每条包含：所有 messages（含完整 system prompt 和对话历史）、LLM 思考过程（reasoning_content，reasoner 模型独有的思维链）、完整回复 content、model、token 用量（含 cache/reasoning 明细）
 - **mitmweb UI**：需要实时观察流量时打开 `http://localhost:8081`（密码 `emily_proxy_2026`），已过滤仅显示 `api.deepseek.com`。注意 UI 含明文 API key，端口已绑 `127.0.0.1` 仅宿主机访问
-- **关闭 jsonl 落盘**：注释 `docker-compose-napcat.yml` 中 mitmproxy 的 `LLM_TRACE_ENABLED=1` 环境变量，`docker compose up -d mitmproxy`（不影响代理功能，mitmweb UI 仍可用）
+- **关闭落盘**：注释 `docker-compose-napcat.yml` 中 mitmproxy 的 `LLM_TRACE_ENABLED=1` 环境变量，`docker compose up -d mitmproxy`（不影响代理功能，mitmweb UI 仍可用）
 - **关闭代理**：注释 `docker-compose-napcat.yml` 中 emily-core 的 `HTTPS_PROXY` 和 `SSL_CERT_FILE` 两行，`docker compose restart emily-core`
 
 **CodeGraph 优先原则**：代码探索类问题（"X 怎么工作"、"谁调用了 Y"、"改动 Z 会影响什么"）优先用 CodeGraph，一句 `codegraph_explore("SessionAgent handle_message")` 替代多轮 Grep+Read。日常写代码前先用 `codegraph_explore` 了解相关模块，而非全量通读文件。
@@ -209,6 +211,14 @@ docker exec mitmproxy tail -5 /app/logs/llm_trace.jsonl
 
 # 在日志文件内搜索特定关键词（如 "Authorization", "error", "tool_registry"）
 docker exec mitmproxy grep -c "" /app/logs/llm_trace.jsonl  # 总行数
+
+# ScriptManager 脚本管理
+uv run python scripts/scriptmgr.py list                    # 列出全部脚本
+uv run python scripts/scriptmgr.py describe <name>         # 显示脚本详情
+uv run python scripts/scriptmgr.py check                   # 跑全部脚本自检
+uv run python scripts/scriptmgr.py run <name> --args "..." # 执行脚本
+uv run python scripts/scriptmgr.py test                    # 跑 smoke 用例
+uv run python scripts/scriptmgr.py export --out docs/脚本工具目录.md  # 重生成脚本目录
 ```
 
 ---

@@ -67,7 +67,7 @@ async def handle_knowledge_search(
 
     Args:
         params: LLM 提取的结构化参数 {query, top_k?, stage?, role?}
-        rag_provider: RAG 检索提供者（MaxKBRagProvider 或 LocalFileRagProvider）
+        rag_provider: RAG 检索提供者（PgVectorRagProvider 或 LocalFileRagProvider）
 
     Returns:
         dict: {

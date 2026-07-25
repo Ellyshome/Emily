@@ -70,6 +70,9 @@ class SessionContext:
     # ── SOP 目录摘要 ──
     sop_catalog_summary: str = ""
 
+    # ── 全景节点参考模板摘要 ──
+    node_template_catalog: str = ""
+
     # ── 当前日期时间 ──
     current_datetime: str = ""
 
@@ -90,7 +93,7 @@ class SessionContext:
     # ── 元认知模块字段（🔥 可热更新）──
     project_world_book: str = ""        # 项目世界书纯文本摘要（注入 prompt）
     rule_book: str = ""                 # 规则书全文（注入 prompt）
-    system_description: str = ""        # 系统自我描述文本（注入 prompt）
+    system_description: str = ""        # 认知书文本（注入 prompt）
 
     # ══════════════════════════════════════════════════════════════════════════
     #  计算属性
@@ -223,6 +226,25 @@ class SessionContext:
                         )
                 except Exception as e:
                     logger.warning("sop_catalog_summary failed: %s", e, exc_info=True)
+
+        # 全景节点模板摘要（从 index.yaml 读取）
+        try:
+            from pathlib import Path
+            from ..infrastructure.paths import resolve_data_path
+            _tmpl_dir = resolve_data_path("node_templates", "/app/data/node_templates", "emily-data/node_templates")
+            _idx_path = Path(_tmpl_dir) / "index.yaml"
+            if _idx_path.exists():
+                import yaml
+                with open(_idx_path, "r", encoding="utf-8") as _f:
+                    _idx = yaml.safe_load(_f) or {}
+                _templates = _idx.get("templates", [])
+                if _templates:
+                    _names = [t.get("node_name", "?") for t in _templates]
+                    ctx.node_template_catalog = (
+                        f"({len(_templates)} 个模板): {', '.join(_names)}"
+                    )
+        except Exception as e:
+            logger.debug("node_template_catalog load skipped: %s", e)
         if errors:
             logger.warning("SessionContext.create: %d data fetch errors for user=%s",
                            len(errors), user_id)
@@ -362,6 +384,7 @@ class SessionContext:
             "{conversation_summary}": self.conversation_summary,
             "{user_memory}": self.long_term_memory,
             "{sop_catalog}": self.sop_catalog_summary,
+            "{node_template_catalog}": self.node_template_catalog,
             "{current_datetime}": self.current_datetime,
             "{available_skills}": ", ".join(self.available_skills) or "（无）",
             "{recent_turns}": "",
@@ -416,11 +439,29 @@ class SessionContext:
             logger.warning("SessionContext archive persist failed: %s", e)
 
     async def _consolidate_conversation_summary(self, llm_client) -> None:
-        """归档时整合本次对话到 conversation_summary。"""
+        """归档时整合本次对话到 conversation_summary。
+
+        仅处理私聊会话。群聊中多人共用一个 Session，归档会导致其他群成员的消息
+        混入本用户的个人摘要，因此群聊会话归档时跳过摘要整合。
+        """
         from ..repositories.user_repo import UserRepository
+        from ..infrastructure.database.session import get_session
+        from ..infrastructure.database.models import Conversation
 
         user = UserRepository.get_by_id(self.user_id)
         if not user:
+            return
+
+        # 守卫：仅私聊会话才生成摘要，群聊跳过
+        with get_session() as session:
+            conv = session.query(Conversation).filter(
+                Conversation.id == self.conversation_id
+            ).first()
+        if conv and conv.conversation_type != "private":
+            logger.debug(
+                "Skipping summary consolidation for non-private conversation %s (type=%s)",
+                self.conversation_id, conv.conversation_type,
+            )
             return
 
         existing_summary = user.conversation_summary or ""

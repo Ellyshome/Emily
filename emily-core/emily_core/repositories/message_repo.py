@@ -454,16 +454,34 @@ class MessageRepository:
 
     @staticmethod
     def get_recent_by_user_id(user_id: str, limit: int = 20) -> list[dict]:
-        """获取用户最近入站消息（跨会话，OpenAI 格式）。
+        """获取用户最近的完整对话（含用户消息 + Agent 回复），按时间正序。
+
+        先定位用户最近活跃的会话，再拉取该会话的完整消息记录，
+        确保 message_history 中包含一问一答的完整对话结构。
 
         Args:
             user_id: 用户 ID
-            limit: 返回条数上限（默认 20）
+            limit: 返回条数上限（默认 20，实际取 limit*2 以容纳用户+Agent 各占一半）
 
         Returns:
             [{role, content, time, sender_name}, ...] 按时间正序
         """
         with get_session() as session:
+            # 1. 找到该用户最近活跃的私聊会话（排除群聊，确保对话记忆是1对1的）
+            recent_msg = (
+                session.query(Message.conversation_id)
+                .join(Conversation, Message.conversation_id == Conversation.id)
+                .filter(
+                    Message.sender_user_id == user_id,
+                    Conversation.conversation_type == "private",
+                )
+                .order_by(Message.created_at.desc())
+                .first()
+            )
+            if not recent_msg:
+                return []
+
+            # 2. 查该会话的完整消息（用户入站 + Agent 出站）
             rows = (
                 session.query(
                     Message.content,
@@ -471,15 +489,18 @@ class MessageRepository:
                     Message.direction,
                     Message.sender_name,
                 )
-                .filter(Message.sender_user_id == user_id)
+                .filter(Message.conversation_id == recent_msg.conversation_id)
                 .order_by(Message.created_at.desc())
-                .limit(limit)
+                .limit(limit * 2)
                 .all()
             )
 
             turns = []
             for row in reversed(rows):  # 正序排列
-                role = "user" if row.direction == "user_to_agent" else "agent"
+                if row.direction in ("user_to_agent", "inbound"):
+                    role = "user"
+                else:
+                    role = "assistant"
                 turns.append({
                     "role": role,
                     "time": row.created_at or "",

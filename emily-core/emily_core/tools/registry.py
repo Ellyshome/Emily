@@ -121,6 +121,14 @@ def _register_base(core, reg):
         logger.warning("knowledge_search registered with stub handler (rag_provider is None)")
     _bc += 1
 
+    # ocr_document (VLM OCR)
+    vlc = getattr(core, "_vlm_client", None)
+    if vlc is not None:
+        from .ocr_tool import handle_ocr_document, _OCR_SCHEMA, _OCR_DESCRIPTION
+        reg.register(_tool("ocr_document", _OCR_DESCRIPTION, _OCR_SCHEMA,
+                           partial(handle_ocr_document, vlm_client=vlc)))
+        _bc += 1
+
 
 # ══════════════════════════════════════════════════════════════════════════════
 # 业务工具 
@@ -172,6 +180,35 @@ def _register_business(core, reg):
         # TC-M01: 不再传入固定 user_name，handler 运行时通过 _user_id 查 DB 解析
         bt = create_memory_tool(mem)
         reg.register(_tool(bt.name, bt.description, bt.parameters, bt.execute))
+        _buc += 1
+
+    # ── 原子工具层（RAG 录入侧）──
+    # parse_document
+    from .parse_document_tool import handle_parse_document, _PARSE_SCHEMA as _PS, _PARSE_DESCRIPTION as _PD
+    reg.register(_tool("parse_document", _PD, _PS, partial(handle_parse_document),
+                      category="business", permission_flag="all"))
+    _buc += 1
+
+    # extract_table
+    from .extract_table_tool import handle_extract_table, _TABLE_SCHEMA as _TS, _TABLE_DESCRIPTION as _TD
+    reg.register(_tool("extract_table", _TD, _TS, partial(handle_extract_table),
+                      category="business", permission_flag="all"))
+    _buc += 1
+
+    # chunk_text
+    from .chunk_tool import handle_chunk_text, _CHUNK_SCHEMA as _CS, _CHUNK_DESCRIPTION as _CD
+    reg.register(_tool("chunk_text", _CD, _CS, partial(handle_chunk_text),
+                      category="business", permission_flag="all"))
+    _buc += 1
+
+    # embed_and_index
+    tei = getattr(core, "_tei_client", None)
+    kc_repo = getattr(core, "_knowledge_chunk_repo", None)
+    if tei is not None and kc_repo is not None:
+        from .embed_tool import handle_embed_and_index, _EMBED_SCHEMA as _ES, _EMBED_DESCRIPTION as _ED
+        reg.register(_tool("embed_and_index", _ED, _ES,
+                          partial(handle_embed_and_index, tei=tei, repo=kc_repo),
+                          category="business", permission_flag="write"))
         _buc += 1
 
 

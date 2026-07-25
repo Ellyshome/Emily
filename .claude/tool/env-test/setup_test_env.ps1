@@ -2,11 +2,11 @@
 # setup_test_env.ps1 — Emily 测试环境一键工具
 #
 # 用法（在项目根目录 d:\app\Emily 下执行）:
-#   powershell -File 需求/env-test/setup_test_env.ps1                  完整重置+种子+文件
-#   powershell -File 需求/env-test/setup_test_env.ps1 -ResetOnly       仅空库重置
-#   powershell -File 需求/env-test/setup_test_env.ps1 -SeedOnly        仅种子（库已空）
-#   powershell -File 需求/env-test/setup_test_env.ps1 -SkipAdvanced    跳过010高级数据
-#   powershell -File 需求/env-test/setup_test_env.ps1 -SkipMockFiles   跳过磁盘空文件
+#   powershell -File .claude\tool\env-test\setup_test_env.ps1                  完整重置+种子+文件
+#   powershell -File .claude\tool\env-test\setup_test_env.ps1 -ResetOnly       仅空库重置
+#   powershell -File .claude\tool\env-test\setup_test_env.ps1 -SeedOnly        仅种子（库已空）
+#   powershell -File .claude\tool\env-test\setup_test_env.ps1 -SkipAdvanced    跳过010高级数据
+#   powershell -File .claude\tool\env-test\setup_test_env.ps1 -SkipMockFiles   跳过磁盘空文件
 #
 # 依赖:
 #   - Docker Desktop 运行中（emily-postgres + emily-core 容器）

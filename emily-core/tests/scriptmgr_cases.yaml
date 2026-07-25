@@ -1,0 +1,28 @@
+# ScriptManager 预设 smoke 用例
+# 每个脚本最小合法参数，scriptmgr test 逐个跑
+# 用法: uv run python scripts/scriptmgr.py test [<name>]
+
+maintain_node_template_index:
+  args: ["--check"]
+  expect_returncode: [0, 1]
+  expect_stdout_contains: ""
+
+self_check:
+  args: ["--dry-run"]
+  expect_returncode: [0, 1]
+  expect_stdout_contains: ""
+
+check_tools_consistency:
+  args: []
+  expect_returncode: [0, 1]
+  expect_stdout_contains: ""
+
+build_system_description:
+  args: ["--dry-run"]
+  expect_returncode: [0, 1]
+  expect_stdout_contains: ""
+
+generate_session_prompt:
+  args: ["--dry-run"]
+  expect_returncode: [0, 1]
+  expect_stdout_contains: ""

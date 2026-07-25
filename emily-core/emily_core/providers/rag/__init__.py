@@ -2,7 +2,7 @@
 
 导出:
   - RagProvider / SearchResult / RagSearchResponse: ABC 与数据模型
-  - MaxKBRagProvider: MaxKB HTTP API 检索（懒加载，需 aiohttp）
+  - PgVectorRagProvider: pgvector + TEI 向量检索（替代 MaxKB）
   - LocalFileRagProvider: 本地 TF 关键词搜索（零依赖回退）
 """
 
@@ -10,13 +10,13 @@ from .base import RagProvider, SearchResult, RagSearchResponse
 from .local_fallback import LocalFileRagProvider
 
 
-def get_maxkb_provider():
-    """懒加载 MaxKBRagProvider（避免本地环境缺 aiohttp 时导入失败）。"""
-    from .maxkb_provider import MaxKBRagProvider
-    return MaxKBRagProvider
+def get_pgvector_provider():
+    """懒加载 PgVectorRagProvider。"""
+    from .pgvector_provider import PgVectorRagProvider
+    return PgVectorRagProvider
 
 
 __all__ = [
     "RagProvider", "SearchResult", "RagSearchResponse",
-    "MaxKBRagProvider", "LocalFileRagProvider", "get_maxkb_provider",
+    "PgVectorRagProvider", "LocalFileRagProvider", "get_pgvector_provider",
 ]
