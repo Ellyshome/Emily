@@ -348,7 +348,7 @@ class SessionAgent:
 
         sop_id = intent.get("sop_id")
         is_compound = intent.get("is_compound", False)
-        sub_tasks = intent.get("sub_tasks", [])
+        sub_tasks = intent.get("sub_tasks") or []
         fallback = intent.get("fallback", False)
         confidence = intent.get("confidence", "none")
 

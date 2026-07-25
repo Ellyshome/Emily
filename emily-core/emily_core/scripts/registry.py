@@ -114,8 +114,8 @@ def load_registry(yaml_path: str | None = None) -> ScriptRegistry:
 
 def _resolve_registry_path() -> str:
     """三级路径探测：容器 → emily-data/config → 失败回退。"""
-    # Try container path first
-    container_path = Path("/app/data/config/scripts_registry.yaml")
+    # Try container path first (docker-compose mounts ./emily-data/config → /app/config)
+    container_path = Path("/app/config/scripts_registry.yaml")
     if container_path.exists():
         return str(container_path)
 
@@ -125,6 +125,6 @@ def _resolve_registry_path() -> str:
         return str(dev_path)
 
     raise FileNotFoundError(
-        "scripts_registry.yaml not found at container path /app/data/config/ "
+        "scripts_registry.yaml not found at container path /app/config/ "
         "or dev path emily-data/config/"
     )

@@ -79,26 +79,25 @@ class KnowledgeChunkRepo:
         Returns:
             [{id, doc_id, doc_name, chunk_index, chunk_text, similarity, metadata}]
         """
-        vec_str = f"[{','.join(str(v) for v in embedding)}]"
-        sql = sa_text(
-            "SELECT id, doc_id, doc_name, chunk_index, chunk_text, "
-            "  1 - (embedding <=> :vec) AS similarity, "
-            "  metadata "
-            "FROM knowledge_chunks "
-            "WHERE 1 - (embedding <=> :vec) >= :threshold "
-            "ORDER BY embedding <=> :vec "
-            "LIMIT :top_k"
-        )
         with self._get_session() as session:
-            rows = session.execute(
-                sql,
-                {"vec": vec_str, "threshold": threshold, "top_k": top_k},
-            ).fetchall()
+            rows = session.query(
+                KnowledgeChunk.id,
+                KnowledgeChunk.doc_id,
+                KnowledgeChunk.doc_name,
+                KnowledgeChunk.chunk_index,
+                KnowledgeChunk.chunk_text,
+                KnowledgeChunk.metadata_.label("meta"),
+                (1 - KnowledgeChunk.embedding.cosine_distance(embedding)).label("similarity"),
+            ).filter(
+                1 - KnowledgeChunk.embedding.cosine_distance(embedding) >= threshold,
+            ).order_by(
+                KnowledgeChunk.embedding.cosine_distance(embedding),
+            ).limit(top_k).all()
 
         results = []
         for row in rows:
             try:
-                meta = json.loads(row.metadata) if row.metadata else {}
+                meta = json.loads(row.meta) if row.meta else {}
             except (json.JSONDecodeError, TypeError):
                 meta = {}
             results.append({

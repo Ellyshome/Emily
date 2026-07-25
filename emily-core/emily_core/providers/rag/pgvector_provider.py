@@ -106,8 +106,8 @@ class PgVectorRagProvider(RagProvider):
             rows = self._repo.search_dense(
                 query_vec, top_k=top_k, threshold=self._similarity,
             )
-        except Exception as e:
-            logger.warning("pgvector search: DB query failed: %s", e)
+        except Exception:
+            logger.exception("pgvector search: DB query failed")
             return RagSearchResponse(
                 query=query, results=[], context_text="",
                 total=0, provider_name="pgvector",

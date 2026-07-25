@@ -121,31 +121,53 @@ async def handle_query_my_nodes(
     user_id: str = "",
     **kwargs,
 ) -> dict:
-    """查询我负责的节点。"""
+    """查询我负责或参与的节点。"""
     if node_service is None:
         return {"success": False, "reply": "NodeService 未初始化"}
 
     from ..repositories.node_repo import ProjectNodeRepo
 
-    nodes = await asyncio.to_thread(
+    project_id = params.get("project_id") or None
+    node_type = params.get("node_type") or None
+    limit = int(params.get("limit", 20))
+
+    # 查责任人 + 参与人，合并去重
+    resp_nodes = await asyncio.to_thread(
         ProjectNodeRepo.find_by_responsible_user,
         user_id,
-        project_id=params.get("project_id") or None,
-        node_type=params.get("node_type") or None,
+        project_id=project_id,
+        node_type=node_type,
         status="IN_PROGRESS",
-        limit=int(params.get("limit", 20)),
+        limit=limit,
+    )
+    part_nodes = await asyncio.to_thread(
+        ProjectNodeRepo.find_by_participant_user,
+        user_id,
+        project_id=project_id,
+        node_type=node_type,
+        status="IN_PROGRESS",
+        limit=limit,
     )
 
-    items = [
-        {
+    seen: set[str] = set()
+    merged: list[dict] = []
+    for n in resp_nodes + part_nodes:
+        if n.node_id in seen:
+            nid = n.node_id
+            continue
+        seen.add(nid)
+        merged.append({
             "node_id": n.node_id,
             "node_name": n.node_name,
             "node_type": getattr(n, "node_type", ""),
             "status": n.status,
             "deadline": n.deadline,
             "project_id": n.project_id,
-        }
-        for n in nodes
-    ]
+        })
 
-    return {"success": True, "reply": f"找到 {len(items)} 个节点", "data": items}
+    # 标记来源：哪些是负责人、哪些是参与人
+    resp_ids = {n.node_id for n in resp_nodes}
+    for item in merged:
+        item["role"] = "responsible" if item["node_id"] in resp_ids else "participant"
+
+    return {"success": True, "reply": f"找到 {len(merged)} 个节点", "data": merged}
