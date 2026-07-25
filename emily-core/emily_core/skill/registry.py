@@ -120,8 +120,8 @@ class SkillRegistry:
     def dump_as_text(self) -> str:
         """将全部 Skill 以类型树格式导出为纯文本（供 LLM 消费）。
 
-        替代 SOPIntentRegistry.dump_as_text()，成为意图识别 prompt 的唯一数据源。
-        输出结构与 SOPIntentRegistry 兼容，确保 session.md prompt 模板无需修改。
+        P1-1 精简：第二部分移除工具列表 + 步骤摘要（执行阶段从 Skill YAML 取），
+        只保留 sop_id + display_name + 说明首行，让 {sop_catalog} 成为 L1 能力树骨架。
         """
         with self._lock:
             skills = list(self._registry.values())
@@ -135,13 +135,14 @@ class SkillRegistry:
             sop_type = _extract_sop_type(skill.sop_id)
             grouped.setdefault(sop_type, []).append(skill)
 
-        # 类型描述映射
+        # 类型描述映射（P1-1 补 DOC 域）
         TYPE_DESC = {
             "REC": "记录与录入（事件/任务/会议等）",
             "FILE": "文件管理（归档/查询/分享）",
             "QRY": "数据查询（项目/进度/人员等）",
             "FLOW": "深度调查（跨维度分析/审计）",
             "SYS": "系统管理（确认/取消/设置等）",
+            "DOC": "文档处理（OCR/解析/表格抽取/向量化）",
         }
 
         # 类型级兜底策略
@@ -151,11 +152,12 @@ class SkillRegistry:
             "QRY": "这是数据查询类请求。若以上 QRY 流程均不匹配，使用 query_data 工具查询，query_type 根据用户意图选择 event/task/meeting/file/message/summary。",
             "FLOW": "这是深度调查类请求。若以上 FLOW 流程均不匹配，使用系统内置的守护调查Agent执行跨维度分析。",
             "SYS": "这是系统管理类请求。若以上 SYS 流程均不匹配，但仍需系统功能，使用对应原子工具自由推理。",
+            "DOC": "这是文档处理类请求。若以上 DOC 流程均不匹配，使用 parse_document / extract_table / chunk_text / embed_and_index 原子工具处理。",
         }
 
         lines: list[str] = []
 
-        # ── 第一部分：类型树总览 ──
+        # ── 第一部分：类型树总览（L1 骨架）──
         lines.append("## 一、业务类型树（先看这里，确定消息属于哪个类型）")
         lines.append("")
         lines.append("请先将用户消息归类到以下类型之一，再在该类型下精匹配具体流程：")
@@ -173,8 +175,8 @@ class SkillRegistry:
         lines.append("---")
         lines.append("")
 
-        # ── 第二部分：各类型详细规则 ──
-        lines.append("## 二、各类型详细匹配规则（锁定类型后精匹配）")
+        # ── 第二部分：各类型流程清单（P1-1 精简：仅 sop_id + display_name + 说明首行）──
+        lines.append("## 二、各类型流程清单（锁定类型后精匹配）")
         lines.append("")
 
         for sop_type, type_skills in grouped.items():
@@ -183,22 +185,12 @@ class SkillRegistry:
             lines.append("")
 
             for skill in type_skills:
-                # 工具列表
-                tool_names = ", ".join(t.name for t in skill.tools) if skill.tools else "（无工具声明）"
-                lines.append(f"**[{skill.sop_id}] {skill.display_name}** | 工具: {tool_names}")
+                # P1-1: 移除工具列表 + 步骤摘要（执行阶段从 Skill YAML 取）
+                lines.append(f"**[{skill.sop_id}] {skill.display_name}**")
 
-                # 执行步骤摘要
-                if skill.steps:
-                    step_descs = " → ".join(
-                        f"{s.id}({s.tool_name})" for s in skill.steps[:5]
-                    )
-                    lines.append(f"  步骤: {step_descs}")
-                else:
-                    lines.append("  步骤: （无预定义步骤）")
-
-                # instructions 首行摘要
+                # instructions 首行摘要（路由匹配必需）
                 if skill.instructions:
-                    first_line = skill.instructions.strip().split("\n")[0][:80]
+                    first_line = skill.instructions.strip().split("\n")[0][:100]
                     lines.append(f"  说明: {first_line}")
 
                 lines.append("")

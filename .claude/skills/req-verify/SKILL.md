@@ -3,7 +3,7 @@ name: req-verify
 description: >
   Emily验证测试。根据模块需求文档、实施计划、实施记录，化身资深测试工程师对Emily新开发模块/系统/脚本进行专业验证测试。
   覆盖测试计划设计、环境准备（Docker状态检查、DB预埋数据、文件系统预设）、测试执行（emy-test IM对话模拟、
-  直接API调用、数据库验证、Docker日志检查）、测试报告生成、临时产物清理。
+  直接API调用、数据库验证、Docker日志检查、LLM流量抓包分析、Session归档分析）、测试报告生成、临时产物清理。
   触发：/emy-verify、/验证测试、"帮我测试这个模块"、"验证一下这个功能"、"test this module"。
   不适用：需求文档审核（用 req-review）、制定实施计划（用 req-plan）、代码审查（用 code-review）。
 allowed-tools:
@@ -204,6 +204,7 @@ WHERE NOT EXISTS (SELECT 1 FROM users WHERE id = 'test_verify_level3');
 | **数据持久化** | DB 写入字段完整性、审计日志、关联数据一致性 | DB 查询验证 |
 | **API 契约** | 状态码、响应格式、错误信息结构 | curl 直接调用 |
 | **权限控制** | 不同 permission_level 用户的访问边界；真实用户 vs 假用户的行为差异 | 切换不同 sender-id 的 emy-test 对话；至少覆盖 3 个权限级别（level 1 访客 / level 3 执行 / level 5 管理员）+ 假用户对照 |
+| **LLM 调用链与 prompt** | LLM 调用次数/顺序、model 分层、prompt 渲染正确性、token 消耗、cache 命中率、回复格式合法 | llm_trace.jsonl 分析（5f）+ Session 归档（5g）+ emy-test 回复 |
 | **Docker 运行时** | 日志无 ERROR、容器不重启、内存稳定 | docker logs 检查 |
 | **与已有系统协同** | 不破坏现有功能、事件兼容 | emy-test 回归消息 |
 
@@ -337,6 +338,97 @@ uv run python .claude/skills/emy-test/cli.py --managed --llm --message "{操作}
 # 低权限用户
 uv run python .claude/skills/emy-test/cli.py --managed --llm --message "{相同操作}" --sender "{访客}" --sender-id "guest_test"
 ```
+
+#### 5f. LLM 流量抓包分析
+
+用于验证 LLM 调用链、prompt 渲染内容、token 消耗、模型选择、cache 命中等。Emily 通过 mitmproxy 拦截 emily-core ↔ DeepSeek 通讯，落盘到 `emily-data/logs/`。**这是验证 LLM 相关需求（如 prompt 优化、模型分层、cache 命中）的核心证据来源。**
+
+**两种读取方式**：
+
+| 文件 | 用途 | 读取方式 |
+|------|------|---------|
+| `emily-data/logs/llm_trace.jsonl` | 机器读，逐行一条 LLM 调用 JSON | `docker exec mitmproxy tail -N /app/logs/llm_trace.jsonl`；或宿主 `Get-Content -Tail N` |
+| `emily-data/logs/llm_trace.md` | 人读全量，含完整 system prompt + 思维链 | Read 工具直接读（文件可能很大，建议先 tail 看规模） |
+
+**应用日志文件**：`emily-data/logs/emily_{YYYYMMDD}.log`——emily-core 应用日志（含 Session 生命周期、WorkItem 执行、Hook 触发等），补充 `docker logs` 看不到的文件级日志。
+
+**每条 jsonl 记录的关键字段及验证用途**：
+
+| 字段 | 验证用途 |
+|------|---------|
+| `messages[0].content` | system prompt 渲染后全文——验证占位符替换、前缀稳定性、prompt 重排效果 |
+| `messages[-1].content` | 当前用户消息——验证消息拼装（如时间戳注入位置） |
+| `model` | 调用的模型——验证 router_model/guardian_model 是否生效 |
+| `usage.prompt_tokens` / `completion_tokens` / `total_tokens` | token 消耗——验证降本效果 |
+| `usage.prompt_cache_hit_tokens` / `prompt_cache_miss_tokens` | DeepSeek cache 命中——验证前缀稳定性（需 trace 字段补全后） |
+| `finish_reason` | 结束原因——`stop` 正常 / `length` 截断 / `content_filter` 过滤 |
+| `reasoning_content` | reasoner 模型思维链——排查异常输出（如把答案吞进思维链导致 content 空） |
+| `response` / `content` | LLM 完整回复——验证输出格式（JSON 是否合法、路由结果是否正确） |
+
+**典型验证场景**：
+
+```powershell
+# 场景 1：查看最近 N 条 LLM 调用（验证调用链顺序：intent → planner → auditor → composer → auditor）
+docker exec mitmproxy tail -10 /app/logs/llm_trace.jsonl
+# → 预期：记录数和顺序符合业务流程（纯知识问答应只有 intent + reply，不应走完整 5 步 BUS）
+
+# 场景 2：验证 system prompt 在多轮调用间字节级稳定（cache 命中前提）
+# 用 Read 工具读 jsonl，对比同一 Session 两次 intent 调用的 messages[0].content
+# → 预期：完全相同（含长度、内容）
+
+# 场景 3：验证 router_model 生效（intent 用 flash，composer 用 pro）
+docker exec mitmproxy grep -o '"model":"[^"]*"' /app/logs/llm_trace.jsonl | sort | uniq -c
+# → 预期：model 分布符合预期设计
+
+# 场景 4：验证 cache 命中率（trace 字段补全后）
+docker exec mitmproxy tail -10 /app/logs/llm_trace.jsonl
+# → 逐行查 usage.prompt_cache_hit_tokens / prompt_tokens 比值，同 Session 第 2 条起应 >50%
+
+# 场景 5：排查 intent 返回空白（flash 把输出吞进 reasoning_content）
+# 读 jsonl 查 finish_reason + content 长度 + reasoning_content 长度
+# → 若 content 空但 reasoning 长，说明模型把答案吞进思维链，需触发 fallback
+
+# 场景 6：应用日志排查（Session 生命周期 / WorkItem 执行 / Hook 触发）
+Get-Content "emily-data\logs\emily_$(Get-Date -Format yyyyMMdd).log" -Tail 50
+# 或 docker logs --tail 50 emily-core 2>&1
+```
+
+**记录内容**：LLM 调用次数、各调用 model/tokens/耗时、cache 命中率、异常 finish_reason、system prompt 关键片段（用于证明前缀稳定或问题）。
+
+#### 5g. Session 归档分析
+
+用于验证 Session 上下文构建、权限加载、意图识别、多轮交互、WorkItem 执行的完整轨迹。每个会话归档为独立 md 文件。**这是验证"权限是否降级""路由是否正确""调用链是否合理"的直接证据——比 docker logs 更结构化、更完整。**
+
+**文件位置与命名**：`emily-data/session_archives/{YYYY-MM-DD}_{用户名}_{会话ID}.md`
+
+```powershell
+# 定位最近的归档文件
+Get-ChildItem "emily-data\session_archives" -Filter "*.md" | Sort-Object LastWriteTime -Descending | Select-Object -First 3
+# → 取最近 3 个归档，用 Read 工具完整阅读
+```
+
+**归档结构与验证用途**：
+
+| 章节 | 内容 | 验证用途 |
+|------|------|---------|
+| 头部元信息 | 会话ID、时间、人员、Session Prompt 模板名 + 字数 | 确认会话身份与模板加载 |
+| 会话快照 | 身份与组织（user_id/职位/企业/权限 level）、可见范围（授权节点/scopes/sop_allow/permission_version）、项目、能力（技能数/工具数/三书摘要字数） | **验证权限加载是否降级**——sop_allow 非空、level 匹配预期、授权节点非空。这是判断"假 sender-id 降级"的直接证据 |
+| 第 N 轮 · 时间 | 用户消息 → 🔍 意图识别（sop_id/confidence/Prompt 渲染信息）→ LLM 调用链（每次调用的 model/耗时/tokens/摘要/思维链）→ 回复 | 验证路由准确性、调用链合理性、回复质量、多轮上下文保持 |
+
+**典型验证场景**：
+
+| 场景 | 在归档中查找 | 预期 |
+|------|------------|------|
+| 权限未降级 | 会话快照段 | `sop_allow` 列表含多个 SOP-XXX；`权限: level N` 与预期一致（非 level 1 访客）；`授权节点` `scopes` 非空 |
+| 意图识别路由正确 | 🔍 意图识别段 | `sop=XXX` 与预期匹配；置信度 high/medium（非全 none） |
+| LLM 调用链合理 | LLM 调用 (N) 段 | 调用次数符合业务（纯问答 2 次，录入类 3-5 次）；各调用 model 符合分层设计 |
+| Prompt 渲染正确 | Prompt 行 | 渲染后字数合理；关键变量（sop_catalog/user_name/project_name）非"（无）" |
+| 回复质量 | 回复段 | 回复内容与业务一致；无幻觉；格式符合 IM 规范（无 Markdown） |
+| 多轮上下文保持 | 多轮段 | 后续轮次能引用前轮信息（如"刚才那个事件"） |
+
+**记录内容**：归档文件路径、会话快照关键字段（证明权限未降级）、意图识别结果、LLM 调用次数与链路、回复内容摘要。
+
+> **5f + 5g 与 5a-5e 的关系**：5a-5e 是"主动测试"（发消息/调 API/查 DB），5f-5g 是"被动观测"（看测试产生的 trace 和归档）。两者配合——5a 触发行为，5f/5g 提供证据。**任何 LLM 相关结论必须有 5f 或 5g 的证据支撑，不能只凭 emy-test 回复文本下判断。**
 
 ### Step 6：生成测试报告
 
@@ -502,7 +594,7 @@ docker exec emily-postgres psql -U emily -d emily -c "SELECT count(*) FROM {受�
 
 ---
 
-## 六、Docker 运行时状态
+## 六、运行时可观测性
 
 ### 6.1 容器日志检查
 
@@ -513,9 +605,30 @@ docker exec emily-postgres psql -U emily -d emily -c "SELECT count(*) FROM {受�
 | 容器重启 | {无 / 有} | — |
 | 内存使用 | {正常 / 异常增长} | `docker stats --no-stream` 快照 |
 
-### 6.2 异常日志详情（如有）
+### 6.2 LLM 调用链分析（基于 `emily-data/logs/llm_trace.jsonl`）
 
-{粘贴测试期间出现的异常日志行。如无此节可省略。}
+| 检查项 | 结果 | 详情 |
+|--------|------|------|
+| 调用次数与顺序 | {符合/不符合预期} | {如 intent → planner → auditor → composer → auditor，共 N 次} |
+| model 分层 | {符合/不符合} | {intent 用 flash，composer 用 pro 等} |
+| token 消耗 | {正常/异常} | {总 tokens / 各调用 tokens 明细} |
+| cache 命中率 | {N%} | {prompt_cache_hit_tokens / prompt_tokens；同 Session 第 2 条起应 >50%} |
+| finish_reason | {正常/异常} | {是否有 length/content_filter 异常；是否有 content 空白 + reasoning 长} |
+| prompt 渲染 | {正确/错误} | {占位符是否替换、前缀是否字节级稳定} |
+
+### 6.3 Session 归档验证（基于 `emily-data/session_archives/`）
+
+| 检查项 | 结果 | 详情 |
+|--------|------|------|
+| 归档文件 | {路径} | {YYYY-MM-DD_用户_会话ID.md} |
+| 权限快照 | {未降级/已降级} | {sop_allow 列表、level、授权节点、scopes} |
+| 意图识别 | {正确/错误} | {各轮 sop_id、confidence} |
+| 调用链 | {合理/不合理} | {各轮调用次数、各阶段 model} |
+| 回复质量 | {合格/不合格} | {无幻觉、IM 格式合规、引用来源正确} |
+
+### 6.4 异常详情（如有）
+
+{粘贴测试期间出现的异常日志行 / 异常 LLM trace 记录 / 归档中的异常段。如无此节可省略。}
 
 ---
 
@@ -589,6 +702,8 @@ uv run python .claude/skills/emy-test/cli.py --managed --llm --message "..." --s
 | 11 | 编造测试结果 | 实际未执行的测试不能写 PASS。没有证据支撑的结论不能下 |
 | 12 | 报告写得像日志流水账 | 报告必须有结构：环境→计划→结果→Bug→结论。逐项结果用表格 |
 | **13** | **用假 sender-id 测试** | **绝对禁止随便造一个 sender-id！必须先查 users 表，用真实存在的 ID 测试，否则测试的是访客降级路径，结果完全无参考价值** |
+| **14** | **LLM 相关结论只凭回复文本下判断** | **必须查 `llm_trace.jsonl` 或 `session_archives/` 作为证据——回复"看起来对"不代表 prompt 渲染对、model 分层对、cache 命中对、调用链合理** |
+| **15** | **不查 session_archive 就下权限/路由结论** | **session_archive 的"会话快照"段是权限是否降级的直接证据；"意图识别"段是路由是否正确的直接证据。不查就下结论 = 猜测** |
 
 ---
 
@@ -620,6 +735,11 @@ uv run python .claude/skills/emy-test/cli.py --managed --llm --message "..." --s
 | **离线烟雾测试** | `uv run python scripts/smoke_test.py` | Session→WorkItem→BUS 骨架（无 LLM） |
 | **配置检查** | `uv run python -c "from config_loader import get_core_url, get_llm_config; print(get_core_url()); print(get_llm_config())"` | 确认 emy-test 配置 |
 | **清除 pycache** | `docker exec emily-core find /app/emily_core -name '__pycache__' -type d -exec rm -rf {} +` | 代码变更后强制重编译 |
+| **LLM trace（jsonl）** | `docker exec mitmproxy tail -N /app/logs/llm_trace.jsonl` | LLM 调用逐行记录（messages/usage/model/finish_reason） |
+| **LLM trace（md 全量）** | Read `emily-data/logs/llm_trace.md` | 人读全量（含完整 system prompt + 思维链） |
+| **应用日志文件** | `Get-Content "emily-data\logs\emily_YYYYMMDD.log" -Tail N` | emily-core 文件级日志（补充 docker logs） |
+| **Session 归档定位** | `Get-ChildItem "emily-data\session_archives" -Filter "*.md" \| Sort-Object LastWriteTime -Descending` | 会话归档文件列表 |
+| **mitmweb UI** | 浏览器 `http://localhost:8081`（密码 `emily_proxy_2026`） | 实时 LLM 流量观察 |
 
 > **注意**：Python 环境基于 uv，命令使用 `uv run python` 而非裸 `python`。
 
@@ -632,14 +752,17 @@ uv run python .claude/skills/emy-test/cli.py --managed --llm --message "..." --s
 - [ ] 已读取需求文档、实施计划、实施记录（如存在）
 - [ ] 已确认 Docker 环境健康（docker ps + curl health）
 - [ ] 已确认 LLM 可用性（如测试需要）
-- [ ] 测试用例覆盖：正常路径、边界、异常、权限、状态机、API契约、数据持久化、运行时
+- [ ] 测试用例覆盖：正常路径、边界、异常、权限、状态机、API契约、数据持久化、LLM 调用链、运行时
 - [ ] 每条用例有明确的预期行为和通过标准
 - [ ] 实际执行了所有测试（非假设结果、非编造）
 - [ ] 每条用例记录了实际输入输出作为证据
-- [ ] 报告包含所有 8 个章节（环境→计划→结果→Bug→DB验证→Docker状态→结论→附录）
+- [ ] 报告包含所有 8 个章节（环境→计划→结果→Bug→DB验证→运行时可观测性→结论→附录）
 - [ ] 已知 Bug 有严重程度、复现步骤、影响范围、修复建议
 - [ ] 测试结论明确（✅通过 / ⚠️有条件通过 / ❌未通过），符合判定标准
 - [ ] 已检查 Docker 日志中的 ERROR/WARNING
+- [ ] 已分析 LLM 调用链（`llm_trace.jsonl`）：调用次数/顺序、model 分层、token 消耗、cache 命中率、异常 finish_reason
+- [ ] 已验证 Session 归档（`session_archives/`）：权限快照未降级、意图识别路由正确、调用链合理
+- [ ] LLM/路由/权限相关结论有 llm_trace 或 session_archive 证据支撑（非仅凭 emy-test 回复文本判断）
 - [ ] 已进行 DB 数据验证（如测试涉及数据写入）
 - [ ] 测试报告命名遵循统一约定（`{模块标识}_测试报告_V{版本号}.md`），保存位置正确
 - [ ] 已清理临时脚本、文件桩、测试数据（或标注保留原因）
