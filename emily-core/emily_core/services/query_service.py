@@ -215,6 +215,18 @@ class QueryService:
                 "total": 0,
             }
 
+        elif qt == "my_nodes":
+            items = self.query_my_nodes(
+                user_id=cmd.sender_name or "",
+                project_id=cmd.project_id,
+                limit=cmd.limit,
+            )
+            return {
+                "query_type": qt,
+                "items": items,
+                "total": len(items),
+            }
+
         else:
             logger.warning("Unknown query_type: %s", qt)
             return {
@@ -330,16 +342,71 @@ class QueryService:
         time_range: str = "all",
         limit: int = 50,
     ) -> list[dict]:
-        """用户列表（含消息计数）。"""
+        """用户列表（含消息计数 + 节点归属）。"""
+        from ..repositories.node_repo import ProjectNodeRepo
+
         users = self.user_repo.list_users(limit=limit)
         results = []
         for u in users:
+            # 查该用户的节点参与信息
+            node_names: list[str] = []
+            try:
+                resp_nodes = ProjectNodeRepo.find_by_responsible_user(
+                    u.id, status="IN_PROGRESS", limit=50,
+                )
+                part_nodes = ProjectNodeRepo.find_by_participant_user(
+                    u.id, status="IN_PROGRESS", limit=50,
+                )
+                seen = set()
+                for n in resp_nodes + part_nodes:
+                    if n.node_id not in seen:
+                        seen.add(n.node_id)
+                        role = "负责人" if n.node_id in {r.node_id for r in resp_nodes} else "参与"
+                        node_names.append(f"{n.node_name}({role})")
+            except Exception:
+                pass
+
             results.append({
                 "user_id": u.id,
                 "username": u.username,
                 "display_name": u.username,
                 "status": u.status or "active",
                 "created_at": u.created_at,
+                "node_names": node_names,
+            })
+        return results
+
+    def query_my_nodes(
+        self,
+        user_id: str = "",
+        project_id: str | None = None,
+        limit: int = 50,
+    ) -> list[dict]:
+        """查询用户负责或参与的全景节点。"""
+        from ..repositories.node_repo import ProjectNodeRepo
+
+        resp_nodes = ProjectNodeRepo.find_by_responsible_user(
+            user_id, project_id=project_id, status="IN_PROGRESS", limit=limit,
+        )
+        part_nodes = ProjectNodeRepo.find_by_participant_user(
+            user_id, project_id=project_id, status="IN_PROGRESS", limit=limit,
+        )
+
+        seen: set[str] = set()
+        results = []
+        resp_ids = {n.node_id for n in resp_nodes}
+        for n in resp_nodes + part_nodes:
+            if n.node_id in seen:
+                continue
+            seen.add(n.node_id)
+            results.append({
+                "node_id": n.node_id,
+                "node_name": n.node_name,
+                "node_type": getattr(n, "node_type", ""),
+                "status": n.status,
+                "deadline": n.deadline,
+                "project_id": n.project_id,
+                "role": "responsible" if n.node_id in resp_ids else "participant",
             })
         return results
 
@@ -578,9 +645,30 @@ class QueryService:
                 line = f"  {name}"
                 if status != "active":
                     line += f" [{status}]"
+                # 附带节点信息
+                node_names = u.get("node_names") or []
+                if node_names:
+                    line += f" → 节点: {', '.join(node_names[:3])}"
+                    if len(node_names) > 3:
+                        line += f" ...等{len(node_names)}个"
                 lines.append(line)
             if total > 10:
                 lines.append(f"... 还有 {total - 10} 位")
+            return "\n".join(lines)
+
+        # ── my_nodes ──
+        elif query_type == "my_nodes":
+            if total == 0:
+                return "未找到您负责或参与的全景节点。"
+            lines = [f"您共参与 {total} 个全景节点："]
+            for i, n in enumerate(items[:15], 1):
+                name = n.get("node_name", "")
+                status = n.get("status", "")
+                role = n.get("role", "participant")
+                role_label = "责任人" if role == "responsible" else "参与人"
+                lines.append(f"  {i}. {name} [{status}]（{role_label}）")
+            if total > 15:
+                lines.append(f"... 还有 {total - 15} 个节点")
             return "\n".join(lines)
 
         # ── project ──

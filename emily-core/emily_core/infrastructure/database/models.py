@@ -1143,6 +1143,29 @@ class NodeAccessibleFile(Base):
     )
 
 
+class NodeParticipant(Base):
+    """节点参与人关联表 —— 需求文档 §3.5b node_participants。
+
+    每个节点可有多个参与人（除责任人外），支持按专业/单位分配。
+    M:N 关系，替代单一 responsible_user_id 无法覆盖的协同场景。
+    """
+    __tablename__ = "node_participants"
+
+    node_id = Column(String(100), nullable=False, comment="节点ID（FK→project_nodes.node_id）")
+    user_id = Column(String(100), nullable=False, comment="参与人ID（FK→users.id）")
+    participant_role = Column(String(20), nullable=False, default="participant", comment="参与角色：participant / approver / observer")
+    added_by = Column(String(100), nullable=False, default="", comment="添加人ID")
+    added_at = Column(String(50), nullable=False, default=_utc_now, comment="添加时间（ISO8601）")
+
+    id = Column(String, primary_key=True, default=_new_uuid)
+
+    __table_args__ = (
+        UniqueConstraint("node_id", "user_id", name="uq_np_node_user"),
+        Index("idx_np_node", "node_id"),
+        Index("idx_np_user", "user_id"),
+    )
+
+
 class NodeEvent(Base):
     """事件总线持久化表 —— 需求文档 §3.6 node_events。
 

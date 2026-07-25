@@ -18,6 +18,7 @@ from ..infrastructure.database.models import (
     NodeDeliverable,
     NodeAccessibleFile,
     NodeEvent,
+    NodeParticipant,
 )
 from ..infrastructure.database.session import get_session
 
@@ -313,6 +314,37 @@ class ProjectNodeRepo:
                 session.query(ProjectNode)
                 .filter(
                     ProjectNode.responsible_user_id == responsible_user_id,
+                    ProjectNode.is_discarded == False,
+                )
+            )
+            if project_id:
+                q = q.filter(ProjectNode.project_id == project_id)
+            if node_type:
+                q = q.filter(ProjectNode.node_type == node_type)
+            if status:
+                q = q.filter(ProjectNode.status == status)
+            return q.order_by(ProjectNode.deadline.asc()).limit(limit).all()
+
+    @staticmethod
+    def find_by_participant_user(
+        user_id: str,
+        project_id: str | None = None,
+        node_type: str | None = None,
+        status: str | None = None,
+        limit: int = 100,
+    ) -> list[ProjectNode]:
+        """按参与人查询节点。"""
+        with get_session() as session:
+            # 子查询：该用户参与的 node_id 列表
+            participant_node_ids = (
+                session.query(NodeParticipant.node_id)
+                .filter(NodeParticipant.user_id == user_id)
+                .subquery()
+            )
+            q = (
+                session.query(ProjectNode)
+                .filter(
+                    ProjectNode.node_id.in_(participant_node_ids),
                     ProjectNode.is_discarded == False,
                 )
             )
