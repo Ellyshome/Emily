@@ -166,6 +166,33 @@ class SessionAgent:
         # ── 进化日志：Session 创建 ──
         _log_session_lifecycle(self.conversation_id, self.context.user_id, "created")
 
+        # M4: 预渲染 Session 级 system prompt 并缓存（Session 内字节级稳定）
+        self._rendered_system_prompt = self._build_rendered_system_prompt()
+        logger.debug("Session[%s] rendered system prompt cached: %d chars",
+                     self.conversation_id, len(self._rendered_system_prompt))
+
+    def _build_rendered_system_prompt(self) -> str:
+        """渲染 Session 级 system prompt（L1+L2），Session 内缓存复用。
+
+        M4: 把 _recognize_intent 每轮的 replace 循环提到 Session 创建时一次完成。
+        system prompt 在 Session 内字节级稳定，是 DeepSeek cache 命中的前提。
+        sop_catalog / 三书 / 身份 / 能力清单 在 Session 内不变，可安全缓存。
+        current_datetime 已在 M3 迁到 user message，不在此处渲染。
+        """
+        try:
+            sop_catalog = self._skill_registry.dump_as_text()
+        except Exception as e:
+            logger.warning("Failed to dump SOP catalog for cached prompt: %s", e)
+            sop_catalog = "（SOP 目录加载失败）"
+
+        prompt = _SESSION_SYSTEM_PROMPT.replace("{sop_catalog}", sop_catalog)
+        # Session 级变量替换（current_datetime 已移除，不再处理）
+        prompt_vars = self.context.get_prompt_variables()
+        for key, value in prompt_vars.items():
+            replacement = str(value) if value else "（无）"
+            prompt = prompt.replace(key, replacement)
+        return prompt
+
     async def handle(self, message: "StandardMessage", db_message_id: str = "") -> ReplyMessage | None:
         """处理一条入站消息（蓝图 §4.3.2）。"""
         # ── 归档：轮次开头（用户消息段，BUS 之前写入）──
@@ -261,16 +288,8 @@ class SessionAgent:
             return {"sop_id": None, "confidence": "none", "reasoning": f"SOP目录加载失败: {e}",
                     "is_compound": False, "sub_tasks": [], "fallback": True}
 
-        system_prompt = (_SESSION_SYSTEM_PROMPT
-            .replace("{sop_catalog}", sop_catalog)
-            .replace("{current_datetime}", _beijing_now_str()))
-
-        # 注入 Session 级变量（D5：两阶段 format）
-        # 始终替换（空值替换为"（无）"），避免 {xxx} 占位符原样残留到 prompt 里
-        prompt_vars = self.context.get_prompt_variables()
-        for key, value in prompt_vars.items():
-            replacement = str(value) if value else "（无）"
-            system_prompt = system_prompt.replace(key, replacement)
+        # M4: 直接复用 __init__ 时预渲染的 system prompt（Session 内字节级稳定）
+        system_prompt = self._rendered_system_prompt
 
         # 组装 messages
         full_messages = [{"role": "system", "content": system_prompt}]
@@ -292,9 +311,11 @@ class SessionAgent:
             })
 
         sender = getattr(message, "sender_name", "") or ""
+        # M3: 当前时间从 system prompt 迁到 user message 末尾，保持 system 前缀稳定
+        user_content = f"{content}\n\n[当前时间: {_beijing_now_str()}]"
         full_messages.append({
             "role": "user",
-            "content": content,
+            "content": user_content,
             "name": sender if sender else None,
         })
 
@@ -323,11 +344,26 @@ class SessionAgent:
             call_category="intent",
         )
         try:
-            # 意图识别 prompt 较大（含 SOP catalog + 对话历史），router_model（v4-flash）
-            # 在大 prompt 上可能把输出放进 reasoning_content 而返回空白 content；
-            # 用主模型（v4-pro）更可靠
-            result = await self._llm.chat_messages(full_messages, json_mode=True)
-            data = result.get("data", {})
+            # M5: 路由用 router_model（v4-flash，便宜快）。M4 已缓存稳定 prompt，flash 可靠性提升。
+            # fallback：flash 返回空白/解析失败/异常时回退主模型（v4-pro），避免路由退化。
+            router_model = getattr(self._llm, "router_model", None) or self._llm.model
+            data = {}
+            try:
+                result = await self._llm.chat_messages(full_messages, json_mode=True, model=router_model)
+                data = result.get("data", {}) or {}
+            except Exception as router_err:
+                logger.warning("router_model (%s) intent failed, fallback to main model: %s",
+                               router_model, router_err)
+                result = await self._llm.chat_messages(full_messages, json_mode=True)
+                data = result.get("data", {}) or {}
+
+            # flash 可能把输出放进 reasoning_content 返回空白 content → data 为空 dict
+            # 注意：sop_id=null 是合法路由结果（无 SOP 匹配），不能误判为空白触发 fallback
+            if not data:
+                logger.warning("router_model returned empty data, fallback to main model")
+                result = await self._llm.chat_messages(full_messages, json_mode=True)
+                data = result.get("data", {}) or {}
+
             logger.debug("SessionAgent intent for '%s': sop=%s conf=%s compound=%s",
                          content[:40], data.get("sop_id"), data.get("confidence"),
                          data.get("is_compound"))

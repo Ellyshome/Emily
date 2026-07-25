@@ -47,7 +47,70 @@ def register_all(core: "EmilyCore") -> None:
     logger.info("registry: %d tools (base=%d, business=%d, project=%d)",
                 len(reg), _bc, _buc, _pjc)
 
+    # M4: 无孤儿审计——扫描全部工具，确保 category 合法
+    _audit_capabilities(reg, core)
+
 _bc, _buc, _pjc = 0, 0, 0
+
+# 合法的工具 category（与能力树五大域的映射关系）
+_VALID_TOOL_CATEGORIES = {
+    "base": "基座能力（query_data / knowledge_search / ocr）—— 对应 QRY / KB / DOC 域",
+    "business": "业务工具（CRUD / 文件 / 文档处理）—— 对应 REC / FILE / DOC 域",
+    "project": "项目级工具（节点 / 邮箱 / 归档）—— 对应 SYS 域",
+}
+
+
+def _audit_capabilities(reg, core) -> None:
+    """无孤儿审计 —— 扫描全部注册工具，确保 category 合法（归类到能力树）。
+
+    §3.7 无孤儿审计：每个工具必须挂在能力树某个节点下（通过 category 归类）。
+    category 不合法的工具视为孤儿，报警告（不阻断启动）。
+
+    Args:
+        reg: BusinessFlowToolRegistry 注册表实例。
+        core: EmilyCore 实例，用于获取 skill_registry 做 Skill 侧审计。
+
+    Returns:
+        None — 审计结果通过 logger 输出。
+    """
+    # ── 工具侧审计 ──
+    tool_orphans: list[str] = []
+    tool_count = 0
+    try:
+        for tool in reg._tools.values():
+            tool_count += 1
+            cat = getattr(tool, "category", "") or ""
+            if cat not in _VALID_TOOL_CATEGORIES:
+                tool_orphans.append(f"{tool.name}(category={cat!r})")
+    except Exception as e:
+        logger.warning("audit_capabilities: tool scan failed: %s", e)
+
+    # ── Skill 侧审计 ──
+    skill_orphans: list[str] = []
+    skill_count = 0
+    skill_registry = getattr(core, "_skill_registry", None)
+    if skill_registry is not None:
+        try:
+            from ..skill.registry import _extract_sop_type
+            for skill in skill_registry.list_skills():
+                skill_count += 1
+                sop_type = _extract_sop_type(skill.sop_id)
+                if sop_type == "UNKNOWN":
+                    skill_orphans.append(f"{skill.sop_id}(无法推导类型)")
+        except Exception as e:
+            logger.warning("audit_capabilities: skill scan failed: %s", e)
+
+    # ── 审计报告 ──
+    logger.info(
+        "audit_capabilities: %d tools, %d skills, orphan_tools=%d, orphan_skills=%d",
+        tool_count, skill_count, len(tool_orphans), len(skill_orphans),
+    )
+    if tool_orphans:
+        logger.warning("audit_capabilities: orphan tools (未归类到能力树): %s",
+                       ", ".join(tool_orphans))
+    if skill_orphans:
+        logger.warning("audit_capabilities: orphan skills (sop_id 类型码无法识别): %s",
+                       ", ".join(skill_orphans))
 
 
 def _tool(name: str, desc: str, params: dict, handler, category: str = "base", permission_flag: str = "all"):

@@ -181,6 +181,8 @@ class LLMClient:
                         "prompt_tokens": getattr(response.usage, "prompt_tokens", 0) if response.usage else 0,
                         "completion_tokens": getattr(response.usage, "completion_tokens", 0) if response.usage else 0,
                         "total_tokens": getattr(response.usage, "total_tokens", 0) if response.usage else 0,
+                        "prompt_cache_hit_tokens": getattr(response.usage, "prompt_cache_hit_tokens", 0) if response.usage else 0,
+                        "prompt_cache_miss_tokens": getattr(response.usage, "prompt_cache_miss_tokens", 0) if response.usage else 0,
                         "latency_ms": elapsed_ms,
                     })
                 except Exception as e:
@@ -221,6 +223,8 @@ class LLMClient:
                     "prompt_tokens": getattr(response.usage, "prompt_tokens", 0) if response.usage else 0,
                     "completion_tokens": getattr(response.usage, "completion_tokens", 0) if response.usage else 0,
                     "total_tokens": getattr(response.usage, "total_tokens", 0) if response.usage else 0,
+                    "prompt_cache_hit_tokens": getattr(response.usage, "prompt_cache_hit_tokens", 0) if response.usage else 0,
+                    "prompt_cache_miss_tokens": getattr(response.usage, "prompt_cache_miss_tokens", 0) if response.usage else 0,
                     "latency_ms": elapsed_ms,
                 })
             except Exception as e:

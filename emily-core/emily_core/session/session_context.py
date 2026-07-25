@@ -16,7 +16,7 @@ from __future__ import annotations
 import asyncio
 import logging
 from dataclasses import dataclass, field
-from datetime import datetime, timezone
+from datetime import datetime, timezone, timedelta
 from typing import Any
 
 logger = logging.getLogger("emily.session_context")
@@ -349,16 +349,24 @@ class SessionContext:
 
         # 当前用户消息
         if current_user_msg:
+            # M3: 当前时间迁到 user message 末尾，保持 system 前缀稳定
+            _now_str = (datetime.now(timezone.utc) + timedelta(hours=8)).strftime("%Y-%m-%d %H:%M:%S")
             full_messages.append({
                 "role": "user",
-                "content": current_user_msg,
+                "content": f"{current_user_msg}\n\n[当前时间: {_now_str}]",
                 "name": sender_name if sender_name else None,
             })
 
         return full_messages
 
     def get_prompt_variables(self) -> dict[str, str]:
-        """返回 prompt 模板变量映射。"""
+        """返回 prompt 模板变量映射。
+
+        P1-1: 移除 7 个已从 session.md 删除的占位符映射
+        （available_tools/visible_schema/visible_files/node_template_catalog/
+          project_world_book/rule_book/system_description）。
+        三书字段保留在 dataclass（PermissionSnapshot 加载不变），仅清理 prompt 变量映射。
+        """
         from ..permission.level import level_label as _level_label
 
         return {
@@ -375,17 +383,9 @@ class SessionContext:
             "{current_node_ids}": "、".join(self.authorized_node_ids),
             "{user_memory}": self.long_term_memory,
             "{sop_catalog}": self.sop_catalog_summary,
-            "{node_template_catalog}": self.node_template_catalog,
-            "{current_datetime}": self.current_datetime,
             "{available_skills}": ", ".join(self.available_skills) or "（无）",
             "{recent_turns}": "",
-            "{available_tools}": self._format_tools_summary(),
-            "{visible_schema}": self.visible_schema_summary,
-            "{visible_files}": self.visible_files_summary,
             "{rag_info}": self._format_rag_summary(),
-            "{project_world_book}": self.project_world_book,
-            "{rule_book}": self.rule_book,
-            "{system_description}": self.system_description,
         }
 
     async def persist_and_consolidate(self, llm_client=None, md_file_path: str = "", archive_writer=None) -> None:
