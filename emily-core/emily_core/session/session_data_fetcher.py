@@ -138,7 +138,6 @@ class SessionDataFetcher:
         user_position = _parse_position_json(user.position or "")
 
         long_term_memory = user.long_term_memory or ""
-        conversation_summary = user.conversation_summary or ""
 
         project_id = getattr(user, "project_id", None)
 
@@ -148,8 +147,8 @@ class SessionDataFetcher:
         # ── 步骤 3: 项目上下文（直查 Project 模型） ──
         project = _sub_fetch_project(project_id)
 
-        # ── 步骤 4: 最近对话（调 MessageRepository.get_recent_by_user_id） ──
-        recent_turns = _sub_fetch_recent_turns(user_id)
+        # ── 步骤 4: （已关闭）最近对话不再在 Session 拉起时批量载入
+        # Agent 需要历史时通过 chat_archive 工具按需检索
 
         # ── 步骤 5: 原子化能力（API 工具列表、可见文件、RAG） ──
         available_tools = _sub_fetch_available_tools(perms)
@@ -194,7 +193,6 @@ class SessionDataFetcher:
             "permissions_loaded_at": perms.get("permissions_loaded_at", ""),
             # 记忆字段 📝
             "long_term_memory": long_term_memory,
-            "conversation_summary": conversation_summary,
             # 原子化能力字段 🔥
             "available_tools": available_tools,
             "visible_schema_summary": visible_schema,
@@ -208,9 +206,7 @@ class SessionDataFetcher:
             "system_description": system_description,
         }
 
-        session_runtime = {
-            "recent_turns": recent_turns,
-        }
+        session_runtime = {}
 
         # 记录错误
         for key in ["user_name", "user_position"]:
@@ -221,7 +217,6 @@ class SessionDataFetcher:
         for key in ["project_name", "project_type", "project_status"]:
             _record(project[key], f"project.{key}")
         _record(long_term_memory, "long_term_memory")
-        _record(conversation_summary, "conversation_summary")
 
         logger.info("SessionDataFetcher.fetch done: user=%s errors=%d", user_id, len(errors))
         if errors:
@@ -356,7 +351,6 @@ def _empty_result(conversation_id: str, user_id: str, errors: list[str]) -> dict
             "permissions_loaded_at": "",
             # 记忆字段 📝
             "long_term_memory": _SENTINEL,
-            "conversation_summary": _SENTINEL,
             # 原子化能力字段 🔥
             "available_tools": [],
             "visible_schema_summary": "",
@@ -369,9 +363,7 @@ def _empty_result(conversation_id: str, user_id: str, errors: list[str]) -> dict
             "rule_book": "",
             "system_description": "",
         },
-        "session_runtime": {
-            "recent_turns": [],
-        },
+        "session_runtime": {},
         "errors": errors,
     }
 
