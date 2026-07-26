@@ -13,8 +13,9 @@ class Config:
     bot_name: str = "Emy"
     """机器人名称，用于 At 判断"""
 
-    takeover_mode: str = "collaborate"
-    """接管模式: observe / collaborate / managed"""
+    takeover_mode: str = "monitor"
+    """接管模式: observe / collaborate / managed / monitor
+    monitor: 群聊静默收集所有消息与文件，仅 @机器人 时回复；私聊正常响应"""
 
     log_level: str = "INFO"
     """日志级别"""

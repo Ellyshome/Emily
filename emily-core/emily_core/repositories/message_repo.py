@@ -55,6 +55,10 @@ class MessageRepository:
                 )
                 session.add(conv)
                 session.flush()  # 获取 conv.id
+            elif msg.group_name and not conv.title:
+                # 补写群名：会话已存在但 title 为空
+                conv.title = msg.group_name
+                session.flush()
 
             # 创建 Message
             # M11: 填充多模态字段
@@ -450,6 +454,28 @@ class MessageRepository:
                     for cid, cnt in conv_q
                 ],
             }
+
+
+    @staticmethod
+    def list_recent_by_group(group_id: str, limit: int = 10, before_id: str = "") -> list[Message]:
+        """按 group_id 倒序取最近 N 条群聊记录（含入站+出站）。
+
+        Args:
+            group_id: 群 ID（messages.group_id 业务字段）
+            limit: 取多少条
+            before_id: 锚点 message id，取此 id 之前的记录（分页回溯用）
+
+        Returns:
+            list[Message]: 倒序排列（最新在前），调用方需反转为正序拼 prompt
+        """
+        with get_session() as session:
+            q = session.query(Message).filter(Message.group_id == group_id)
+            if before_id:
+                anchor = session.query(Message).filter(Message.id == before_id).first()
+                if anchor:
+                    q = q.filter(Message.created_at < anchor.created_at)
+            q = q.order_by(Message.created_at.desc()).limit(limit)
+            return q.all()
 
 
     @staticmethod

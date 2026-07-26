@@ -107,9 +107,15 @@ class AuthHook(Hook):
     async def execute(self, context: "PipelineContext") -> HookResult:
         """执行鉴权检查（阶段二：三维鉴权 + SessionContext 扁平化字段）。
 
+        群聊多用户权限越界修复：优先读 actor_snapshot（每条消息独立），
+        缺失时回退 session_context。
+
         阻断时自动写入审计日志（permission_audit_log 表）。
         """
-        user_id = context.user_id
+        # ── 统一鉴权入口：优先当前操作者权限快照，回退 SessionContext ──
+        user_id, actor_snapshot = context.get_auth_context()
+        if not user_id:
+            user_id = context.user_id or ""
         if not user_id:
             if self.action and self.action not in ("read",):
                 logger.info(
@@ -119,45 +125,61 @@ class AuthHook(Hook):
                 return HookResult.block(f"需要登录才能执行 {self.action} 操作")
             return HookResult.allow()
 
-        # 获取 SessionContext
+        # 获取 SessionContext（管理员检查用）
         session_ctx = context.get_session_context()
+
+        # 如果有 actor_snapshot，用它做鉴权；否则回退 session_ctx
+        def _get_level():
+            if actor_snapshot is not None:
+                return actor_snapshot.get("level", 1)
+            if session_ctx is not None:
+                return session_ctx.level
+            return 1
+
+        def _get_sop_allow():
+            if actor_snapshot is not None:
+                return actor_snapshot.get("sop_allow", [])
+            if session_ctx is not None:
+                return session_ctx.sop_allow
+            return []
+
+        def _get_supervisor_id():
+            if actor_snapshot is not None:
+                return actor_snapshot.get("supervisor_id", "")
+            if session_ctx is not None:
+                return session_ctx.supervisor_id
+            return ""
 
         # 管理员检查: system.execute 只允许 L5+
         if self.resource_type == "system" and self.action == "execute":
-            if session_ctx is None:
-                is_admin_flag = getattr(context, "is_admin", False) or context.get("is_admin", False)
-                if not is_admin_flag:
-                    logger.info("AuthHook[%s] blocking: user %s is not admin", self.name, user_id)
-                    result = HookResult.block("仅管理员可执行系统级操作")
-                    await _log_auth_block(user_id, self.resource_type, result.message)
-                    return result
-            else:
-                from ...permission.level import is_admin as _is_admin
-                if not _is_admin(session_ctx.level):
-                    logger.info(
-                        "AuthHook[%s] blocking: user %s level=%d < L5",
-                        self.name, user_id, session_ctx.level,
-                    )
-                    result = HookResult.block("仅管理员（L5+）可执行系统级操作")
-                    await _log_auth_block(user_id, self.resource_type, result.message)
-                    return result
+            from ...permission.level import is_admin as _is_admin
+            if not _is_admin(_get_level()):
+                logger.info(
+                    "AuthHook[%s] blocking: user %s level=%d < L5",
+                    self.name, user_id, _get_level(),
+                )
+                result = HookResult.block("仅管理员（L5+）可执行系统级操作")
+                await _log_auth_block(user_id, self.resource_type, result.message)
+                return result
 
         # SOP 权限检查：有 SOP 绑定时验证白名单
         intent = context.intent
         sop_id = getattr(intent, "sop_id", None) if intent else None
-        if sop_id and session_ctx is not None:
+        if sop_id:
+            sop_allow = _get_sop_allow()
             logger.info(
                 "AuthHook[%s] check: user=%s sop=%s sop_allow=%s",
-                self.name, user_id, sop_id, session_ctx.sop_allow,
+                self.name, user_id, sop_id, sop_allow,
             )
-            if sop_id not in session_ctx.sop_allow and "all" not in session_ctx.sop_allow:
+            if sop_id not in sop_allow and "all" not in sop_allow:
                 logger.info(
                     "AuthHook[%s] blocking: user %s no access to SOP %s",
                     self.name, user_id, sop_id,
                 )
                 reason = f"无权访问 {sop_id}"
-                if session_ctx.supervisor_id:
-                    reason += f"，可联系主管 {session_ctx.supervisor_id} 申请权限"
+                supervisor = _get_supervisor_id()
+                if supervisor:
+                    reason += f"，可联系主管 {supervisor} 申请权限"
                 result = HookResult.block(reason)
                 await _log_auth_block(user_id, sop_id, reason)
                 return result
@@ -201,7 +223,9 @@ class AuditHook(Hook):
             run_id = context.pipeline_run_id
 
             # ── 增强字段采集 ──
-            user_id = context.user_id or ""
+            user_id, actor_snapshot = context.get_auth_context()
+            if not user_id:
+                user_id = context.user_id or ""
             sop_id = ""
             session_level = None
             session_ctx = context.get_session_context()

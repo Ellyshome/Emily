@@ -317,7 +317,8 @@ class SessionContext:
     def build_llm_messages(self, system_prompt_template: str,
                            current_user_msg: str = "",
                            sender_name: str = "",
-                           pending_context: str = "") -> list[dict]:
+                           pending_context: str = "",
+                           actor_snapshot: dict | None = None) -> list[dict]:
         """统一拼装 LLM messages 列表。
 
         Args:
@@ -331,7 +332,7 @@ class SessionContext:
         """
         # 两阶段 format：Session 级变量替换
         # 始终替换（空值替换为"（无）"），避免 {xxx} 占位符原样残留到 prompt 里
-        prompt_vars = self.get_prompt_variables()
+        prompt_vars = self.get_prompt_variables(actor_snapshot)
         system_prompt = system_prompt_template
         for key, value in prompt_vars.items():
             replacement = str(value) if value else "（无）"
@@ -359,15 +360,43 @@ class SessionContext:
 
         return full_messages
 
-    def get_prompt_variables(self) -> dict[str, str]:
+    def get_prompt_variables(self, actor_snapshot: dict | None = None) -> dict[str, str]:
         """返回 prompt 模板变量映射。
 
         P1-1: 移除 7 个已从 session.md 删除的占位符映射
         （available_tools/visible_schema/visible_files/node_template_catalog/
           project_world_book/rule_book/system_description）。
         三书字段保留在 dataclass（PermissionSnapshot 加载不变），仅清理 prompt 变量映射。
+
+        群聊多用户权限修复（BUG #3）：权限字段优先取 actor_snapshot（当前操作者），
+        回退 self（Session 创建者，私聊场景 actor=None）。使 LLM 看到的权限与
+        AuthHook 鉴权用的权限一致。身份/项目/记忆字段仍用 self（actor_snapshot
+        仅含权限字段，且这些字段 Session 内稳定）。
         """
         from ..permission.level import level_label as _level_label
+
+        a = actor_snapshot or {}
+        # 权限字段：优先 actor（当前操作者），回退 self（Session 创建者）
+        level = a.get("level")
+        if level is None:
+            level = self.level
+        company_name = a.get("company_name")
+        if company_name is None:
+            company_name = self.company_name
+        company_type = a.get("company_type")
+        if company_type is None:
+            company_type = self.company_type
+        department = a.get("department")
+        if department is None:
+            department = self.department
+        authorized_node_ids = a.get("authorized_node_ids")
+        if authorized_node_ids is None:
+            authorized_node_ids = self.authorized_node_ids
+        sop_allow = a.get("sop_allow")
+        if sop_allow is not None:
+            available_skills = list(sop_allow)
+        else:
+            available_skills = self.available_skills
 
         return {
             "{project_name}": self.project_name,
@@ -375,15 +404,15 @@ class SessionContext:
             "{project_status}": self.project_status,
             "{user_name}": self.user_name,
             "{user_position}": self.user_position,
-            "{user_company}": self.company_name,
-            "{user_company_type}": self.company_type,
-            "{user_department}": "、".join(self.department) if self.department else "",
-            "{user_level}": _level_label(self.level),
-            "{user_permission_level}": _level_label(self.level),
-            "{current_node_ids}": "、".join(self.authorized_node_ids),
+            "{user_company}": company_name,
+            "{user_company_type}": company_type,
+            "{user_department}": "、".join(department) if department else "",
+            "{user_level}": _level_label(level),
+            "{user_permission_level}": _level_label(level),
+            "{current_node_ids}": "、".join(authorized_node_ids),
             "{user_memory}": self.long_term_memory,
             "{sop_catalog}": self.sop_catalog_summary,
-            "{available_skills}": ", ".join(self.available_skills) or "（无）",
+            "{available_skills}": ", ".join(available_skills) or "（无）",
             "{recent_turns}": "",
             "{rag_info}": self._format_rag_summary(),
         }
@@ -443,15 +472,33 @@ class SessionContext:
         if not user:
             return
 
-        # 守卫：仅私聊会话才生成摘要，群聊跳过
+        # 守卫：仅私聊会话才生成摘要，群聊跳过（走群级记忆沉淀）
         with get_session() as session:
             conv = session.query(Conversation).filter(
-                Conversation.id == self.conversation_id
+                Conversation.conversation_id == self.conversation_id
             ).first()
         if conv and conv.conversation_type != "private":
-            logger.debug(
-                "Skipping summary consolidation for non-private conversation %s (type=%s)",
-                self.conversation_id, conv.conversation_type,
+            # ── 群聊：走群级长期记忆沉淀 ──
+            if getattr(conv, "group_id", None):
+                try:
+                    from ..services.group_memory_service import GroupMemoryService
+                    from ..repositories.group_memory_repo import GroupMemoryRepository
+                    existing = GroupMemoryRepository.get_by_group(conv.group_id)
+                    group_name = getattr(conv, "title", "") or ""
+                    svc = GroupMemoryService(llm_client=llm_client)
+                    await svc.consolidate_on_archive(
+                        group_id=conv.group_id,
+                        group_name=group_name,
+                        session_id=self.conversation_id,
+                        speaker_user_id=self.user_id,
+                        message_history=self.message_history,
+                        existing_memory=existing,
+                    )
+                except Exception as e:
+                    logger.warning("group memory consolidate error: %s", e)
+            logger.info(
+                "Skipping personal summary consolidation for group %s (type=%s, group_id=%s)",
+                self.conversation_id, conv.conversation_type, getattr(conv, "group_id", ""),
             )
             return
 

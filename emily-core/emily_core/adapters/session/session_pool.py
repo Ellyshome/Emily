@@ -35,13 +35,14 @@ logger = logging.getLogger("emily.session_pool")
 
 
 class _Entry:
-    """池内条目：SessionAgent + 最后活跃时间 + 串行锁。"""
+    """池内条目：SessionAgent + 最后活跃时间 + 创建时间 + 串行锁。"""
 
-    __slots__ = ("agent", "last_active", "lock")
+    __slots__ = ("agent", "last_active", "lock", "created_at")
 
     def __init__(self, agent):
         self.agent = agent
         self.last_active = time.time()
+        self.created_at = time.time()
         self.lock = asyncio.Lock()
 
 
@@ -124,7 +125,7 @@ class SessionPoolManager:
         # Session 内串行
         async with entry.lock:
             entry.last_active = time.time()
-            return await entry.agent.handle(message, db_message_id=db_message_id)
+            return await entry.agent.handle(message, db_message_id=db_message_id, current_user_id=user_id)
 
     # ── 池维护 ──
 
@@ -150,28 +151,52 @@ class SessionPoolManager:
         return True
 
     def sweep_expired(self) -> int:
-        """扫描并移除过期 Session（TTL 到期，蓝图 §3.4）。
+        """扫描并归档过期 Session（任务段制）。
 
-        BUG-004 修复：先调用 archive()（含归档持久化 + conversation_summary 整合），
-        再从内存移除。
+        判定优先级：
+          1. hard_limit — 超过 hard_limit_seconds 强制归档
+          2. task_complete — 无活跃 WorkItem + 队列空 + 空闲超 task_idle_seconds
         """
         now = time.time()
-        ttl = self._config.ttl_seconds
-        expired = [
-            cid for cid, e in self._sessions.items()
-            if now - e.last_active > ttl
-        ]
-        for cid in expired:
+        hard_limit = self._config.hard_limit_seconds
+        idle_limit = self._config.task_idle_seconds
+        expired: list[tuple[str, str]] = []
+        for cid, entry in self._sessions.items():
+            # 硬上限优先
+            if now - entry.created_at > hard_limit:
+                expired.append((cid, "hard_limit"))
+            elif self._is_task_complete(entry, now, idle_limit):
+                expired.append((cid, "task_complete"))
+        for cid, reason in expired:
             entry = self._sessions.pop(cid, None)
             if entry:
-                # BUG-004: 归档（含 conversation_summary 整合）再删除
                 try:
                     asyncio.ensure_future(entry.agent.archive())
                 except Exception as e:
                     logger.warning("SessionPool sweep archive failed for %s: %s", cid, e)
         if expired:
-            logger.info("SessionPool swept %d expired session(s)", len(expired))
+            reasons = {r for _, r in expired}
+            logger.info("SessionPool swept %d expired session(s): %s", len(expired), reasons)
         return len(expired)
+
+    def _is_task_complete(self, entry: _Entry, now: float, idle_limit: int) -> bool:
+        """判定 Session 当前任务段是否完成。
+
+        完成条件：
+          - 无活跃 WorkItem（active_count == 0）
+          - confirm_queue 为空
+          - 距最后活跃时间超过 task_idle_seconds
+        """
+        agent = entry.agent
+        scheduler = getattr(agent, "scheduler", None)
+        if scheduler is not None and scheduler.active_count > 0:
+            return False
+        # confirm_queue 非空时不归档
+        cq = getattr(agent, "confirm_queue", None)
+        if cq is not None and not cq.is_empty:
+            return False
+        idle = now - entry.last_active
+        return idle > idle_limit
 
     # ── 状态 ──
 

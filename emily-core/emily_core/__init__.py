@@ -123,6 +123,9 @@ class EmilyCore:
         # 聊天归档服务（chat_archive 工具）
         self._chat_archive_service = None
 
+        # 群列表注册服务
+        self._group_registry_service = None
+
         # 元认知模块
         self._rule_book_loader = None
         self._world_book_service = None
@@ -205,6 +208,15 @@ class EmilyCore:
         except Exception as e:
             logger.warning("ChatArchiveService init failed: %s", e)
             self._chat_archive_service = None
+
+        # ── 群列表注册服务 ──
+        try:
+            from .services.group_registry_service import GroupRegistryService
+            self._group_registry_service = GroupRegistryService()
+            logger.info("GroupRegistryService initialized")
+        except Exception as e:
+            logger.warning("GroupRegistryService init failed: %s", e)
+            self._group_registry_service = None
 
         # ── 注入 trace 服务到 API 路由（lazy fallback 也能工作，直接注入更可靠）──
         try:
@@ -994,6 +1006,14 @@ class EmilyCore:
                     "Scheduled attachment download: msg=%s, %d item(s)",
                     db_message_id, len(_attachments),
                 )
+
+        # ── 静默收集：仅归档不响应，跳过流水线 ──
+        if not decision.should_reply:
+            logger.info(
+                "Silent collect: msg persisted conv=%s sender=%s",
+                message.conversation_id, message.sender_name,
+            )
+            return None
 
         # SessionPool 路由（携带 db_message_id —— 见 M2）
         reply = await self._session_pool.route(message, user_id=user_id, db_message_id=db_message_id)

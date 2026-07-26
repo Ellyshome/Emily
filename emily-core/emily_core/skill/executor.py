@@ -63,7 +63,11 @@ class SkillExecutor:
                 if step.tool_params:
                     extracted = await self._extract_null_step_data(step, ctx)
                     if step.output_key and extracted:
-                        ctx.step_results[step.output_key] = extracted
+                        # 单输出键：自动解包 dict（避免 {'title': '测试越权'} 被当 dict 传递）
+                        if len(extracted) == 1 and step.output_key in extracted:
+                            ctx.step_results[step.output_key] = extracted[step.output_key]
+                        else:
+                            ctx.step_results[step.output_key] = extracted
                     results.append(StepResult(
                         step_id=step.id,
                         success=True,

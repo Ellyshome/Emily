@@ -393,6 +393,26 @@ def main():
         dest="files",
         help="附件文件路径（可多次指定），模拟 QQ/微信发送文件",
     )
+    # ── 群聊模拟参数 ──
+    parser.add_argument(
+        "--conversation-type",
+        type=str,
+        choices=["private", "group"],
+        default=None,
+        help="会话类型: private(私聊) / group(群聊)，不指定时根据 --cid 自动推断",
+    )
+    parser.add_argument(
+        "--group-id",
+        type=str,
+        default=None,
+        help="群号（群聊时有效，默认自动生成 group_001）",
+    )
+    parser.add_argument(
+        "--no-at",
+        action="store_true",
+        default=False,
+        help="群聊时不 @机器人（默认群聊 @机器人）。用于测试静默收集场景",
+    )
 
     args = parser.parse_args()
 
@@ -405,9 +425,21 @@ def main():
 
     # ── 推导 conversation_id（与 AstrBot 行为一致）──
     # 私聊: conversation_id = sender_id（QQ 号）
+    # 群聊: conversation_id = group_id
     # 如果用户指定了 --cid 则优先使用
+    # 自动推断：--cid 以 group_ 开头 → 群聊模式
+    if args.conversation_type is None:
+        if args.cid and args.cid.startswith("group_"):
+            args.conversation_type = "group"
+        else:
+            args.conversation_type = "private"
+    is_group = args.conversation_type == "group"
+    group_id = args.group_id or "group_001"
+
     if args.cid:
         cid = args.cid
+    elif is_group:
+        cid = group_id
     elif sender_info["qq"]:
         # 有 QQ 号时用 QQ 号作为 conversation_id（与 AstrBot 行为一致）
         cid = sender_info["qq"]
@@ -455,6 +487,9 @@ def main():
                 sender_name=sender_info["sender_name"],
                 platform=sender_info.get("platform", "napcat"),
                 conversation_id=cid,
+                conversation_type=args.conversation_type,
+                group_id=group_id if is_group else None,
+                is_at_bot=(not args.no_at) if is_group else False,
                 attachments=attachments,
             )
             if reply:

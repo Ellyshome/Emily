@@ -98,6 +98,42 @@ class SessionDataFetcher:
     静态方法 fetch() 一次性全量采集并返回结构化数据。
     """
 
+    # 权限快照字段白名单
+    _PERM_KEYS = frozenset({
+        "level", "is_management_unit", "company_id", "company_type", "company_name",
+        "department", "project_ids", "partner_ids", "scopes", "sop_allow",
+        "db_perms", "info_level", "supervisor_id", "granted_codes", "denied_codes",
+        "authorized_node_ids", "permission_version", "permissions_loaded_at",
+    })
+
+    @staticmethod
+    def fetch_actor_snapshot(user_id: str, core=None) -> dict:
+        """获取当前操作者的权限快照（轻量，仅权限字段）。
+
+        复用 SessionDataFetcher.fetch() 的权限采集逻辑，但跳过记忆/项目上下文/
+        能力清单等 Session 级字段，减少查询开销。
+
+        Args:
+            user_id: 当前操作者的用户 UUID。
+            core: EmilyCore 实例（可选）。
+
+        Returns:
+            dict: {level, sop_allow, authorized_node_ids, db_perms, info_level,
+                   supervisor_id, granted_codes, denied_codes, company_id,
+                   company_type, is_management_unit, department, scopes, ...}
+        """
+        if not user_id:
+            return {}
+        try:
+            data = SessionDataFetcher.fetch(
+                user_id=user_id, conversation_id="", core=core,
+            )
+            snapshot = data.get("session_snapshot", {})
+            return {k: snapshot.get(k) for k in SessionDataFetcher._PERM_KEYS}
+        except Exception as e:
+            logger.warning("fetch_actor_snapshot failed for user=%s: %s", user_id, e)
+            return {}
+
     @staticmethod
     def fetch(user_id: str, conversation_id: str = "", core=None) -> dict:
         """一次性全量采集 Session 数据。
