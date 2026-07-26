@@ -327,6 +327,42 @@ class FileCategory:
         return cls.DISPLAY_NAMES.get(value, "其他文件")
 
 
+class FilePurpose:
+    """文件业务意图枚举（主分类）—— M5 三层正交分类。
+
+    purpose 独立于 file_category（文档类别），表达"这个文件用来干嘛"的业务意图。
+    CHAT 不入 files 表（枚举完整性保留），仅规则引擎/AttachmentDownloader 消费。
+    """
+    EVIDENCE = "EVIDENCE"      # 凭证证据（证照/许可/合同/批复/合格单）
+    RECORD = "RECORD"          # 工作记录（验收附图/施工记录/会议附件）
+    DESIGN = "DESIGN"          # 设计图纸（施工图/过程图，走版本链）
+    REFERENCE = "REFERENCE"    # 参考样例（优秀工艺/做法参考，入通用 RAG）
+    CHAT = "CHAT"              # 闲聊素材（梗图/表情包，不入 files 表）
+
+    ALL_IN_DB = [EVIDENCE, RECORD, DESIGN, REFERENCE]  # CHAT 不入库
+    ALL = [EVIDENCE, RECORD, DESIGN, REFERENCE, CHAT]
+
+    DISPLAY_NAMES = {
+        EVIDENCE: "凭证证据",
+        RECORD: "工作记录",
+        DESIGN: "设计图纸",
+        REFERENCE: "参考样例",
+        CHAT: "闲聊素材",
+    }
+
+    @classmethod
+    def validate(cls, value: str) -> str:
+        """校验并返回合法枚举值，非法值回退 RECORD。"""
+        if value in cls.ALL_IN_DB:
+            return value
+        return cls.RECORD
+
+    @classmethod
+    def display(cls, value: str) -> str:
+        """返回中文显示名。"""
+        return cls.DISPLAY_NAMES.get(value, "工作记录")
+
+
 class File(Base):
     """文件存储表 —— 对应需求文档 file_storage。
 
@@ -374,6 +410,13 @@ class File(Base):
     source_module_id = Column(String(100), default="", comment="来源模块ID（节点ID/其他业务对象ID）")
     source_module_type = Column(String(50), default="", comment="来源模块类型：NODE_STARTUP_DOC/NODE_WORKLOAD_DOC/NODE_DELIVERABLE_DOC/NODE_ATTACHMENT")
     file_category = Column(String(50), default="OTHER", comment="文件业务分类：PROJECT_LICENSE/CONTRACT/WORK_RECORD/PHASE_DELIVERABLE/PROCESS_DOC/MANAGEMENT_SPEC/OTHER")
+
+    # ── M5: 三层正交分类新增字段 ──
+    purpose = Column(String(50), default="RECORD", comment="业务意图：EVIDENCE/RECORD/DESIGN/REFERENCE（CHAT 不入库）")
+    purpose_confirmed = Column(Boolean, default=False, comment="LLM/用户是否已确认 purpose")
+    attachment_of = Column(String, ForeignKey("files.id"), nullable=True, comment="附件链：指向主文件 id，NULL=主文件/独立")
+    rag_indexed = Column(Boolean, default=False, comment="是否已入 RAG 知识库")
+    rag_collection = Column(String(100), default="", comment="RAG 集合名：general_reference/project_<id>")
 
 
 # ══════════════════════════════════════════════════════════════════════════════
@@ -1205,6 +1248,7 @@ class ToolRegistryModel(Base):
     display_name    = Column(String(200), nullable=False)          # 功能一句话说明
     category        = Column(String(20), nullable=False, default="base")  # base / business / project
     permission_flag = Column(String(50), nullable=False, default="all")
+    exposure_mode   = Column(String(20), nullable=False, default="meta")  # meta=可被SOP-999直调 / sop_only=必须走专属SOP；默认值按 permission_flag 分级：all→meta，write/admin→sop_only
     handler_module  = Column(String(200), default="")
     is_active       = Column(Boolean, nullable=False, default=True)
     registered_at   = Column(String(50), nullable=False)

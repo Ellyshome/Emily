@@ -35,7 +35,10 @@ REGISTERED_TOOLS: set[str] = {
     "query_data", "knowledge_search",
     # business
     "record_event", "record_task", "record_meeting", "record_file",
-    "query_files", "update_file_category", "write_user_memory",
+    "query_files", "update_file_category", "send_file", "write_user_memory",
+    "link_file", "new_file_version", "delete_file", "list_file_versions",
+    "link_to_master", "unlink_attachment", "list_attachments",
+    "update_file_purpose",
     "create_task_node", "submit_node_deliverable", "confirm_node_deliverable",
     "return_node_deliverable", "query_my_nodes",
     # project
@@ -44,39 +47,51 @@ REGISTERED_TOOLS: set[str] = {
     "send_email", "fetch_inbox", "chat_archive", "manage_pending_issues", "voice_entry",
 }
 
-# ── 工具名 → (display_name, category, permission_flag) ──────────────
+# ── 工具名 → (display_name, category, permission_flag, exposure_mode) ──
 # 供 _ensure_tool_registry_seed() 自动种子与 register_api.py 保持一致
-TOOL_META_MAP: dict[str, tuple[str, str, str]] = {
+# ⚠️ 与 tools/registry.py 的 register_all 保持同步
+# exposure_mode: meta=可被SOP-999直调(默认all类), sop_only=必须走专属SOP(默认write/admin类+破坏性工具)
+TOOL_META_MAP: dict[str, tuple[str, str, str, str]] = {
     # base
-    "query_data":         ("查询项目数据",          "base",     "all"),
-    "knowledge_search":   ("搜索知识库获取领域知识", "base",     "all"),
-    "send_email":         ("发送邮件",              "base",     "all"),
-    "fetch_inbox":        ("获取收件箱",            "base",     "all"),
-    "chat_archive":       ("聊天归档查询",          "base",     "all"),
-    "manage_pending_issues": ("管理待解决问题",     "base",     "all"),
-    "voice_entry":        ("语音入口",              "base",     "all"),
-    # business
-    "record_event":       ("记录项目事件",   "business", "write"),
-    "record_task":        ("创建任务",       "business", "write"),
-    "record_meeting":     ("归档会议纪要",   "business", "write"),
-    "record_file":        ("记录文件元数据", "business", "write"),
-    "query_files":        ("按分类查询项目文件", "business", "all"),
-    "update_file_category": ("修改文件分类归属", "business", "write"),
-    "write_user_memory":  ("写入用户长期记忆",   "business", "all"),
-    "create_task_node":        ("创建TASK类型叶子节点", "business", "write"),
-    "submit_node_deliverable": ("提交节点成果",   "business", "write"),
-    "confirm_node_deliverable":("确认节点成果",   "business", "write"),
-    "return_node_deliverable": ("退回节点成果",   "business", "write"),
-    "query_my_nodes":          ("查询我负责的节点","business", "write"),
-    # project
-    "create_node":           ("创建全景节点",   "project", "admin"),
-    "query_node":            ("查询全景节点",   "project", "admin"),
-    "update_node_progress":  ("更新节点进度",   "project", "admin"),
-    "add_node_dependency":   ("添加节点依赖",   "project", "admin"),
-    "mount_child_node":      ("挂载子节点",     "project", "admin"),
-    "update_nodes":          ("批量更新节点",   "project", "admin"),
-    "activate_nodes":        ("批量激活节点",   "project", "admin"),
-    "discard_nodes":         ("批量废弃节点",   "project", "admin"),
+    "query_data":         ("查询项目数据",          "base",     "all",   "meta"),
+    "knowledge_search":   ("搜索知识库获取领域知识", "base",     "all",   "meta"),
+    "send_email":         ("发送邮件",              "base",     "all",   "meta"),
+    "fetch_inbox":        ("获取收件箱",            "base",     "all",   "meta"),
+    "chat_archive":       ("聊天归档查询",          "base",     "all",   "meta"),
+    "manage_pending_issues": ("管理待解决问题",     "base",     "all",   "meta"),
+    "voice_entry":        ("语音入口",              "base",     "all",   "meta"),
+    # business — permission_flag=all → exposure_mode=meta（只读可直调）
+    "query_files":        ("按分类查询项目文件", "business", "all",   "meta"),
+    "send_file":          ("向用户发送已有文件", "business", "all",   "meta"),
+    "list_file_versions": ("列出文件版本",       "business", "all",   "meta"),
+    "list_attachments":   ("列出主文件下的附件", "business", "all",   "meta"),
+    "write_user_memory":  ("写入用户长期记忆",   "business", "all",   "meta"),
+    # business — permission_flag=write → exposure_mode=sop_only（写操作默认走专属SOP）
+    "record_event":       ("记录项目事件",   "business", "write", "sop_only"),
+    "record_task":        ("创建任务",       "business", "write", "sop_only"),
+    "record_meeting":     ("归档会议纪要",   "business", "write", "sop_only"),
+    "record_file":        ("记录文件元数据", "business", "write", "sop_only"),
+    "update_file_category": ("修改文件分类归属", "business", "write", "sop_only"),
+    "link_file":          ("关联文件到业务对象", "business", "write", "sop_only"),
+    "new_file_version":   ("创建文件新版本",     "business", "write", "sop_only"),
+    "delete_file":        ("软删除文件",         "business", "write", "sop_only"),
+    "link_to_master":     ("挂载附件到主文件",   "business", "write", "sop_only"),
+    "unlink_attachment":  ("卸载附件为独立文件", "business", "write", "sop_only"),
+    "update_file_purpose": ("校正文件的业务意图", "business", "write", "sop_only"),
+    "create_task_node":        ("创建TASK类型叶子节点", "business", "write", "sop_only"),
+    "submit_node_deliverable": ("提交节点成果",   "business", "write", "sop_only"),
+    "confirm_node_deliverable":("确认节点成果",   "business", "write", "sop_only"),
+    "return_node_deliverable": ("退回节点成果",   "business", "write", "sop_only"),
+    "query_my_nodes":          ("查询我负责的节点","business", "write", "sop_only"),
+    # project — permission_flag=admin → exposure_mode=sop_only
+    "create_node":           ("创建全景节点",   "project", "admin", "sop_only"),
+    "query_node":            ("查询全景节点",   "project", "admin", "sop_only"),
+    "update_node_progress":  ("更新节点进度",   "project", "admin", "sop_only"),
+    "add_node_dependency":   ("添加节点依赖",   "project", "admin", "sop_only"),
+    "mount_child_node":      ("挂载子节点",     "project", "admin", "sop_only"),
+    "update_nodes":          ("批量更新节点",   "project", "admin", "sop_only"),
+    "activate_nodes":        ("批量激活节点",   "project", "admin", "sop_only"),
+    "discard_nodes":         ("批量废弃节点",   "project", "admin", "sop_only"),
 }
 
 # ── 工具名 → (模块路径, schema 变量名) ─────────────────────────────
@@ -90,6 +105,15 @@ TOOL_SCHEMA_MAP: dict[str, tuple[str, str]] = {
     "record_file": ("emily_core.tools.file_tool", "_FILE_TOOL_SCHEMA"),
     "query_files": ("emily_core.tools.file_tool", "_QUERY_FILES_SCHEMA"),
     "update_file_category": ("emily_core.tools.file_tool", "_UPDATE_CATEGORY_SCHEMA"),
+    "send_file": ("emily_core.tools.file_tool", "_SEND_FILE_SCHEMA"),
+    "link_file": ("emily_core.tools.file_tool", "_LINK_FILE_SCHEMA"),
+    "new_file_version": ("emily_core.tools.file_tool", "_NEW_FILE_VERSION_SCHEMA"),
+    "delete_file": ("emily_core.tools.file_tool", "_DELETE_FILE_SCHEMA"),
+    "list_file_versions": ("emily_core.tools.file_tool", "_LIST_FILE_VERSIONS_SCHEMA"),
+    "link_to_master": ("emily_core.tools.file_tool", "_LINK_TO_MASTER_SCHEMA"),
+    "unlink_attachment": ("emily_core.tools.file_tool", "_UNLINK_ATTACHMENT_SCHEMA"),
+    "list_attachments": ("emily_core.tools.file_tool", "_LIST_ATTACHMENTS_SCHEMA"),
+    "update_file_purpose": ("emily_core.tools.file_tool", "_UPDATE_PURPOSE_SCHEMA"),
     "create_node": ("emily_core.tools.node_tool", "_CREATE_NODE_SCHEMA"),
     "query_node": ("emily_core.tools.node_tool", "_QUERY_NODE_SCHEMA"),
     "update_node_progress": ("emily_core.tools.node_tool", "_UPDATE_PROGRESS_SCHEMA"),
@@ -155,8 +179,11 @@ def _check_skill_yaml(
 ) -> None:
     """V10/V11/V12: Skill YAML 工具名存在性 + 参数 schema 匹配。"""
     for skill_id, data, _yfile in skills:
-        # V10: tools[].name 存在
-        for t in data.get("tools", []) or []:
+        # V10: tools[].name 存在（M3: 跳过 auto_generate: true 的 tools 段）
+        raw_tools = data.get("tools", [])
+        if isinstance(raw_tools, dict) and raw_tools.get("auto_generate"):
+            raw_tools = []  # 运行时派生，不检查
+        for t in raw_tools or []:
             if isinstance(t, dict) and "name" in t and t["name"] not in REGISTERED_TOOLS:
                 issues.append({
                     "severity": "fatal", "check": "V10_tool_name_missing",
@@ -168,6 +195,9 @@ def _check_skill_yaml(
                 continue
             tn = s.get("tool_name")
             if not tn:
+                continue
+            # M3: __DYNAMIC__ 是合法特殊值，跳过 V11 检查
+            if tn == "__DYNAMIC__":
                 continue
             if tn not in REGISTERED_TOOLS:
                 issues.append({
@@ -221,6 +251,74 @@ def _check_tool_registry(issues: list[dict]) -> dict:
     }
 
 
+# ── M5: V14 + V15 新增检查 ──
+
+def _check_meta_tools_whitelist(skills: list, issues: list[dict]) -> None:
+    """V14: SOP-999 派生白名单 ⊆ REGISTERED_TOOLS。
+
+    从 Skill YAML 检查 SOP-999 的 tools 是否引用了不存在的工具（仅检查非 auto_generate 的手写 tools）。
+    auto_generate 的 tools 由 SkillRegistry 运行时派生，不在此处检查。
+    """
+    for skill_id, data, _yfile in skills:
+        if "SOP-999" not in skill_id:
+            continue
+        raw_tools = data.get("tools", [])
+        # auto_generate 的工具不在此处检查（运行时派生）
+        if isinstance(raw_tools, dict) and raw_tools.get("auto_generate"):
+            continue
+        for t in raw_tools or []:
+            if isinstance(t, dict) and "name" in t and t["name"] not in REGISTERED_TOOLS:
+                issues.append({
+                    "severity": "fatal", "check": "V14_meta_tool_not_registered",
+                    "skill": skill_id,
+                    "detail": f"SOP-999 tools 引用不存在的工具: {t['name']}",
+                })
+
+
+def _check_dark_tools(skills: list, issues: list[dict]) -> None:
+    """V15: 暗工具检测——每个 REGISTERED_TOOLS 的工具必须满足以下之一，否则 warning：
+    - 被某专属 SOP 的 tools[].name 引用
+    - 在 tool_registry 中标 exposure_mode == 'sop_only'
+    - 否则：将自动进入 SOP-999 派生白名单（warning 提示开发者确认）
+    """
+    # 收集所有 Skill YAML 的 tools[].name
+    referenced: set[str] = set()
+    for skill_id, data, _yfile in skills:
+        raw_tools = data.get("tools", [])
+        if isinstance(raw_tools, dict) and raw_tools.get("auto_generate"):
+            continue
+        for t in raw_tools or []:
+            if isinstance(t, dict) and "name" in t:
+                referenced.add(t["name"])
+
+    # 从 tool_registry 取 exposure_mode 映射
+    exposure_map: dict[str, str] = {}
+    try:
+        from emily_core.repositories.tool_registry_repo import ToolRegistryRepo
+        db_tools = ToolRegistryRepo.get_all_active()
+        for row in db_tools:
+            exposure_map[row["api_id"]] = row.get("exposure_mode", "meta")
+    except Exception as e:
+        logger.warning("_check_dark_tools: tool_registry unavailable: %s", e)
+
+    for tool in sorted(REGISTERED_TOOLS):
+        if tool in referenced:
+            continue  # 有专属 SOP 引用
+        if exposure_map.get(tool) == "sop_only":
+            continue  # 显式标为 sop_only
+        # 暗工具：将自动进入 SOP-999 派生白名单
+        issues.append({
+            "severity": "warning", "check": "V15_dark_tool",
+            "tool": tool,
+            "detail": (
+                f"工具 {tool} 无专属 SOP、未标 sop_only，"
+                f"将自动进入 SOP-999 直调白名单。"
+                f"若需专属流程，请创建 SOP-XXX；"
+                f"若不应被 LLM 自主调用，标 sop_only"
+            ),
+        })
+
+
 def check_all(skill_dir: str, check_tool_registry: bool = True) -> dict:
     """全量一致性检查。返回结构化报告 dict。
 
@@ -254,6 +352,12 @@ def check_all(skill_dir: str, check_tool_registry: bool = True) -> dict:
     skills = _load_skills(skill_dir)
     _check_skill_yaml(skills, tool_schemas, issues)
 
+    # M5 V14: SOP-999 派生白名单 ⊆ REGISTERED_TOOLS
+    _check_meta_tools_whitelist(skills, issues)
+
+    # M5 V15: 暗工具检测
+    _check_dark_tools(skills, issues)
+
     # V13: tool_registry 表同步（可选）
     tool_registry_report = None
     if check_tool_registry:
@@ -275,34 +379,45 @@ def check_all(skill_dir: str, check_tool_registry: bool = True) -> dict:
 
 
 def _ensure_tool_registry_seed() -> dict:
-    """自动种子：tool_registry 表为空时，从 TOOL_META_MAP 同步写入。
+    """自动种子：每次启动从 TOOL_META_MAP 全量同步到 tool_registry 表。
 
-    fail-open：任何异常不阻断启动，返回 {"seeded": N, "error": ...}。
+    对每个 TOOL_META_MAP 条目执行 upsert，确保 category / permission_flag / exposure_mode
+    等字段与代码中的 TOOL_META_MAP 保持一致。已有记录会更新，新记录会插入。
+
+    fail-open：任何异常不阻断启动，返回 {"synced": N, "error": ...}。
     """
     try:
         from emily_core.repositories.tool_registry_repo import ToolRegistryRepo
+        synced = 0
+        updated = 0
+        inserted = 0
         active = ToolRegistryRepo.get_all_active()
-        if len(active) >= len(TOOL_META_MAP):
-            return {"seeded": 0, "total": len(active)}
+        existing_ids = {r["api_id"] for r in active}
 
-        seeded = 0
-        for tool_name, (display_name, category, perm_flag) in TOOL_META_MAP.items():
-            if any(r["api_id"] == tool_name for r in active):
-                continue
+        for tool_name, (display_name, category, perm_flag, exposure_mode) in TOOL_META_MAP.items():
             ok = ToolRegistryRepo.upsert(
                 api_id=tool_name,
                 display_name=display_name,
                 category=category,
                 permission_flag=perm_flag,
+                exposure_mode=exposure_mode,
             )
             if ok:
-                seeded += 1
-        if seeded:
-            logger.info("_ensure_tool_registry_seed: seeded %d tools", seeded)
-        return {"seeded": seeded, "total": len(active) + seeded}
+                synced += 1
+                if tool_name in existing_ids:
+                    updated += 1
+                else:
+                    inserted += 1
+
+        if synced:
+            logger.info(
+                "_ensure_tool_registry_seed: synced %d tools (%d updated, %d inserted)",
+                synced, updated, inserted,
+            )
+        return {"synced": synced, "updated": updated, "inserted": inserted, "total": len(TOOL_META_MAP)}
     except Exception as e:
         logger.warning("_ensure_tool_registry_seed failed: %s", e)
-        return {"seeded": 0, "error": str(e)}
+        return {"synced": 0, "error": str(e)}
 
 
 def check_quick(skill_dir: str) -> dict:
@@ -320,6 +435,10 @@ def check_quick(skill_dir: str) -> dict:
         skills = _load_skills(skill_dir)
         issues: list[dict] = []
         _check_skill_yaml(skills, tool_schemas, issues)
+        # M5 V14: SOP-999 派生白名单 ⊆ REGISTERED_TOOLS
+        _check_meta_tools_whitelist(skills, issues)
+        # M5 V15: 暗工具检测
+        _check_dark_tools(skills, issues)
         fatal = sum(1 for i in issues if i["severity"] == "fatal")
         return {
             "skills": len(skills),

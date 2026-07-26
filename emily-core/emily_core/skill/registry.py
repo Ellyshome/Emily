@@ -7,13 +7,14 @@
 
 from __future__ import annotations
 
+import dataclasses
 import logging
 import threading
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from pathlib import Path
 
-from .definition import SkillDefinition
+from .definition import SkillDefinition, SkillTool
 from .parser import parse_skill_file, SkillParseError
 
 logger = logging.getLogger("emily.skill.registry")
@@ -66,6 +67,8 @@ class SkillRegistry:
             self._registry = new_registry
             self._by_skill_id = new_by_skill_id
             self._is_ready = status.successfully_parsed > 0
+            # M2: 派生 SOP-999 的 tools 白名单
+            self._derive_sop999_tools()
             logger.info(
                 "SkillRegistry loaded: %d skills, %d ok, %d failed",
                 status.total_files, status.successfully_parsed, status.failed_parsed,
@@ -82,6 +85,8 @@ class SkillRegistry:
             self._registry = new_registry
             self._by_skill_id = new_by_skill_id
             self._is_ready = status.successfully_parsed > 0
+            # M2: 派生 SOP-999 的 tools 白名单
+            self._derive_sop999_tools()
             logger.info(
                 "SkillRegistry reloaded: %d ok, %d failed",
                 status.successfully_parsed, status.failed_parsed,
@@ -145,15 +150,8 @@ class SkillRegistry:
             "DOC": "文档处理（OCR/解析/表格抽取/向量化）",
         }
 
-        # 类型级兜底策略
-        FALLBACK_BY_TYPE = {
-            "REC": "这是记录/录入类请求。若以上 REC 流程均不匹配，使用 record_event / record_task 原子工具自由推理录入。",
-            "FILE": "这是文件管理类请求。若以上 FILE 流程均不匹配，使用 file_storage 原子工具处理。",
-            "QRY": "这是数据查询类请求。若以上 QRY 流程均不匹配，使用 query_data 工具查询，query_type 根据用户意图选择 event/task/meeting/file/message/summary。",
-            "FLOW": "这是深度调查类请求。若以上 FLOW 流程均不匹配，使用系统内置的守护调查Agent执行跨维度分析。",
-            "SYS": "这是系统管理类请求。若以上 SYS 流程均不匹配，但仍需系统功能，使用对应原子工具自由推理。",
-            "DOC": "这是文档处理类请求。若以上 DOC 流程均不匹配，使用 parse_document / extract_table / chunk_text / embed_and_index 原子工具处理。",
-        }
+        # 类型级兜底策略（M2: 从 tool_registry 派生，失败时回退硬编码快照）
+        FALLBACK_BY_TYPE = self._derive_fallback_by_type()
 
         lines: list[str] = []
 
@@ -204,6 +202,129 @@ class SkillRegistry:
             lines.append("---")
 
         return "\n".join(lines)
+
+    # ── M2: 派生计算 ──
+
+    def _derive_sop999_tools(self) -> None:
+        """M2: 派生 SOP-999 的工具直调白名单，用 dataclasses.replace 注入。
+
+        公式：全部 REGISTERED_TOOLS
+            − ∪(所有 Skill YAML 的 tools[].name)   # 被专属 SOP 引用的
+            − {t for t in tool_registry if exposure_mode == 'sop_only'}
+
+        fail-open：tool_registry 不可用时回退到 REGISTERED_TOOLS 减被引用工具。
+        """
+        sop999 = self._registry.get("SOP-999-SYS")
+        if sop999 is None:
+            return
+
+        try:
+            from ..infrastructure.tools_consistency import REGISTERED_TOOLS
+
+            # 收集所有非 SOP-999 Skill 的 tools[].name
+            referenced: set[str] = set()
+            for skill in self._registry.values():
+                if skill.sop_id == "SOP-999-SYS":
+                    continue
+                for t in skill.tools:
+                    referenced.add(t.name)
+
+            # 从 tool_registry 取 exposure_mode 映射
+            sop_only_tools: set[str] = set()
+            try:
+                from ..repositories.tool_registry_repo import ToolRegistryRepo
+                db_tools = ToolRegistryRepo.get_all_active()
+                sop_only_tools = {
+                    row["api_id"] for row in db_tools
+                    if row.get("exposure_mode") == "sop_only"
+                }
+            except Exception as e:
+                logger.warning(
+                    "_derive_sop999_tools: tool_registry unavailable, "
+                    "fallback to REGISTERED_TOOLS only: %s", e
+                )
+
+            # 派生白名单
+            whitelist = (
+                REGISTERED_TOOLS
+                - referenced
+                - sop_only_tools
+            )
+
+            # 构建 SkillTool 列表
+            meta_tools = [
+                SkillTool(name=api_id, description=api_id)
+                for api_id in sorted(whitelist)
+            ]
+
+            # frozen dataclass → dataclasses.replace
+            self._registry["SOP-999-SYS"] = dataclasses.replace(sop999, tools=meta_tools)
+            logger.info("SOP-999 meta tools derived: %d tools", len(meta_tools))
+
+        except Exception as e:
+            logger.warning("_derive_sop999_tools failed (fail-open): %s", e)
+
+    def _derive_fallback_by_type(self) -> dict[str, str]:
+        """M2: 从 tool_registry 按 category 分组派生 FALLBACK_BY_TYPE。
+
+        fail-open：DB 不可用时回退到硬编码快照。
+        """
+        try:
+            from ..repositories.tool_registry_repo import ToolRegistryRepo
+            db_tools = ToolRegistryRepo.get_all_active()
+
+            # 收集所有非 SOP-999 Skill 的 tools[].name
+            referenced: set[str] = set()
+            for skill in self._registry.values():
+                if skill.sop_id == "SOP-999-SYS":
+                    continue
+                for t in skill.tools:
+                    referenced.add(t.name)
+
+            # 按 category 分组的兜底 tools
+            category_tools: dict[str, list[str]] = {}
+            category_desc: dict[str, str] = {
+                "REC": "这是记录/录入类请求。若以上 REC 流程均不匹配，使用 {tools} 原子工具自由推理录入。",
+                "FILE": "这是文件管理类请求。若以上 FILE 流程均不匹配，使用 {tools} 原子工具处理。",
+                "QRY": "这是数据查询类请求。若以上 QRY 流程均不匹配，使用 {tools} 工具查询。",
+                "FLOW": "这是深度调查类请求。若以上 FLOW 流程均不匹配，使用 {tools} 工具执行跨维度分析。",
+                "SYS": "这是系统管理类请求。若以上 SYS 流程均不匹配，使用 {tools} 原子工具自由推理。",
+                "DOC": "这是文档处理类请求。若以上 DOC 流程均不匹配，使用 {tools} 原子工具处理。",
+                "base": "这是基础查询类请求。若以上流程均不匹配，使用 {tools} 原子工具。",
+            }
+
+            for row in db_tools:
+                tool_name = row["api_id"]
+                if row.get("exposure_mode") == "sop_only":
+                    continue
+                if tool_name in referenced:
+                    continue
+                cat = row.get("category", "base")
+                category_tools.setdefault(cat, []).append(tool_name)
+
+            result: dict[str, str] = {}
+            for cat, tools in category_tools.items():
+                if not tools:
+                    continue
+                tools_str = " / ".join(tools[:5])  # 最多展示5个
+                template = category_desc.get(cat, "使用 {tools} 原子工具。")
+                result[cat.upper() if cat in ("rec", "file", "qry", "flow", "sys", "doc") else cat] = \
+                    template.format(tools=tools_str)
+
+            if result:
+                return result
+        except Exception as e:
+            logger.warning("_derive_fallback_by_type: tool_registry unavailable: %s", e)
+
+        # 硬编码回退快照
+        return {
+            "REC": "这是记录/录入类请求。若以上 REC 流程均不匹配，使用 record_event / record_task 原子工具自由推理录入。",
+            "FILE": "这是文件管理类请求。若以上 FILE 流程均不匹配，使用 file_storage 原子工具处理。",
+            "QRY": "这是数据查询类请求。若以上 QRY 流程均不匹配，使用 query_data 工具查询，query_type 根据用户意图选择 event/task/meeting/file/message/summary。",
+            "FLOW": "这是深度调查类请求。若以上 FLOW 流程均不匹配，使用系统内置的守护调查Agent执行跨维度分析。",
+            "SYS": "这是系统管理类请求。若以上 SYS 流程均不匹配，但仍需系统功能，使用对应原子工具自由推理。",
+            "DOC": "这是文档处理类请求。若以上 DOC 流程均不匹配，使用 parse_document / extract_table / chunk_text / embed_and_index 原子工具处理。",
+        }
 
     # ── 内部 ──
 

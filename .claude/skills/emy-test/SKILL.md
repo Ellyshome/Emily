@@ -198,6 +198,29 @@ uv run python .claude/skills/emy-test/cli.py --managed --llm \
   --sender "{真实用户名}" --sender-id "{真实用户UUID}"
 ```
 
+> ⚠️ **跨操作系统文件 URL 陷阱**
+> `--file` 参数使用 `Path.as_uri()` 生成 `file:///D:/temp/xxx.txt` 格式的 URL。
+> 这个 URL 会写入 `StandardMessage.attachments[].url` 并传入 Docker 容器，
+> 但 **容器是 Linux 环境，无法解析 Windows 路径**（`D:\` 不存在），
+> 导致 `AttachmentDownloader` / `FileStorageService` 下载文件时失败。
+>
+> **解决方案**：将测试文件放入 Docker volume 挂载目录（`emily-data/attachments/`），
+> 容器内即可通过 `file:///app/attachments/xxx.txt` 访问。
+>
+> 对于已有 mock 文件（由 `setup_test_env.ps1` 生成），路径天然可访问：
+> ```
+> 宿主机：emily-data/attachments/mock/EMERALD-01/...
+>    ↕ volume 挂载 (docker-compose-napcat.yml L77)
+> 容器内：/app/attachments/mock/EMERALD-01/...
+> ```
+> `storage_path` 在 DB 中已是相对路径，`FileStorageService.get_local_path()` 会拼出容器内绝对路径，
+> send_file 等功能可直接使用。
+>
+> **测试文件放置建议**：
+> - 测试附件自动下载 → 文件放 `emily-data/attachments/`，消息中传容器内 `file:///app/attachments/...`
+> - 测试 send_file / 权限校验 → 先跑 `setup_test_env.ps1` 生成 mock 文件（18 个空文件 + storage_path 修复）
+> - 不要依赖 `--file` 生成的 Windows 绝对路径 URL 在容器侧生效
+
 ---
 
 ## CLI 参数速查

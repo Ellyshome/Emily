@@ -27,6 +27,7 @@
 5. 置信度：high（明确意图）/ medium（可推断）/ low（模糊）/ none（无法匹配）
 6. 用户表达确认/取消意图（如"确认""好的""取消""算了"）时，输出 sop_id="SYS-confirm"，action 为 confirm 或 cancel
 7. 用户询问 Emily 自身的能力/权限/分类（如"你能做什么""权限怎么分级"）时，直接基于下方"能力树"回答，设 fallback=true
+8. 用户请求明确需要某个工具能力（如发文件/查文件/写记忆），且无对应专属 SOP 时，路由到 sop_id="SOP-999-SYS"（工具直调兜底），由该流程从工具白名单中选择工具执行。两条边界：仅当请求**明确指向工具能力**时路由 SOP-999；模糊请求（"帮我处理一下""帮我看看"）走 fallback=true 对话引导，不路由 SOP-999；元认知询问（"你能做什么""权限怎么分级"）仍走 fallback=true，不路由 SOP-999
 
 ### 输出要求
 仅输出一个 JSON 对象：sop_id（匹配的 SOP 编号或 null）、confidence（high/medium/low/none）、is_compound（true/false）、sub_tasks（子任务数组）、fallback（无匹配时为 true）

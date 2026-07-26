@@ -75,9 +75,9 @@ def validate_skill(skill: SkillDefinition) -> SkillValidationResult:
         result.warnings.append("tools 为空——Skill 未声明任何可用工具")
     else:
         tool_names = {t.name for t in skill.tools}
-        # 检查 steps 中的 tool_name 是否在 tools 白名单中
+        # 检查 steps 中的 tool_name 是否在 tools 白名单中（M3: __DYNAMIC__ 是特殊值，跳过检查）
         for i, step in enumerate(skill.steps):
-            if step.tool_name and step.tool_name not in tool_names:
+            if step.tool_name and step.tool_name != "__DYNAMIC__" and step.tool_name not in tool_names:
                 result.warnings.append(
                     f"steps[{i}].tool_name='{step.tool_name}' 不在 tools 白名单中"
                 )

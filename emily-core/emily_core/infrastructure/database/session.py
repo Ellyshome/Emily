@@ -72,6 +72,16 @@ def _ensure_columns(engine) -> list[dict]:
             ("response_full", "TEXT", "''"),
             ("reasoning_content", "TEXT", "''"),
         ],
+        "files": [
+            ("purpose", "VARCHAR(50)", "'RECORD'"),
+            ("purpose_confirmed", "BOOLEAN", "FALSE"),
+            ("attachment_of", "VARCHAR", "NULL"),
+            ("rag_indexed", "BOOLEAN", "FALSE"),
+            ("rag_collection", "VARCHAR(100)", "''"),
+        ],
+        "tool_registry": [
+            ("exposure_mode", "VARCHAR(20)", "'meta'"),
+        ],
     }
 
     from sqlalchemy import text as sa_text
