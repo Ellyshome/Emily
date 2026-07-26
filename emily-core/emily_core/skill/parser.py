@@ -128,8 +128,12 @@ def parse_skill_text(text: str, source_name: str = "<text>") -> SkillDefinition:
     if not data.get("display_name") and _inferred_sop_id:
         data["display_name"] = _inferred_sop_id
 
-    # 解析 tools
-    tools = [_parse_tool(t) for t in data.get("tools", [])]
+    # 解析 tools（M3: 支持 auto_generate: true 语法）
+    raw_tools = data.get("tools", [])
+    if isinstance(raw_tools, dict) and raw_tools.get("auto_generate"):
+        tools = []  # 由 SkillRegistry._derive_sop999_tools() 运行时填充
+    else:
+        tools = [_parse_tool(t) for t in raw_tools]
 
     # 解析 steps
     steps = [_parse_step(s) for s in data.get("steps", [])]

@@ -49,6 +49,8 @@ class FileRepository:
         uploaded_by: Optional[str] = None,
         parse_status: str = "pending",
         file_category: str = "OTHER",
+        purpose: str = "RECORD",
+        purpose_confirmed: bool = False,
     ) -> File:
         with get_session() as session:
             f = File(
@@ -64,6 +66,8 @@ class FileRepository:
                 uploaded_by=uploaded_by,
                 parse_status=parse_status,
                 file_category=file_category,
+                purpose=purpose,
+                purpose_confirmed=purpose_confirmed,
             )
             session.add(f)
             session.flush()
@@ -158,3 +162,26 @@ class FileRepository:
                 cat = f.file_category or "OTHER"
                 counts[cat] = counts.get(cat, 0) + 1
             return counts
+
+    # ── M5 附件链 CRUD ──
+
+    @staticmethod
+    def update_attachment_of(file_id: str, master_file_id: str | None) -> File | None:
+        """纯 CRUD：更新 attachment_of 字段。master_file_id=None 表示卸载。"""
+        with get_session() as session:
+            f = session.query(File).filter(File.id == file_id, File.is_deleted == False).first()
+            if f is None:
+                return None
+            f.attachment_of = master_file_id
+            session.commit()
+            logger.info("File %s attachment_of updated: %s", f.file_no, master_file_id or "NULL(unlinked)")
+            return f
+
+    @staticmethod
+    def query_attachments(master_file_id: str) -> list[File]:
+        """查询主文件下的所有附件（不含主文件本身）。"""
+        with get_session() as session:
+            return session.query(File).filter(
+                File.attachment_of == master_file_id,
+                File.is_deleted == False,
+            ).order_by(File.created_at).all()

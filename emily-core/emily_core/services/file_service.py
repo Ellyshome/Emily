@@ -31,6 +31,7 @@ class FileService:
             uploaded_by=cmd.uploaded_by or None,
             parse_status="pending",
             file_category=cmd.file_category or "OTHER",
+            purpose=getattr(cmd, "purpose", "RECORD") or "RECORD",
         )
         logger.info("File %s recorded: %s", file_no, cmd.filename)
         return f

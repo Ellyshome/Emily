@@ -2,11 +2,12 @@
 # setup_test_env.ps1 — Emily 测试环境一键工具
 #
 # 用法（在项目根目录 d:\app\Emily 下执行）:
-#   powershell -File .claude\tool\env-test\setup_test_env.ps1                  完整重置+种子+文件
+#   powershell -File .claude\tool\env-test\setup_test_env.ps1                  完整重置+种子+文件+权限
 #   powershell -File .claude\tool\env-test\setup_test_env.ps1 -ResetOnly       仅空库重置
 #   powershell -File .claude\tool\env-test\setup_test_env.ps1 -SeedOnly        仅种子（库已空）
 #   powershell -File .claude\tool\env-test\setup_test_env.ps1 -SkipAdvanced    跳过010高级数据
 #   powershell -File .claude\tool\env-test\setup_test_env.ps1 -SkipMockFiles   跳过磁盘空文件
+#   powershell -File .claude\tool\env-test\setup_test_env.ps1 -SkipFileMgmtTests  跳过文件管理测试数据
 #
 # 依赖:
 #   - Docker Desktop 运行中（emily-postgres + emily-core 容器）
@@ -18,6 +19,7 @@ param(
     [switch]$SeedOnly,
     [switch]$SkipAdvanced,
     [switch]$SkipMockFiles,
+    [switch]$SkipFileMgmtTests,
     [string]$Project = "EMERALD-01"
 )
 
@@ -320,6 +322,66 @@ function New-MockFiles {
 }
 
 # ============================================================
+# 功能二续四：文件管理系统测试专用 — session_accessible_files 种子
+# ============================================================
+function Invoke-SeedFileAccess {
+    Write-Host "[文件管理] 创建文件可见性权限记录 (session_accessible_files)..." -ForegroundColor Yellow
+
+    $sql = @"
+-- 王建国 (level=6, admin) 可看前 9 个文件 (PROJECT_LICENSE + CONTRACT + PHASE_DELIVERABLE)
+INSERT INTO session_accessible_files (id, user_id, file_id, access_type, granted_at)
+SELECT gen_random_uuid(),
+       (SELECT id FROM users WHERE username = '王建国' AND is_deleted = false LIMIT 1),
+       id, 'explicit', '2026-07-26T00:00:00'
+FROM (
+    SELECT id FROM files WHERE is_deleted = false ORDER BY file_no LIMIT 9
+) f;
+
+-- 李景利 (level=4) 只能看前 4 个文件 (PROJECT_LICENSE only)
+INSERT INTO session_accessible_files (id, user_id, file_id, access_type, granted_at)
+SELECT gen_random_uuid(),
+       (SELECT id FROM users WHERE username = '李景利' AND is_deleted = false LIMIT 1),
+       id, 'explicit', '2026-07-26T00:00:00'
+FROM (
+    SELECT id FROM files WHERE is_deleted = false ORDER BY file_no LIMIT 4
+) f;
+"@
+
+    $tmpPath = [System.IO.Path]::GetTempFileName()
+    [System.IO.File]::WriteAllText($tmpPath, $sql, [System.Text.UTF8Encoding]::new($false))
+    docker cp $tmpPath "emily-postgres:/tmp/seed_file_access.sql" 2>$null
+    docker exec emily-postgres psql -U emily -d emily -f /tmp/seed_file_access.sql 2>$null
+    docker exec emily-postgres rm -f /tmp/seed_file_access.sql 2>$null
+    Remove-Item $tmpPath -Force -ErrorAction SilentlyContinue
+
+    if ($LASTEXITCODE -ne 0) {
+        Write-Host "  [WARN] session_accessible_files 种子可能失败，请检查" -ForegroundColor Yellow
+    } else {
+        Write-Host "  [OK] 王建国 9 条 + 李景利 4 条 = 13 条 session_accessible_files 记录" -ForegroundColor Green
+    }
+    Write-Host ""
+}
+
+# ============================================================
+# 功能二续五：M3 附件自动下载测试用文件
+# ============================================================
+function New-TestAttachment {
+    Write-Host "[文件管理] 生成 M3 附件下载测试文件..." -ForegroundColor Yellow
+
+    $testFile = "$ATTACHMENTS_ROOT/test_attachment.txt"
+    $content = "Emily 文件管理系统 M3 附件自动下载测试文件。`r`n创建时间: $(Get-Date -Format 'yyyy-MM-dd HH:mm:ss')`r`n用途: 验证 AttachmentDownloader.download_for_message 流程。"
+
+    try {
+        [System.IO.File]::WriteAllText($testFile, $content, [System.Text.UTF8Encoding]::new($false))
+        Write-Host "  [OK] test_attachment.txt 已生成 → $testFile" -ForegroundColor Green
+        Write-Host "  容器内 URL: file:///app/attachments/test_attachment.txt" -ForegroundColor DarkGray
+    } catch {
+        Write-Host "  [WARN] 测试文件创建失败: $_" -ForegroundColor Yellow
+    }
+    Write-Host ""
+}
+
+# ============================================================
 # 功能三：验证数据完整性
 # ============================================================
 function Invoke-Verify {
@@ -348,6 +410,19 @@ function Invoke-Verify {
     if (Test-Path "$ATTACHMENTS_ROOT/mock") {
         $fileCount = (Get-ChildItem -Recurse "$ATTACHMENTS_ROOT/mock" -File -ErrorAction SilentlyContinue).Count
         Write-Host "  [OK] mock 目录下磁盘文件数: $fileCount" -ForegroundColor Green
+    }
+
+    # 文件管理测试数据验证
+    $safCount = docker exec emily-postgres psql -U emily -d emily -t -c 'SELECT count(*) FROM session_accessible_files;'
+    $safNum = $safCount.Trim()
+    if ($safNum -gt 0) {
+        Write-Host "  [OK] session_accessible_files 记录数: $safNum" -ForegroundColor Green
+    } else {
+        Write-Host "  [提示] session_accessible_files 为空（跳过文件管理测试数据时正常）" -ForegroundColor DarkGray
+    }
+
+    if (Test-Path "$ATTACHMENTS_ROOT/test_attachment.txt") {
+        Write-Host "  [OK] M3 测试附件: test_attachment.txt" -ForegroundColor Green
     }
 
     Write-Host ""
@@ -380,6 +455,10 @@ if (-not $ResetOnly) {
     Invoke-FixIMBindings
     if (-not $SkipMockFiles) {
         New-MockFiles
+    }
+    if (-not $SkipFileMgmtTests) {
+        Invoke-SeedFileAccess
+        New-TestAttachment
     }
 
     # ── 世界书 tier 补丁（补全 T2/T3 数据缺口，确保 tier≥3 激活）──

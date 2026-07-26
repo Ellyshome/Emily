@@ -43,18 +43,14 @@ steps:
     output_key: file_type
 
   - id: step-04
-    description: 提取或推断关联项目（project_id）。
-    tool_name: query_data
+    description: 提取或推断关联项目(project_id)，从用户可见项目取默认值。
+    tool_name: null
     tool_params:
-      - name: project_name
-        source: user_input
-        extraction: 从用户消息中提取项目名称，如“科技城3号楼”、“科技城项目”等。
-        required: false
       - name: project_id
         source: context
-        path: project_id
+        path: project_ids.0
         required: false
-    output_key: project_id
+    output_key: project_info
 
   - id: step-05
     description: 提取文件描述（description，可选）。
@@ -82,15 +78,15 @@ steps:
     tool_params:
       - name: filename
         source: prev_step
-        path: filename
+        path: filename.filename
         required: true
       - name: file_type
         source: prev_step
-        path: file_type
+        path: file_type.file_type
         required: false
       - name: project_id
         source: prev_step
-        path: project_id
+        path: project_info.project_id
         required: false
     output_key: file_record
 

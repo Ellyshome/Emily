@@ -495,6 +495,14 @@ class SessionAgent:
 
     # ── M4: Session 回复合成层 ──
 
+    def _has_meta_cognition_intent(self, done_workitems: list) -> bool:
+        """检测是否存在 meta_cognition 意图的 WorkItem。"""
+        for wi in done_workitems:
+            sr = getattr(wi, "structured_result", None)
+            if sr is not None and getattr(sr, "intent", "") == "meta_cognition":
+                return True
+        return False
+
     async def _synthesize_final_reply(self, message: "StandardMessage",
                                       done_workitems: list) -> str:
         """M4: 基于 WorkItem 的 structured_result 调 LLM 组织最终回复。
@@ -518,6 +526,17 @@ class SessionAgent:
         for key, value in prompt_vars.items():
             replacement = str(value) if value else "（无）"
             system_prompt = system_prompt.replace(key, replacement)
+        # M4: 元认知意图 ← 注入 SOP 能力树到回复合成上下文
+        has_meta = self._has_meta_cognition_intent(done_workitems)
+        if has_meta and self._skill_registry:
+            try:
+                sop_catalog = self._skill_registry.dump_as_text()
+                system_prompt = system_prompt.replace("{sop_catalog}", sop_catalog)
+            except Exception as e:
+                logger.warning("M4: failed to dump SOP catalog for meta_cognition: %s", e)
+                system_prompt = system_prompt.replace("{sop_catalog}", "（SOP 能力目录暂不可用）")
+        else:
+            system_prompt = system_prompt.replace("{sop_catalog}", "")
         system_prompt = re.sub(r'\{[a-z_]+\}', '', system_prompt)
 
         full_messages = [{"role": "system", "content": system_prompt}]

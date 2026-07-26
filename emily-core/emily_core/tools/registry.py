@@ -224,7 +224,10 @@ def _register_business(core, reg):
                              meeting_app=core._meeting_app), "business", "write")
     _buc += _reg_biz(reg, "record_file", "记录文件元数据",
                      partial(_h("file_tool", "handle_record_file"),
-                             file_app=core._file_app), "business", "write")
+                             file_app=core._file_app,
+                             file_manager=core._file_manager,
+                             tei_client=core._tei_client,
+                             kc_repo=core._knowledge_chunk_repo), "business", "write")
 
     # 文件查询 + 分类修改 (2 tools)
     _buc += _reg_biz(reg, "query_files", "按分类或关键词查询项目文件",
@@ -233,6 +236,52 @@ def _register_business(core, reg):
     _buc += _reg_biz(reg, "update_file_category", "修改文件分类归属",
                      partial(_h("file_tool", "handle_update_file_category"),
                              file_app=core._file_app), "business", "write")
+
+    # M2: send_file — Emily 主动发送文件
+    _buc += _reg_biz(reg, "send_file", "向用户发送已有文件",
+                     partial(_h("file_tool", "handle_send_file"),
+                             file_manager=core._file_manager,
+                             outbound_bus=core.outbound_bus),
+                     "business", "all")
+
+    # M4: 文件关联与版本 (4 tools)
+    _buc += _reg_biz(reg, "link_file", "关联文件到业务对象",
+                     partial(_h("file_tool", "handle_link_file"),
+                             file_manager=core._file_manager),
+                     "business", "write")
+    _buc += _reg_biz(reg, "new_file_version", "创建文件新版本",
+                     partial(_h("file_tool", "handle_new_file_version"),
+                             file_app=core._file_app,
+                             file_manager=core._file_manager),
+                     "business", "write")
+    _buc += _reg_biz(reg, "delete_file", "软删除文件",
+                     partial(_h("file_tool", "handle_delete_file"),
+                             file_manager=core._file_manager),
+                     "business", "write")
+    _buc += _reg_biz(reg, "list_file_versions", "列出文件版本",
+                     partial(_h("file_tool", "handle_list_file_versions"),
+                             file_manager=core._file_manager),
+                     "business", "all")
+
+    # M5: 附件链工具 (3 tools)
+    _buc += _reg_biz(reg, "link_to_master", "挂载附件到主文件",
+                     partial(_h("file_tool", "handle_link_to_master"),
+                             file_manager=core._file_manager),
+                     "business", "write")
+    _buc += _reg_biz(reg, "unlink_attachment", "卸载附件为独立文件",
+                     partial(_h("file_tool", "handle_unlink_attachment"),
+                             file_manager=core._file_manager),
+                     "business", "write")
+    _buc += _reg_biz(reg, "list_attachments", "列出主文件下的附件",
+                     partial(_h("file_tool", "handle_list_attachments"),
+                             file_manager=core._file_manager),
+                     "business", "all")
+
+    # M5: purpose 校正工具
+    _buc += _reg_biz(reg, "update_file_purpose", "校正文件的业务意图",
+                     partial(_h("file_tool", "handle_update_file_purpose"),
+                             file_manager=core._file_manager),
+                     "business", "write")
 
     # 计划任务工具已废弃（由 node_task_tool 替代），不再注册
 

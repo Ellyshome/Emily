@@ -106,6 +106,8 @@ class EmilyCore:
         self._task_app = None
         self._meeting_app = None
         self._file_app = None
+        self._file_manager = None  # M1: FileManager 统一入口
+        self._attachment_downloader = None  # M3: 附件异步下载
         self._query_service = None
 
         # Skill 模块
@@ -414,6 +416,23 @@ class EmilyCore:
             file_storage = FileStorageService(storage_root=storage_root)
             self._file_app = FileApplication(FileService(), storage_service=file_storage)
             self._query_service = QueryService()
+
+            # M1: 创建 FileManager 统一入口并注入
+            from .repositories.session_accessible_file_repo import SessionAccessibleFileRepo
+            from .services.file_manager import FileManager
+            file_manager = FileManager(
+                file_service=self._file_app.file_service,
+                storage_service=file_storage,
+                accessible_repo=SessionAccessibleFileRepo(),
+            )
+            self._file_app.set_file_manager(file_manager)
+            self._file_manager = file_manager
+            logger.info("FileManager initialized and injected into FileApplication")
+
+            # M3: 创建 AttachmentDownloader
+            from .services.attachment_downloader import AttachmentDownloader
+            self._attachment_downloader = AttachmentDownloader(file_manager)
+            logger.info("AttachmentDownloader initialized")
 
             # 注入项目日记到 Application 层（如果 journal 先于此处初始化则注入）
             if self._event_journal is not None:
@@ -961,6 +980,20 @@ class EmilyCore:
         except Exception as e:
             # 非阻断：持久化失败不阻塞 Pipeline，仅 trace 会缺失
             logger.warning("Inbound message persist failed (non-blocking): %s", e)
+
+        # ── M3: 附件自动下载（异步，不阻塞主线）──
+        if db_message_id and self._attachment_downloader is not None:
+            _attachments = getattr(message, "attachments", None) or []
+            if _attachments:
+                asyncio.create_task(
+                    self._attachment_downloader.download_for_message(
+                        message_id=db_message_id, attachments=_attachments,
+                    )
+                )
+                logger.debug(
+                    "Scheduled attachment download: msg=%s, %d item(s)",
+                    db_message_id, len(_attachments),
+                )
 
         # SessionPool 路由（携带 db_message_id —— 见 M2）
         reply = await self._session_pool.route(message, user_id=user_id, db_message_id=db_message_id)
