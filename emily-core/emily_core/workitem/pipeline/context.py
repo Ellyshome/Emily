@@ -47,6 +47,9 @@ class BusContext:
     # ── SessionContext（私有，只读访问）──
     _session_context: Optional["SessionContext"] = None
 
+    # ── 当前操作者权限快照（每条消息独立，群聊多用户场景必需）──
+    _actor_snapshot: Optional[dict] = None
+
     # ── 运行标识 ──
     pipeline_run_id: str = field(default_factory=_new_run_id)
     current_stage: str = ""
@@ -93,6 +96,26 @@ class BusContext:
         WorkItemAgent / AuthHook 通过此方法获取会话状态信息与权限列表。
         """
         return self._session_context
+
+    def get_actor_snapshot(self) -> Optional[dict]:
+        """获取当前操作者权限快照。
+
+        AuthHook 优先读此字段鉴权；为 None 时回退 get_session_context()。
+        """
+        return self._actor_snapshot
+
+    def get_auth_context(self) -> tuple:
+        """统一鉴权数据源：返回 (user_id, perm_snapshot)。
+
+        优先用 actor_snapshot（每条消息独立）；缺失时回退 session_context 的字段。
+        私聊场景 actor_snapshot 为 None，回退到 session_context 权限（行为不变）。
+        """
+        if self._actor_snapshot is not None:
+            return self._actor_snapshot.get("user_id", ""), self._actor_snapshot
+        # 回退：私聊场景 actor_snapshot 为空，使用 SessionContext 权限
+        if self._session_context is not None:
+            return self._session_context.user_id, None
+        return self.user_id, None
 
     def has_sop_permission(self, sop_id: str) -> bool:
         """检查是否有权限使用指定 SOP（便捷方法）。"""

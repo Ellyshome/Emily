@@ -88,6 +88,11 @@ steps:
         source: prev_step
         path: project_info.project_id
         required: false
+      - name: purpose
+        source: user_input
+        extraction: 按文件名判断业务意图。EVIDENCE=证照/许可/执照/合同/批复/合格单;RECORD=验收附图/施工记录/会议附件;DESIGN=施工图/过程图/图纸;REFERENCE=优秀工艺/做法参考/规范。从文件名关键词判断,默认 RECORD。
+        required: false
+        default: RECORD
     output_key: file_record
 
   - id: step-08

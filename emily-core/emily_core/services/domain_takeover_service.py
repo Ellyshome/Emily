@@ -20,6 +20,7 @@ class DomainTakeoverService:
         - 群聊中 @了机器人 → takeover=true
         - 私聊消息 → takeover=true
         - 观察模式 → takeover=false, 不回复 (仅在此模式)
+        - 监控模式 → 全量接管但仅 @ 时回复（静默收集群聊消息与文件）
         - 其他 → takeover=false
     """
 
@@ -37,6 +38,32 @@ class DomainTakeoverService:
                 mode=mode,
                 should_reply=False,
                 reason="observe_mode",
+            )
+
+        # 监控模式：全量接管，但仅 @ 时回复（静默收集群聊消息与文件）
+        if mode == "monitor":
+            if message.conversation_type == "private":
+                logger.info("takeover=true, reason=monitor_private")
+                return RouteDecision(
+                    takeover=True,
+                    mode=mode,
+                    should_reply=True,
+                    reason="monitor_private",
+                )
+            if message.is_at_bot:
+                logger.info("takeover=true, reason=monitor_at_bot")
+                return RouteDecision(
+                    takeover=True,
+                    mode=mode,
+                    should_reply=True,
+                    reason="monitor_at_bot",
+                )
+            logger.info("takeover=true, reason=monitor_silent_collect")
+            return RouteDecision(
+                takeover=True,
+                mode=mode,
+                should_reply=False,
+                reason="monitor_silent_collect",
             )
 
         # 托管模式：接管所有消息 (M1 不启用，预留)
@@ -67,7 +94,7 @@ class DomainTakeoverService:
                 reason="at_bot_in_group",
             )
 
-        # 群聊未 @机器人 → 放行
+        # 群聊未 @机器人 → 放行（collaborate / observe 等模式的兜底）
         logger.debug("takeover=false, reason=group_message_not_at_bot")
         return RouteDecision(
             takeover=False,

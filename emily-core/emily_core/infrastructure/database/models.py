@@ -1696,3 +1696,28 @@ class SystemDescription(Base):
     generated_by = Column(String(50), default="manual", comment="生成来源：startup / scheduler / manual")
     created_at = Column(String, default=_utc_now, comment="首次创建时间")
     updated_at = Column(String, default=_utc_now, onupdate=_utc_now, comment="最近更新时间")
+
+
+
+# ══════════════════════════════════════════════════════════════════════════════
+# 群聊模块 —— GroupMemory 群级长期记忆
+# ══════════════════════════════════════════════════════════════════════════════
+
+
+class GroupMemory(Base):
+    """Group-level long-term memory - key facts extracted on Session archive."""
+    __tablename__ = "group_memories"
+    id = Column(String, primary_key=True, default=_new_uuid)
+    group_id = Column(String(200), nullable=False, index=True)
+    group_name = Column(String(500))
+    summary = Column(Text, default="")
+    key_facts = Column(String, default="[]")
+    last_session_id = Column(String, default="")
+    last_speaker_user_id = Column(String, ForeignKey("users.id"), nullable=True)
+    fact_count = Column(Integer, default=0)
+    created_at = Column(String, default=_utc_now)
+    updated_at = Column(String, default=_utc_now, onupdate=_utc_now)
+
+    __table_args__ = (
+        Index("idx_gm_group_id", "group_id"),
+    )

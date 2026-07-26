@@ -312,6 +312,17 @@ def _collect_system_snapshot() -> dict:
             pass
         snapshot["sops"] = sop_count
 
+        # 群清单统计
+        try:
+            from .services.group_registry_service import GroupRegistryService
+            groups = GroupRegistryService().list_groups()
+            snapshot["groups"] = groups
+            snapshot["groups_total"] = len(groups)
+        except Exception as e:
+            _logger.warning("group list collect failed: %s", e)
+            snapshot["groups"] = []
+            snapshot["groups_total"] = 0
+
         return snapshot
     except Exception as e:
         _logger.warning("System snapshot collection failed: %s", e)
@@ -485,6 +496,24 @@ async def _send_startup_email(core: "EmilyCore", config: Config, startup_report:
                     lines.append(f"{k}: {v}")
             else:
                 lines.append("(无)")
+            lines.append("")
+        except Exception:
+            lines.append("(采集失败)")
+            lines.append("")
+
+        # 节 5.5：群聊覆盖
+        try:
+            snapshot = _collect_system_snapshot()
+            groups = snapshot.get("groups", [])
+            groups_total = snapshot.get("groups_total", 0)
+            lines.append(f"═══ 群聊覆盖 ({groups_total} 个群) ═══")
+            if groups:
+                for g in groups[:30]:
+                    lines.append(f"  - {g['group_name']} ({g['platform']}, 最近活跃: {g.get('last_active', '?')})")
+                if len(groups) > 30:
+                    lines.append(f"  ... 等 {len(groups)} 个群")
+            else:
+                lines.append("(无群数据，等待插件同步)")
             lines.append("")
         except Exception:
             lines.append("(采集失败)")
