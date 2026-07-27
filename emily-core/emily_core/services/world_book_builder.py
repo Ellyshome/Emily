@@ -254,14 +254,13 @@ class ProjectWorldBookBuilder:
                         milestones.append({
                             "name": n.node_name,
                             "status": n.status,
-                            "progress": n.progress or "0.00",
                             "deadline": n.deadline or "",
                         })
 
-                # 整体进度加权汇总
+                # 整体进度加权汇总（基于完成节点占比）
                 total_progress = 0.0
                 if total > 0:
-                    total_progress = sum(float(n.progress or "0") for n in nodes) / total
+                    total_progress = (completed / total) * 100
 
                 return {
                     "total_nodes": total,
@@ -500,7 +499,7 @@ class ProjectWorldBookBuilder:
             ms = s.get("milestones", [])
             if ms:
                 ms_str = " ｜ ".join(
-                    f"{m['name']}{'✓' if m['status']=='COMPLETED' else m.get('progress','')}"
+                    f"{m['name']}{'✓' if m['status']=='COMPLETED' else ''}"
                     for m in ms[:3]
                 )
                 lines.append(f"🏁 {ms_str}")

@@ -174,10 +174,7 @@ async function showNodeDetail(nodeId) {
             ['项目归属', node.project_id], ['节点编号', node.node_id],
             ['节点名称', node.node_name], ['主责条线', node.owner_dept_id],
             ['关联单位', node.related_company_id], ['截止时间', node.deadline],
-            ['关联地块', node.land_parcel_id], ['备注', node.remark],
-            ['父节点', node.parent_node_id], ['所属阶段', node.stage_id],
-            ['子节点权重', node.child_weight], ['启动文档', node.startup_doc_id],
-            ['进度', `${(node.progress || 0).toFixed(1)}%`],
+            ['备注', node.remark],
             ['状态', node.status],
         ];
         body.innerHTML = `<table class="detail-table">${fields.map(([k, v]) =>

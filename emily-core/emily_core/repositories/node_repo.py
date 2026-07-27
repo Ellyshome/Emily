@@ -19,6 +19,7 @@ from ..infrastructure.database.models import (
     NodeAccessibleFile,
     NodeEvent,
     NodeParticipant,
+    NodeParticipantCompany,
 )
 from ..infrastructure.database.session import get_session
 
@@ -58,8 +59,7 @@ class ProjectNodeRepo:
         """创建节点。
 
         必填参数：project_id, node_id, node_name, creator_id, deadline
-        可选参数：owner_dept_id, related_company_id, parent_node_id, stage_id,
-                  child_weight, remark, land_parcel_id, startup_doc_id, sort_order
+        可选参数：owner_dept_id, related_company_id, remark
         """
         with get_session() as session:
             node = ProjectNode(**kwargs)
@@ -100,37 +100,7 @@ class ProjectNodeRepo:
             )
             if status:
                 q = q.filter(ProjectNode.status == status)
-            return q.order_by(ProjectNode.sort_order, ProjectNode.created_at).limit(limit).all()
-
-    @staticmethod
-    def find_by_parent(parent_node_id: str) -> list[ProjectNode]:
-        """查询某父节点的所有子节点。"""
-        with get_session() as session:
-            return (
-                session.query(ProjectNode)
-                .filter(
-                    ProjectNode.parent_node_id == parent_node_id,
-                    ProjectNode.is_discarded == False,
-                )
-                .order_by(ProjectNode.sort_order)
-                .all()
-            )
-
-    @staticmethod
-    def find_by_stage(project_id: str, stage_id: int) -> list[ProjectNode]:
-        """查询某阶段的所有根节点（parent_node_id 为空）。"""
-        with get_session() as session:
-            return (
-                session.query(ProjectNode)
-                .filter(
-                    ProjectNode.project_id == project_id,
-                    ProjectNode.stage_id == stage_id,
-                    ProjectNode.parent_node_id == "",
-                    ProjectNode.is_discarded == False,
-                )
-                .order_by(ProjectNode.sort_order)
-                .all()
-            )
+            return q.order_by(ProjectNode.created_at.desc()).limit(limit).all()
 
     @staticmethod
     def find_by_owner(owner_dept_id: str, project_id: str | None = None) -> list[ProjectNode]:
@@ -148,8 +118,7 @@ class ProjectNodeRepo:
     def update_fields(node_id: str, **kwargs) -> ProjectNode | None:
         """更新节点字段。自动设置 updated_at。
 
-        可更新字段：node_name, deadline, owner_dept_id, related_company_id,
-                    remark, stage_id, sort_order, land_parcel_id, startup_doc_id
+        可更新字段：node_name, deadline, owner_dept_id, related_company_id, remark
         """
         with get_session() as session:
             node = (
@@ -898,3 +867,100 @@ class NodeEventRepo:
                 .limit(limit)
                 .all()
             )
+
+
+# ══════════════════════════════════════════════════════════════════════════════
+# NodeParticipantCompanyRepo
+# ══════════════════════════════════════════════════════════════════════════════
+
+class NodeParticipantCompanyRepo:
+    """节点参与单位关联表 Repository。"""
+
+    @staticmethod
+    def add(node_id: str, company_id: str, added_by: str = "") -> NodeParticipantCompany:
+        """添加节点参与单位。"""
+        now_iso = datetime.now(BEIJING_TZ).isoformat()
+        with get_session() as session:
+            npc = NodeParticipantCompany(
+                node_id=node_id,
+                company_id=company_id,
+                added_by=added_by,
+                added_at=now_iso,
+            )
+            session.add(npc)
+            session.flush()
+            logger.info("NodeParticipantCompany added: node=%s company=%s", node_id, company_id)
+            return npc
+
+    @staticmethod
+    def remove(node_id: str, company_id: str) -> bool:
+        """移除节点参与单位。"""
+        with get_session() as session:
+            deleted = (
+                session.query(NodeParticipantCompany)
+                .filter(
+                    NodeParticipantCompany.node_id == node_id,
+                    NodeParticipantCompany.company_id == company_id,
+                )
+                .delete()
+            )
+            session.flush()
+            if deleted:
+                logger.info("NodeParticipantCompany removed: node=%s company=%s", node_id, company_id)
+            return deleted > 0
+
+    @staticmethod
+    def find_by_node(node_id: str) -> list[NodeParticipantCompany]:
+        """查询节点的所有参与单位。"""
+        with get_session() as session:
+            return (
+                session.query(NodeParticipantCompany)
+                .filter(NodeParticipantCompany.node_id == node_id)
+                .all()
+            )
+
+    @staticmethod
+    def find_company_ids_by_node(node_id: str) -> list[str]:
+        """查询节点的参与单位ID列表。"""
+        with get_session() as session:
+            rows = (
+                session.query(NodeParticipantCompany.company_id)
+                .filter(NodeParticipantCompany.node_id == node_id)
+                .all()
+            )
+            return [r[0] for r in rows]
+
+    @staticmethod
+    def find_by_company(company_id: str, limit: int = 200) -> list[NodeParticipantCompany]:
+        """查询某单位参与的所有节点。"""
+        with get_session() as session:
+            return (
+                session.query(NodeParticipantCompany)
+                .filter(NodeParticipantCompany.company_id == company_id)
+                .limit(limit)
+                .all()
+            )
+
+    @staticmethod
+    def replace_all(node_id: str, company_ids: list[str], added_by: str = "") -> list[NodeParticipantCompany]:
+        """全量替换节点的参与单位列表。"""
+        now_iso = datetime.now(BEIJING_TZ).isoformat()
+        with get_session() as session:
+            # 删除旧的
+            session.query(NodeParticipantCompany).filter(
+                NodeParticipantCompany.node_id == node_id,
+            ).delete()
+            # 插入新的
+            npcs = []
+            for cid in company_ids:
+                npc = NodeParticipantCompany(
+                    node_id=node_id,
+                    company_id=cid,
+                    added_by=added_by,
+                    added_at=now_iso,
+                )
+                session.add(npc)
+                npcs.append(npc)
+            session.flush()
+            logger.info("NodeParticipantCompany replaced: node=%s count=%d", node_id, len(company_ids))
+            return npcs

@@ -43,8 +43,6 @@ VOICE_NODE_SCHEMA = {
                 "node_name": {"type": "string", "description": "节点名称/工作项描述"},
                 "deadline": {"type": "string", "description": "截止时间（ISO8601）"},
                 "owner_dept_id": {"type": "string", "description": "主责部门/条线"},
-                "parent_node_id": {"type": "string", "description": "父节点ID（如果是子节点）"},
-                "stage_id": {"type": "integer", "description": "阶段ID"},
                 "deliverable_name": {"type": "string", "description": "成果/产出物名称"},
                 "deliverable_amount": {"type": "number", "description": "成果数量"},
                 "deliverable_unit": {"type": "string", "description": "成果单位"},
@@ -80,8 +78,6 @@ VOICE_ENTRY_SYSTEM_PROMPT = """你是 Emily 项目计划助手的对话理解模
 - node_name: 节点名称/工作描述（如"主体结构施工"）
 - deadline: 截止时间（如"下周五"→转换为ISO8601）
 - owner_dept_id: 负责部门（如"工程部"→dept-eng）
-- parent_node_id: 如果是子节点，指定父节点
-- stage_id: 0=立项 1=规划 2=施工 3=交付
 - deliverable_name: 成果物（如"施工图"）
 - deliverable_amount: 数量（如 1）
 - deliverable_unit: 单位（如"份"、"平方米"）
@@ -200,7 +196,6 @@ async def voice_execute_create(user_id: str, project_id: str, extracted: dict) -
             node_name=extracted.get("node_name", "未命名节点"),
             deadline=extracted.get("deadline", ""),
             owner_dept_id=extracted.get("owner_dept_id", "项目总"),
-            stage_id=extracted.get("stage_id", 0),
             creator_id=user_id,
         )
         result = await svc.create_node(cmd)

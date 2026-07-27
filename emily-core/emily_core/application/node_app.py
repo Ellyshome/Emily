@@ -83,7 +83,6 @@ class NodeApplication:
             "success": result.success,
             "node_id": result.node_id,
             "status": result.status,
-            "progress": result.progress,
             "reply": result.message,
             "error_code": result.error_code,
         }
@@ -147,7 +146,6 @@ class NodeApplication:
             "success": result.success,
             "node_id": result.node_id,
             "status": result.status,
-            "progress": result.progress,
             "reply": result.message,
             "affected_ancestors": result.affected_downstream,
             "error_code": result.error_code,

@@ -10,8 +10,9 @@
     PATCH  /api/v1/node-deliverables/{deliverable_id}     — 更新成果进度
     POST   /api/v1/project-nodes/{node_id}/dependencies   — 添加依赖
     DELETE /api/v1/node-dependencies/{dependency_id}      — 移除依赖
-    POST   /api/v1/project-nodes/{parent_node_id}/children — 挂载子节点
-    DELETE /api/v1/project-nodes/{parent_node_id}/children/{child_node_id} — 移除子节点
+    POST   /api/v1/project-nodes/{node_id}/participant-companies  — 添加参与单位
+    DELETE /api/v1/project-nodes/{node_id}/participant-companies  — 移除参与单位
+    PUT    /api/v1/project-nodes/{node_id}/participant-companies  — 全量设置参与单位
 
 参照模式：api/routes/permission.py。
 """
@@ -29,12 +30,14 @@ from .node_schemas import (
     CreateDeliverableRequest,
     UpdateDeliverableProgressRequest,
     AddDependencyRequest,
-    MountChildRequest,
     AssignNodeRequest,
     SubmitDeliverableRequest,
     ConfirmDeliverableRequest,
     ReturnDeliverableRequest,
     ResubmitDeliverableRequest,
+    AddParticipantCompanyRequest,
+    RemoveParticipantCompanyRequest,
+    SetParticipantCompaniesRequest,
     ApiResponse,
 )
 
@@ -87,18 +90,12 @@ async def create_node(body: CreateNodeRequest):
         node_id=body.node_id,
         node_name=body.node_name,
         owner_dept_id=body.owner_dept_id,
-        related_company_id=body.related_company_id,
         deadline=body.deadline,
         creator_id=body.creator_id,
-        parent_node_id=body.parent_node_id,
-        stage_id=body.stage_id,
-        child_weight=body.child_weight,
         remark=body.remark,
-        land_parcel_id=body.land_parcel_id,
-        startup_doc_id=body.startup_doc_id,
-        sort_order=body.sort_order,
         responsible_user_id=getattr(body, 'responsible_user_id', ''),
         node_type=getattr(body, 'node_type', 'WORK_PACKAGE'),
+        participant_company_ids=getattr(body, 'participant_company_ids', []),
     )
     result = await svc.create_node(cmd)
     if not result.success:
@@ -168,12 +165,7 @@ async def update_node(node_id: str, body: UpdateNodeRequest):
         node_name=body.node_name,
         deadline=body.deadline,
         owner_dept_id=body.owner_dept_id,
-        related_company_id=body.related_company_id,
         remark=body.remark,
-        stage_id=body.stage_id,
-        sort_order=body.sort_order,
-        land_parcel_id=body.land_parcel_id,
-        startup_doc_id=body.startup_doc_id,
     )
     result = await svc.update_node(cmd)
     if not result.success:
@@ -322,6 +314,61 @@ async def activate_node(node_id: str, body: ActivateNodeRequest):
 
 
 # ══════════════════════════════════════════════════════════════════════════════
+# 参与单位管理
+# ══════════════════════════════════════════════════════════════════════════════
+
+@router.post("/{node_id}/participant-companies", status_code=201)
+async def add_participant_company(node_id: str, body: AddParticipantCompanyRequest):
+    """添加节点参与单位。"""
+    from emily_core.services.node_commands import AddParticipantCompanyCommand
+
+    svc = _get_service()
+    cmd = AddParticipantCompanyCommand(
+        node_id=node_id,
+        company_id=body.company_id,
+        operator_id=body.operator_id,
+    )
+    result = await svc.add_participant_company(cmd)
+    if not result.success:
+        raise HTTPException(status_code=400, detail=result.message)
+    return ApiResponse(message=result.message)
+
+
+@router.delete("/{node_id}/participant-companies")
+async def remove_participant_company(node_id: str, body: RemoveParticipantCompanyRequest):
+    """移除节点参与单位。"""
+    from emily_core.services.node_commands import RemoveParticipantCompanyCommand
+
+    svc = _get_service()
+    cmd = RemoveParticipantCompanyCommand(
+        node_id=node_id,
+        company_id=body.company_id,
+        operator_id=body.operator_id,
+    )
+    result = await svc.remove_participant_company(cmd)
+    if not result.success:
+        raise HTTPException(status_code=400, detail=result.message)
+    return ApiResponse(message=result.message)
+
+
+@router.put("/{node_id}/participant-companies")
+async def set_participant_companies(node_id: str, body: SetParticipantCompaniesRequest):
+    """全量设置节点参与单位。"""
+    from emily_core.services.node_commands import SetParticipantCompaniesCommand
+
+    svc = _get_service()
+    cmd = SetParticipantCompaniesCommand(
+        node_id=node_id,
+        company_ids=body.company_ids,
+        operator_id=body.operator_id,
+    )
+    result = await svc.set_participant_companies(cmd)
+    if not result.success:
+        raise HTTPException(status_code=400, detail=result.message)
+    return ApiResponse(message=result.message)
+
+
+# ══════════════════════════════════════════════════════════════════════════════
 # 成果管理
 # ══════════════════════════════════════════════════════════════════════════════
 
@@ -412,45 +459,3 @@ async def remove_dependency(dependency_id: str, operator_id: str = Query(default
     return ApiResponse(message=result.message)
 
 
-# ══════════════════════════════════════════════════════════════════════════════
-# 子节点管理
-# ══════════════════════════════════════════════════════════════════════════════
-
-@router.post("/{parent_node_id}/children", status_code=201)
-async def mount_child(parent_node_id: str, body: MountChildRequest):
-    """挂载子节点 —— 需求文档 §8.4.1。"""
-    from emily_core.services.node_commands import MountChildCommand
-
-    svc = _get_service()
-    cmd = MountChildCommand(
-        parent_node_id=parent_node_id,
-        child_node_id=body.child_node_id,
-        child_weight=body.child_weight,
-        operator_id=body.operator_id,
-    )
-    result = await svc.mount_child(cmd)
-    if not result.success:
-        status_code = 400
-        if result.error_code == "40001":
-            status_code = 400
-        elif result.error_code == "40002":
-            status_code = 400
-        raise HTTPException(status_code=status_code, detail=result.message)
-    return ApiResponse(message=result.message)
-
-
-@router.delete("/{parent_node_id}/children/{child_node_id}")
-async def unmount_child(parent_node_id: str, child_node_id: str, operator_id: str = Query(default="")):
-    """移除子节点。"""
-    from emily_core.services.node_commands import UnmountChildCommand
-
-    svc = _get_service()
-    cmd = UnmountChildCommand(
-        parent_node_id=parent_node_id,
-        child_node_id=child_node_id,
-        operator_id=operator_id,
-    )
-    result = await svc.unmount_child(cmd)
-    if not result.success:
-        raise HTTPException(status_code=400, detail=result.message)
-    return ApiResponse(message=result.message)

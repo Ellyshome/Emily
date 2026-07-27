@@ -753,21 +753,6 @@ class EvolutionRepo:
                 ProjectNode.is_discarded == False,
             ).group_by(ProjectNode.status).all()
 
-            progress_nums = sess.query(ProjectNode.progress).filter(
-                ProjectNode.status == "IN_PROGRESS",
-                ProjectNode.is_discarded == False,
-            ).all()
-            avg_progress = 0.0
-            if progress_nums:
-                vals = []
-                for p in progress_nums:
-                    try:
-                        vals.append(float(p.progress))
-                    except (ValueError, TypeError):
-                        pass
-                if vals:
-                    avg_progress = sum(vals) / len(vals)
-
             type_rows = sess.query(
                 ProjectNode.node_type,
                 func.count(ProjectNode.id).label("cnt"),
@@ -802,13 +787,12 @@ class EvolutionRepo:
                     ProjectNode.is_discarded == False,
                 ).all()
                 progress_changes = [
-                    {"node_id": n.node_id, "name": n.node_name, "progress": n.progress}
+                    {"node_id": n.node_id, "name": n.node_name}
                     for n in updated
                 ]
 
             return {
                 "status_distribution": {r.status: r.cnt for r in status_rows},
-                "avg_progress_in_progress": round(avg_progress, 2),
                 "type_distribution": {r.node_type: r.cnt for r in type_rows},
                 "overdue_nodes": [{"node_id": n.node_id, "name": n.node_name, "deadline": n.deadline} for n in overdue],
                 "upcoming_deadlines": [{"node_id": n.node_id, "name": n.node_name, "deadline": n.deadline} for n in upcoming],

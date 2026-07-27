@@ -90,3 +90,11 @@ class FileService:
             },
             "total": sum(counts.values()),
         }
+
+    def update_summary(self, file_id: str, summary: str) -> None:
+        """更新文件的 content_summary 和 summary_generated_at。"""
+        self.repo.update_summary(file_id, summary)
+
+    def get_by_summary_null(self, limit: int = 50) -> list[FileModel]:
+        """取出 content_summary 为空的文件，按时间升序。"""
+        return self.repo.get_by_summary_null(limit)

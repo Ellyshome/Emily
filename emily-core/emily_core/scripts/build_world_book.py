@@ -1,5 +1,5 @@
 """手动触发世界书构建。
-用法: uv run python scripts/build_world_book.py [project_code]
+用法: uv run python -m emily_core.scripts.build_world_book [project_code]
 默认 project_code = EMERALD-01
 环境变量 EMILY_DATABASE_URL 或默认 localhost:25432
 """
