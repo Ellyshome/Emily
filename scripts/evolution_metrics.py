@@ -86,7 +86,6 @@ async def collect_metrics(end_date: str, *, days: int = 1, db_url: str = "") -> 
     from emily_core.repositories.evolution_repo import EvolutionRepo
     from emily_core.infrastructure.database.session import get_session
 
-    # 计算起止日期
     start_dt = datetime.fromisoformat(end_date) - timedelta(days=days - 1)
     start_date = start_dt.strftime("%Y-%m-%d")
 
