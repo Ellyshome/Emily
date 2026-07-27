@@ -1,4 +1,4 @@
-"""fetch_system_description —— 获取系统自我描述文本（按用户权限裁剪）。
+"""fetch_system_description —— 获取认知书文本（按用户权限裁剪）。
 
 被 SessionDataFetcher._sub_fetch_system_description() 调用。
 也可独立运行：python -m emily_core.session.fetchers.fetch_system_description --user-id <UUID>
@@ -34,7 +34,7 @@ _TABLE_DISPLAY_NAMES = {
 
 
 def fetch(perms: dict) -> str:
-    """获取系统自我描述纯文本摘要（按用户权限裁剪）。
+    """获取认知书纯文本摘要（按用户权限裁剪）。
 
     Args:
         perms: 权限字典，含 db_perms 等
@@ -173,7 +173,7 @@ def main():
     import sys
     sys.stdout.reconfigure(encoding="utf-8")
 
-    parser = argparse.ArgumentParser(description="获取系统自我描述文本")
+    parser = argparse.ArgumentParser(description="获取认知书文本")
     parser.add_argument("--user-id", required=True, help="用户 UUID")
     parser.add_argument("--db-url", default=DB_URL_DEFAULT, help="PostgreSQL 连接 URL")
     args = parser.parse_args()

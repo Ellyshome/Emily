@@ -1,0 +1,88 @@
+# ToolManager 预设 smoke 用例
+# 每个工具一个最小合法 params，toolmgr test 逐个跑
+# 用法: uv run python scripts/toolmgr.py test [<name>]
+
+query_data:
+  params:
+    query_type: "project"
+
+knowledge_search:
+  params:
+    query: "项目进度"
+
+record_event:
+  params:
+    title: "smoke test event"
+    description: "auto-generated smoke test"
+
+record_task:
+  params:
+    title: "smoke test task"
+    description: "auto-generated smoke test"
+
+record_meeting:
+  params:
+    title: "smoke test meeting"
+    description: "auto-generated smoke test"
+
+record_file:
+  params:
+    file_name: "smoke_test.txt"
+    file_type: "document"
+
+query_files:
+  params:
+    category: "document"
+
+update_file_category:
+  params:
+    file_id: "00000000-0000-0000-0000-000000000000"
+    new_category: "archive"
+
+create_node:
+  params:
+    title: "smoke test node"
+    node_type: "TASK"
+
+query_node:
+  params:
+    node_id: "00000000-0000-0000-0000-000000000000"
+
+update_node_progress:
+  params:
+    node_id: "00000000-0000-0000-0000-000000000000"
+    progress: 50
+
+create_task_node:
+  params:
+    title: "smoke test task node"
+    description: "auto-generated smoke test"
+
+query_my_nodes:
+  params: {}
+
+chat_archive:
+  params:
+    conversation_id: "smoke_test_conv"
+
+manage_pending_issues:
+  params:
+    action: "list"
+
+voice_entry:
+  params:
+    text: "smoke test voice entry"
+
+# ── RAG 原子工具层 ──
+chunk_text:
+  params:
+    text: "# 第一章\n这是第一章的内容。\n\n## 第一节\n这是第一节的内容。\n\n## 第二节\n这是第二节的内容。"
+    strategy: "markdown"
+
+chunk_text_recursive:
+  params:
+    text: "这是一段很长的文本用于测试递归分块策略。Emily是一个施工项目智能助手，能够处理文档、表格、OCR等多种格式的工程资料。"
+    strategy: "recursive"
+    chunk_size: 100
+    chunk_overlap: 20
+

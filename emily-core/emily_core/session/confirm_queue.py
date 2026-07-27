@@ -29,6 +29,7 @@ class _Entry:
     seq: int
     workitem_id: str = field(compare=False)
     prompt: str = field(compare=False)
+    user_id: str = field(default="", compare=False)
     payload: Any = field(default=None, compare=False)
 
 
@@ -39,24 +40,37 @@ class ConfirmQueue:
         self._heap: list[_Entry] = []
         self._counter = itertools.count()
 
-    def add(self, workitem_id: str, prompt: str, priority: int = 1, payload: Any = None) -> None:
+    def add(self, workitem_id: str, prompt: str, priority: int = 1,
+            payload: Any = None, user_id: str = "") -> None:
         """加入一个待确认项（priority 0 最高）。"""
         entry = _Entry(
             priority=priority,
             seq=next(self._counter),
             workitem_id=workitem_id,
             prompt=prompt,
+            user_id=user_id,
             payload=payload,
         )
         heapq.heappush(self._heap, entry)
-        logger.debug("ConfirmQueue add: WI=%s priority=%d (size=%d)",
-                     workitem_id, priority, len(self._heap))
+        logger.debug("ConfirmQueue add: WI=%s priority=%d user=%s (size=%d)",
+                     workitem_id, priority, user_id, len(self._heap))
 
     def pop(self) -> _Entry | None:
         """取出优先级最高的待确认项（队列空返回 None）。"""
         if not self._heap:
             return None
         return heapq.heappop(self._heap)
+
+    def pop_for_user(self, user_id: str) -> _Entry | None:
+        """取出指定用户的待确认项（谁发起谁确认）。"""
+        for i, entry in enumerate(self._heap):
+            if entry.user_id == user_id:
+                return self._heap.pop(i)
+        return None
+
+    def has_pending_for_user(self, user_id: str) -> bool:
+        """检查指定用户是否有待确认项。"""
+        return any(e.user_id == user_id for e in self._heap)
 
     def peek(self) -> _Entry | None:
         """查看队首但不取出。"""

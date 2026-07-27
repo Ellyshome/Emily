@@ -1,4 +1,4 @@
-"""SystemDescriptionRepo —— 系统自我描述 Repository 层。
+"""SystemDescriptionRepo —— 认知书（系统自我描述）Repository 层。
 
 参照模式：emily_core/repositories/world_book_repo.py（@staticmethod + get_session）。
 """
@@ -16,7 +16,7 @@ logger = logging.getLogger("emily.system_description_repo")
 
 
 class SystemDescriptionRepo:
-    """系统自我描述 Repository。全局唯一记录。"""
+    """认知书（系统自我描述）Repository。全局唯一记录。"""
 
     @staticmethod
     def create(
@@ -29,7 +29,7 @@ class SystemDescriptionRepo:
         token_count: int = 0,
         generated_by: str = "manual",
     ) -> SystemDescription:
-        """创建系统自我描述记录。"""
+        """创建认知书记录。"""
         with get_session() as session:
             desc = SystemDescription(
                 content_json=content_json,

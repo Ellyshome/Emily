@@ -94,6 +94,24 @@ class EmilyApiClient:
             logger.error("terminate_session failed: %s", e)
             return False
 
+    async def sync_groups(self, groups: list[dict]) -> dict:
+        """推送群列表到 core。
+
+        POST /api/v1/groups/sync
+        """
+        session = await self._ensure_session()
+        url = f"{self.base_url}/api/v1/groups/sync"
+        try:
+            async with session.post(url, json={"groups": groups}) as resp:
+                if resp.status != 200:
+                    text = await resp.text()
+                    logger.warning("sync_groups %d: %s", resp.status, text[:200])
+                    return {"synced": 0}
+                return await resp.json()
+        except Exception as e:
+            logger.error("sync_groups failed: %s", e)
+            return {"synced": 0}
+
     async def health_check(self) -> dict:
         """检查 Core 健康状态。
 

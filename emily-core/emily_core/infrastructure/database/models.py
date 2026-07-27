@@ -17,6 +17,14 @@ import uuid
 from sqlalchemy import Column, String, Integer, BigInteger, Float, ForeignKey, UniqueConstraint, Boolean, Text, Index, text
 from sqlalchemy.orm import DeclarativeBase, relationship
 
+# pgvector 向量类型（条件导入，兼容未装 pgvector 的环境）
+try:
+    from pgvector.sqlalchemy import Vector
+    _VECTOR_AVAILABLE = True
+except ImportError:
+    Vector = None       # type: ignore
+    _VECTOR_AVAILABLE = False
+
 
 class Base(DeclarativeBase):
     pass
@@ -319,6 +327,42 @@ class FileCategory:
         return cls.DISPLAY_NAMES.get(value, "其他文件")
 
 
+class FilePurpose:
+    """文件业务意图枚举（主分类）—— M5 三层正交分类。
+
+    purpose 独立于 file_category（文档类别），表达"这个文件用来干嘛"的业务意图。
+    CHAT 不入 files 表（枚举完整性保留），仅规则引擎/AttachmentDownloader 消费。
+    """
+    EVIDENCE = "EVIDENCE"      # 凭证证据（证照/许可/合同/批复/合格单）
+    RECORD = "RECORD"          # 工作记录（验收附图/施工记录/会议附件）
+    DESIGN = "DESIGN"          # 设计图纸（施工图/过程图，走版本链）
+    REFERENCE = "REFERENCE"    # 参考样例（优秀工艺/做法参考，入通用 RAG）
+    CHAT = "CHAT"              # 闲聊素材（梗图/表情包，不入 files 表）
+
+    ALL_IN_DB = [EVIDENCE, RECORD, DESIGN, REFERENCE]  # CHAT 不入库
+    ALL = [EVIDENCE, RECORD, DESIGN, REFERENCE, CHAT]
+
+    DISPLAY_NAMES = {
+        EVIDENCE: "凭证证据",
+        RECORD: "工作记录",
+        DESIGN: "设计图纸",
+        REFERENCE: "参考样例",
+        CHAT: "闲聊素材",
+    }
+
+    @classmethod
+    def validate(cls, value: str) -> str:
+        """校验并返回合法枚举值，非法值回退 RECORD。"""
+        if value in cls.ALL_IN_DB:
+            return value
+        return cls.RECORD
+
+    @classmethod
+    def display(cls, value: str) -> str:
+        """返回中文显示名。"""
+        return cls.DISPLAY_NAMES.get(value, "工作记录")
+
+
 class File(Base):
     """文件存储表 —— 对应需求文档 file_storage。
 
@@ -366,6 +410,13 @@ class File(Base):
     source_module_id = Column(String(100), default="", comment="来源模块ID（节点ID/其他业务对象ID）")
     source_module_type = Column(String(50), default="", comment="来源模块类型：NODE_STARTUP_DOC/NODE_WORKLOAD_DOC/NODE_DELIVERABLE_DOC/NODE_ATTACHMENT")
     file_category = Column(String(50), default="OTHER", comment="文件业务分类：PROJECT_LICENSE/CONTRACT/WORK_RECORD/PHASE_DELIVERABLE/PROCESS_DOC/MANAGEMENT_SPEC/OTHER")
+
+    # ── M5: 三层正交分类新增字段 ──
+    purpose = Column(String(50), default="RECORD", comment="业务意图：EVIDENCE/RECORD/DESIGN/REFERENCE（CHAT 不入库）")
+    purpose_confirmed = Column(Boolean, default=False, comment="LLM/用户是否已确认 purpose")
+    attachment_of = Column(String, ForeignKey("files.id"), nullable=True, comment="附件链：指向主文件 id，NULL=主文件/独立")
+    rag_indexed = Column(Boolean, default=False, comment="是否已入 RAG 知识库")
+    rag_collection = Column(String(100), default="", comment="RAG 集合名：general_reference/project_<id>")
 
 
 # ══════════════════════════════════════════════════════════════════════════════
@@ -1135,6 +1186,29 @@ class NodeAccessibleFile(Base):
     )
 
 
+class NodeParticipant(Base):
+    """节点参与人关联表 —— 需求文档 §3.5b node_participants。
+
+    每个节点可有多个参与人（除责任人外），支持按专业/单位分配。
+    M:N 关系，替代单一 responsible_user_id 无法覆盖的协同场景。
+    """
+    __tablename__ = "node_participants"
+
+    node_id = Column(String(100), nullable=False, comment="节点ID（FK→project_nodes.node_id）")
+    user_id = Column(String(100), nullable=False, comment="参与人ID（FK→users.id）")
+    participant_role = Column(String(20), nullable=False, default="participant", comment="参与角色：participant / approver / observer")
+    added_by = Column(String(100), nullable=False, default="", comment="添加人ID")
+    added_at = Column(String(50), nullable=False, default=_utc_now, comment="添加时间（ISO8601）")
+
+    id = Column(String, primary_key=True, default=_new_uuid)
+
+    __table_args__ = (
+        UniqueConstraint("node_id", "user_id", name="uq_np_node_user"),
+        Index("idx_np_node", "node_id"),
+        Index("idx_np_user", "user_id"),
+    )
+
+
 class NodeEvent(Base):
     """事件总线持久化表 —— 需求文档 §3.6 node_events。
 
@@ -1174,6 +1248,7 @@ class ToolRegistryModel(Base):
     display_name    = Column(String(200), nullable=False)          # 功能一句话说明
     category        = Column(String(20), nullable=False, default="base")  # base / business / project
     permission_flag = Column(String(50), nullable=False, default="all")
+    exposure_mode   = Column(String(20), nullable=False, default="meta")  # meta=可被SOP-999直调 / sop_only=必须走专属SOP；默认值按 permission_flag 分级：all→meta，write/admin→sop_only
     handler_module  = Column(String(200), default="")
     is_active       = Column(Boolean, nullable=False, default=True)
     registered_at   = Column(String(50), nullable=False)
@@ -1357,7 +1432,7 @@ class RAGRetrievalLog(Base):
     conversation_id = Column(String, default="")
     user_id = Column(String, default="")
     query_text = Column(String(500), default="")
-    provider = Column(String(30), default="")             # maxkb/local_fallback/unavailable
+    provider = Column(String(30), default="")             # pgvector/local_fallback/unavailable
     hit_count = Column(Integer, default=0)
     top_score = Column(Float, default=0.0)
     avg_score = Column(Float, default=0.0)
@@ -1370,6 +1445,33 @@ class RAGRetrievalLog(Base):
     __table_args__ = (
         Index("idx_rrl_run_id", "pipeline_run_id"),
         Index("idx_rrl_provider_created", "provider", "created_at"),
+    )
+
+
+class KnowledgeChunk(Base):
+    """知识库文档分块 —— pgvector 向量检索主表。
+
+    每个 chunk 关联一个源文档（doc_id），存储原文 + BGE-m3 密集向量。
+    """
+    __tablename__ = "knowledge_chunks"
+
+    id = Column(String, primary_key=True, default=_new_uuid)       # UUID
+    doc_id = Column(String, index=True, comment="文档 ID（同文档多 chunk）")
+    doc_name = Column(String, default="", comment="源文档名")
+    chunk_index = Column(Integer, default=0, comment="chunk 序号")
+    chunk_text = Column(Text, default="", comment="chunk 原文")
+    embedding = Column(
+        Vector(1024) if _VECTOR_AVAILABLE else Text,
+        default=None,
+        nullable=True,
+        comment="BGE-m3 密集向量（1024 维）",
+    )
+    metadata_ = Column("metadata", Text, default="{}", comment="JSON: {stage, role, doc_type, ...}")
+    created_at = Column(String, default=_utc_now)
+
+    __table_args__ = (
+        Index("idx_kc_doc_id", "doc_id"),
+        Index("idx_kc_created", "created_at"),
     )
 
 
@@ -1568,12 +1670,12 @@ class ProjectWorldBook(Base):
 
 
 # ══════════════════════════════════════════════════════════════════════════════
-# 元认知模块 — 系统自我描述表（SD1 数据模型）
+# 元认知模块 — 认知书（系统自我描述表，SD1 数据模型）
 # ══════════════════════════════════════════════════════════════════════════════
 
 
 class SystemDescription(Base):
-    """系统自我描述表 —— 元认知模块第三类知识（与规则书/世界书并列）。
+    """认知书（系统自我描述表）—— 元认知模块第三类知识（与规则书/世界书并列）。
 
     全局唯一，存储系统自身结构与能力描述（代码驱动的自我认知）。
     三域：数据库认知(D1) / 文件认知(D2) / 权限认知(D3)。
@@ -1594,3 +1696,28 @@ class SystemDescription(Base):
     generated_by = Column(String(50), default="manual", comment="生成来源：startup / scheduler / manual")
     created_at = Column(String, default=_utc_now, comment="首次创建时间")
     updated_at = Column(String, default=_utc_now, onupdate=_utc_now, comment="最近更新时间")
+
+
+
+# ══════════════════════════════════════════════════════════════════════════════
+# 群聊模块 —— GroupMemory 群级长期记忆
+# ══════════════════════════════════════════════════════════════════════════════
+
+
+class GroupMemory(Base):
+    """Group-level long-term memory - key facts extracted on Session archive."""
+    __tablename__ = "group_memories"
+    id = Column(String, primary_key=True, default=_new_uuid)
+    group_id = Column(String(200), nullable=False, index=True)
+    group_name = Column(String(500))
+    summary = Column(Text, default="")
+    key_facts = Column(String, default="[]")
+    last_session_id = Column(String, default="")
+    last_speaker_user_id = Column(String, ForeignKey("users.id"), nullable=True)
+    fact_count = Column(Integer, default=0)
+    created_at = Column(String, default=_utc_now)
+    updated_at = Column(String, default=_utc_now, onupdate=_utc_now)
+
+    __table_args__ = (
+        Index("idx_gm_group_id", "group_id"),
+    )

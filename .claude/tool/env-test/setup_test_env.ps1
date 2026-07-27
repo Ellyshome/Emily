@@ -1,12 +1,13 @@
-﻿﻿# ============================================================
+﻿# ============================================================
 # setup_test_env.ps1 — Emily 测试环境一键工具
 #
 # 用法（在项目根目录 d:\app\Emily 下执行）:
-#   powershell -File 需求/env-test/setup_test_env.ps1                  完整重置+种子+文件
-#   powershell -File 需求/env-test/setup_test_env.ps1 -ResetOnly       仅空库重置
-#   powershell -File 需求/env-test/setup_test_env.ps1 -SeedOnly        仅种子（库已空）
-#   powershell -File 需求/env-test/setup_test_env.ps1 -SkipAdvanced    跳过010高级数据
-#   powershell -File 需求/env-test/setup_test_env.ps1 -SkipMockFiles   跳过磁盘空文件
+#   powershell -File .claude\tool\env-test\setup_test_env.ps1                  完整重置+种子+文件+权限
+#   powershell -File .claude\tool\env-test\setup_test_env.ps1 -ResetOnly       仅空库重置
+#   powershell -File .claude\tool\env-test\setup_test_env.ps1 -SeedOnly        仅种子（库已空）
+#   powershell -File .claude\tool\env-test\setup_test_env.ps1 -SkipAdvanced    跳过010高级数据
+#   powershell -File .claude\tool\env-test\setup_test_env.ps1 -SkipMockFiles   跳过磁盘空文件
+#   powershell -File .claude\tool\env-test\setup_test_env.ps1 -SkipFileMgmtTests  跳过文件管理测试数据
 #
 # 依赖:
 #   - Docker Desktop 运行中（emily-postgres + emily-core 容器）
@@ -18,6 +19,7 @@ param(
     [switch]$SeedOnly,
     [switch]$SkipAdvanced,
     [switch]$SkipMockFiles,
+    [switch]$SkipFileMgmtTests,
     [string]$Project = "EMERALD-01"
 )
 
@@ -31,10 +33,10 @@ $env:LESSCHARSET = "utf-8"
 
 # ── 路径常量（相对于项目根目录 d:\app\Emily）──
 $BASE = "emily-core/emily_core/infrastructure/database/scripts"
-$SEED = "需求/env-test"
+$SEED_PATCH = "需求/环境布置/scripts"
 $COMPOSE_FILE = "docker-compose-napcat.yml"
 $ATTACHMENTS_ROOT = "emily-data/attachments"
-$SEED_PATCH = "需求/环境布置/scripts"
+$ENV_TOOL = ".claude/tool/env-test"
 
 # ============================================================
 # 工具函数：执行 SQL 文件
@@ -105,40 +107,40 @@ function Invoke-ResetDatabase {
 }
 
 # ============================================================
-# 功能二：导入核心种子数据（步骤 [1]-[6]）
+# 功能二：导入核心种子数据（步骤 [1]-[9]）
 # ============================================================
 function Invoke-SeedData {
     Write-Host "[种子] 导入核心种子数据..." -ForegroundColor Yellow
 
     # [1] 公司 + 用户 (002)
-    Write-Host "  [1/8] 公司 + 用户 (002)..." -ForegroundColor DarkGray
+    Write-Host "  [1/9] 公司 + 用户 (002)..." -ForegroundColor DarkGray
     ExecSql "$BASE/002_seed_test_data.sql"
     Write-Host "    [OK] 5家公司 + 7名用户" -ForegroundColor Green
 
     # [2] 补用户 (002_patch)
     $patchPath = "$SEED_PATCH/002_seed_test_data_patch.sql"
     if (Test-Path $patchPath) {
-        Write-Host "  [2/8] 补充用户 (patch)..." -ForegroundColor DarkGray
+        Write-Host "  [2/9] 补充用户 (patch)..." -ForegroundColor DarkGray
         ExecSql $patchPath
         Write-Host "    [OK] 新增3名用户 (L5/L2/L2)" -ForegroundColor Green
     } else {
-        Write-Host "  [2/8] 补充用户 (patch)... 跳过 (文件不存在: $patchPath)" -ForegroundColor DarkGray
+        Write-Host "  [2/9] 补充用户 (patch)... 跳过 (文件不存在: $patchPath)" -ForegroundColor DarkGray
     }
 
     # [3] 建设单位专业人员 (003)
-    $usersPath = "$SEED/003_seed_users_patch.sql"
+    $usersPath = "$ENV_TOOL/003_seed_users_patch.sql"
     if (Test-Path $usersPath) {
-        Write-Host "  [3/8] 建设单位专业人员 (003)..." -ForegroundColor DarkGray
+        Write-Host "  [3/9] 建设单位专业人员 (003)..." -ForegroundColor DarkGray
         ExecSql $usersPath
         Write-Host "    [OK] 4名专业人员 (建筑/土建/安装/景观精装)" -ForegroundColor Green
     } else {
-        Write-Host "  [3/8] 建设单位专业人员... 跳过 (文件不存在: $usersPath)" -ForegroundColor DarkGray
+        Write-Host "  [3/9] 建设单位专业人员... 跳过 (文件不存在: $usersPath)" -ForegroundColor DarkGray
     }
 
     # [4] 项目 + 文件元数据 (007)
     $projPath = "$SEED_PATCH/007_seed_emerald_project.sql"
     if (Test-Path $projPath) {
-        Write-Host "  [4/8] 项目 + 文件元数据 (007)..." -ForegroundColor DarkGray
+        Write-Host "  [4/9] 项目 + 文件元数据 (007)..." -ForegroundColor DarkGray
         ExecSql $projPath
         Write-Host "    [OK] EMERALD-01 项目 + 5指标 + 18文件" -ForegroundColor Green
     } else {
@@ -149,7 +151,7 @@ function Invoke-SeedData {
     # [5] 节点树 (008 YAML -> manage_nodes.py)
     $nodesYaml = "$SEED_PATCH/008_seed_emerald_nodes.yaml"
     if (Test-Path $nodesYaml) {
-        Write-Host "  [5/8] 全景节点树 (008 YAML)..." -ForegroundColor DarkGray
+        Write-Host "  [5/9] 全景节点树 (008 YAML)..." -ForegroundColor DarkGray
         $env:PYTHONPATH = "emily-core"
         $nodeResult = uv run python scripts/manage_nodes.py create --file $nodesYaml 2>&1
         if ($LASTEXITCODE -ne 0) {
@@ -164,19 +166,29 @@ function Invoke-SeedData {
     }
 
     # [6] 节点责任人分配 (012)
-    $respPath = "$SEED/012_seed_node_responsible.sql"
+    $respPath = "$ENV_TOOL/012_seed_node_responsible.sql"
     if (Test-Path $respPath) {
-        Write-Host "  [6/8] 节点责任人分配 (012)..." -ForegroundColor DarkGray
+        Write-Host "  [6/9] 节点责任人分配 (012)..." -ForegroundColor DarkGray
         ExecSql $respPath
         Write-Host "    [OK] 24个节点按专业分配责任人" -ForegroundColor Green
     } else {
-        Write-Host "  [6/8] 节点责任人分配... 跳过 (文件不存在: $respPath)" -ForegroundColor DarkGray
+        Write-Host "  [6/9] 节点责任人分配... 跳过 (文件不存在: $respPath)" -ForegroundColor DarkGray
     }
 
-    # [7] 业务数据 (009)
+    # [7] 节点参与人分配 (013)
+    $participantsPath = "$ENV_TOOL/013_seed_node_participants.sql"
+    if (Test-Path $participantsPath) {
+        Write-Host "  [7/9] 节点参与人分配 (013)..." -ForegroundColor DarkGray
+        ExecSql $participantsPath
+        Write-Host "    [OK] 13名用户（除访客外）按专业分配到各节点" -ForegroundColor Green
+    } else {
+        Write-Host "  [7/9] 节点参与人分配... 跳过 (文件不存在: $participantsPath)" -ForegroundColor DarkGray
+    }
+
+    # [8] 业务数据 (009)
     $bizPath = "$SEED_PATCH/009_seed_emerald_business.sql"
     if (Test-Path $bizPath) {
-        Write-Host "  [7/8] 业务数据 (009)..." -ForegroundColor DarkGray
+        Write-Host "  [8/9] 业务数据 (009)..." -ForegroundColor DarkGray
         ExecSql $bizPath
         Write-Host "    [OK] 事件/任务/会议/流转单/指令单/计划/会话/消息" -ForegroundColor Green
     } else {
@@ -184,8 +196,8 @@ function Invoke-SeedData {
         exit 1
     }
 
-    # [8] 权限体系 (006)
-    Write-Host "  [8/8] 权限体系 (006)..." -ForegroundColor DarkGray
+    # [9] 权限体系 (006)
+    Write-Host "  [9/9] 权限体系 (006)..." -ForegroundColor DarkGray
     ExecSql "$BASE/006_seed_permission_data.sql"
     Write-Host "    [OK] 权限组 + SOP + 绑定 + 授权" -ForegroundColor Green
 
@@ -310,6 +322,66 @@ function New-MockFiles {
 }
 
 # ============================================================
+# 功能二续四：文件管理系统测试专用 — session_accessible_files 种子
+# ============================================================
+function Invoke-SeedFileAccess {
+    Write-Host "[文件管理] 创建文件可见性权限记录 (session_accessible_files)..." -ForegroundColor Yellow
+
+    $sql = @"
+-- 王建国 (level=6, admin) 可看前 9 个文件 (PROJECT_LICENSE + CONTRACT + PHASE_DELIVERABLE)
+INSERT INTO session_accessible_files (id, user_id, file_id, access_type, granted_at)
+SELECT gen_random_uuid(),
+       (SELECT id FROM users WHERE username = '王建国' AND is_deleted = false LIMIT 1),
+       id, 'explicit', '2026-07-26T00:00:00'
+FROM (
+    SELECT id FROM files WHERE is_deleted = false ORDER BY file_no LIMIT 9
+) f;
+
+-- 李景利 (level=4) 只能看前 4 个文件 (PROJECT_LICENSE only)
+INSERT INTO session_accessible_files (id, user_id, file_id, access_type, granted_at)
+SELECT gen_random_uuid(),
+       (SELECT id FROM users WHERE username = '李景利' AND is_deleted = false LIMIT 1),
+       id, 'explicit', '2026-07-26T00:00:00'
+FROM (
+    SELECT id FROM files WHERE is_deleted = false ORDER BY file_no LIMIT 4
+) f;
+"@
+
+    $tmpPath = [System.IO.Path]::GetTempFileName()
+    [System.IO.File]::WriteAllText($tmpPath, $sql, [System.Text.UTF8Encoding]::new($false))
+    docker cp $tmpPath "emily-postgres:/tmp/seed_file_access.sql" 2>$null
+    docker exec emily-postgres psql -U emily -d emily -f /tmp/seed_file_access.sql 2>$null
+    docker exec emily-postgres rm -f /tmp/seed_file_access.sql 2>$null
+    Remove-Item $tmpPath -Force -ErrorAction SilentlyContinue
+
+    if ($LASTEXITCODE -ne 0) {
+        Write-Host "  [WARN] session_accessible_files 种子可能失败，请检查" -ForegroundColor Yellow
+    } else {
+        Write-Host "  [OK] 王建国 9 条 + 李景利 4 条 = 13 条 session_accessible_files 记录" -ForegroundColor Green
+    }
+    Write-Host ""
+}
+
+# ============================================================
+# 功能二续五：M3 附件自动下载测试用文件
+# ============================================================
+function New-TestAttachment {
+    Write-Host "[文件管理] 生成 M3 附件下载测试文件..." -ForegroundColor Yellow
+
+    $testFile = "$ATTACHMENTS_ROOT/test_attachment.txt"
+    $content = "Emily 文件管理系统 M3 附件自动下载测试文件。`r`n创建时间: $(Get-Date -Format 'yyyy-MM-dd HH:mm:ss')`r`n用途: 验证 AttachmentDownloader.download_for_message 流程。"
+
+    try {
+        [System.IO.File]::WriteAllText($testFile, $content, [System.Text.UTF8Encoding]::new($false))
+        Write-Host "  [OK] test_attachment.txt 已生成 → $testFile" -ForegroundColor Green
+        Write-Host "  容器内 URL: file:///app/attachments/test_attachment.txt" -ForegroundColor DarkGray
+    } catch {
+        Write-Host "  [WARN] 测试文件创建失败: $_" -ForegroundColor Yellow
+    }
+    Write-Host ""
+}
+
+# ============================================================
 # 功能三：验证数据完整性
 # ============================================================
 function Invoke-Verify {
@@ -317,7 +389,7 @@ function Invoke-Verify {
     Write-Host ""
 
     # 使用 docker cp 避免 PowerShell 管道损坏 UTF-8 编码
-    $verifyPath = "$SEED/verify_data.sql"
+    $verifyPath = "$ENV_TOOL/verify_data.sql"
     docker cp $verifyPath "emily-postgres:/tmp/verify_data.sql" 2>$null
     docker exec emily-postgres psql -U emily -d emily -f /tmp/verify_data.sql
     docker exec emily-postgres rm -f /tmp/verify_data.sql 2>$null
@@ -338,6 +410,19 @@ function Invoke-Verify {
     if (Test-Path "$ATTACHMENTS_ROOT/mock") {
         $fileCount = (Get-ChildItem -Recurse "$ATTACHMENTS_ROOT/mock" -File -ErrorAction SilentlyContinue).Count
         Write-Host "  [OK] mock 目录下磁盘文件数: $fileCount" -ForegroundColor Green
+    }
+
+    # 文件管理测试数据验证
+    $safCount = docker exec emily-postgres psql -U emily -d emily -t -c 'SELECT count(*) FROM session_accessible_files;'
+    $safNum = $safCount.Trim()
+    if ($safNum -gt 0) {
+        Write-Host "  [OK] session_accessible_files 记录数: $safNum" -ForegroundColor Green
+    } else {
+        Write-Host "  [提示] session_accessible_files 为空（跳过文件管理测试数据时正常）" -ForegroundColor DarkGray
+    }
+
+    if (Test-Path "$ATTACHMENTS_ROOT/test_attachment.txt") {
+        Write-Host "  [OK] M3 测试附件: test_attachment.txt" -ForegroundColor Green
     }
 
     Write-Host ""
@@ -365,15 +450,19 @@ if (-not $SeedOnly) {
 if (-not $ResetOnly) {
     Invoke-SeedData
     if (-not $SkipAdvanced) {
-        Invoke-SeedAdvanced "$SEED/010_seed_runtime_data.sql"
+        Invoke-SeedAdvanced "$ENV_TOOL/010_seed_runtime_data.sql"
     }
     Invoke-FixIMBindings
     if (-not $SkipMockFiles) {
         New-MockFiles
     }
+    if (-not $SkipFileMgmtTests) {
+        Invoke-SeedFileAccess
+        New-TestAttachment
+    }
 
     # ── 世界书 tier 补丁（补全 T2/T3 数据缺口，确保 tier≥3 激活）──
-    $patchPath = "$SEED/011_seed_world_book_patch.sql"
+    $patchPath = "$ENV_TOOL/011_seed_world_book_patch.sql"
     if (Test-Path $patchPath) {
         Write-Host "[补丁] 世界书 tier 数据补丁 (011)..." -ForegroundColor Yellow
         ExecSql $patchPath

@@ -55,12 +55,43 @@ class Main(star.Star):
         self._sse_task = None
 
     async def initialize(self) -> None:
-        """启动 SSE 监听 + 健康检查。"""
+        """启动 SSE 监听 + 健康检查 + 群列表同步。"""
         # 启动 SSE 监听（接收 Core 推送的出站消息）
         self._sse_task = asyncio.create_task(self.sse.listen(self._sse_url))
         # 健康检查
         health = await self.api.health_check()
         logger.info("Emily Core health: %s", health.get("status", "?"))
+        # 同步群列表到 Core
+        try:
+            await self._sync_group_list()
+        except Exception as e:
+            logger.warning("group list sync failed (non-blocking): %s", e)
+
+    async def _sync_group_list(self) -> None:
+        """从 astrbot 获取 bot 加入的所有群，推给 core。"""
+        groups = []
+        platform_manager = getattr(self.context, "platform_manager", None)
+        if platform_manager is None:
+            return
+        platform_insts = getattr(platform_manager, "platform_insts", None) or []
+        for platform in platform_insts:
+            bot = getattr(platform, "bot", None)
+            if bot is None:
+                continue
+            try:
+                group_list = await bot.call_action("get_group_list")
+                for g in (group_list or []):
+                    groups.append({
+                        "group_id": str(g.get("group_id", "")),
+                        "group_name": g.get("group_name", ""),
+                        "member_count": g.get("member_count", 0),
+                        "platform": getattr(platform, "platform_name", "unknown"),
+                    })
+            except Exception as e:
+                logger.warning("get_group_list failed on platform %s: %s", platform, e)
+        if groups:
+            await self.api.sync_groups(groups)
+            logger.info("synced %d groups to core", len(groups))
 
     async def terminate(self) -> None:
         """插件卸载：停止 SSE + 关闭 HTTP 连接。"""
@@ -78,7 +109,7 @@ class Main(star.Star):
         self._seen.append(event_id)
 
         # 2. AstrMessageEvent → StandardMessage（纯数据转换）
-        msg = self.inbound.to_standard_message(event)
+        msg = await self.inbound.to_standard_message(event)
 
         # 注册 event 供异步 SSE 出站回复定位
         if msg.conversation_id:

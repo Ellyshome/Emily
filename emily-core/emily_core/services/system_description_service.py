@@ -1,4 +1,4 @@
-"""SystemDescriptionService —— 系统自我描述增量更新服务。
+"""SystemDescriptionService —— 认知书（系统自我描述）增量更新服务。
 
 检测偏差 → 全量重建 → 存储更新。与世界书模式一致。
 
@@ -17,7 +17,7 @@ logger = logging.getLogger("emily.system_description_service")
 
 
 class SystemDescriptionService:
-    """系统自我描述更新服务。"""
+    """认知书（系统自我描述）更新服务。"""
 
     def __init__(self, llm_client=None):
         self._builder = SystemDescriptionBuilder()

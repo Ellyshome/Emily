@@ -65,6 +65,13 @@ class EmilyCore:
         # 执行依赖
         self._business_flow_tools = None
 
+        # ToolManager 聚合层
+        self._tool_manager = None
+
+        # ScriptManager 聚合层（开发者/维护脚本）
+        self._script_registry = None
+        self._script_manager = None
+
         # 系统调度器
         self._scheduler_service = None
         self._scheduler_engine = None
@@ -99,6 +106,8 @@ class EmilyCore:
         self._task_app = None
         self._meeting_app = None
         self._file_app = None
+        self._file_manager = None  # M1: FileManager 统一入口
+        self._attachment_downloader = None  # M3: 附件异步下载
         self._query_service = None
 
         # Skill 模块
@@ -113,6 +122,9 @@ class EmilyCore:
 
         # 聊天归档服务（chat_archive 工具）
         self._chat_archive_service = None
+
+        # 群列表注册服务
+        self._group_registry_service = None
 
         # 元认知模块
         self._rule_book_loader = None
@@ -138,6 +150,8 @@ class EmilyCore:
                     model=self.config.llm_model,
                     temperature=self.config.llm_temperature,
                     max_tokens=self.config.llm_max_tokens,
+                    router_model=getattr(self.config, "llm_router_model", "") or self.config.llm_model,
+                    guardian_model=getattr(self.config, "llm_guardian_model", "") or self.config.llm_model,
                 )
                 # ── 进化日志：接入 LLM trace callback ──
                 try:
@@ -195,6 +209,15 @@ class EmilyCore:
             logger.warning("ChatArchiveService init failed: %s", e)
             self._chat_archive_service = None
 
+        # ── 群列表注册服务 ──
+        try:
+            from .services.group_registry_service import GroupRegistryService
+            self._group_registry_service = GroupRegistryService()
+            logger.info("GroupRegistryService initialized")
+        except Exception as e:
+            logger.warning("GroupRegistryService init failed: %s", e)
+            self._group_registry_service = None
+
         # ── 注入 trace 服务到 API 路由（lazy fallback 也能工作，直接注入更可靠）──
         try:
             from api.routes.trace import set_trace_service
@@ -209,6 +232,18 @@ class EmilyCore:
         if self._business_flow_tools is not None:
             from .tools.registry import register_all
             register_all(self)
+
+            # ── ToolManager 聚合层 ──
+            from .tools.manager import ToolManager
+            self._tool_manager = ToolManager(self._business_flow_tools)
+            logger.info("tool_manager: ready (%d tools)", len(self._business_flow_tools))
+
+            # ── ScriptManager 聚合层 ──
+            from .scripts.registry import load_registry
+            from .scripts.manager import ScriptManager
+            self._script_registry = load_registry()
+            self._script_manager = ScriptManager(self._script_registry)
+            logger.info("script_manager: ready (%d scripts)", len(self._script_registry))
 
         # ── 公共 Pipeline BUS ──
         self._build_pipeline_bus()
@@ -393,6 +428,23 @@ class EmilyCore:
             file_storage = FileStorageService(storage_root=storage_root)
             self._file_app = FileApplication(FileService(), storage_service=file_storage)
             self._query_service = QueryService()
+
+            # M1: 创建 FileManager 统一入口并注入
+            from .repositories.session_accessible_file_repo import SessionAccessibleFileRepo
+            from .services.file_manager import FileManager
+            file_manager = FileManager(
+                file_service=self._file_app.file_service,
+                storage_service=file_storage,
+                accessible_repo=SessionAccessibleFileRepo(),
+            )
+            self._file_app.set_file_manager(file_manager)
+            self._file_manager = file_manager
+            logger.info("FileManager initialized and injected into FileApplication")
+
+            # M3: 创建 AttachmentDownloader
+            from .services.attachment_downloader import AttachmentDownloader
+            self._attachment_downloader = AttachmentDownloader(file_manager)
+            logger.info("AttachmentDownloader initialized")
 
             # 注入项目日记到 Application 层（如果 journal 先于此处初始化则注入）
             if self._event_journal is not None:
@@ -941,6 +993,28 @@ class EmilyCore:
             # 非阻断：持久化失败不阻塞 Pipeline，仅 trace 会缺失
             logger.warning("Inbound message persist failed (non-blocking): %s", e)
 
+        # ── M3: 附件自动下载（异步，不阻塞主线）──
+        if db_message_id and self._attachment_downloader is not None:
+            _attachments = getattr(message, "attachments", None) or []
+            if _attachments:
+                asyncio.create_task(
+                    self._attachment_downloader.download_for_message(
+                        message_id=db_message_id, attachments=_attachments,
+                    )
+                )
+                logger.debug(
+                    "Scheduled attachment download: msg=%s, %d item(s)",
+                    db_message_id, len(_attachments),
+                )
+
+        # ── 静默收集：仅归档不响应，跳过流水线 ──
+        if not decision.should_reply:
+            logger.info(
+                "Silent collect: msg persisted conv=%s sender=%s",
+                message.conversation_id, message.sender_name,
+            )
+            return None
+
         # SessionPool 路由（携带 db_message_id —— 见 M2）
         reply = await self._session_pool.route(message, user_id=user_id, db_message_id=db_message_id)
 
@@ -951,6 +1025,21 @@ class EmilyCore:
                 "content": reply.content,
                 "reply_to_message_id": reply.reply_to_message_id,
             })
+            # 持久化 agent 回复到 messages 表（非阻断，fail-open）
+            if self._chat_archive_service is not None:
+                try:
+                    await asyncio.to_thread(
+                        self._chat_archive_service.record_outbound_reply,
+                        conversation_id=message.conversation_id,
+                        content=reply.content,
+                        reply_to_message_id=reply.reply_to_message_id,
+                    )
+                    logger.info(
+                        "Outbound reply persisted: conv=%s len=%d",
+                        message.conversation_id, len(reply.content),
+                    )
+                except Exception as e:
+                    logger.warning("Outbound reply persist failed (non-blocking): %s", e)
         return reply
 
     async def terminate_session(self, conversation_id: str) -> bool:

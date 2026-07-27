@@ -91,6 +91,8 @@ class FileStorageService:
         source_filename: str = "",
         mime_type: str = "",
         file_size: int = 0,
+        purpose: str = "RECORD",
+        purpose_confirmed: bool = False,
     ) -> dict | None:
         """从 URL 下载附件并保存到本地（同步版本，urllib）。
 
@@ -134,6 +136,8 @@ class FileStorageService:
             mime_type=mime_type,
             file_size=file_size,
             local_path=local_path,
+            purpose=purpose,
+            purpose_confirmed=purpose_confirmed,
         )
 
     async def store_attachment_async(
@@ -144,6 +148,8 @@ class FileStorageService:
         source_filename: str = "",
         mime_type: str = "",
         file_size: int = 0,
+        purpose: str = "RECORD",
+        purpose_confirmed: bool = False,
     ) -> dict | None:
         """从 URL 下载附件并保存到本地（异步版本，aiohttp 优先）。
 
@@ -180,6 +186,8 @@ class FileStorageService:
             mime_type=mime_type,
             file_size=file_size,
             local_path=local_path,
+            purpose=purpose,
+            purpose_confirmed=purpose_confirmed,
         )
         if result:
             result["attachment_type"] = attachment_type
@@ -211,6 +219,8 @@ class FileStorageService:
         mime_type: str,
         file_size: int,
         local_path: Path,
+        purpose: str = "RECORD",
+        purpose_confirmed: bool = False,
     ) -> dict | None:
         """完成存储流程：写 files 表 + message_attachments 表。"""
         actual_size = len(data)
@@ -226,6 +236,16 @@ class FileStorageService:
                 storage_path=str(local_path.relative_to(self._storage_root)),
                 file_size=actual_size or file_size,
             )
+            # M5: 写入 purpose 字段
+            if file_record:
+                from ..infrastructure.database.session import get_session
+                from ..infrastructure.database.models import File as FileModel
+                with get_session() as session:
+                    f = session.query(FileModel).filter(FileModel.id == file_record.id).first()
+                    if f:
+                        f.purpose = purpose
+                        f.purpose_confirmed = purpose_confirmed
+                        session.commit()
         except Exception as e:
             logger.warning("File record creation failed: %s", e)
             return None
