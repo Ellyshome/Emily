@@ -15,7 +15,7 @@ class RouteDecision:
     """是否接管"""
 
     mode: str = "collaborate"
-    """接管模式: observe / collaborate / managed"""
+    """接管模式: observe / collaborate / managed / monitor"""
 
     intent: str | None = None
     """意图类型（预留字段，当前由 MasterAgent 决策树处理）"""
@@ -27,7 +27,7 @@ class RouteDecision:
     """处理器名称（预留字段）"""
 
     should_reply: bool = True
-    """是否需要回复。观察模式下为 False"""
+    """是否需要回复。observe 和 monitor(非@) 模式下为 False"""
 
     reason: str = ""
     """决策原因，用于日志追踪"""

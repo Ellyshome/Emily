@@ -151,9 +151,13 @@ class ParamExtractor:
         )
 
         try:
-            result = await self._llm.chat_json(prompt)
-            data = result.get("data", {})
-            value = data.get("value")
+            # chat_json(system_prompt, user_message) -> dict
+            # system_prompt 含提取指令与约束，user_message 传入原始用户消息便于模型聚焦
+            # 用 router_model（v4-flash）：参数提取是轻量任务，主模型（v4-pro）是 reasoner，
+            # reasoning_content 可能占满 max_tokens 导致 content 被截断为空（finish=length）
+            router_model = getattr(self._llm, "router_model", None)
+            result = await self._llm.chat_json(prompt, user_input, model=router_model)
+            value = result.get("value") if isinstance(result, dict) else None
             return value
         except Exception as e:
             logger.warning("LLM 参数提取失败: %s — %s", mapping.extraction, e)

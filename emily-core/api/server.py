@@ -89,3 +89,8 @@ app.include_router(monitor.router, prefix="/api/v1")
 from .routes import trace as trace_routes  # noqa: E402
 
 app.include_router(trace_routes.router, prefix="/api/v1")
+
+# 群列表同步 API
+from .routes import groups  # noqa: E402
+
+app.include_router(groups.router, prefix="/api/v1")

@@ -39,10 +39,14 @@ services:
       - EMILY_DATABASE_URL=postgresql://emily:emily_secret_2026@emily-postgres:5432/emily
       - EMILY_LLM_API_KEY=${EMILY_LLM_API_KEY:-}
       - EMILY_LLM_BASE_URL=${EMILY_LLM_BASE_URL:-https://api.deepseek.com}
-      - EMILY_LLM_MODEL=${EMILY_LLM_MODEL:-deepseek-chat}
-      - EMILY_MAXKB_URL=http://maxkb:8080
+      - EMILY_LLM_MODEL=${EMILY_LLM_MODEL:-deepseek-v4-flash}
+      # ── RAG (pgvector + TEI) ──
       - EMILY_KB_ENABLED=true
-      - EMILY_MAXKB_ADMIN_PASSWORD=maxkb123
+      - EMILY_TEI_URL=http://emily-embed:8000
+      # ── VLM OCR ──
+      - EMILY_VLM_API_URL=${EMILY_VLM_API_URL:-https://api.siliconflow.cn/v1/chat/completions}
+      - EMILY_VLM_API_KEY=${EMILY_VLM_API_KEY:-}
+      - EMILY_VLM_MODEL=${EMILY_VLM_MODEL:-Qwen/Qwen3-VL-8B-Instruct}
       - EMILY_STORAGE_ROOT=/app/attachments
       - EMILY_HOOK_CONFIG_PATH=/app/config/hook_config.json
       - EMILY_SOP_REPOSITORY_DIR=/app/sops
@@ -55,7 +59,7 @@ services:
       # ── LLM 流量代理（mitmproxy）── 关闭时注释这 3 行 + 重启即可
       - HTTPS_PROXY=http://mitmproxy:8888
       - SSL_CERT_FILE=/app/certs/mitmproxy-ca-cert.pem
-      - NO_PROXY=localhost,127.0.0.1,emily-postgres,maxkb,mitmproxy
+      - NO_PROXY=localhost,127.0.0.1,emily-postgres,mitmproxy
     volumes:
       # ── 人类编辑（只读）──
       - ./emily-data/sops:/app/sops
@@ -83,26 +87,30 @@ services:
       - emily_network
     depends_on:
       - emily-postgres
-      - maxkb
+      - emily-embed
 
-  maxkb:                      # RAG 知识库
-    image: 1panel/maxkb:latest
-    container_name: maxkb
+  emily-embed:                # Embedding 服务（BGE-m3，1024d，sentence-transformers）
+    image: emily-core:latest
+    container_name: emily-embed
     ports:
-      - "8080:8080"
+      - "127.0.0.1:8082:8000"
+    command: ["python", "-m", "emily_core.infrastructure.embedding.server"]
     environment:
-      - MAXKB_EMBEDDING_MODEL_PATH=/opt/maxkb-app/model/embedding
-      - MAXKB_EMBEDDING_MODEL_NAME=/opt/maxkb-app/model/embedding/Qwen3-Embedding-0.6B
+      - EMBEDDING_MODEL_ID=BAAI/bge-m3
+      - EMBEDDING_PORT=8000
+      - HF_HUB_ENABLE_HF_TRANSFER=1
+      - HF_HOME=/app/hf_cache
     volumes:
-      - D:\app\pgdata:/var/lib/postgresql/data
-      - D:\app\Qwen\Qwen3-Embedding-0___6B:/opt/maxkb-app/model/embedding/Qwen3-Embedding-0.6B:ro
-      - D:\app\Emily\emily-data\baseknowledge:/opt/maxkb-app/data/emily:ro
+      - ./emily-data/hf_cache:/app/hf_cache
+      - ./emily-core/emily_core:/app/emily_core:ro
     networks:
       - emily_network
     restart: always
 
-  emily-postgres:             # 业务数据库（Core 专用，干净空库）
-    image: postgres:16-alpine
+  # ── MaxKB 已关闭（RAG 基座已替换为 pgvector + TEI）──
+
+  emily-postgres:             # 业务数据库（Core 专用，pgvector 扩展）
+    image: pgvector/pgvector:pg16
     container_name: emily-postgres
     ports:
       - "127.0.0.1:25432:5432"

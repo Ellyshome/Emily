@@ -12,6 +12,12 @@ class SessionConfig:
     ttl_seconds: int = 600
     """Session 无新消息过期时间（默认 10 分钟，蓝图 §3.4）。"""
 
+    task_idle_seconds: int = 180
+    """任务完成后空闲超时（秒），默认 3 分钟。任务段制下补充 ttl_seconds。"""
+
+    hard_limit_seconds: int = 1800
+    """Session 硬上限（秒），默认 30 分钟。超时强制归档。"""
+
     max_concurrent: int = 100
     """最大并发 Session 数（蓝图 §10.4 session_max_concurrent）。"""
 
@@ -19,7 +25,7 @@ class SessionConfig:
     """每 Session 最大 WorkItem 数（蓝图 §10.4 workitem_max_per_session）。"""
 
     sweep_interval_seconds: int = 60
-    """后台过期扫描间隔。"""
+    """后台过期扫描间隔（任务段制更敏感，从 300s 调短到 60s）。"""
 
     @classmethod
     def from_config(cls, config) -> "SessionConfig":

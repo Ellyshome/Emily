@@ -1,7 +1,7 @@
 """bootstrap —— Emily Core 初始化入口。
 
 负责加载配置、初始化日志、初始化数据库（自动建表）、创建 EmilyCore 实例。
-容器化后：配置主要来自环境变量（EMILY_DATABASE_URL / EMILY_LLM_* / EMILY_MAXKB_* 等），
+容器化后：配置主要来自环境变量（EMILY_DATABASE_URL / EMILY_LLM_* / EMILY_TEI_* / EMILY_VLM_* 等），
 由 api 层在启动时读取并传入。
 """
 
@@ -60,9 +60,10 @@ def _config_from_env(config_data: dict | None) -> dict:
         "EMILY_STORAGE_ROOT": "storage_root",
         "EMILY_HOOK_CONFIG_PATH": "hook_config_path",
         "EMILY_SOP_REPOSITORY_DIR": "sop_repository_dir",
-        "EMILY_MAXKB_URL": "maxkb_url",
-        "EMILY_MAXKB_ADMIN_PASSWORD": "maxkb_admin_password",
-        "EMILY_MAXKB_KNOWLEDGE_ID": "maxkb_knowledge_id",
+        "EMILY_TEI_URL": "tei_url",
+        "EMILY_VLM_API_URL": "vlm_api_url",
+        "EMILY_VLM_API_KEY": "vlm_api_key",
+        "EMILY_VLM_MODEL": "vlm_model",
         "EMILY_KB_ENABLED": "kb_enabled",
         "EMILY_PROMPTS_DIR": "prompts_dir",
     }
@@ -119,18 +120,56 @@ def init(config_data: dict | None = None, rag_provider=None) -> "EmilyCore":
         except Exception as e:
             _logger.warning("tool_registry auto-seed failed: %s", e)
 
-    # 初始化 RAG Provider（如果 kb_enabled + maxkb 配置了）
+    # 自动运行清单中 auto_run: bootstrap 的脚本（fail-open，启动时自检）
+    try:
+        from .scripts.registry import load_registry
+        _registry = load_registry()
+        for _entry in _registry.entries_with_auto_run("bootstrap"):
+            _script = Path(__file__).resolve().parents[2] / _entry.source_path
+            if not _script.exists():
+                continue
+            _result = subprocess.run(
+                [sys.executable, str(_script), *_entry.auto_run_args],
+                capture_output=True, text=True, timeout=_entry.timeout_seconds,
+            )
+            if _result.returncode == 0 and _result.stdout.strip():
+                _logger.info("%s: %s", _entry.name, _result.stdout.strip())
+            elif _result.stderr.strip():
+                _logger.debug("%s: %s", _entry.name, _result.stderr.strip())
+    except Exception as e:
+        _logger.warning("bootstrap auto-run scripts skipped: %s", e)
+
+    # 初始化 RAG Provider（pgvector + TEI）
+    tei_client = None
+    kc_repo = None
     if rag_provider is None and config.kb_enabled:
         try:
-            from .providers.rag.maxkb_provider import MaxKBRagProvider
-            if config.maxkb_admin_password:
-                rag_provider = MaxKBRagProvider(
-                    base_url=config.maxkb_url,
-                    admin_password=config.maxkb_admin_password,
+            if config.tei_url:
+                from .infrastructure.embedding.tei_client import TeiClient
+                from .repositories.knowledge_chunk_repo import KnowledgeChunkRepo
+                from .providers.rag.pgvector_provider import PgVectorRagProvider
+                tei_client = TeiClient(config.tei_url)
+                kc_repo = KnowledgeChunkRepo()
+                rag_provider = PgVectorRagProvider(
+                    tei=tei_client, repo=kc_repo,
+                    similarity=config.rag_similarity_threshold,
                 )
-                _logger.info("MaxKB RAG provider created")
+                _logger.info("PgVector RAG provider created")
         except Exception as e:
-            _logger.warning("MaxKB RAG provider init failed: %s", e)
+            _logger.warning("PgVector RAG provider init failed: %s", e)
+
+    # VLM client 初始化（OCR 用）
+    vlm_client = None
+    if config.vlm_api_key:
+        try:
+            from .infrastructure.vlm.client import VlmOcrClient
+            vlm_client = VlmOcrClient(
+                api_url=config.vlm_api_url,
+                api_key=config.vlm_api_key,
+                model=config.vlm_model,
+            )
+        except Exception as e:
+            _logger.warning("VLM client init failed: %s", e)
 
     # ── 基座工具就绪检查 ──
     base_tools = _check_base_tools_readiness(rag_provider)
@@ -144,6 +183,11 @@ def init(config_data: dict | None = None, rag_provider=None) -> "EmilyCore":
     )
 
     core = EmilyCore(config, rag_provider=rag_provider)
+
+    # 注入基础设施到 core（供 registry + ToolManager 使用）
+    core._vlm_client = vlm_client
+    core._tei_client = tei_client
+    core._knowledge_chunk_repo = kc_repo
 
     # ── 组装启动报告 ──
     llm_configured = bool(config.llm_api_key)
@@ -268,6 +312,17 @@ def _collect_system_snapshot() -> dict:
             pass
         snapshot["sops"] = sop_count
 
+        # 群清单统计
+        try:
+            from .services.group_registry_service import GroupRegistryService
+            groups = GroupRegistryService().list_groups()
+            snapshot["groups"] = groups
+            snapshot["groups_total"] = len(groups)
+        except Exception as e:
+            _logger.warning("group list collect failed: %s", e)
+            snapshot["groups"] = []
+            snapshot["groups_total"] = 0
+
         return snapshot
     except Exception as e:
         _logger.warning("System snapshot collection failed: %s", e)
@@ -367,7 +422,7 @@ async def _send_startup_email(core: "EmilyCore", config: Config, startup_report:
             llm_model = startup_report.get("llm_model", "unspecified")
             lines.append(f"{'✓' if llm_ok else '✗'} LLM — {llm_model} ({'已配置' if llm_ok else '未配置'})")
             rag_ok = startup_report.get("rag_enabled", False)
-            lines.append(f"{'✓' if rag_ok else '✗'} RAG/MaxKB — {'已启用' if rag_ok else '未启用'}")
+            lines.append(f"{'✓' if rag_ok else '✗'} RAG — {'已启用' if rag_ok else '未启用'}")
             lines.append("")
         except Exception:
             lines.append("(采集失败)")
@@ -441,6 +496,24 @@ async def _send_startup_email(core: "EmilyCore", config: Config, startup_report:
                     lines.append(f"{k}: {v}")
             else:
                 lines.append("(无)")
+            lines.append("")
+        except Exception:
+            lines.append("(采集失败)")
+            lines.append("")
+
+        # 节 5.5：群聊覆盖
+        try:
+            snapshot = _collect_system_snapshot()
+            groups = snapshot.get("groups", [])
+            groups_total = snapshot.get("groups_total", 0)
+            lines.append(f"═══ 群聊覆盖 ({groups_total} 个群) ═══")
+            if groups:
+                for g in groups[:30]:
+                    lines.append(f"  - {g['group_name']} ({g['platform']}, 最近活跃: {g.get('last_active', '?')})")
+                if len(groups) > 30:
+                    lines.append(f"  ... 等 {len(groups)} 个群")
+            else:
+                lines.append("(无群数据，等待插件同步)")
             lines.append("")
         except Exception:
             lines.append("(采集失败)")

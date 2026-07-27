@@ -15,15 +15,43 @@ class FileApplication:
     def __init__(self, file_service: FileService, storage_service=None):
         self.file_service = file_service
         self.storage_service = storage_service  # FileStorageService（可选）
+        self._file_manager = None               # FileManager（M1：统一入口，由 EmilyCore 注入）
         self._journal = None  # EventJournal（由 EmilyCore 注入）
 
     def set_journal(self, journal) -> None:
         """注入事件日志服务。"""
         self._journal = journal
 
+    def set_file_manager(self, file_manager) -> None:
+        """M1: 注入 FileManager 统一入口。"""
+        self._file_manager = file_manager
+
     def set_storage_service(self, storage_service) -> None:
         """注入文件物理存储服务。"""
         self.storage_service = storage_service
+
+    @staticmethod
+    def _get_already_downloaded_path(message_id: str, attachment_url: str) -> str:
+        """M3: 检查 message_attachments 表中是否已有该 URL 的本地路径。"""
+        try:
+            from ..infrastructure.database.session import get_session
+            from ..infrastructure.database.models import MessageAttachment
+
+            with get_session() as session:
+                att = session.query(MessageAttachment).filter(
+                    MessageAttachment.message_id == message_id,
+                    MessageAttachment.file_url == attachment_url,
+                ).order_by(MessageAttachment.created_at.desc()).first()
+                if att and att.local_path:
+                    # 还原为绝对路径
+                    from ..services.file_storage_service import FileStorageService
+                    storage_root = str(
+                        __import__("pathlib").Path(__file__).parent.parent.parent / "data" / "files"
+                    )
+                    return str(__import__("pathlib").Path(storage_root) / att.local_path)
+        except Exception as e:
+            logger.debug("_get_already_downloaded_path failed: %s", e)
+        return ""
 
     async def handle_file(
         self, route_result: RouteResult, user_id: str, message_id: str,
@@ -52,6 +80,7 @@ class FileApplication:
                 uploaded_by=user_id,
                 source_message_id=message_id,
                 file_category=data.get("file_category", "OTHER"),
+                purpose=data.get("purpose", "RECORD"),
             )
             f = self.file_service.create_file_record(cmd)
 
@@ -59,15 +88,21 @@ class FileApplication:
             local_path = ""
             if attachment_url and self.storage_service:
                 try:
-                    store_result = self.storage_service.store_attachment(
-                        message_id=message_id,
-                        attachment_url=attachment_url,
-                        attachment_type=attachment_type or 3,  # 默认 file 类型
-                        source_filename=source_filename or filename,
-                    )
-                    if store_result:
-                        local_path = store_result.get("local_path", "")
-                        logger.info("File physically stored: %s", local_path)
+                    # M3: 先检查是否已由 AttachmentDownloader 自动下载
+                    reuse_path = self._get_already_downloaded_path(message_id, attachment_url)
+                    if reuse_path:
+                        local_path = reuse_path
+                        logger.info("File reused from auto-download: %s", local_path)
+                    else:
+                        store_result = self.storage_service.store_attachment(
+                            message_id=message_id,
+                            attachment_url=attachment_url,
+                            attachment_type=attachment_type or 3,  # 默认 file 类型
+                            source_filename=source_filename or filename,
+                        )
+                        if store_result:
+                            local_path = store_result.get("local_path", "")
+                            logger.info("File physically stored: %s", local_path)
                 except Exception as e:
                     logger.warning("Physical file storage failed (non-blocking): %s", e)
 
@@ -99,17 +134,31 @@ class FileApplication:
         project_ids: list[str] | None = None,
         keyword: str = "",
         limit: int = 10,
+        user_id: str = "",
     ) -> HandlerResult:
-        """按分类查询文件列表。"""
+        """按分类查询文件列表。
+
+        M1 权限统一：当 user_id 且 _file_manager 可用时，走 session_accessible_files。
+        否则回退旧 project_ids 路径。
+        """
         try:
             from ..infrastructure.database.models import FileCategory
 
-            files = self.file_service.list_by_category(
-                project_id=project_id,
-                project_ids=project_ids,
-                file_category=file_category,
-                limit=limit,
-            )
+            # M1: 权限统一出口 —— 有 user_id 且有 file_manager，走可见文件查询
+            if user_id and self._file_manager:
+                files = self._file_manager.query_visible_files(
+                    user_id,
+                    file_category=file_category,
+                    keyword=keyword,
+                    limit=limit,
+                )
+            else:
+                files = self.file_service.list_by_category(
+                    project_id=project_id,
+                    project_ids=project_ids,
+                    file_category=file_category,
+                    limit=limit,
+                )
 
             if not files:
                 cat_name = FileCategory.display(file_category) if file_category else "文件"

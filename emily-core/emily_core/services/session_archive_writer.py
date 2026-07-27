@@ -64,20 +64,41 @@ class SessionArchiveWriter:
         if self.enabled and self.archive_dir:
             os.makedirs(self.archive_dir, exist_ok=True)
 
-    def _path_for(self, conversation_id: str, user_name: str, started_at: str = "") -> Path:
+    def _path_for(self, conversation_id: str, user_name: str, started_at: str = "",
+                  group_name: str = "") -> Path:
         """生成归档文件路径。
 
-        命名规则：{开始日期}_{人员 sanitized}_{conv_id[:8]}.md
+        命名规则：
+          - 群聊：{群名 sanitized}_{启动时间}.md
+          - 私聊：{开始日期}_{人员 sanitized}_{conv_id[:8]}.md
         同 conv_id 续接则复用现有文件。
 
         Args:
             conversation_id: 会话 ID。
             user_name: 用户姓名。
             started_at: 会话开始时间 ISO8601 字符串。
+            group_name: 群名（群聊时非空）。
 
         Returns:
             Path: 归档文件路径。
         """
+        if group_name:
+            # 群聊：按群名命名
+            safe_name = _sanitize_filename(group_name) or "group"
+            time_part = ""
+            if started_at:
+                try:
+                    dt = datetime.fromisoformat(started_at.replace("Z", "+00:00"))
+                    local_dt = dt + timedelta(hours=8)
+                    time_part = local_dt.strftime("%Y-%m-%d_%H-%M-%S")
+                except (ValueError, TypeError):
+                    time_part = _beijing_date_str()
+            else:
+                time_part = _beijing_date_str()
+            filename = f"{safe_name}_{time_part}.md"
+            return Path(self.archive_dir) / filename
+
+        # 私聊：原命名规则
         date_str = ""
         if started_at:
             try:
@@ -223,7 +244,7 @@ class SessionArchiveWriter:
         big_texts = [
             ("项目世界书", ctx.get("project_world_book", "")),
             ("规则书", ctx.get("rule_book", "")),
-            ("系统自我描述", ctx.get("system_description", "")),
+            ("认知书", ctx.get("system_description", "")),
             ("可见库表摘要", ctx.get("visible_schema_summary", "")),
             ("可见文件摘要", ctx.get("visible_files_summary", "")),
             ("SOP目录摘要", ctx.get("sop_catalog_summary", "")),
@@ -716,7 +737,8 @@ class SessionArchiveWriter:
         if not self.enabled or not self.archive_dir:
             return ""
 
-        path = self._path_for(conversation_id, user_name, started_at)
+        group_name = (context or {}).get("group_name", "")
+        path = self._path_for(conversation_id, user_name, started_at, group_name=group_name)
         try:
             os.makedirs(path.parent, exist_ok=True)
             if not path.exists():

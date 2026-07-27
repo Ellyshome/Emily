@@ -16,7 +16,8 @@ MONITORED_CONTAINERS = [
     "napcat",
     "astrbot",
     "emily-core",
-    "maxkb",
+    "maxkb",   # 已废弃，保留占位避免索引错位
+    "tei",     # TEI embedding 服务
     "emily-postgres",
 ]
 
@@ -25,7 +26,8 @@ CONTAINER_DISPLAY_NAMES = {
     "napcat": "通讯接口",
     "astrbot": "消息平台",
     "emily-core": "业务内核",
-    "maxkb": "知识库",
+    "maxkb": "知识库（已废弃）",
+    "tei": "TEI embedding",
     "emily-postgres": "数据库",
 }
 

@@ -1,4 +1,4 @@
-﻿"""ToolRegistryRepo —— API 注册表持久化操作。
+"""ToolRegistryRepo —— API 注册表持久化操作。
 
 提供 tool_registry 表的 CRUD 与查询能力。
 """
@@ -25,6 +25,7 @@ class ToolRegistryRepo:
         display_name: str = "",
         category: str = "base",
         permission_flag: str = "all",
+        exposure_mode: str = "meta",
         handler_module: str = "",
     ) -> bool:
         """注册或更新 API 元数据。"""
@@ -40,6 +41,7 @@ class ToolRegistryRepo:
                     existing.display_name = display_name
                     existing.category = category
                     existing.permission_flag = permission_flag
+                    existing.exposure_mode = exposure_mode
                     existing.handler_module = handler_module
                     existing.updated_at = now
                 else:
@@ -49,6 +51,7 @@ class ToolRegistryRepo:
                         display_name=display_name,
                         category=category,
                         permission_flag=permission_flag,
+                        exposure_mode=exposure_mode,
                         handler_module=handler_module,
                         is_active=True,
                         registered_at=now,
@@ -158,6 +161,7 @@ def _row_to_dict(row: ToolRegistryModel) -> dict:
         "signature": row.signature,
         "category": row.category,
         "permission_flag": row.permission_flag,
+        "exposure_mode": row.exposure_mode,
         "handler_module": row.handler_module,
         "is_active": row.is_active,
         "registered_at": row.registered_at,

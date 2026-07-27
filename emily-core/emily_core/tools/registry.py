@@ -47,7 +47,70 @@ def register_all(core: "EmilyCore") -> None:
     logger.info("registry: %d tools (base=%d, business=%d, project=%d)",
                 len(reg), _bc, _buc, _pjc)
 
+    # M4: 无孤儿审计——扫描全部工具，确保 category 合法
+    _audit_capabilities(reg, core)
+
 _bc, _buc, _pjc = 0, 0, 0
+
+# 合法的工具 category（与能力树五大域的映射关系）
+_VALID_TOOL_CATEGORIES = {
+    "base": "基座能力（query_data / knowledge_search / ocr）—— 对应 QRY / KB / DOC 域",
+    "business": "业务工具（CRUD / 文件 / 文档处理）—— 对应 REC / FILE / DOC 域",
+    "project": "项目级工具（节点 / 邮箱 / 归档）—— 对应 SYS 域",
+}
+
+
+def _audit_capabilities(reg, core) -> None:
+    """无孤儿审计 —— 扫描全部注册工具，确保 category 合法（归类到能力树）。
+
+    §3.7 无孤儿审计：每个工具必须挂在能力树某个节点下（通过 category 归类）。
+    category 不合法的工具视为孤儿，报警告（不阻断启动）。
+
+    Args:
+        reg: BusinessFlowToolRegistry 注册表实例。
+        core: EmilyCore 实例，用于获取 skill_registry 做 Skill 侧审计。
+
+    Returns:
+        None — 审计结果通过 logger 输出。
+    """
+    # ── 工具侧审计 ──
+    tool_orphans: list[str] = []
+    tool_count = 0
+    try:
+        for tool in reg._tools.values():
+            tool_count += 1
+            cat = getattr(tool, "category", "") or ""
+            if cat not in _VALID_TOOL_CATEGORIES:
+                tool_orphans.append(f"{tool.name}(category={cat!r})")
+    except Exception as e:
+        logger.warning("audit_capabilities: tool scan failed: %s", e)
+
+    # ── Skill 侧审计 ──
+    skill_orphans: list[str] = []
+    skill_count = 0
+    skill_registry = getattr(core, "_skill_registry", None)
+    if skill_registry is not None:
+        try:
+            from ..skill.registry import _extract_sop_type
+            for skill in skill_registry.list_skills():
+                skill_count += 1
+                sop_type = _extract_sop_type(skill.sop_id)
+                if sop_type == "UNKNOWN":
+                    skill_orphans.append(f"{skill.sop_id}(无法推导类型)")
+        except Exception as e:
+            logger.warning("audit_capabilities: skill scan failed: %s", e)
+
+    # ── 审计报告 ──
+    logger.info(
+        "audit_capabilities: %d tools, %d skills, orphan_tools=%d, orphan_skills=%d",
+        tool_count, skill_count, len(tool_orphans), len(skill_orphans),
+    )
+    if tool_orphans:
+        logger.warning("audit_capabilities: orphan tools (未归类到能力树): %s",
+                       ", ".join(tool_orphans))
+    if skill_orphans:
+        logger.warning("audit_capabilities: orphan skills (sop_id 类型码无法识别): %s",
+                       ", ".join(skill_orphans))
 
 
 def _tool(name: str, desc: str, params: dict, handler, category: str = "base", permission_flag: str = "all"):
@@ -121,6 +184,14 @@ def _register_base(core, reg):
         logger.warning("knowledge_search registered with stub handler (rag_provider is None)")
     _bc += 1
 
+    # ocr_document (VLM OCR)
+    vlc = getattr(core, "_vlm_client", None)
+    if vlc is not None:
+        from .ocr_tool import handle_ocr_document, _OCR_SCHEMA, _OCR_DESCRIPTION
+        reg.register(_tool("ocr_document", _OCR_DESCRIPTION, _OCR_SCHEMA,
+                           partial(handle_ocr_document, vlm_client=vlc)))
+        _bc += 1
+
 
 # ══════════════════════════════════════════════════════════════════════════════
 # 业务工具 
@@ -153,7 +224,10 @@ def _register_business(core, reg):
                              meeting_app=core._meeting_app), "business", "write")
     _buc += _reg_biz(reg, "record_file", "记录文件元数据",
                      partial(_h("file_tool", "handle_record_file"),
-                             file_app=core._file_app), "business", "write")
+                             file_app=core._file_app,
+                             file_manager=core._file_manager,
+                             tei_client=core._tei_client,
+                             kc_repo=core._knowledge_chunk_repo), "business", "write")
 
     # 文件查询 + 分类修改 (2 tools)
     _buc += _reg_biz(reg, "query_files", "按分类或关键词查询项目文件",
@@ -162,6 +236,52 @@ def _register_business(core, reg):
     _buc += _reg_biz(reg, "update_file_category", "修改文件分类归属",
                      partial(_h("file_tool", "handle_update_file_category"),
                              file_app=core._file_app), "business", "write")
+
+    # M2: send_file — Emily 主动发送文件
+    _buc += _reg_biz(reg, "send_file", "向用户发送已有文件",
+                     partial(_h("file_tool", "handle_send_file"),
+                             file_manager=core._file_manager,
+                             outbound_bus=core.outbound_bus),
+                     "business", "all")
+
+    # M4: 文件关联与版本 (4 tools)
+    _buc += _reg_biz(reg, "link_file", "关联文件到业务对象",
+                     partial(_h("file_tool", "handle_link_file"),
+                             file_manager=core._file_manager),
+                     "business", "write")
+    _buc += _reg_biz(reg, "new_file_version", "创建文件新版本",
+                     partial(_h("file_tool", "handle_new_file_version"),
+                             file_app=core._file_app,
+                             file_manager=core._file_manager),
+                     "business", "write")
+    _buc += _reg_biz(reg, "delete_file", "软删除文件",
+                     partial(_h("file_tool", "handle_delete_file"),
+                             file_manager=core._file_manager),
+                     "business", "write")
+    _buc += _reg_biz(reg, "list_file_versions", "列出文件版本",
+                     partial(_h("file_tool", "handle_list_file_versions"),
+                             file_manager=core._file_manager),
+                     "business", "all")
+
+    # M5: 附件链工具 (3 tools)
+    _buc += _reg_biz(reg, "link_to_master", "挂载附件到主文件",
+                     partial(_h("file_tool", "handle_link_to_master"),
+                             file_manager=core._file_manager),
+                     "business", "write")
+    _buc += _reg_biz(reg, "unlink_attachment", "卸载附件为独立文件",
+                     partial(_h("file_tool", "handle_unlink_attachment"),
+                             file_manager=core._file_manager),
+                     "business", "write")
+    _buc += _reg_biz(reg, "list_attachments", "列出主文件下的附件",
+                     partial(_h("file_tool", "handle_list_attachments"),
+                             file_manager=core._file_manager),
+                     "business", "all")
+
+    # M5: purpose 校正工具
+    _buc += _reg_biz(reg, "update_file_purpose", "校正文件的业务意图",
+                     partial(_h("file_tool", "handle_update_file_purpose"),
+                             file_manager=core._file_manager),
+                     "business", "write")
 
     # 计划任务工具已废弃（由 node_task_tool 替代），不再注册
 
@@ -172,6 +292,35 @@ def _register_business(core, reg):
         # TC-M01: 不再传入固定 user_name，handler 运行时通过 _user_id 查 DB 解析
         bt = create_memory_tool(mem)
         reg.register(_tool(bt.name, bt.description, bt.parameters, bt.execute))
+        _buc += 1
+
+    # ── 原子工具层（RAG 录入侧）──
+    # parse_document
+    from .parse_document_tool import handle_parse_document, _PARSE_SCHEMA as _PS, _PARSE_DESCRIPTION as _PD
+    reg.register(_tool("parse_document", _PD, _PS, partial(handle_parse_document),
+                      category="business", permission_flag="all"))
+    _buc += 1
+
+    # extract_table
+    from .extract_table_tool import handle_extract_table, _TABLE_SCHEMA as _TS, _TABLE_DESCRIPTION as _TD
+    reg.register(_tool("extract_table", _TD, _TS, partial(handle_extract_table),
+                      category="business", permission_flag="all"))
+    _buc += 1
+
+    # chunk_text
+    from .chunk_tool import handle_chunk_text, _CHUNK_SCHEMA as _CS, _CHUNK_DESCRIPTION as _CD
+    reg.register(_tool("chunk_text", _CD, _CS, partial(handle_chunk_text),
+                      category="business", permission_flag="all"))
+    _buc += 1
+
+    # embed_and_index
+    tei = getattr(core, "_tei_client", None)
+    kc_repo = getattr(core, "_knowledge_chunk_repo", None)
+    if tei is not None and kc_repo is not None:
+        from .embed_tool import handle_embed_and_index, _EMBED_SCHEMA as _ES, _EMBED_DESCRIPTION as _ED
+        reg.register(_tool("embed_and_index", _ED, _ES,
+                          partial(handle_embed_and_index, tei=tei, repo=kc_repo),
+                          category="business", permission_flag="write"))
         _buc += 1
 
 

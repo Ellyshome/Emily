@@ -1,6 +1,6 @@
 """数据库会话管理 —— PostgreSQL 连接、会话工厂、自动建表。
 
-对接 MaxKB 容器的 PostgreSQL 服务，pool_pre_ping + pool_recycle。
+对接 emily-postgres 容器的 PostgreSQL 服务，pool_pre_ping + pool_recycle。
 """
 
 import logging
@@ -72,6 +72,16 @@ def _ensure_columns(engine) -> list[dict]:
             ("response_full", "TEXT", "''"),
             ("reasoning_content", "TEXT", "''"),
         ],
+        "files": [
+            ("purpose", "VARCHAR(50)", "'RECORD'"),
+            ("purpose_confirmed", "BOOLEAN", "FALSE"),
+            ("attachment_of", "VARCHAR", "NULL"),
+            ("rag_indexed", "BOOLEAN", "FALSE"),
+            ("rag_collection", "VARCHAR(100)", "''"),
+        ],
+        "tool_registry": [
+            ("exposure_mode", "VARCHAR(20)", "'meta'"),
+        ],
     }
 
     from sqlalchemy import text as sa_text
@@ -142,7 +152,7 @@ def init_db(
     Args:
         db_url: 完整的 PostgreSQL URL（如 postgresql://user:pass@host:port/db）。
                 提供此参数时忽略 pg_* 参数。
-        pg_host: PG 主机地址（Docker 内用服务名 maxkb）。
+        pg_host: PG 主机地址（Docker 内用服务名 emily-postgres）。
         pg_port: PG 端口。
         pg_db: PG 数据库名。
         pg_user: PG 用户名。
@@ -180,6 +190,9 @@ def init_db(
     # 建表（幂等，已存在的表不会重建）
     Base.metadata.create_all(bind=_engine)
 
+    # pgvector 扩展（幂等）
+    _ensure_pgvector_extension(_engine)
+
     # 补齐已有表的新增列（create_all 不 ALTER 已有表）
     migrations = _ensure_columns(_engine)
 
@@ -189,6 +202,18 @@ def init_db(
     )
 
     return migrations
+
+
+def _ensure_pgvector_extension(engine) -> None:
+    """确保 pgvector 扩展已安装（幂等）。"""
+    from sqlalchemy import text as sa_text
+    try:
+        with engine.connect() as conn:
+            conn.execute(sa_text("CREATE EXTENSION IF NOT EXISTS vector"))
+            conn.commit()
+        logger.info("pgvector extension ensured")
+    except Exception as e:
+        logger.warning("pgvector extension not available: %s", e)
 
 
 @contextmanager

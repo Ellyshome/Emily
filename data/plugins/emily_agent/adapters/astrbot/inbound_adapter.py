@@ -1,5 +1,6 @@
 """"AstrBot Inbound Adapter —— 将 AstrBot 事件转换为 StandardMessage。"""
 
+import asyncio
 import logging
 from typing import TYPE_CHECKING
 
@@ -17,8 +18,11 @@ class AstrBotInboundAdapter:
     负责将 AstrBot 的 AstrMessageEvent 转换为 Emily 的 StandardMessage。
     """
 
-    @staticmethod
-    def to_standard_message(event: "AstrMessageEvent") -> StandardMessage:
+    def __init__(self):
+        # 群名缓存：避免每条群消息都调 get_group() API
+        self._group_name_cache: dict[str, str] = {}
+
+    async def to_standard_message(self, event: "AstrMessageEvent") -> StandardMessage:
         """转换 AstrBot 消息事件为标准消息。
 
         Args:
@@ -45,10 +49,23 @@ class AstrBotInboundAdapter:
 
         # 群信息
         group_id = None
+        group_name = ""
         if conversation_type == "group":
             gid = event.get_group_id()
             if gid:
                 group_id = gid
+                # 群名提取：优先缓存，miss 时调 get_group() API（仅首次）
+                if gid in self._group_name_cache:
+                    group_name = self._group_name_cache[gid]
+                else:
+                    try:
+                        group_obj = await event.get_group()
+                        if group_obj is not None:
+                            gn = getattr(group_obj, "group_name", "") or ""
+                            self._group_name_cache[gid] = gn
+                            group_name = gn
+                    except Exception as e:
+                        logger.debug("get_group failed (non-blocking): %s", e)
 
         # 消息文本
         content = event.message_str or ""
@@ -144,6 +161,7 @@ class AstrBotInboundAdapter:
             sender_id=sender_id,
             sender_name=sender_name,
             group_id=group_id,
+            group_name=group_name or None,
             content=content,
             is_at_bot=is_at_bot,
             mentioned_user_ids=mentioned_ids,
