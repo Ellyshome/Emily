@@ -31,8 +31,6 @@ _CREATE_NODE_SCHEMA = {
         "node_name": {"type": "string", "description": "节点名称/工作项描述。单节点模式必填"},
         "deadline": {"type": "string", "description": "截止时间（ISO8601格式）。单节点模式必填"},
         "owner_dept_id": {"type": "string", "description": "主责条线/部门，默认'项目总'"},
-        "stage_id": {"type": "integer", "description": "阶段ID: 0=立项 1=规划 2=施工 3=交付，默认0"},
-        "parent_node_id": {"type": "string", "description": "父节点编号（如果是子节点则填写）"},
         "remark": {"type": "string", "description": "备注/说明"},
         "nodes": {
             "type": "array",
@@ -98,11 +96,9 @@ _ADD_DEPENDENCY_DESCRIPTION = (
 _MOUNT_CHILD_SCHEMA = {
     "type": "object",
     "properties": {
-        "parent_node_id": {"type": "string", "description": "父节点编号"},
         "child_node_id": {"type": "string", "description": "子节点编号"},
-        "child_weight": {"type": "number", "description": "子节点权重（0.0-1.0），默认为1.0"},
     },
-    "required": ["parent_node_id", "child_node_id"],
+    "required": ["child_node_id"],
 }
 
 _MOUNT_CHILD_DESCRIPTION = (
@@ -163,8 +159,6 @@ async def handle_create_node(
         node_name=params.get("node_name", ""),
         deadline=params.get("deadline", ""),
         owner_dept_id=params.get("owner_dept_id", "项目总"),
-        stage_id=params.get("stage_id", 0),
-        parent_node_id=params.get("parent_node_id", ""),
         remark=params.get("remark", ""),
         creator_id=user_id,
     )
@@ -195,7 +189,7 @@ async def handle_query_node(
     return {
         "success": True,
         "data": detail,
-        "message": f"节点「{detail['node_name']}」当前状态: {detail['status']}, 进度: {detail['progress']}%",
+        "message": f"节点「{detail['node_name']}」当前状态: {detail['status']}",
     }
 
 
@@ -222,7 +216,6 @@ async def handle_update_node_progress(
         "success": result.success,
         "node_id": result.node_id,
         "status": result.status,
-        "progress": result.progress,
         "message": result.message,
         "affected_ancestors": result.affected_downstream,
     }
@@ -268,9 +261,7 @@ async def handle_mount_child_node(
 
     svc = NodeService(user_repo=PermissionRepository())
     cmd = MountChildCommand(
-        parent_node_id=params.get("parent_node_id", ""),
         child_node_id=params.get("child_node_id", ""),
-        child_weight=float(params.get("child_weight", 1.0)),
         operator_id=user_id,
     )
     result = await svc.mount_child(cmd)
@@ -289,7 +280,7 @@ _UPDATE_NODES_SCHEMA = {
     "properties": {
         "updates": {
             "type": "array",
-            "description": "节点更新列表。每项含 node_id（必填）+ 要更新的字段（node_name/deadline/owner_dept_id/remark/stage_id 等）",
+            "description": "节点更新列表。每项含 node_id（必填）+ 要更新的字段（node_name/deadline/owner_dept_id/remark 等）",
             "items": {"type": "object"},
         },
     },
@@ -298,7 +289,7 @@ _UPDATE_NODES_SCHEMA = {
 
 _UPDATE_NODES_DESCRIPTION = (
     "批量更新节点字段。每项指定 node_id + 要修改的字段（只填要改的），"
-    "支持：node_name/deadline/owner_dept_id/related_company_id/remark/stage_id/sort_order。"
+    "支持：node_name/deadline/owner_dept_id/related_company_id/remark。"
 )
 
 _ACTIVATE_NODES_SCHEMA = {

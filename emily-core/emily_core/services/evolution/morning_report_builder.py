@@ -43,7 +43,7 @@ class MorningReportBuilder:
         report_text = self._format_report(user_name, date, nodes, tasks, events, is_admin)
 
         sections = {
-            "nodes": [{"node_id": n.node_id, "name": n.node_name, "progress": n.progress, "deadline": n.deadline, "status": n.status} for n in nodes],
+            "nodes": [{"node_id": n.node_id, "name": n.node_name, "deadline": n.deadline, "status": n.status} for n in nodes],
             "tasks": [{"title": t.title, "status": t.status, "due_date": t.due_date} for t in tasks],
             "events": [{"summary": e.summary, "action": e.event_action} for e in events],
         }
@@ -76,12 +76,7 @@ class MorningReportBuilder:
             lines.append("\U0001f4cb 你的节点进度")
             lines.append("")
             for n in nodes:
-                try:
-                    progress = float(n.progress)
-                except (ValueError, TypeError):
-                    progress = 0.0
-                icon = "\U0001f7e2" if progress >= 70 else ("\U0001f7e1" if progress >= 30 else "\u26aa")
-                lines.append(f"{icon} {n.node_name} ({n.node_id}) — {n.progress}%，截止{n.deadline}")
+                lines.append(f"  {n.node_name} ({n.node_id}) — 截止{n.deadline}")
             lines.append("")
 
         # 待办任务

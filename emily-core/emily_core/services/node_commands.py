@@ -17,18 +17,12 @@ class CreateNodeCommand:
     node_id: str
     node_name: str
     owner_dept_id: str = "项目总"
-    related_company_id: str = "建设单位"
     deadline: str = ""
     creator_id: str = ""
-    parent_node_id: str = ""
-    stage_id: int = 0
-    child_weight: float = 1.0
     remark: str = ""
-    land_parcel_id: str = ""
-    startup_doc_id: str = ""
-    sort_order: int = 0
     responsible_user_id: str = ""   # 责任人（为空时自动取 creator_id），需求 §3.1.2
     node_type: str = "WORK_PACKAGE" # 节点类型：MILESTONE / WORK_PACKAGE / TASK，需求 §3.1.1
+    participant_company_ids: list[str] = field(default_factory=list)  # 参与单位ID列表
 
 
 @dataclass
@@ -39,12 +33,7 @@ class UpdateNodeCommand:
     node_name: str | None = None
     deadline: str | None = None
     owner_dept_id: str | None = None
-    related_company_id: str | None = None
     remark: str | None = None
-    stage_id: int | None = None
-    sort_order: int | None = None
-    land_parcel_id: str | None = None
-    startup_doc_id: str | None = None
 
 
 @dataclass
@@ -109,27 +98,6 @@ class AddDependencyCommand:
 class RemoveDependencyCommand:
     """移除依赖命令 —— 需求文档 §8.3.2。"""
     dependency_id: str
-    operator_id: str = ""
-
-
-# ══════════════════════════════════════════════════════════════════════════════
-# 子节点管理 Commands
-# ══════════════════════════════════════════════════════════════════════════════
-
-@dataclass
-class MountChildCommand:
-    """挂载子节点命令 —— 需求文档 §8.4.1。"""
-    parent_node_id: str
-    child_node_id: str
-    child_weight: float = 1.0
-    operator_id: str = ""
-
-
-@dataclass
-class UnmountChildCommand:
-    """移除子节点命令。"""
-    parent_node_id: str
-    child_node_id: str
     operator_id: str = ""
 
 
@@ -232,6 +200,30 @@ class CreateTaskNodeCommand:
     owner_dept_id: str = "项目总"
     description: str = ""
     creator_id: str = ""
+
+
+@dataclass
+class AddParticipantCompanyCommand:
+    """添加节点参与单位命令。"""
+    node_id: str
+    company_id: str
+    operator_id: str = ""
+
+
+@dataclass
+class RemoveParticipantCompanyCommand:
+    """移除节点参与单位命令。"""
+    node_id: str
+    company_id: str
+    operator_id: str = ""
+
+
+@dataclass
+class SetParticipantCompaniesCommand:
+    """批量设置节点参与单位命令（全量替换）。"""
+    node_id: str
+    company_ids: list[str] = field(default_factory=list)
+    operator_id: str = ""
 
 
 @dataclass

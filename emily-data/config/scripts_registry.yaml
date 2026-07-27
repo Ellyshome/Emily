@@ -1,4 +1,4 @@
-﻿prologue: |
+prologue: |
   > 本文档收录 `scripts/` 目录下全部脚本，按功能域分组，说明职责、聚合归属、典型用法、调度归属。
   >
   > **设计约定**：每个功能以独立可执行脚本交付，聚合薄壳仅串联入口不含业务逻辑。独立脚本提供双通道：① CLI 可独立执行 + `--dry-run` 预览；② 核心函数可被系统 import 调用返回 dict。
@@ -96,6 +96,22 @@ scripts:
     auto_run: null
     auto_run_args: []
     writes_db: true
+    aggregation_parent: null
+    status: active
+    entrypoint: null
+    timeout_seconds: 60
+    scheduling_note: "纯手动"
+
+  startup_report:
+    description: "startup_report.py — 冷启动邮件报告预览/发送脚本。复刻 bootstrap 启动邮件内容。"
+    category: system_maintenance
+    source_path: scripts/startup_report.py
+    invocation: uv run python scripts/startup_report.py {args}
+    check_arg: --dry-run
+    run_args: []
+    auto_run: null
+    auto_run_args: []
+    writes_db: false
     aggregation_parent: null
     status: active
     entrypoint: null

@@ -33,11 +33,10 @@ def flatten_nodes(
     nodes: list[dict],
     *,
     project_id: str = "",
-    parent_node_id: str = "",
 ) -> list[dict]:
-    """将嵌套的节点树展平为列表，保留 parent_node_id 信息。
+    """将嵌套的节点树展平为列表。
 
-    YAML 中 children 嵌套 → 展平后通过 parent_node_id 标记层级。
+    YAML 中 children 嵌套 → 展平后按层级顺序排列。
     node_id 为空时自动生成：NODE-{hash4}（基于 node_name + project_id）。
     """
     flat: list[dict] = []
@@ -56,13 +55,9 @@ def flatten_nodes(
             "deadline": node_def.get("deadline", ""),
             "owner_dept_id": node_def.get("owner_dept_id", "项目总"),
             "related_company_id": node_def.get("related_company_id", "建设单位"),
-            "stage_id": node_def.get("stage_id", 0),
             "remark": node_def.get("remark", ""),
-            "sort_order": node_def.get("sort_order", 0),
-            "child_weight": node_def.get("child_weight", 1.0),
             "deliverables": node_def.get("deliverables", []),
             "dependencies": node_def.get("dependencies", []),
-            "parent_node_id": parent_node_id,
         }
         flat.append(record)
 
@@ -72,7 +67,6 @@ def flatten_nodes(
             child_records = flatten_nodes(
                 children,
                 project_id=project_id,
-                parent_node_id=node_id,
             )
             flat.extend(child_records)
 
@@ -216,11 +210,8 @@ async def create_node_tree(
             deadline=fn.get("deadline", ""),
             owner_dept_id=fn.get("owner_dept_id", "项目总"),
             related_company_id=fn.get("related_company_id", "建设单位"),
-            stage_id=fn.get("stage_id", 0),
-            parent_node_id="",  # 父子关系在 Phase 3 挂载
             creator_id=creator_id,
             remark=fn.get("remark", ""),
-            sort_order=fn.get("sort_order", 0),
         )
 
         try:
@@ -305,7 +296,6 @@ async def create_node_tree(
             mount_specs.append({
                 "parent_node_id": parent_node_id,
                 "child_node_id": fn["node_id"],
-                "child_weight": fn.get("child_weight", 1.0),
             })
 
     if mount_specs:
@@ -324,7 +314,6 @@ async def create_node_tree(
         cmd = MountChildCommand(
             parent_node_id=ms["parent_node_id"],
             child_node_id=ms["child_node_id"],
-            child_weight=ms["child_weight"],
             operator_id=creator_id,
         )
 

@@ -4,7 +4,6 @@
   - 前置条件满足度计算（文件级依赖：Σ(文件就绪 × 权重)）
   - 成果完成度计算（Σ(必需成果完成度) / 必需成果总数）
   - 三态流转判定（CONDITIONS_NOT_MET / IN_PROGRESS / COMPLETED）
-  - 父子进度加权汇总
   - 循环依赖检测（BFS）
 
 基于需求文档 §2.1（四态模型：未启用→条件不足→进行中→已完成）和 §4.1（状态自动流转计算）。
@@ -48,15 +47,11 @@ VALID_TRANSITIONS: dict[str, frozenset[str]] = {
 
 class NodeSnapshot:
     """节点快照 —— 引擎计算的输入单元。"""
-    __slots__ = ("node_id", "status", "progress", "parent_node_id",
-                 "dependencies", "deliverables", "children")
+    __slots__ = ("node_id", "status", "dependencies", "deliverables", "children")
 
-    def __init__(self, node_id: str, status: str = NOT_ACTIVATED,
-                 progress: float = 0.0, parent_node_id: str = ""):
+    def __init__(self, node_id: str, status: str = NOT_ACTIVATED):
         self.node_id = node_id
         self.status = status
-        self.progress = progress
-        self.parent_node_id = parent_node_id
         self.dependencies: list[DependencySnapshot] = []
         self.deliverables: list[DeliverableSnapshot] = []
         self.children: list[ChildSnapshot] = []
@@ -87,12 +82,11 @@ class DeliverableSnapshot:
 
 class ChildSnapshot:
     """子节点快照（仅含状态和进度，不展开嵌套）。"""
-    __slots__ = ("node_id", "status", "progress", "child_weight")
-    def __init__(self, node_id: str, status: str, progress: float, child_weight: float = 1.0):
+    __slots__ = ("node_id", "status", "progress")
+    def __init__(self, node_id: str, status: str, progress: float):
         self.node_id = node_id
         self.status = status
         self.progress = progress
-        self.child_weight = child_weight
 
 
 # ══════════════════════════════════════════════════════════════════════════════
@@ -194,19 +188,6 @@ def _determine_parent_status(children: list[ChildSnapshot]) -> str:
     return IN_PROGRESS
 
 
-def calc_parent_progress(children: list[ChildSnapshot]) -> float:
-    """计算父节点进度（子节点加权平均）。
-
-    公式：Σ(子节点进度 × 子节点权重) / max(Σ(子节点权重), 0.0001)
-    """
-    if not children:
-        return 0.0
-
-    weighted_sum = sum(c.progress * c.child_weight for c in children)
-    total_weight = max(sum(c.child_weight for c in children), 0.0001)
-
-    return min(weighted_sum / total_weight, 100.0)
-
 
 # ══════════════════════════════════════════════════════════════════════════════
 # 循环依赖检测
@@ -281,30 +262,3 @@ def _reconstruct_path(parent_map: dict[str, str | None], end_node: str,
     path.reverse()
     path.append(upstream_node)  # 补上环的闭合
     return path
-
-
-def check_parent_child_cycle(parent_node_id: str, child_node_id: str,
-                              parent_child_map: dict[str, str]) -> bool:
-    """检查父子关系不会形成循环。
-
-    子节点不能是父节点的祖先（任何层级）。
-
-    Args:
-        parent_node_id: 新父节点
-        child_node_id: 子节点
-        parent_child_map: {node_id: parent_node_id} 所有节点的父子映射
-
-    Returns:
-        True 如果会形成循环
-    """
-    # 向上追溯 child_node_id 的祖先链
-    current = parent_node_id
-    visited = set()
-    while current:
-        if current == child_node_id:
-            return True  # parent_node_id 是 child_node_id 的后代 → 循环
-        if current in visited:
-            return True  # 已存在循环
-        visited.add(current)
-        current = parent_child_map.get(current, "")
-    return False

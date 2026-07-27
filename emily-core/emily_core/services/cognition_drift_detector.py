@@ -158,14 +158,6 @@ class CognitionDriftDetector:
                     signals.append(f"节点数变化: {recorded_total}->{current_total}")
                     stale = True
 
-                # 进度偏差
-                if current_total > 0:
-                    current_progress = sum(float(n.progress or "0") for n in nodes) / current_total
-                    recorded_progress = float(layer.get("overall_progress", "0%").replace("%", ""))
-                    if abs(current_progress - recorded_progress) > 5:
-                        signals.append(f"进度偏差: {recorded_progress:.1f}%->{current_progress:.1f}%")
-                        stale = True
-
                 # 逾期数
                 now_beijing = datetime.now(BEIJING_TZ)
                 current_overdue = 0

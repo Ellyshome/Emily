@@ -7,6 +7,7 @@ from .session_cleanup import SessionCleanupHandler
 from .health_check import HealthCheckHandler
 from .data_sync import DataSyncHandler
 from .webhook import WebhookHandler
+from .daily_file_parse import DailyFileParseHandler
 
 __all__ = [
     "MorningReportHandler",
@@ -16,4 +17,5 @@ __all__ = [
     "HealthCheckHandler",
     "DataSyncHandler",
     "WebhookHandler",
+    "DailyFileParseHandler",
 ]

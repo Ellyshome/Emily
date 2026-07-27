@@ -2,7 +2,7 @@
 
 双用途：
   1. 作为 API 供系统调用（register() 注册到 BusinessFlowToolRegistry）
-  2. 作为独立脚本运行：uv run python -m emily_core.tools.scripts.search_files "精装施工图"
+  2. 作为独立脚本运行：uv run python -m emily_core.scripts.search_files "精装施工图"
 
 API 签名：
   params:
@@ -58,7 +58,7 @@ async def handle_search_files(params: dict, **kwargs) -> dict:
     if not user_id:
         return {"success": False, "reply": "用户身份未识别"}
 
-    from ...repositories.session_accessible_file_repo import SessionAccessibleFileRepo
+    from ..repositories.session_accessible_file_repo import SessionAccessibleFileRepo
     results = SessionAccessibleFileRepo.search(user_id, query, top_k=top_k)
 
     if not results:
@@ -86,7 +86,7 @@ async def handle_search_files(params: dict, **kwargs) -> dict:
 
 def register(core=None):
     """返回 BusinessFlowTool 实例，供注册器使用。"""
-    from ..business_flow_tools import BusinessFlowTool
+    from ..tools.business_flow_tools import BusinessFlowTool
     return BusinessFlowTool(
         name="search_files",
         description=SEARCH_FILES_DISPLAY_NAME,
@@ -114,7 +114,7 @@ def _detect_docker_pg_port() -> int | None:
 def _init_db():
     from emily_core.infrastructure.database import init_db
 
-    _HERE = Path(__file__).resolve().parent.parent.parent.parent.parent  # project root
+    _HERE = Path(__file__).resolve().parent.parent.parent.parent  # project root
     _CORE_DIR = _HERE / "emily-core"
     if str(_CORE_DIR) not in sys.path:
         sys.path.insert(0, str(_CORE_DIR))

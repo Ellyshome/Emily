@@ -115,6 +115,18 @@ class FileApplication:
                     summary += f" → {local_path}"
                 self._journal.append(name=user_name, summary=summary)
 
+            # ── 文件解析钩子（异步，不阻塞返回）──
+            if local_path and getattr(f, 'content_summary', None) is None:
+                from ..services.file_parser_service import FileParserService
+
+                async def _parse_and_update():
+                    parse_result = await FileParserService.parse_and_summarize(local_path, filename)
+                    if parse_result:
+                        self.file_service.update_summary(str(f.id), parse_result.summary)
+
+                import asyncio
+                asyncio.create_task(_parse_and_update())
+
             reply = FileService.format_reply(f)
             if local_path:
                 reply += f"\n文件已保存到本地存储。"

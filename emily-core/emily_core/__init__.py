@@ -561,6 +561,16 @@ class EmilyCore:
             self._scheduler_handler_registry.register(DataSyncHandler())
             self._scheduler_handler_registry.register(WebhookHandler())
 
+            # 每日文件解析盘点 Handler
+            from .scheduler.jobs.daily_file_parse import DailyFileParseHandler
+            _file_svc = self._file_app.file_service if self._file_app else None
+            self._scheduler_handler_registry.register(
+                DailyFileParseHandler(
+                    file_service=_file_svc,
+                    outbound_bus=self.outbound_bus,
+                )
+            )
+
             # 元认知 Handler
             from .scheduler.jobs.world_book_update import WorldBookUpdateHandler
             self._scheduler_handler_registry.register(

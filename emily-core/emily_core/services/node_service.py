@@ -4,7 +4,6 @@
   - 节点/成果/依赖的 CRUD 编排
   - 调用状态机引擎 + 写入 DB
   - 循环依赖检测前置（BFS）
-  - 父子进度重算（递归 ≤3 层）
   - 事件记录（状态流转、操作审计）
 
 基于需求文档 §4.1–§4.5。
@@ -27,13 +26,14 @@ from .node_commands import (
     UpdateDeliverableProgressCommand,
     AddDependencyCommand,
     RemoveDependencyCommand,
-    MountChildCommand,
-    UnmountChildCommand,
     AssignNodeCommand,
     SubmitNodeDeliverableCommand,
     ConfirmNodeDeliverableCommand,
     ReturnNodeDeliverableCommand,
     ResubmitNodeDeliverableCommand,
+    AddParticipantCompanyCommand,
+    RemoveParticipantCompanyCommand,
+    SetParticipantCompaniesCommand,
     NodeOperationResult,
     CycleCheckResult,
     StateTransitionResult,
@@ -50,15 +50,14 @@ from .node_state_machine import (
     calc_dependency_satisfaction,
     calc_deliverable_completion,
     determine_node_status,
-    calc_parent_progress,
     detect_cycle,
-    check_parent_child_cycle,
 )
 from ..repositories.node_repo import (
     ProjectNodeRepo,
     NodeDependencyRepo,
     NodeDeliverableRepo,
     NodeEventRepo,
+    NodeParticipantCompanyRepo,
     _parse_decimal,
     _to_decimal_str,
 )
@@ -75,10 +74,32 @@ logger = logging.getLogger("emily.node_service")
 
 BEIJING_TZ = timezone(timedelta(hours=8))
 
-# 子节点数量上限
-MAX_CHILDREN_PER_PARENT = 100
-# 最大递归深度
-MAX_ANCESTOR_RECALC_DEPTH = 3
+
+def _derive_related_company_from_participants(
+    participant_company_ids: list[str],
+    default: str = "建设单位",
+) -> str:
+    """从参与单位列表中推导关联单位（优先取管理单位，否则取首项，兜底 default）。"""
+    if not participant_company_ids:
+        return default
+    # 尝试找到管理单位（CompanyInfo.is_admin=True）
+    try:
+        from ..infrastructure.database.session import get_session
+        from ..infrastructure.database.models import CompanyInfo
+        with get_session() as session:
+            admin_company = (
+                session.query(CompanyInfo)
+                .filter(
+                    CompanyInfo.id.in_(participant_company_ids),
+                    CompanyInfo.is_admin == True,
+                )
+                .first()
+            )
+            if admin_company:
+                return admin_company.id
+    except Exception:
+        pass
+    return participant_company_ids[0]
 
 
 # ══════════════════════════════════════════════════════════════════════════════
@@ -94,6 +115,7 @@ class NodeService:
         dependency_repo: NodeDependencyRepo | None = None,
         deliverable_repo: NodeDeliverableRepo | None = None,
         event_repo: NodeEventRepo | None = None,
+        npc_repo: NodeParticipantCompanyRepo | None = None,
         user_repo=None,
         outbound_bus=None,
     ):
@@ -101,6 +123,7 @@ class NodeService:
         self._dep_repo = dependency_repo or NodeDependencyRepo()
         self._deliv_repo = deliverable_repo or NodeDeliverableRepo()
         self._event_repo = event_repo or NodeEventRepo()
+        self._npc_repo = npc_repo or NodeParticipantCompanyRepo()
         self._user_repo = user_repo
         self._outbound_bus = outbound_bus
 
@@ -146,17 +169,7 @@ class NodeService:
                     error_code="40002",
                 )
 
-        # ── TASK 父节点校验：TASK 不可作为父节点 ──
-        if cmd.parent_node_id:
-            parent = await asyncio.to_thread(self._node_repo.get_by_node_id, cmd.parent_node_id)
-            if parent and getattr(parent, 'node_type', '') == "TASK":
-                return NodeOperationResult(
-                    success=False, node_id=cmd.node_id,
-                    message="TASK 类型节点不允许挂载子节点",
-                    error_code="40003",
-                )
-
-        # 权限校验 + 管理员级别检测
+        # ── 权限校验 + 管理员级别检测 ──
         is_admin = False
         if cmd.creator_id and self._user_repo:
             user = await asyncio.to_thread(self._user_repo.get_user, cmd.creator_id)
@@ -175,10 +188,14 @@ class NodeService:
                             error_code="40301",
                         )
 
-        child_weight_str = _to_decimal_str(cmd.child_weight, precision=4)
-
         # 管理员直接以 CONDITIONS_NOT_MET 创建，普通用户以 NOT_ACTIVATED 创建
         initial_status = CONDITIONS_NOT_MET if is_admin else NOT_ACTIVATED
+
+        # ── 关联单位从参与单位中推导：优先取管理单位，否则取首项，兜底"建设单位" ──
+        participant_company_ids = getattr(cmd, 'participant_company_ids', None) or []
+        related_company_id = _derive_related_company_from_participants(
+            participant_company_ids, default="建设单位"
+        )
 
         node = await asyncio.to_thread(
             self._node_repo.create,
@@ -186,20 +203,21 @@ class NodeService:
             node_id=cmd.node_id,
             node_name=cmd.node_name,
             owner_dept_id=cmd.owner_dept_id,
-            related_company_id=cmd.related_company_id,
+            related_company_id=related_company_id,
             deadline=cmd.deadline,
             creator_id=cmd.creator_id,
-            parent_node_id=cmd.parent_node_id,
-            stage_id=cmd.stage_id,
-            child_weight=child_weight_str,
             remark=cmd.remark,
-            land_parcel_id=cmd.land_parcel_id,
-            startup_doc_id=cmd.startup_doc_id,
-            sort_order=cmd.sort_order,
             status=initial_status,
             responsible_user_id=responsible_user_id,
             node_type=getattr(cmd, 'node_type', 'WORK_PACKAGE'),
         )
+
+        # ── 写入参与单位（多对多关联）──
+        if participant_company_ids:
+            await asyncio.to_thread(
+                self._npc_repo.replace_all,
+                cmd.node_id, participant_company_ids, cmd.creator_id,
+            )
 
         now_iso = self._now_iso()
 
@@ -296,18 +314,8 @@ class NodeService:
             updates["deadline"] = cmd.deadline
         if cmd.owner_dept_id is not None:
             updates["owner_dept_id"] = cmd.owner_dept_id
-        if cmd.related_company_id is not None:
-            updates["related_company_id"] = cmd.related_company_id
         if cmd.remark is not None:
             updates["remark"] = cmd.remark
-        if cmd.stage_id is not None:
-            updates["stage_id"] = cmd.stage_id
-        if cmd.sort_order is not None:
-            updates["sort_order"] = cmd.sort_order
-        if cmd.land_parcel_id is not None:
-            updates["land_parcel_id"] = cmd.land_parcel_id
-        if cmd.startup_doc_id is not None:
-            updates["startup_doc_id"] = cmd.startup_doc_id
 
         if not updates:
             return NodeOperationResult(success=False, node_id=cmd.node_id, message="无更新字段")
@@ -338,19 +346,10 @@ class NodeService:
         )
 
     async def discard_node(self, cmd: DiscardNodeCommand) -> NodeOperationResult:
-        """废弃节点。已完成或未完成的子节点存在时阻止。"""
+        """废弃节点。"""
         node = await asyncio.to_thread(self._node_repo.get_by_node_id, cmd.node_id)
         if node is None:
             return NodeOperationResult(success=False, node_id=cmd.node_id, message="节点不存在")
-
-        # 检查子节点：已完成的不可废弃
-        children = await asyncio.to_thread(self._node_repo.find_by_parent, cmd.node_id)
-        for child in children:
-            if child.status == COMPLETED:
-                return NodeOperationResult(
-                    success=False, node_id=cmd.node_id,
-                    message=f"子节点「{child.node_id}」已完成，不可废弃父节点",
-                )
 
         await asyncio.to_thread(self._node_repo.discard, cmd.node_id)
 
@@ -621,15 +620,7 @@ class NodeService:
                 error_code="40001",
             )
 
-        # 3. 禁止子节点依赖父节点（任何层级）
-        if await self._is_ancestor_dependency(cmd.node_id, upstream_node_id):
-            return NodeOperationResult(
-                success=False, node_id=cmd.node_id,
-                message="子节点不能依赖父节点（任何层级）",
-                error_code="40001",
-            )
-
-        # 4. BFS 循环检测
+        # 3. BFS 循环检测
         cycle_result = await self._check_cycle(cmd.node_id, cmd.depends_on_deliverable_id)
         if cycle_result.has_cycle:
             return NodeOperationResult(
@@ -638,7 +629,7 @@ class NodeService:
                 error_code="40001",
             )
 
-        # 5. 检查重复
+        # 4. 检查重复
         if await asyncio.to_thread(
             self._dep_repo.exists, cmd.node_id, cmd.depends_on_deliverable_id,
         ):
@@ -647,7 +638,7 @@ class NodeService:
                 message="该依赖关系已存在",
             )
 
-        # 6. 创建依赖
+        # 5. 创建依赖
         weight_str = _to_decimal_str(cmd.weight, precision=4)
         await asyncio.to_thread(
             self._dep_repo.create,
@@ -679,7 +670,7 @@ class NodeService:
                 remark="人工阻塞条件",
             )
 
-        # 7. 依赖变更 → 重新计算状态
+        # 6. 依赖变更 → 重新计算状态
         await self._recalc_node_status(cmd.node_id)
 
         return NodeOperationResult(
@@ -719,100 +710,6 @@ class NodeService:
         await self._recalc_node_status(node_id)
 
         return NodeOperationResult(success=True, node_id=node_id, message="依赖已移除")
-
-    # ── 子节点管理 ──
-
-    async def mount_child(self, cmd: MountChildCommand) -> NodeOperationResult:
-        """挂载子节点。"""
-        # 1. 数量上限检查
-        count = await asyncio.to_thread(self._node_repo.count_children, cmd.parent_node_id)
-        if count >= MAX_CHILDREN_PER_PARENT:
-            return NodeOperationResult(
-                success=False, node_id=cmd.parent_node_id,
-                message=f"子节点数量已达上限（{MAX_CHILDREN_PER_PARENT}）",
-                error_code="40002",
-            )
-
-        # 2. 深度检查：追溯到根，最多2级（挂载后最多3级）
-        ancestors = await asyncio.to_thread(
-            self._node_repo.get_ancestor_chain, cmd.parent_node_id, max_depth=2,
-        )
-        if len(ancestors) >= 2:
-            return NodeOperationResult(
-                success=False, node_id=cmd.parent_node_id,
-                message="嵌套深度已达上限（3层），无法继续挂载子节点",
-            )
-
-        # 3. 循环检查：parent 不能是 child 的后代
-        all_parents = {cmd.parent_node_id}
-        for a in ancestors:
-            all_parents.add(a.node_id)
-        child_ancestors = await asyncio.to_thread(
-            self._node_repo.get_ancestor_chain, cmd.child_node_id, max_depth=3,
-        )
-        for ca in child_ancestors:
-            if ca.node_id in all_parents:
-                return NodeOperationResult(
-                    success=False, node_id=cmd.parent_node_id,
-                    message="不能将祖先节点挂载为子节点",
-                    error_code="40001",
-                )
-
-        # 4. 更新子节点
-        weight_str = _to_decimal_str(cmd.child_weight, precision=4)
-        await asyncio.to_thread(
-            self._node_repo.update_fields,
-            cmd.child_node_id,
-            parent_node_id=cmd.parent_node_id,
-            child_weight=weight_str,
-        )
-
-        self._record_event(
-            node_id=cmd.child_node_id,
-            event_type="child_node_mounted",
-            new_value=json.dumps({"parent_node_id": cmd.parent_node_id}),
-            operator_id=cmd.operator_id,
-            remark=f"挂载到父节点 {cmd.parent_node_id}",
-        )
-
-        # 更新父节点进度
-        await self._recalc_node_status(cmd.parent_node_id)
-
-        return NodeOperationResult(
-            success=True,
-            node_id=cmd.child_node_id,
-            message=f"子节点已挂载到 {cmd.parent_node_id}",
-        )
-
-    async def unmount_child(self, cmd: UnmountChildCommand) -> NodeOperationResult:
-        """移除子节点关联。"""
-        child = await asyncio.to_thread(self._node_repo.get_by_node_id, cmd.child_node_id)
-        if child is None or child.parent_node_id != cmd.parent_node_id:
-            return NodeOperationResult(
-                success=False, node_id=cmd.child_node_id,
-                message="父子关系不匹配",
-            )
-
-        await asyncio.to_thread(
-            self._node_repo.update_fields,
-            cmd.child_node_id,
-            parent_node_id="",
-            child_weight="1.0000",
-        )
-
-        self._record_event(
-            node_id=cmd.child_node_id,
-            event_type="child_node_unmounted",
-            old_value=json.dumps({"parent_node_id": cmd.parent_node_id}),
-            operator_id=cmd.operator_id,
-            remark=f"从父节点 {cmd.parent_node_id} 移除",
-        )
-
-        await self._recalc_node_status(cmd.parent_node_id)
-
-        return NodeOperationResult(
-            success=True, node_id=cmd.child_node_id, message="子节点已移除",
-        )
 
     # ── 责任人管理 ──
 
@@ -858,6 +755,42 @@ class NodeService:
         )
 
         return NodeOperationResult(success=True, node_id=cmd.node_id, message="责任人变更成功")
+
+    # ── 参与单位管理 ──
+
+    async def add_participant_company(self, cmd: AddParticipantCompanyCommand) -> NodeOperationResult:
+        """添加节点参与单位。"""
+        node = await asyncio.to_thread(self._node_repo.get_by_node_id, cmd.node_id)
+        if node is None:
+            return NodeOperationResult(success=False, node_id=cmd.node_id, message="节点不存在")
+
+        # 检查是否已存在（唯一约束在 DB 层兜底）
+        existing = await asyncio.to_thread(self._npc_repo.find_company_ids_by_node, cmd.node_id)
+        if cmd.company_id in existing:
+            return NodeOperationResult(success=False, node_id=cmd.node_id, message="该单位已是参与单位")
+
+        await asyncio.to_thread(self._npc_repo.add, cmd.node_id, cmd.company_id, cmd.operator_id)
+        return NodeOperationResult(success=True, node_id=cmd.node_id, message="参与单位添加成功")
+
+    async def remove_participant_company(self, cmd: RemoveParticipantCompanyCommand) -> NodeOperationResult:
+        """移除节点参与单位。"""
+        node = await asyncio.to_thread(self._node_repo.get_by_node_id, cmd.node_id)
+        if node is None:
+            return NodeOperationResult(success=False, node_id=cmd.node_id, message="节点不存在")
+
+        removed = await asyncio.to_thread(self._npc_repo.remove, cmd.node_id, cmd.company_id)
+        if not removed:
+            return NodeOperationResult(success=False, node_id=cmd.node_id, message="该单位不是参与单位")
+        return NodeOperationResult(success=True, node_id=cmd.node_id, message="参与单位移除成功")
+
+    async def set_participant_companies(self, cmd: SetParticipantCompaniesCommand) -> NodeOperationResult:
+        """全量设置节点参与单位。"""
+        node = await asyncio.to_thread(self._node_repo.get_by_node_id, cmd.node_id)
+        if node is None:
+            return NodeOperationResult(success=False, node_id=cmd.node_id, message="节点不存在")
+
+        await asyncio.to_thread(self._npc_repo.replace_all, cmd.node_id, cmd.company_ids, cmd.operator_id)
+        return NodeOperationResult(success=True, node_id=cmd.node_id, message=f"参与单位已更新（{len(cmd.company_ids)} 个）")
 
     # ── 成果提交确认工作流 ──
 
@@ -1027,38 +960,27 @@ class NodeService:
     # ── 查询方法 ──
 
     async def get_node_detail(self, node_id: str) -> dict | None:
-        """查询节点详情（含子节点、成果、依赖）。"""
+        """查询节点详情（含成果、依赖）。"""
         node = await asyncio.to_thread(self._node_repo.get_by_node_id, node_id)
         if node is None:
             return None
 
-        children = await asyncio.to_thread(self._node_repo.find_by_parent, node_id)
         delivs = await asyncio.to_thread(self._deliv_repo.find_by_node, node_id)
         deps = await asyncio.to_thread(self._dep_repo.find_by_node, node_id)
+        participant_company_ids = await asyncio.to_thread(self._npc_repo.find_company_ids_by_node, node_id)
 
         return {
             "node_id": node.node_id,
             "node_name": node.node_name,
             "project_id": node.project_id,
             "status": node.status,
-            "progress": _parse_decimal(node.progress),
             "deadline": node.deadline,
             "owner_dept_id": node.owner_dept_id,
-            "related_company_id": node.related_company_id,
-            "parent_node_id": node.parent_node_id,
-            "stage_id": node.stage_id,
+            "related_company_id": _derive_related_company_from_participants(participant_company_ids, default=node.related_company_id),
+            "participant_company_ids": participant_company_ids,
             "remark": node.remark,
             "is_discarded": node.is_discarded,
             "created_at": node.created_at,
-            "children": [
-                {
-                    "node_id": c.node_id,
-                    "node_name": c.node_name,
-                    "status": c.status,
-                    "progress": _parse_decimal(c.progress),
-                }
-                for c in children
-            ],
             "deliverables": [
                 {
                     "deliverable_id": d.deliverable_id,
@@ -1090,11 +1012,10 @@ class NodeService:
         """重新计算节点状态（文件上传/成果更新/依赖变更时触发）。
 
         流程：
-        1. 加载节点快照（含子节点、成果、依赖）
+        1. 加载节点快照（含成果、依赖）
         2. 构建 deliverable_file_status 映射
         3. 调用引擎 determine_node_status
         4. 如有变更，写入 DB + 记录事件
-        5. 递归更新祖先节点进度（最多 3 层）
         """
         snap = await self._build_snapshot(node_id)
         if snap is None:
@@ -1128,10 +1049,7 @@ class NodeService:
         )
 
         # 进度计算
-        if snap.children:
-            new_progress = calc_parent_progress(snap.children)
-        else:
-            new_progress = calc_deliverable_completion(snap.deliverables) * 100.0
+        new_progress = calc_deliverable_completion(snap.deliverables) * 100.0
 
         # 检查是否需要更新
         status_changed = (new_status != old_status)
@@ -1163,21 +1081,9 @@ class NodeService:
                     remark="节点已完成",
                 )
 
-        # 递归更新祖先（最多 3 层）
-        affected = []
-        current_id = node_id
-        for depth in range(MAX_ANCESTOR_RECALC_DEPTH):
-            current = await asyncio.to_thread(self._node_repo.get_by_node_id, current_id)
-            if current is None or not current.parent_node_id:
-                break
-            parent_id = current.parent_node_id
-            await self._recalc_parent_progress(parent_id)
-            affected.append(parent_id)
-            current_id = parent_id
-
         logger.info(
-            "Node %s recalc: status %s->%s, progress %.2f->%.2f, ancestors=%s",
-            node_id, old_status, new_status, old_progress, new_progress, affected,
+            "Node %s recalc: status %s->%s, progress %.2f->%.2f",
+            node_id, old_status, new_status, old_progress, new_progress,
         )
 
         return NodeOperationResult(
@@ -1186,34 +1092,7 @@ class NodeService:
             status=new_status,
             progress=new_progress,
             message=f"状态重算完成：{old_status} → {new_status}",
-            affected_downstream=affected,
         )
-
-    async def _recalc_parent_progress(self, parent_node_id: str) -> None:
-        """重算父节点进度（不递归，仅当前层）。"""
-        children = await asyncio.to_thread(self._node_repo.find_by_parent, parent_node_id)
-        if not children:
-            return
-
-        child_snapshots = [
-            ChildSnapshot(
-                node_id=c.node_id,
-                status=c.status,
-                progress=_parse_decimal(c.progress),
-                child_weight=_parse_decimal(c.child_weight),
-            )
-            for c in children
-        ]
-
-        new_progress = calc_parent_progress(child_snapshots)
-        new_status = determine_node_status([], [], {}, child_snapshots)
-
-        node = await asyncio.to_thread(self._node_repo.get_by_node_id, parent_node_id)
-        if node:
-            old_status = node.status
-            await asyncio.to_thread(self._node_repo.update_progress, parent_node_id, new_progress)
-            if new_status != old_status:
-                await asyncio.to_thread(self._node_repo.update_status, parent_node_id, new_status)
 
     async def _build_snapshot(self, node_id: str) -> NodeSnapshot | None:
         """构建节点快照（供引擎计算）。"""
@@ -1225,7 +1104,6 @@ class NodeService:
             node_id=node.node_id,
             status=node.status,
             progress=_parse_decimal(node.progress),
-            parent_node_id=node.parent_node_id,
         )
 
         # 加载依赖
@@ -1251,18 +1129,6 @@ class NodeService:
                 file_id=d.file_id,
             )
             for d in delivs
-        ]
-
-        # 加载子节点
-        children = await asyncio.to_thread(self._node_repo.find_by_parent, node_id)
-        snap.children = [
-            ChildSnapshot(
-                node_id=c.node_id,
-                status=c.status,
-                progress=_parse_decimal(c.progress),
-                child_weight=_parse_decimal(c.child_weight),
-            )
-            for c in children
         ]
 
         return snap
@@ -1314,11 +1180,3 @@ class NodeService:
             cycle_path=path,
             message=" → ".join(path) if has_cycle else "",
         )
-
-    async def _is_ancestor_dependency(self, node_id: str, upstream_node_id: str) -> bool:
-        """检查 upstream_node_id 是否是 node_id 的祖先（父子层级）。"""
-        ancestors = await asyncio.to_thread(self._node_repo.get_ancestor_chain, node_id, max_depth=3)
-        for a in ancestors:
-            if a.node_id == upstream_node_id:
-                return True
-        return False

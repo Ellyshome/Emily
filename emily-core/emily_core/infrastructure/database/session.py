@@ -78,6 +78,8 @@ def _ensure_columns(engine) -> list[dict]:
             ("attachment_of", "VARCHAR", "NULL"),
             ("rag_indexed", "BOOLEAN", "FALSE"),
             ("rag_collection", "VARCHAR(100)", "''"),
+            ("content_summary", "TEXT", "NULL"),
+            ("summary_generated_at", "VARCHAR", "NULL"),
         ],
         "tool_registry": [
             ("exposure_mode", "VARCHAR(20)", "'meta'"),

@@ -34,7 +34,6 @@ class NodeEvent:
     node_id: str
     event_type: str
     project_id: str = ""
-    stage_id: int = 0
     old_value: str = ""
     new_value: str = ""
     operator_id: str = ""
@@ -65,7 +64,6 @@ class SubscriptionFilter:
     node_id: str | None = None          # 特定节点（含子节点事件）
     event_types: list[str] | None = None  # 只订阅这些事件类型
     project_id: str | None = None       # 只订阅某项目
-    stage_id: int | None = None         # 只订阅某阶段
     owner_dept_id: str | None = None    # 只订阅某主责条线
 
 
@@ -142,8 +140,6 @@ class NodeEventBus:
         if filter_.event_types is not None and event.event_type not in filter_.event_types:
             return False
         if filter_.project_id is not None and event.project_id != filter_.project_id:
-            return False
-        if filter_.stage_id is not None and event.stage_id != filter_.stage_id:
             return False
         return True
 

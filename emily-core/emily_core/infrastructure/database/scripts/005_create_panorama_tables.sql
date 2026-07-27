@@ -16,29 +16,20 @@ CREATE TABLE IF NOT EXISTS project_nodes (
     owner_dept_id   VARCHAR(100) NOT NULL DEFAULT '项目总',
     related_company_id VARCHAR(100) NOT NULL DEFAULT '建设单位',
     deadline        VARCHAR(50) NOT NULL,
-    land_parcel_id  VARCHAR(100) DEFAULT '',
     remark          TEXT DEFAULT '',
-    parent_node_id  VARCHAR(100) DEFAULT '',
-    stage_id        INTEGER DEFAULT 0,
-    child_weight    VARCHAR(10) DEFAULT '1.0000',
-    startup_doc_id  VARCHAR(100) DEFAULT '',
     creator_id      VARCHAR(100) NOT NULL,
     created_at      VARCHAR(50) NOT NULL,
     approver_id     VARCHAR(100) DEFAULT '',
     approved_at     VARCHAR(50) DEFAULT '',
     completed_at    VARCHAR(50) DEFAULT '',
     is_discarded    BOOLEAN DEFAULT FALSE,
-    progress        VARCHAR(10) DEFAULT '0.00',
     status          VARCHAR(20) DEFAULT 'CONDITIONS_NOT_MET',
-    sort_order      INTEGER DEFAULT 0,
     updated_at      VARCHAR(50) NOT NULL
 );
 
 CREATE INDEX IF NOT EXISTS idx_nodes_project ON project_nodes(project_id);
 CREATE INDEX IF NOT EXISTS idx_nodes_status ON project_nodes(status);
-CREATE INDEX IF NOT EXISTS idx_nodes_stage ON project_nodes(stage_id);
 CREATE INDEX IF NOT EXISTS idx_nodes_owner ON project_nodes(owner_dept_id);
-CREATE INDEX IF NOT EXISTS idx_nodes_parent ON project_nodes(parent_node_id);
 
 -- 2. 前置依赖表
 CREATE TABLE IF NOT EXISTS node_dependencies (

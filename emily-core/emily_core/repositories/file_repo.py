@@ -178,6 +178,29 @@ class FileRepository:
             return f
 
     @staticmethod
+    def update_summary(file_id: str, summary: str) -> File | None:
+        """更新文件的 content_summary 和 summary_generated_at（幂等：已有值则跳过）。"""
+        from datetime import datetime, timezone
+        with get_session() as session:
+            f = session.query(File).filter(File.id == file_id).first()
+            if f is None or f.content_summary is not None:
+                return f
+            f.content_summary = summary
+            f.summary_generated_at = datetime.now(timezone.utc).isoformat()
+            session.commit()
+            logger.info("File %s summary updated", f.file_no)
+            return f
+
+    @staticmethod
+    def get_by_summary_null(limit: int = 50) -> list[File]:
+        """取出 content_summary 为空的文件，按创建时间升序。"""
+        with get_session() as session:
+            return session.query(File).filter(
+                File.content_summary.is_(None),
+                File.is_deleted == False,
+            ).order_by(File.created_at.asc()).limit(limit).all()
+
+    @staticmethod
     def query_attachments(master_file_id: str) -> list[File]:
         """查询主文件下的所有附件（不含主文件本身）。"""
         with get_session() as session:

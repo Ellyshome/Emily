@@ -29,9 +29,7 @@ logger = logging.getLogger("emily.repo.monitor")
 
 NODE_BUSINESS_FIELDS = [
     "project_id", "node_id", "node_name", "owner_dept_id",
-    "related_company_id", "deadline", "land_parcel_id", "remark",
-    "parent_node_id", "stage_id", "child_weight", "startup_doc_id",
-    "progress", "status",
+    "related_company_id", "deadline", "remark", "status",
 ]
 
 
@@ -62,7 +60,7 @@ class MonitorRepository:
             )
             if project_id:
                 q = q.filter(ProjectNode.project_id == project_id)
-            q = q.order_by(ProjectNode.sort_order, ProjectNode.node_id)
+            q = q.order_by(ProjectNode.created_at.desc())
             q = q.limit(limit).offset(offset)
             rows = q.all()
             result = []
@@ -70,12 +68,6 @@ class MonitorRepository:
                 item = {}
                 for field in NODE_BUSINESS_FIELDS:
                     val = getattr(row, field, None)
-                    # DECIMAL 字符串字段转 float 便于 JSON 序列化
-                    if field in ("child_weight", "progress") and val is not None:
-                        try:
-                            val = float(val)
-                        except (ValueError, TypeError):
-                            pass
                     item[field] = val
                 result.append(item)
             return result
@@ -104,11 +96,6 @@ class MonitorRepository:
             item = {}
             for field in NODE_BUSINESS_FIELDS:
                 val = getattr(row, field, None)
-                if field in ("child_weight", "progress") and val is not None:
-                    try:
-                        val = float(val)
-                    except (ValueError, TypeError):
-                        pass
                 item[field] = val
             return item
 

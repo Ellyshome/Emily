@@ -236,40 +236,31 @@ def init(config_data: dict | None = None, rag_provider=None) -> "EmilyCore":
     return core
 
 
-def _check_base_tools_readiness(rag_provider) -> dict:
+def _check_base_tools_readiness(rag_provider) -> list[dict]:
     """基座工具就绪检查：验证 query_data + knowledge_search 依赖是否可用（fail-open）。
 
     Returns:
-        dict: 检查结果，如 {"query_data": "ok (projects=5)", ...}
+        list[dict]: 如 [{"name": "数据查询", "status": "ok", "detail": "1 个项目"}, ...]
     """
-    checks = {}
+    checks = []
 
-    # 1. query_data — 依赖数据库连接
+    # 1. 数据查询 — 依赖数据库连接（查询事件/任务/项目/消息等业务数据）
     try:
         from .infrastructure.database.session import get_session
         from .infrastructure.database.models import Project
         with get_session() as session:
             count = session.query(Project).count()
-        checks["query_data"] = f"ok (projects={count})"
+        checks.append({"name": "数据查询", "status": "ok", "detail": f"{count} 个项目"})
     except Exception as e:
-        checks["query_data"] = f"degraded ({e})"
+        checks.append({"name": "数据查询", "status": "degraded", "detail": str(e)})
 
-    # 2. knowledge_search — 依赖 RAG Provider
+    # 2. 知识库检索 — 依赖 RAG Provider（语义检索领域知识）
     if rag_provider is not None:
-        checks["knowledge_search"] = "ok (rag connected)"
+        checks.append({"name": "知识库检索", "status": "ok", "detail": "RAG 已连接"})
     else:
-        checks["knowledge_search"] = "stub (kb disabled)"
+        checks.append({"name": "知识库检索", "status": "degraded", "detail": "未启用"})
 
-    # 3. 工具目录存在性
-    import importlib
-    for mod_name in ("query_tool", "knowledge_search_tool"):
-        try:
-            importlib.import_module(f".tools.{mod_name}", package="emily_core")
-            checks[f"tool:{mod_name}"] = "found"
-        except ImportError:
-            checks[f"tool:{mod_name}"] = "missing"
-
-    status_parts = [f"{k}={v}" for k, v in checks.items()]
+    status_parts = [f"{c['name']}={c['status']}" for c in checks]
     _logger.info("Base tools readiness: %s", "; ".join(status_parts))
     return checks
 
@@ -301,7 +292,7 @@ def _collect_system_snapshot() -> dict:
             if not Path(skill_dir).exists():
                 skill_dir = ""
             if not skill_dir:
-                dev_dir = str(Path(__file__).resolve().parents[3] / "emily-data" / "skills")
+                dev_dir = str(Path(__file__).resolve().parents[2] / "emily-data" / "skills")
                 if Path(dev_dir).exists():
                     skill_dir = dev_dir
             if skill_dir:
@@ -365,6 +356,207 @@ def _write_last_startup(started_at: datetime) -> None:
         _logger.debug("Failed to write last startup: %s", e)
 
 
+def build_startup_email_body(startup_report: dict) -> str:
+    """构建冷启动邮件正文（纯函数，不依赖 core/config，可供独立脚本复用）。
+
+    包含 7 节：依赖连通性 / 降级警告 / 系统快照 / 配置概要 / 基座工具 / 群聊覆盖 / 历史信息。
+    """
+    started_at = startup_report.get("started_at")
+    now_str = started_at.strftime("%Y-%m-%d %H:%M:%S") if started_at else "unknown"
+    hostname = startup_report.get("hostname", "unknown")
+    env = startup_report.get("env", "unspecified")
+    duration = startup_report.get("duration_s", 0)
+
+    lines: list[str] = []
+    lines.append("Emily 系统启动完成 ✓")
+    lines.append("──────────────────────────────")
+    lines.append(f"启动时间：{now_str} (北京时间)")
+    lines.append(f"主机：{hostname}")
+    lines.append(f"环境：{env}")
+    lines.append("启动耗时：{:.1f}s".format(duration))
+    lines.append("")
+
+    # 节 1：依赖连通性
+    try:
+        lines.append("═══ 依赖连通性 ═══")
+        db_ready = startup_report.get("db_ready", False)
+        db_tables = startup_report.get("db_tables", 0)
+        if db_ready:
+            lines.append(f"✓ PostgreSQL — emily-postgres:5432/emily ({db_tables} 表)")
+        else:
+            lines.append("✗ PostgreSQL — 连接失败")
+        smtp_ok = startup_report.get("smtp_configured", False)
+        lines.append(f"{'✓' if smtp_ok else '✗'} SMTP 邮箱 — {'已配置' if smtp_ok else '未配置'}")
+        llm_ok = startup_report.get("llm_configured", False)
+        llm_model = startup_report.get("llm_model", "unspecified")
+        lines.append(f"{'✓' if llm_ok else '✗'} LLM — {llm_model} ({'已配置' if llm_ok else '未配置'})")
+        rag_ok = startup_report.get("rag_enabled", False)
+        lines.append(f"{'✓' if rag_ok else '✗'} RAG — {'已启用' if rag_ok else '未启用'}")
+        lines.append("")
+    except Exception:
+        lines.append("(采集失败)")
+        lines.append("")
+
+    # 节 2：降级警告
+    try:
+        lines.append("═══ 降级警告 ═══")
+        degradations = startup_report.get("degradations", [])
+        if degradations:
+            for d in degradations:
+                lines.append(f"⚠ {d}")
+        else:
+            lines.append("无降级，全部依赖就绪")
+        lines.append("")
+    except Exception:
+        lines.append("(采集失败)")
+        lines.append("")
+
+    # 节 3：系统快照
+    try:
+        snapshot = _collect_system_snapshot()
+        lines.append("═══ 系统快照 ═══")
+        if snapshot:
+            users_active = snapshot.get("users_active", 0)
+            users_total = snapshot.get("users_total", 0)
+            admins = snapshot.get("admins", 0)
+            lines.append(f"用户：{users_active} 活跃 / {users_total} 总计 ({admins} 管理员)")
+
+            projects_active = snapshot.get("projects_active", 0)
+            projects_total = snapshot.get("projects_total", 0)
+            lines.append(f"项目：{projects_active} 活跃 / {projects_total} 总计")
+
+            events = snapshot.get("events", 0)
+            tasks = snapshot.get("tasks", 0)
+            nodes = snapshot.get("nodes", 0)
+            lines.append(f"业务：{events} 事件 / {tasks} 任务 / {nodes} 节点")
+
+            wb = snapshot.get("world_books", 0)
+            wb_act = snapshot.get("world_books_activated", 0)
+            lines.append(f"世界书：{wb} 份 / {wb_act} 已激活")
+
+            sops = snapshot.get("sops", 0)
+            lines.append(f"SOP：{sops} 个")
+        else:
+            lines.append("(快照不可用)")
+        lines.append("")
+    except Exception:
+        lines.append("(采集失败)")
+        lines.append("")
+
+    # 节 4：配置概要
+    try:
+        lines.append("═══ 配置概要 ═══")
+        cs = startup_report.get("config_summary", {})
+        lines.append(f"接管模式：{cs.get('takeover_mode', 'unknown')}")
+        lines.append(f"机器人名称：{cs.get('bot_name', 'unknown')}")
+        lines.append(f"LLM 模型：{startup_report.get('llm_model', 'unspecified')}")
+        lines.append("")
+    except Exception:
+        lines.append("(采集失败)")
+        lines.append("")
+
+    # 节 5：基座工具就绪
+    try:
+        lines.append("═══ 基座工具就绪 ═══")
+        base_tools = startup_report.get("base_tools", [])
+        if base_tools:
+            for t in base_tools:
+                name = t.get("name", "?")
+                status = t.get("status", "?")
+                detail = t.get("detail", "")
+                icon = "✓" if status == "ok" else "✗"
+                lines.append(f"{icon} {name}：{detail}")
+        else:
+            lines.append("(无)")
+        lines.append("")
+    except Exception:
+        lines.append("(采集失败)")
+        lines.append("")
+
+    # 节 5.5：群聊覆盖
+    try:
+        snapshot = _collect_system_snapshot()
+        groups = snapshot.get("groups", [])
+        groups_total = snapshot.get("groups_total", 0)
+        lines.append(f"═══ 群聊覆盖 ({groups_total} 个群) ═══")
+        if groups:
+            for g in groups[:30]:
+                lines.append(f"  - {g['group_name']} ({g['platform']}, 最近活跃: {g.get('last_active', '?')})")
+            if len(groups) > 30:
+                lines.append(f"  ... 等 {len(groups)} 个群")
+        else:
+            lines.append("(无群数据，等待插件同步)")
+        lines.append("")
+    except Exception:
+        lines.append("(采集失败)")
+        lines.append("")
+
+    # 节 6：启动副作用（数据库迁移）
+    try:
+        lines.append("═══ 启动副作用 ═══")
+        migrations = startup_report.get("migrations", [])
+        if migrations:
+            migration_lines = []
+            for m in migrations:
+                migration_lines.append(f"{m['table']}.{m['column']}")
+            lines.append("数据库迁移：新增列 " + ", ".join(migration_lines))
+        else:
+            lines.append("数据库迁移：无")
+        lines.append("")
+    except Exception:
+        lines.append("(采集失败)")
+        lines.append("")
+
+    # 节 7：历史信息
+    try:
+        lines.append("═══ 历史信息 ═══")
+        last_startup_str, downtime_str = _read_last_startup()
+        if last_startup_str:
+            lines.append(f"上次启动：{last_startup_str}")
+            if downtime_str:
+                lines.append(f"停机时长：约 {downtime_str}")
+            else:
+                try:
+                    last_dt = datetime.fromisoformat(last_startup_str)
+                    if started_at:
+                        delta = started_at - last_dt
+                        hours = delta.total_seconds() // 3600
+                        minutes = (delta.total_seconds() % 3600) // 60
+                        if hours > 0:
+                            lines.append(f"停机时长：约 {int(hours)}h {int(minutes)}m")
+                        else:
+                            lines.append(f"停机时长：约 {int(minutes)}m")
+                except Exception:
+                    pass
+        else:
+            lines.append("首次启动")
+        lines.append("")
+    except Exception:
+        lines.append("(采集失败)")
+        lines.append("")
+
+    # 节 8：项目运转
+    try:
+        active_projects = startup_report.get("active_projects", [])
+        if active_projects:
+            lines.append(f"═══ 项目运转 ({len(active_projects)} 个活跃项目) ═══")
+            for p in active_projects:
+                lines.append(f"  · {p['project_name']}")
+                lines.append(f"    负责人：{p.get('project_leader', '?')}")
+                admins = p.get('super_admins', [])
+                lines.append(f"    超级管理员：{', '.join(admins) if admins else '(无)'}")
+        else:
+            lines.append("═══ 项目运转 ═══")
+            lines.append("无活跃项目")
+        lines.append("")
+    except Exception:
+        lines.append("(采集失败)")
+        lines.append("")
+
+    lines.append("— Emily Core")
+    return "\n".join(lines)
+
+
 async def _send_startup_email(core: "EmilyCore", config: Config, startup_report: dict) -> None:
     """冷启动邮件通知：向 EMILY_EMAIL_IDKEY 邮箱发送启动完成邮件（fail-open）。"""
     email_idkey = os.environ.get("EMILY_EMAIL_IDKEY", "")
@@ -391,182 +583,7 @@ async def _send_startup_email(core: "EmilyCore", config: Config, startup_report:
         smtp = SMTPEmailProvider()
         email_service = EmailService(smtp=smtp, imap=None)
 
-        started_at = startup_report.get("started_at")
-        now_str = started_at.strftime("%Y-%m-%d %H:%M:%S") if started_at else "unknown"
-        hostname = startup_report.get("hostname", "unknown")
-        env = startup_report.get("env", "unspecified")
-        duration = startup_report.get("duration_s", 0)
-
-        # ── 构建邮件正文（每节独立 try/except） ──
-        lines = []
-        lines.append("Emily 系统启动完成 ✓")
-        lines.append("──────────────────────────────")
-        lines.append(f"启动时间：{now_str} (北京时间)")
-        lines.append(f"主机：{hostname}")
-        lines.append(f"环境：{env}")
-        lines.append("启动耗时：{:.1f}s".format(duration))
-        lines.append("")
-
-        # 节 1：依赖连通性
-        try:
-            lines.append("═══ 依赖连通性 ═══")
-            db_ready = startup_report.get("db_ready", False)
-            db_tables = startup_report.get("db_tables", 0)
-            if db_ready:
-                lines.append(f"✓ PostgreSQL — emily-postgres:5432/emily ({db_tables} 表)")
-            else:
-                lines.append("✗ PostgreSQL — 连接失败")
-            smtp_ok = startup_report.get("smtp_configured", False)
-            lines.append(f"{'✓' if smtp_ok else '✗'} SMTP 邮箱 — {'已配置' if smtp_ok else '未配置'}")
-            llm_ok = startup_report.get("llm_configured", False)
-            llm_model = startup_report.get("llm_model", "unspecified")
-            lines.append(f"{'✓' if llm_ok else '✗'} LLM — {llm_model} ({'已配置' if llm_ok else '未配置'})")
-            rag_ok = startup_report.get("rag_enabled", False)
-            lines.append(f"{'✓' if rag_ok else '✗'} RAG — {'已启用' if rag_ok else '未启用'}")
-            lines.append("")
-        except Exception:
-            lines.append("(采集失败)")
-            lines.append("")
-
-        # 节 2：降级警告
-        try:
-            lines.append("═══ 降级警告 ═══")
-            degradations = startup_report.get("degradations", [])
-            if degradations:
-                for d in degradations:
-                    lines.append(f"⚠ {d}")
-            else:
-                lines.append("无降级，全部依赖就绪")
-            lines.append("")
-        except Exception:
-            lines.append("(采集失败)")
-            lines.append("")
-
-        # 节 3：系统快照
-        try:
-            snapshot = _collect_system_snapshot()
-            lines.append("═══ 系统快照 ═══")
-            if snapshot:
-                users_active = snapshot.get("users_active", 0)
-                users_total = snapshot.get("users_total", 0)
-                admins = snapshot.get("admins", 0)
-                lines.append(f"用户：{users_active} 活跃 / {users_total} 总计 ({admins} 管理员)")
-
-                projects_active = snapshot.get("projects_active", 0)
-                projects_total = snapshot.get("projects_total", 0)
-                lines.append(f"项目：{projects_active} 活跃 / {projects_total} 总计")
-
-                events = snapshot.get("events", 0)
-                tasks = snapshot.get("tasks", 0)
-                nodes = snapshot.get("nodes", 0)
-                lines.append(f"业务：{events} 事件 / {tasks} 任务 / {nodes} 节点")
-
-                wb = snapshot.get("world_books", 0)
-                wb_act = snapshot.get("world_books_activated", 0)
-                lines.append(f"世界书：{wb} 份 / {wb_act} 已激活")
-
-                sops = snapshot.get("sops", 0)
-                lines.append(f"SOP：{sops} 个")
-            else:
-                lines.append("(快照不可用)")
-            lines.append("")
-        except Exception:
-            lines.append("(采集失败)")
-            lines.append("")
-
-        # 节 4：配置概要
-        try:
-            lines.append("═══ 配置概要 ═══")
-            cs = startup_report.get("config_summary", {})
-            lines.append(f"接管模式：{cs.get('takeover_mode', 'unknown')}")
-            lines.append(f"机器人名称：{cs.get('bot_name', 'unknown')}")
-            lines.append(f"LLM 模型：{startup_report.get('llm_model', 'unspecified')}")
-            lines.append(f"知识库：{'on' if cs.get('kb_enabled') else 'off'}")
-            lines.append("")
-        except Exception:
-            lines.append("(采集失败)")
-            lines.append("")
-
-        # 节 5：基座工具就绪
-        try:
-            lines.append("═══ 基座工具就绪 ═══")
-            base_tools = startup_report.get("base_tools", {})
-            if base_tools:
-                for k, v in base_tools.items():
-                    lines.append(f"{k}: {v}")
-            else:
-                lines.append("(无)")
-            lines.append("")
-        except Exception:
-            lines.append("(采集失败)")
-            lines.append("")
-
-        # 节 5.5：群聊覆盖
-        try:
-            snapshot = _collect_system_snapshot()
-            groups = snapshot.get("groups", [])
-            groups_total = snapshot.get("groups_total", 0)
-            lines.append(f"═══ 群聊覆盖 ({groups_total} 个群) ═══")
-            if groups:
-                for g in groups[:30]:
-                    lines.append(f"  - {g['group_name']} ({g['platform']}, 最近活跃: {g.get('last_active', '?')})")
-                if len(groups) > 30:
-                    lines.append(f"  ... 等 {len(groups)} 个群")
-            else:
-                lines.append("(无群数据，等待插件同步)")
-            lines.append("")
-        except Exception:
-            lines.append("(采集失败)")
-            lines.append("")
-
-        # 节 6：启动副作用（数据库迁移）
-        try:
-            lines.append("═══ 启动副作用 ═══")
-            migrations = startup_report.get("migrations", [])
-            if migrations:
-                migration_lines = []
-                for m in migrations:
-                    migration_lines.append(f"{m['table']}.{m['column']}")
-                lines.append("数据库迁移：新增列 " + ", ".join(migration_lines))
-            else:
-                lines.append("数据库迁移：无")
-            lines.append("")
-        except Exception:
-            lines.append("(采集失败)")
-            lines.append("")
-
-        # 节 7：历史信息
-        try:
-            lines.append("═══ 历史信息 ═══")
-            last_startup_str, downtime_str = _read_last_startup()
-            if last_startup_str:
-                lines.append(f"上次启动：{last_startup_str}")
-                if downtime_str:
-                    lines.append(f"停机时长：约 {downtime_str}")
-                else:
-                    # 用本次启动时间减去上次时间算停机时长
-                    try:
-                        last_dt = datetime.fromisoformat(last_startup_str)
-                        if started_at:
-                            delta = started_at - last_dt
-                            hours = delta.total_seconds() // 3600
-                            minutes = (delta.total_seconds() % 3600) // 60
-                            if hours > 0:
-                                lines.append(f"停机时长：约 {int(hours)}h {int(minutes)}m")
-                            else:
-                                lines.append(f"停机时长：约 {int(minutes)}m")
-                    except Exception:
-                        pass
-            else:
-                lines.append("首次启动")
-            lines.append("")
-        except Exception:
-            lines.append("(采集失败)")
-            lines.append("")
-
-        lines.append("— Emily Core")
-
-        body = "\n".join(lines)
+        body = build_startup_email_body(startup_report)
         subject = "[Emily] 系统启动完成"
 
         result = await email_service.send(
@@ -580,7 +597,7 @@ async def _send_startup_email(core: "EmilyCore", config: Config, startup_report:
         else:
             _logger.warning("Startup email failed: %s", result.error)
 
-        # 写入本次启动时间（无论邮件成功与否）
+        started_at = startup_report.get("started_at")
         if started_at:
             _write_last_startup(started_at)
 

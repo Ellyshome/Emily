@@ -70,7 +70,7 @@ async def batch_update_nodes(
         updates: 更新列表，每项含：
             - node_id: 节点编号（必填）
             - 可选字段: node_name, deadline, owner_dept_id, related_company_id,
-                        remark, stage_id, sort_order, land_parcel_id, startup_doc_id
+                        remark
         operator_id: 操作人 UUID
         dry_run: 只校验不写入
 
@@ -115,10 +115,6 @@ async def batch_update_nodes(
             owner_dept_id=u.get("owner_dept_id"),
             related_company_id=u.get("related_company_id"),
             remark=u.get("remark"),
-            stage_id=u.get("stage_id"),
-            sort_order=u.get("sort_order"),
-            land_parcel_id=u.get("land_parcel_id"),
-            startup_doc_id=u.get("startup_doc_id"),
         )
 
         try:
@@ -128,7 +124,6 @@ async def batch_update_nodes(
                 "success": r.success,
                 "phase": "update_node",
                 "status": r.status,
-                "progress": r.progress,
                 "message": r.message,
             })
         except Exception as e:
@@ -356,7 +351,6 @@ async def batch_update_progress(
                 "success": r.success,
                 "phase": "update_progress",
                 "status": r.status,
-                "progress": r.progress,
                 "message": r.message,
                 "affected_ancestors": r.affected_downstream,
             })
@@ -379,8 +373,6 @@ async def batch_update_progress(
 _VALID_ACTIONS = frozenset({
     "add_shared_file",
     "remove_shared_file",
-    "set_startup_doc",
-    "clear_startup_doc",
     "link_deliverable_file",
     "unlink_deliverable_file",
 })
@@ -389,7 +381,6 @@ _VALID_ACTIONS = frozenset({
 _FILE_REQUIRED_ACTIONS = frozenset({
     "add_shared_file",
     "remove_shared_file",
-    "set_startup_doc",
     "link_deliverable_file",
 })
 
@@ -410,11 +401,9 @@ async def batch_link_files(
 
     每项 link 含：
       - node_id: 节点编号（必填）
-      - action: 操作类型，6 种之一（必填）
+      - action: 操作类型，4 种之一（必填）
         - add_shared_file:       增加共享文件（node_accessible_files）
         - remove_shared_file:    移除共享文件
-        - set_startup_doc:       设置条件文件（project_nodes.startup_doc_id）
-        - clear_startup_doc:     清除条件文件
         - link_deliverable_file: 关联成果文件（node_deliverables.file_id）
         - unlink_deliverable_file: 取消成果文件关联
       - file_no: 文件编号（与 file_id 二选一，多数 action 必填）
@@ -560,46 +549,6 @@ async def batch_link_files(
                         "success": True,
                         "phase": action,
                         "message": f"已移除共享文件 (file_id={file_id})",
-                    })
-
-            elif action == "set_startup_doc":
-                node = await asyncio.to_thread(ProjectNodeRepo.get_by_node_id, node_id)
-                if node is None:
-                    results.append({
-                        "node_id": node_id,
-                        "success": False,
-                        "phase": action,
-                        "message": f"节点「{node_id}」不存在",
-                    })
-                else:
-                    await asyncio.to_thread(
-                        ProjectNodeRepo.update_fields, node_id, startup_doc_id=file_id,
-                    )
-                    results.append({
-                        "node_id": node_id,
-                        "success": True,
-                        "phase": action,
-                        "message": f"已设置条件文件 (startup_doc_id={file_id})",
-                    })
-
-            elif action == "clear_startup_doc":
-                node = await asyncio.to_thread(ProjectNodeRepo.get_by_node_id, node_id)
-                if node is None:
-                    results.append({
-                        "node_id": node_id,
-                        "success": False,
-                        "phase": action,
-                        "message": f"节点「{node_id}」不存在",
-                    })
-                else:
-                    await asyncio.to_thread(
-                        ProjectNodeRepo.update_fields, node_id, startup_doc_id="",
-                    )
-                    results.append({
-                        "node_id": node_id,
-                        "success": True,
-                        "phase": action,
-                        "message": "已清除条件文件",
                     })
 
             elif action == "link_deliverable_file":

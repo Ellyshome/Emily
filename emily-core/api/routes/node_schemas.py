@@ -33,16 +33,10 @@ class CreateNodeRequest(BaseModel):
     node_id: str = Field(..., description="节点编号（业务主键），例：SG-JG-01-2026")
     node_name: str = Field(..., description="节点名称")
     owner_dept_id: str = Field(default="项目总", description="主责条线")
-    related_company_id: str = Field(default="建设单位", description="关联单位")
+    participant_company_ids: list[str] = Field(default_factory=list, description="参与单位ID列表（至少一项；首项自动成为关联单位）")
     deadline: str = Field(..., description="截止时间（ISO8601）")
-    parent_node_id: str = Field(default="", description="父节点ID")
-    stage_id: int = Field(default=0, description="所属阶段ID")
-    child_weight: float = Field(default=1.0, description="子节点权重")
     remark: str = Field(default="", description="备注")
-    land_parcel_id: str = Field(default="", description="关联地块ID")
-    sort_order: int = Field(default=0, description="排序序号")
     creator_id: str = Field(default="", description="创建人ID")
-    startup_doc_id: str = Field(default="", description="启动文档ID")
     responsible_user_id: str = Field(default="", description="责任人ID（为空时取creator_id）")
     node_type: str = Field(default="WORK_PACKAGE", description="节点类型：MILESTONE / WORK_PACKAGE / TASK")
 
@@ -51,12 +45,7 @@ class UpdateNodeRequest(BaseModel):
     node_name: str | None = Field(default=None, description="节点名称")
     deadline: str | None = Field(default=None, description="截止时间")
     owner_dept_id: str | None = Field(default=None, description="主责条线")
-    related_company_id: str | None = Field(default=None, description="关联单位")
     remark: str | None = Field(default=None, description="备注")
-    stage_id: int | None = Field(default=None, description="阶段ID")
-    sort_order: int | None = Field(default=None, description="排序序号")
-    land_parcel_id: str | None = Field(default=None, description="地块ID")
-    startup_doc_id: str | None = Field(default=None, description="启动文档ID")
     operator_id: str = Field(default="", description="操作人ID")
 
 
@@ -105,7 +94,6 @@ class AddDependencyRequest(BaseModel):
 
 class MountChildRequest(BaseModel):
     child_node_id: str = Field(..., description="子节点编号")
-    child_weight: float = Field(default=1.0, description="子节点权重")
     operator_id: str = Field(default="", description="操作人ID")
 
 
@@ -149,3 +137,22 @@ class MyTasksRequest(BaseModel):
     submission_status: str = Field(default="", description="提交状态过滤")
     page: int = Field(default=1, description="页码")
     page_size: int = Field(default=20, description="每页数量")
+
+
+# ══════════════════════════════════════════════════════════════════════════════
+# 参与单位管理
+# ══════════════════════════════════════════════════════════════════════════════
+
+class AddParticipantCompanyRequest(BaseModel):
+    company_id: str = Field(..., description="参与单位ID（company_info.id）")
+    operator_id: str = Field(default="", description="操作人ID")
+
+
+class RemoveParticipantCompanyRequest(BaseModel):
+    company_id: str = Field(..., description="参与单位ID（company_info.id）")
+    operator_id: str = Field(default="", description="操作人ID")
+
+
+class SetParticipantCompaniesRequest(BaseModel):
+    company_ids: list[str] = Field(default_factory=list, description="参与单位ID列表（全量替换）")
+    operator_id: str = Field(default="", description="操作人ID")

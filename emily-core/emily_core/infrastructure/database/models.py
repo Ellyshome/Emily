@@ -418,6 +418,10 @@ class File(Base):
     rag_indexed = Column(Boolean, default=False, comment="是否已入 RAG 知识库")
     rag_collection = Column(String(100), default="", comment="RAG 集合名：general_reference/project_<id>")
 
+    # ── 文件自动解析字段 ──
+    content_summary = Column(Text, nullable=True, comment="文件内容摘要（LLM自动生成）")
+    summary_generated_at = Column(String, nullable=True, comment="摘要生成时间")
+
 
 # ══════════════════════════════════════════════════════════════════════════════
 # 新增表（对齐需求文档 清单-数据库表.md）
@@ -1054,7 +1058,6 @@ class ProjectNode(Base):
     """节点主表 —— 需求文档 §3.2 project_nodes。
 
     三态状态机：CONDITIONS_NOT_MET / IN_PROGRESS / COMPLETED。
-    支持父子层级（parent_node_id 自引用），嵌套深度上限 3 层。
     多项目隔离：project_id 为必填。
     """
     __tablename__ = "project_nodes"
@@ -1067,24 +1070,17 @@ class ProjectNode(Base):
     related_company_id = Column(String(100), nullable=False, default="建设单位", comment="关联单位（FK→company_info.id）")
     deadline = Column(String(50), nullable=False, comment="截止时间（ISO8601）")
 
-    # ── 选填业务字段（6个）──
-    land_parcel_id = Column(String(100), default="", comment="关联地块ID")
+    # ── 选填业务字段（1个）──
     remark = Column(Text, default="", comment="备注")
-    parent_node_id = Column(String(100), default="", comment="父节点ID（FK→project_nodes.node_id）")
-    stage_id = Column(Integer, default=0, comment="所属阶段ID（对齐 projects.lifecycle_stage）")
-    child_weight = Column(String, default="1.0000", comment="作为子节点时在父节点中的权重（DECIMAL(5,4)，存为字符串避免精度问题）")
-    startup_doc_id = Column(String(100), default="", comment="启动文档记录ID（FK→files.id）")
 
-    # ── 系统字段（10个）──
+    # ── 系统字段（8个）──
     creator_id = Column(String(100), nullable=False, comment="录入人ID")
     created_at = Column(String(50), nullable=False, default=_utc_now, comment="录入时间（ISO8601）")
     approver_id = Column(String(100), default="", comment="批准人ID")
     approved_at = Column(String(50), default="", comment="批准时间（ISO8601）")
     completed_at = Column(String(50), default="", comment="完成时间（ISO8601）")
     is_discarded = Column(Boolean, default=False, comment="是否被废弃")
-    progress = Column(String, default="0.00", comment="整体进度（百分比 0.00-100.00，存为字符串避免精度问题）")
     status = Column(String(20), default="NOT_ACTIVATED", comment="当前状态：NOT_ACTIVATED / CONDITIONS_NOT_MET / IN_PROGRESS / COMPLETED")
-    sort_order = Column(Integer, default=0, comment="排序序号")
     responsible_user_id = Column(String(100), nullable=False, default="", comment="责任人（FK→users.id，创建时默认取 creator_id）")
     node_type = Column(String(20), nullable=False, default="WORK_PACKAGE", comment="节点类型：MILESTONE / WORK_PACKAGE / TASK")
     visibility_mode = Column(
@@ -1099,9 +1095,7 @@ class ProjectNode(Base):
     __table_args__ = (
         Index("idx_nodes_project", "project_id"),
         Index("idx_nodes_status", "status"),
-        Index("idx_nodes_stage", "stage_id"),
         Index("idx_nodes_owner", "owner_dept_id"),
-        Index("idx_nodes_parent", "parent_node_id"),
     )
 
 
@@ -1206,6 +1200,28 @@ class NodeParticipant(Base):
         UniqueConstraint("node_id", "user_id", name="uq_np_node_user"),
         Index("idx_np_node", "node_id"),
         Index("idx_np_user", "user_id"),
+    )
+
+
+class NodeParticipantCompany(Base):
+    """节点参与单位关联表 —— 需求文档 §3.5c node_participant_companies。
+
+    每个节点可有多个参与单位（建设单位/设计单位/总包/分包/监理等）。
+    M:N 关系，替代单一 related_company_id 无法覆盖的多参建单位场景。
+    """
+    __tablename__ = "node_participant_companies"
+
+    node_id = Column(String(100), nullable=False, comment="节点ID（FK→project_nodes.node_id）")
+    company_id = Column(String(100), nullable=False, comment="参与单位ID（FK→company_info.id）")
+    added_by = Column(String(100), nullable=False, default="", comment="添加人ID")
+    added_at = Column(String(50), nullable=False, default=_utc_now, comment="添加时间（ISO8601）")
+
+    id = Column(String, primary_key=True, default=_new_uuid)
+
+    __table_args__ = (
+        UniqueConstraint("node_id", "company_id", name="uq_npc_node_company"),
+        Index("idx_npc_node", "node_id"),
+        Index("idx_npc_company", "company_id"),
     )
 
 
