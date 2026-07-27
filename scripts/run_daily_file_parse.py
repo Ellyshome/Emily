@@ -4,9 +4,10 @@
 供开发者手动触发批量文件解析，或观察解析效果。
 
 用法：
-    uv run python scripts/run_daily_file_parse.py --dry-run       # 不写库，只输出将处理哪些文件
-    uv run python scripts/run_daily_file_parse.py                 # 正式执行批量解析 + 写入摘要
-    uv run python scripts/run_daily_file_parse.py --batch-limit 5 # 控制每次处理数量
+    uv run python scripts/run_daily_file_parse.py --list              # 只列出待解析文件，不执行解析
+    uv run python scripts/run_daily_file_parse.py --dry-run           # 不写库，只输出将处理哪些文件
+    uv run python scripts/run_daily_file_parse.py                     # 正式执行批量解析 + 写入摘要
+    uv run python scripts/run_daily_file_parse.py --batch-limit 5     # 控制每次处理数量
 """
 
 from __future__ import annotations
@@ -76,6 +77,46 @@ def _init_db(db_url: str = "") -> None:
             )
 
 
+async def list_pending_files(*, db_url: str = "", limit: int = 0) -> str:
+    """列出所有待解析文件（content_summary IS NULL），不执行解析。
+
+    Returns:
+        格式化的文件列表字符串。
+    """
+    _init_db(db_url)
+
+    from emily_core.services.file_service import FileService
+
+    file_service = FileService()
+    pending = file_service.get_by_summary_null(limit=limit if limit > 0 else 10000)
+
+    if not pending:
+        print("没有待解析文件。")
+        return "没有待解析文件。"
+
+    print(f"\n待解析文件列表（共 {len(pending)} 个）：\n")
+    print(f"{'序号':<5} {'文件编号':<22} {'文件名':<35} {'分类':<18} {'大小':<10} {'上传时间'}")
+    print("-" * 110)
+
+    for idx, f in enumerate(pending, 1):
+        file_no = getattr(f, 'file_no', '') or '?'
+        filename = (getattr(f, 'filename', '') or '?')[:34]
+        category = (getattr(f, 'file_category', '') or '?')[:17]
+        size_bytes = getattr(f, 'file_size', 0) or 0
+        if size_bytes >= 1024 * 1024:
+            size_str = f"{size_bytes / 1024 / 1024:.1f} MB"
+        elif size_bytes >= 1024:
+            size_str = f"{size_bytes / 1024:.1f} KB"
+        else:
+            size_str = f"{size_bytes} B"
+        created_at = str(getattr(f, 'created_at', '') or '?')[:19]
+
+        print(f"{idx:<5} {file_no:<22} {filename:<35} {category:<18} {size_str:<10} {created_at}")
+
+    print("")
+    return f"共 {len(pending)} 个待解析文件"
+
+
 async def run_daily_file_parse(*, db_url: str = "", batch_limit: int = 50, dry_run: bool = False) -> str:
     """执行每日文件解析盘点。
 
@@ -105,7 +146,13 @@ def main():
     parser.add_argument("--db-url", default="", help="数据库连接串（可选，优先级高于 .env）")
     parser.add_argument("--batch-limit", type=int, default=50, help="每次处理文件数量上限（默认 50）")
     parser.add_argument("--dry-run", action="store_true", help="不写库，仅输出将处理哪些文件")
+    parser.add_argument("--list", action="store_true", help="只列出待解析文件，不执行解析")
+    parser.add_argument("--list-limit", type=int, default=0, help="--list 时最多显示条数（0=全部）")
     args = parser.parse_args()
+
+    if args.list:
+        asyncio.run(list_pending_files(db_url=args.db_url, limit=args.list_limit))
+        return
 
     summary = asyncio.run(run_daily_file_parse(
         db_url=args.db_url,
