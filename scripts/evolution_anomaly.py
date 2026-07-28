@@ -1,14 +1,12 @@
 """evolution_anomaly.py — 硬规则异常检测脚本。
 
-8 条硬规则异常检测，纯逻辑无 LLM 依赖。
-支持多天复盘：部分"次/天"类阈值按天数均摊。
-可独立运行，也可从 evolution_metrics.py 的输出检测。
+基于快照（snapshot）数据做硬规则检测，纯逻辑无 LLM。
+当前规则聚焦于快照中实际有数据的维度。
 
 用法：
-    uv run python scripts/evolution_anomaly.py --date 2026-07-09
-    uv run python scripts/evolution_anomaly.py --date 2026-07-09 --days 7
-    uv run python scripts/evolution_anomaly.py --preview
-    uv run python scripts/evolution_anomaly.py --metrics-file metrics.json
+    uv run python scripts/evolution_anomaly.py --date 2026-07-26
+    uv run python scripts/evolution_anomaly.py --snapshot-file snapshot.json
+    uv run python scripts/evolution_anomaly.py --date 2026-07-26 --json
 """
 
 from __future__ import annotations
@@ -33,133 +31,118 @@ logging.basicConfig(
 )
 logger = logging.getLogger("evolution_anomaly")
 
+# ══════════════════════════════════════════════════════════════════════════════
+# 异常阈值配置
+# ══════════════════════════════════════════════════════════════════════════════
+
+THRESHOLDS = {
+    "node_overdue": 1,            # 存在 >=1 个逾期节点
+    "system_error_high": 20,      # 系统报错 > 20 条
+    "system_error_warn": 5,       # 系统报错 > 5 条
+    "session_anomaly_high": 10,   # Session 异常 > 10 处
+    "session_anomaly_warn": 3,    # Session 异常 > 3 处
+    "no_chat_activity": 0,        # 目标日期无任何聊天记录
+}
 
 # ══════════════════════════════════════════════════════════════════════════════
 # 核心函数（可 import）
 # ══════════════════════════════════════════════════════════════════════════════
 
-# 异常阈值配置
-THRESHOLDS = {
-    "high_fallback": 0.30,           # Fallback 率 > 30%
-    "sop_correction_spike": 3,       # 单 SOP 纠正信号 > 3 次/天
-    "low_rag_hit": 0.50,            # RAG 零命中率 > 50%
-    "slow_pipeline": 10000,         # Pipeline 平均耗时 > 10s
-    "volume_anomaly": 0.50,         # 消息量同比 ±50%
-    "tool_failure": 0.20,           # 单工具失败率 > 20%
-    "iteration_overflow": 3,        # max_iterations_reached > 3 次/天
-    "node_overdue": 1,              # 存在逾期节点
-}
 
+def detect_anomalies(snapshot: dict, *, days: int = 1) -> list[dict]:
+    """硬规则异常检测。输入 snapshot dict，输出异常列表。
 
-def detect_anomalies(metrics: dict, *, days: int = 1) -> list[dict]:
-    """8 条硬规则异常检测。输入 metrics dict，输出异常列表。
-
-    多天均摊规则：部分"次/天"类阈值需乘以 days，避免长周期误报：
-    - sop_correction_spike: 阈值 = 3 * days
-    - iteration_overflow: 阈值 = 3 * days
-    - 率值类（fallback_rate, zero_hit_rate, tool_failure_rate）无需均摊
+    snapshot 结构：
+        {
+            "projects": { "aggregate": { "overdue_nodes": [...] } },
+            "chat_samples": { "total_messages": ..., "conversations": [...] },
+            "system_errors": { "error_count_dedup": ..., "errors": [...] },
+            "session_anomalies": { "anomaly_count": ..., "anomalies": [...] }
+        }
 
     每条异常：
     {
-        "flag": "high_fallback",
+        "flag": "node_overdue",
         "severity": "high" | "medium",
-        "message": "Fallback 率 35% 超过阈值 30%",
+        "message": "存在 13 个逾期节点",
         "detail": {...}
     }
     """
     anomalies = []
-    p = metrics.get("pipeline", {})
-    fb = metrics.get("feedback", {})
-    rag = metrics.get("rag", {})
-    tc = metrics.get("tool_calls", {})
-    ar = metrics.get("agent_reasoning", {})
-    pn = metrics.get("project_nodes", {})
 
-    # 1. high_fallback: Fallback 率 > 30%
-    fallback_rate = p.get("fallback_rate", 0.0)
-    if fallback_rate > THRESHOLDS["high_fallback"]:
-        anomalies.append({
-            "flag": "high_fallback",
-            "severity": "high",
-            "message": f"Fallback 率 {fallback_rate:.1%} 超过阈值 {THRESHOLDS['high_fallback']:.0%}",
-            "detail": {"fallback_rate": fallback_rate, "threshold": THRESHOLDS["high_fallback"]},
-        })
+    projects = snapshot.get("projects", {})
+    agg = projects.get("aggregate", {})
+    chat = snapshot.get("chat_samples", {})
+    sys_err = snapshot.get("system_errors", {})
+    sess_anom = snapshot.get("session_anomalies", {})
 
-    # 2. sop_correction_spike: 单 SOP 纠正信号 > 3*days（多天均摊）
-    correction_count = 0
-    for t in fb.get("type_distribution", []):
-        if t["type"] == "explicit_correction":
-            correction_count = t["count"]
-            break
-    correction_threshold = THRESHOLDS["sop_correction_spike"] * days
-    if correction_count > correction_threshold:
-        anomalies.append({
-            "flag": "sop_correction_spike",
-            "severity": "high",
-            "message": f"纠正信号 {correction_count} 次超过阈值 {correction_threshold}",
-            "detail": {"correction_count": correction_count},
-        })
-
-    # 3. low_rag_hit: RAG 零命中率 > 50%
-    zero_hit_rate = rag.get("zero_hit_rate", 0.0)
-    if zero_hit_rate > THRESHOLDS["low_rag_hit"]:
-        anomalies.append({
-            "flag": "low_rag_hit",
-            "severity": "medium",
-            "message": f"RAG 零命中率 {zero_hit_rate:.1%} 超过阈值 {THRESHOLDS['low_rag_hit']:.0%}",
-            "detail": {"zero_hit_rate": zero_hit_rate},
-        })
-
-    # 4. slow_pipeline: Pipeline 平均耗时 > 10s
-    avg_elapsed = p.get("avg_elapsed_ms", 0)
-    if avg_elapsed > THRESHOLDS["slow_pipeline"]:
-        anomalies.append({
-            "flag": "slow_pipeline",
-            "severity": "medium",
-            "message": f"Pipeline 平均耗时 {avg_elapsed}ms 超过阈值 {THRESHOLDS['slow_pipeline']}ms",
-            "detail": {"avg_elapsed_ms": avg_elapsed},
-        })
-
-    # 5. volume_anomaly: 消息量同比 ±50%（需要前日数据，简化：仅当日总量异常低/高标记）
-    # TODO: 实现需要对比前日数据，Phase 2 补充
-
-    # 6. tool_failure: 单工具失败率 > 20%
-    tool_dist = tc.get("tool_distribution", {})
-    failure_details = tc.get("failure_details", [])
-    failure_by_tool = {}
-    for f in failure_details:
-        failure_by_tool[f["tool"]] = failure_by_tool.get(f["tool"], 0) + f["count"]
-    for tool_name, fail_count in failure_by_tool.items():
-        total_calls = tool_dist.get(tool_name, 0)
-        if total_calls > 0:
-            fail_rate = fail_count / total_calls
-            if fail_rate > THRESHOLDS["tool_failure"]:
-                anomalies.append({
-                    "flag": "tool_failure",
-                    "severity": "high",
-                    "message": f"工具 {tool_name} 失败率 {fail_rate:.1%} 超过阈值 {THRESHOLDS['tool_failure']:.0%}",
-                    "detail": {"tool": tool_name, "fail_rate": fail_rate, "fail_count": fail_count, "total": total_calls},
-                })
-
-    # 7. iteration_overflow: max_iterations_reached > 3*days（多天均摊）
-    max_iter = ar.get("max_iterations_reached", 0)
-    iter_threshold = THRESHOLDS["iteration_overflow"] * days
-    if max_iter > iter_threshold:
-        anomalies.append({
-            "flag": "iteration_overflow",
-            "severity": "medium",
-            "message": f"最大迭代触达 {max_iter} 次超过阈值 {iter_threshold}",
-            "detail": {"max_iterations_reached": max_iter},
-        })
-
-    # 8. node_overdue: 存在 IN_PROGRESS 节点已过 deadline
-    overdue = pn.get("overdue_nodes", [])
+    # 1. node_overdue: 存在逾期节点
+    overdue = agg.get("overdue_nodes", [])
     if len(overdue) >= THRESHOLDS["node_overdue"]:
         anomalies.append({
             "flag": "node_overdue",
             "severity": "high",
             "message": f"存在 {len(overdue)} 个逾期节点",
-            "detail": {"overdue_count": len(overdue), "nodes": [{"node_id": n["node_id"], "name": n["name"]} for n in overdue[:5]]},
+            "detail": {
+                "overdue_count": len(overdue),
+                "nodes": [{"node_id": n["node_id"], "name": n["name"]} for n in overdue[:10]]
+            },
+        })
+
+    # 2. system_error: 系统日志报错过多
+    err_count = sys_err.get("error_count_dedup", 0)
+    if err_count > THRESHOLDS["system_error_high"]:
+        anomalies.append({
+            "flag": "system_error_high",
+            "severity": "high",
+            "message": f"系统报错 {err_count} 条超过严重阈值 {THRESHOLDS['system_error_high']}",
+            "detail": {
+                "error_count": err_count,
+                "sample_errors": [e[:150] for e in sys_err.get("errors", [])[:5]],
+            },
+        })
+    elif err_count > THRESHOLDS["system_error_warn"]:
+        anomalies.append({
+            "flag": "system_error_warn",
+            "severity": "medium",
+            "message": f"系统报错 {err_count} 条超过警告阈值 {THRESHOLDS['system_error_warn']}",
+            "detail": {
+                "error_count": err_count,
+                "sample_errors": [e[:150] for e in sys_err.get("errors", [])[:3]],
+            },
+        })
+
+    # 3. session_anomaly: Session 归档中异常过多
+    anom_count = sess_anom.get("anomaly_count", 0)
+    if anom_count > THRESHOLDS["session_anomaly_high"]:
+        anomalies.append({
+            "flag": "session_anomaly_high",
+            "severity": "high",
+            "message": f"Session 异常 {anom_count} 处超过严重阈值 {THRESHOLDS['session_anomaly_high']}",
+            "detail": {
+                "anomaly_count": anom_count,
+                "sample_anomalies": [a.get("excerpt", "")[:150] for a in sess_anom.get("anomalies", [])[:5]],
+            },
+        })
+    elif anom_count > THRESHOLDS["session_anomaly_warn"]:
+        anomalies.append({
+            "flag": "session_anomaly_warn",
+            "severity": "medium",
+            "message": f"Session 异常 {anom_count} 处超过警告阈值 {THRESHOLDS['session_anomaly_warn']}",
+            "detail": {
+                "anomaly_count": anom_count,
+                "sample_anomalies": [a.get("excerpt", "")[:150] for a in sess_anom.get("anomalies", [])[:3]],
+            },
+        })
+
+    # 4. no_chat_activity: 目标日期无聊天
+    total_msgs = chat.get("total_messages", 0)
+    if total_msgs <= THRESHOLDS["no_chat_activity"]:
+        anomalies.append({
+            "flag": "no_chat_activity",
+            "severity": "medium",
+            "message": "目标日期无任何聊天记录",
+            "detail": {"total_messages": 0},
         })
 
     return anomalies
@@ -181,7 +164,7 @@ def _print_anomalies(anomalies: list[dict], date_label: str) -> None:
             icon = severity_icon.get(a["severity"], "WARN")
             print(f"  [{icon}] {a['flag']}: {a['message']}")
     else:
-        print("  [OK] 全部 8 条规则未触发异常")
+        print("  [OK] 全部规则未触发异常")
 
     high_count = sum(1 for a in anomalies if a["severity"] == "high")
     medium_count = sum(1 for a in anomalies if a["severity"] == "medium")
@@ -197,27 +180,27 @@ def main():
     sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding='utf-8', errors='replace')
     sys.stderr = io.TextIOWrapper(sys.stderr.buffer, encoding='utf-8', errors='replace')
 
-    parser = argparse.ArgumentParser(description="硬规则异常检测脚本")
-    parser.add_argument("--date", "-d", default="", help="复盘结束日期 YYYY-MM-DD")
-    parser.add_argument("--days", type=int, default=1, help="复盘天数（默认1，最小1）")
-    parser.add_argument("--metrics-file", "-f", default="", help="从 JSON 文件加载 metrics")
+    parser = argparse.ArgumentParser(description="硬规则异常检测脚本（基于快照）")
+    parser.add_argument("--date", "-d", default="", help="日期 YYYY-MM-DD（自动采集快照）")
+    parser.add_argument("--days", type=int, default=1, help="复盘天数（默认1）")
+    parser.add_argument("--snapshot-file", "-f", default="", help="从 JSON 文件加载快照")
     parser.add_argument("--json", action="store_true", help="输出原始 JSON")
 
     args = parser.parse_args()
 
-    if args.metrics_file:
-        with open(args.metrics_file, "r", encoding="utf-8") as f:
-            metrics = json.load(f)
-        date_label = metrics.get("end_date", args.metrics_file)
+    if args.snapshot_file:
+        with open(args.snapshot_file, "r", encoding="utf-8") as f:
+            snapshot = json.load(f)
+        date_label = snapshot.get("meta", {}).get("end_date", args.snapshot_file)
     elif args.date:
-        from evolution_metrics import collect_metrics
-        metrics = asyncio.run(collect_metrics(args.date, days=args.days))
+        from emily_core.snapshot import collect_snapshot
+        snapshot = asyncio.run(collect_snapshot(args.date, days=args.days))
         date_label = args.date
     else:
-        print("错误：必须指定 --date 或 --metrics-file")
+        print("错误：必须指定 --date 或 --snapshot-file")
         sys.exit(1)
 
-    anomalies = detect_anomalies(metrics, days=args.days)
+    anomalies = detect_anomalies(snapshot, days=args.days)
 
     if args.json:
         print(json.dumps(anomalies, ensure_ascii=False, indent=2, default=str))
