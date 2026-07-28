@@ -64,6 +64,8 @@ class SessionFactory:
             journal=journal,
             archive_writer=archive_writer,
         )
+        # 将 EmilyCore 注入 scheduler（graph 引擎通过 _core 获取 _workitem_graph）
+        agent.scheduler._core = self._core
         logger.info(
             "SessionFactory created session: conv=%s user=%s llm=%s skill_registry=%s journal=%s archive_writer=%s",
             conv_id, user_id or "?",

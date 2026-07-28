@@ -22,3 +22,7 @@ markitdown>=0.0.1                      # Office 转 Markdown
 camelot-py[cv]>=0.11                   # PDF 表格提取
 openpyxl>=3.1                          # Excel 表格提取
 pdf2image>=1.17                        # PDF 转图片（OCR 前置）
+
+# ── LangGraph 执行引擎（WorkItem 内部执行引擎替换）──
+langgraph>=0.2.0                       # StateGraph + Checkpoint + interrupt
+tenacity>=8.2.0                        # 细粒度重试（langgraph 传递依赖，显式声明便于直接 import）
