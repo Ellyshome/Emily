@@ -362,6 +362,20 @@ class WorkItemAgent:
             "content": f"Plan for: {wi.user_input[:200]}",
         })
 
+        # ── 重规划反馈：若 error_analysis 产出了 replan_hint，注入到 prompt ──
+        # 由 LangGraph node2 适配函数写入 context.baggage["replan_hint"]
+        # 无 replan_hint 时（首次规划）此段不执行，行为不变
+        replan_hint = context.get("replan_hint", "") if context else ""
+        if replan_hint:
+            full_messages.insert(-1, {
+                "role": "system",
+                "content": (
+                    f"⚠️ 上次执行失败，错误分析建议：{replan_hint}\n"
+                    f"请在重新规划时参考此建议调整工具选择或参数。"
+                ),
+            })
+            logger.info("_llm_plan: replan_hint injected (hint=%s)", replan_hint[:80])
+
         try:
             result = await self._llm.chat_messages(full_messages, json_mode=True)
             data = result.get("data", {})

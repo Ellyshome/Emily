@@ -50,9 +50,8 @@ services:
       - EMILY_STORAGE_ROOT=/app/attachments
       - EMILY_HOOK_CONFIG_PATH=/app/config/hook_config.json
       - EMILY_SOP_REPOSITORY_DIR=/app/sops
+      # - EMILY_WORKITEM_ENGINE=langgraph  # 切回 pipeline_bus 回退验证
       - EMILY_API_TOKEN=${EMILY_API_TOKEN:-}
-      - EMILY_EMAIL_IDKEY=${EMILY_EMAIL_IDKEY:-}
-      - EMILY_EMAIL_PASSWORD=${EMILY_EMAIL_PASSWORD:-}
       # NAPCAT_WEBUI_TOKEN 现已动态从 NapCat 容器读取（docker/client.py _fetch_napcat_webui_token），
       # 不再依赖环境变量硬编码。保留此行仅当 Docker API 不可用时回退使用：
       - NAPCAT_WEBUI_TOKEN=${NAPCAT_WEBUI_TOKEN:-}

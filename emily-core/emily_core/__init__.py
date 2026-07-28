@@ -491,6 +491,33 @@ class EmilyCore:
             injected = self._collect_injected_services()
             self._bus.register_hooks_from_config(hook_config, **injected)
 
+        # ── LangGraph 引擎旁路构建（feature flag 控制）──
+        self._workitem_graph = None
+        self._hook_adapter = None
+        if getattr(self.config, "workitem_engine", "pipeline_bus") == "langgraph":
+            try:
+                from .workitem.langgraph_engine.graph import build_workitem_graph
+                from .workitem.langgraph_engine.hook_adapter import build_hook_adapter_from_config
+
+                hook_cfg = self._load_hook_config() or {"hooks": {}}
+                injected2 = self._collect_injected_services()
+                self._hook_adapter = build_hook_adapter_from_config(hook_cfg, injected2)
+
+                self._workitem_graph = build_workitem_graph(
+                    agent=self._workitem_agent,
+                    hook_adapter=self._hook_adapter,
+                    max_replan=getattr(self.config, "langgraph_max_replan", 1),
+                    checkpointer=None,  # 本期 MemorySaver，后续切 PostgresSaver
+                )
+                logger.info(
+                    "LangGraph engine built: 5 nodes (含 error_analysis), max_replan=%d, checkpointer=MemorySaver",
+                    getattr(self.config, "langgraph_max_replan", 1),
+                )
+            except Exception as e:
+                logger.error("LangGraph engine build failed, fallback to pipeline_bus: %s", e)
+                self._workitem_graph = None
+                self._hook_adapter = None
+
     def _build_session_pool(self) -> None:
         """构建 Session 池（蓝图 §3.4）。"""
         from .adapters.session import SessionPoolManager, SessionConfig, SessionFactory

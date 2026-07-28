@@ -66,6 +66,7 @@ def _config_from_env(config_data: dict | None) -> dict:
         "EMILY_VLM_MODEL": "vlm_model",
         "EMILY_KB_ENABLED": "kb_enabled",
         "EMILY_PROMPTS_DIR": "prompts_dir",
+        "EMILY_WORKITEM_ENGINE": "workitem_engine",
     }
     # 布尔字段：环境变量为字符串，需显式转换
     bool_fields = {"llm_console_trace_enabled", "kb_enabled"}

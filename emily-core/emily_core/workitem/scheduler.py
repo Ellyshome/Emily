@@ -32,10 +32,11 @@ class SessionScheduler:
     - 不直接将权限数据传递给 WorkItemAgent，避免上下文污染
     """
 
-    def __init__(self, session_id: str, bus: PipelineBUS, session_context=None):
+    def __init__(self, session_id: str, bus: PipelineBUS, session_context=None, core=None):
         self.session_id = session_id
         self._bus = bus                       # 公共 Pipeline BUS（全局共享）
         self._session_context = session_context  # SessionContext（只读访问）
+        self._core = core                     # EmilyCore 实例（graph 引擎取 _workitem_graph）
         self._queue: list[WorkItem] = []      # 待执行队列（按 priority 排序）
         self._active: dict[str, WorkItem] = {}  # 执行中
         self._done: list[WorkItem] = []       # 已完成
@@ -130,7 +131,16 @@ class SessionScheduler:
 
             # PLANNING → EXECUTING（节点内部经过 node1/node2 规划 + node3 执行）
             wi.transition_to(WorkItemState.EXECUTING)
-            await self._bus.run(context)
+
+            # ── 引擎选择：feature flag 切换 ──
+            core = getattr(self, "_core", None)
+            graph = getattr(core, "_workitem_graph", None) if core else None
+            engine = getattr(getattr(core, "config", None), "workitem_engine", "pipeline_bus") if core else "pipeline_bus"
+
+            if engine == "langgraph" and graph is not None:
+                await self._run_graph(context, graph)
+            else:
+                await self._bus.run(context)
 
             if context.should_abort:
                 wi.transition_to(WorkItemState.FAILED)
@@ -153,6 +163,48 @@ class SessionScheduler:
             self._active.pop(wi.id, None)
             self._done.append(wi)
         return wi
+
+    async def _run_graph(self, context, graph) -> None:
+        """通过 LangGraph 引擎执行 WorkItem（含 error_analysis 纠错闭环）。
+
+        对齐 PipelineBUS.run 的日志上下文注入 + per-message progress_sender 注入，
+        确保 Hook/归档/trace 行为与旧引擎一致。
+        """
+        from emily_core.infrastructure.logging.llm_logger import LLMInteractionLogger
+        from emily_core.infrastructure.logging.business_event_logger import BusinessEventLogger
+        from emily_core.workitem.langgraph_engine.graph import make_initial_state
+
+        # 注入日志上下文（对齐 pipeline/bus.py 的 run 方法）
+        LLMInteractionLogger.set_context(
+            pipeline_run_id=context.pipeline_run_id,
+            conversation_id=context.message.conversation_id if context.message else "",
+            user_id=context.user_id,
+        )
+        BusinessEventLogger.set_context(
+            pipeline_run_id=context.pipeline_run_id,
+            conversation_id=context.message.conversation_id if context.message else "",
+        )
+
+        # 注入 per-message progress_sender（对齐 bus.py:157-168）
+        core = getattr(self, "_core", None)
+        outbound_bus = getattr(core, "outbound_bus", None) if core else None
+        if outbound_bus is not None and context.message is not None:
+            _cid = context.message.conversation_id or ""
+
+            def _send_progress(text: str, _bus=outbound_bus, _cid=_cid) -> None:
+                _bus.publish("progress", {"content": text, "conversation_id": _cid})
+
+            context.baggage.setdefault("progress_sender", _send_progress)
+
+        try:
+            max_replan = getattr(getattr(core, "config", None), "langgraph_max_replan", 1) if core else 1
+            state = make_initial_state(context, max_replan=max_replan)
+            # thread_id = pipeline_run_id，对接现有 trace/归档/LLM 日志
+            config = {"configurable": {"thread_id": context.pipeline_run_id}}
+            await graph.ainvoke(state, config=config)
+        finally:
+            LLMInteractionLogger.clear_context()
+            BusinessEventLogger.clear_context()
 
     @property
     def has_pending(self) -> bool:
