@@ -27,26 +27,35 @@ if str(_CORE_DIR) not in sys.path:
 if str(_HERE) not in sys.path:
     sys.path.insert(0, str(_HERE))
 
-from evolution_metrics import collect_metrics
 from evolution_anomaly import detect_anomalies
+
+# 此时不 import collect_metrics，daily pipeline 改用快照
+# 兼容旧调用：collect_metrics 可作为 import 使用，但不参与新流水线
+try:
+    from evolution_metrics import collect_metrics  # noqa: F401 — 保留给外部 import
+except ImportError:
+    pass
 
 
 async def run_daily_pipeline(date: str, *, days: int = 1, dry_run: bool = False) -> dict:
-    """每日 22:00 调度入口：metrics → anomaly → insight"""
-    print(f"=== 洞察流水线 — {date}（{days}天） ===")
-    metrics = await collect_metrics(date, days=days)
-    anomalies = detect_anomalies(metrics, days=days)
-    print(f"  指标聚合完成: {len(metrics)} 个数据源, {len(anomalies)} 条异常")
+    """每日 22:00 调度入口：snapshot → anomaly → problem report"""
+    print(f"=== 问题分析流水线 — {date}（{days}天） ===")
+
+    from emily_core.snapshot import collect_snapshot
+
+    snapshot = await collect_snapshot(date, days=days)
+    anomalies = detect_anomalies(snapshot, days=days)
+    print(f"  快照采集完成: {len(anomalies)} 条异常")
 
     try:
         from evolution_insight import generate_insight
         insight = await generate_insight(date, days=days, dry_run=dry_run)
-        print(f"  日洞察生成: status={insight.get('status')}")
+        print(f"  问题分析报告: status={insight.get('status')}")
     except Exception as e:
         insight = {"status": "error", "error": str(e)}
-        print(f"  日洞察生成失败: {e}")
+        print(f"  报告生成失败: {e}")
 
-    return {"metrics_summary": f"{len(metrics)} sources", "anomalies": anomalies, "insight": insight}
+    return {"snapshot_collected": True, "anomalies": anomalies, "report": insight}
 
 
 async def run_weekly_pipeline(end_date: str, *, days: int = 7, dry_run: bool = False) -> dict:
