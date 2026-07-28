@@ -13,31 +13,22 @@ Graph 拓扑：
                  │
                  └── node3 ←── retry ────────────┘
 
-条件边路由：
-  route_after_node3:
-    - should_abort → END
-    - 有失败 step 且 replan_count < max_replan → error_analysis（先分析再决定重规划/重试）
-    - 否则 → node4
+State 设计（方案 C：纯可序列化 + contextvars）：
+  - State 仅含基础类型（str/int/bool/dict），100% msgpack 兼容 → MemorySaver 可用
+  - BusContext 通过 contextvars 传递，node handler 零改动
+  - 条件边从 state["flow_control"] 读流程控制信号
 
-  route_after_analysis:
-    - should_abort / ABORT_TYPES → END
-    - RETRY_TYPES (transient_failure) → node3（直接重试，省 LLM 重新规划）
-    - REPLAN_TYPES (param_error/tool_mismatch) → node2（带 replan_hint 重规划）
-    - 兜底 → END
-
-Checkpoint：本期用 MemorySaver，后续切 PostgresSaver。
 thread_id = pipeline_run_id，对接现有 trace/归档/LLM 日志。
 """
 
 from __future__ import annotations
 
 import logging
-from typing import Any
 
 from langgraph.graph import StateGraph, START, END
 from langgraph.checkpoint.memory import MemorySaver
 
-from .state import WorkItemGraphState
+from .state import WorkItemGraphState, get_bus_context
 from .nodes import (
     make_node1, make_node2, make_node3, make_node4, make_error_analysis,
     node_retry_policies,
@@ -47,34 +38,23 @@ from .error_analysis import REPLAN_TYPES, RETRY_TYPES, ABORT_TYPES
 logger = logging.getLogger("emily.langgraph.graph")
 
 
-def _has_failed_step(ctx) -> bool:
-    """检查 BusContext.work_item 是否有失败的 step。"""
-    wi = ctx.work_item
-    if wi is None:
-        return False
-    for sr in getattr(wi, "step_results", []) or []:
-        if not getattr(sr, "success", True):
-            return True
-    return False
-
-
-def route_after_node3(state: WorkItemGraphState) -> str:
+def route_after_node3(state: dict) -> str:
     """node3 之后的条件边路由。
 
-    路由优先级：
-      1. should_abort → "end"
-      2. 有失败 step 且 replan_count < max_replan → "error_analysis"
+    路由优先级（从 state 读 flow_control，从 contextvars 读 BusContext）：
+      1. flow_control["should_abort"] → "end"
+      2. flow_control["has_failed_step"] 且 replan_count < max_replan → "error_analysis"
       3. 否则 → "node4"
     """
-    ctx = state["context"]
+    fc = state.get("flow_control", {})
     max_replan = state.get("_max_replan", 1)
     replan_count = state.get("replan_count", 0)
 
-    if ctx.should_abort:
+    if fc.get("should_abort"):
         logger.info("route_after_node3: should_abort=True → end")
         return "end"
 
-    if _has_failed_step(ctx) and replan_count < max_replan:
+    if fc.get("has_failed_step") and replan_count < max_replan:
         logger.info("route_after_node3: failed step + replan_count=%d < %d → error_analysis",
                     replan_count, max_replan)
         return "error_analysis"
@@ -82,17 +62,10 @@ def route_after_node3(state: WorkItemGraphState) -> str:
     return "node4"
 
 
-def route_after_analysis(state: WorkItemGraphState) -> str:
-    """error_analysis 之后的条件边路由（按错误类型路由）。
-
-    路由规则：
-      - should_abort / ABORT_TYPES → end
-      - RETRY_TYPES (transient_failure) → node3（直接重试）
-      - REPLAN_TYPES (param_error/tool_mismatch) → node2（带 replan_hint 重规划）
-      - 兜底 → end
-    """
-    ctx = state["context"]
-    if ctx.should_abort:
+def route_after_analysis(state: dict) -> str:
+    """error_analysis 之后的条件边路由（按错误类型路由）。"""
+    fc = state.get("flow_control", {})
+    if fc.get("should_abort"):
         logger.info("route_after_analysis: should_abort=True → end")
         return "end"
 
@@ -115,10 +88,10 @@ def route_after_analysis(state: WorkItemGraphState) -> str:
     return "end"
 
 
-def route_after_node2(state: WorkItemGraphState) -> str:
+def route_after_node2(state: dict) -> str:
     """node2 之后的路由：should_abort → end，否则 → node3。"""
-    ctx = state["context"]
-    if ctx.should_abort:
+    fc = state.get("flow_control", {})
+    if fc.get("should_abort"):
         return "end"
     return "node3"
 
@@ -127,18 +100,16 @@ def build_workitem_graph(
     agent,
     hook_adapter,
     max_replan: int = 1,
-    checkpointer: Any = None,
-) -> Any:
+) -> StateGraph:
     """构建 WorkItem 执行 StateGraph（含 error_analysis 纠错闭环）。
 
     Args:
-        agent: WorkItemAgent 实例（提供 4 个 node handler + _llm 供 ErrorAnalyzer）
+        agent: WorkItemAgent 实例
         hook_adapter: HookAdapter 实例
         max_replan: 最大重规划次数
-        checkpointer: Checkpoint 实例，None 用 MemorySaver
 
     Returns:
-        编译后的 LangGraph CompiledGraph
+        编译后的 LangGraph CompiledGraph（带 MemorySaver checkpoint）
     """
     graph_builder = StateGraph(WorkItemGraphState)
 
@@ -177,30 +148,12 @@ def build_workitem_graph(
     # node4 → END
     graph_builder.add_edge("wi_node4", END)
 
-    # ── 编译（禁用 checkpoint——BusContext 不可 msgpack 序列化，MemorySaver 不适用）
-    # 后续切 PostgresSaver 时需为 context 实现自定义 serializer。
-    graph = graph_builder.compile(checkpointer=False)
+    # ── 编译（MemorySaver — State 纯可序列化，checkpoint 可用）──
+    graph = graph_builder.compile(checkpointer=MemorySaver())
     graph._max_replan = max_replan  # type: ignore[attr-defined]
 
     logger.info(
-        "WorkItem graph built: 5 nodes, max_replan=%d, checkpointer=None (disabled)",
+        "WorkItem graph built: 5 nodes (含 error_analysis), max_replan=%d, checkpointer=MemorySaver",
         max_replan,
     )
     return graph
-
-
-def make_initial_state(context, max_replan: int = 1) -> WorkItemGraphState:
-    """构建 graph 初始 State。"""
-    return WorkItemGraphState(
-        context=context,
-        replan_count=0,
-        node_timings={},
-        started_at="",
-        error_analysis={},
-        replan_hint="",
-        error_type="",
-        pipeline_run_id=context.pipeline_run_id,
-        current_stage="",
-        _entered_node2=False,
-        _max_replan=max_replan,
-    )

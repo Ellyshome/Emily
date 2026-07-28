@@ -82,8 +82,9 @@ def _make_mock_agents():
 
 
 def cmd_mock() -> int:
-    from emily_core.workitem.langgraph_engine.graph import build_workitem_graph, make_initial_state
+    from emily_core.workitem.langgraph_engine.graph import build_workitem_graph
     from emily_core.workitem.langgraph_engine.hook_adapter import build_hook_adapter_from_config
+    from emily_core.workitem.langgraph_engine.state import set_bus_context, clear_bus_context, make_initial_state
     from emily_core.workitem.pipeline.context import BusContext
     from emily_core.workitem.workitem import WorkItem
 
@@ -91,8 +92,12 @@ def cmd_mock() -> int:
     async def main():
         g = build_workitem_graph(NormalAgent(), build_hook_adapter_from_config({}, {}), max_replan=1)
         ctx = BusContext(); ctx.work_item = WorkItem()
-        state = make_initial_state(ctx, max_replan=1)
-        result = await g.ainvoke(state, config={'configurable': {'thread_id': 'mock-normal'}})
+        set_bus_context(ctx)
+        state = make_initial_state(pipeline_run_id="mock-normal", max_replan=1)
+        try:
+            result = await g.ainvoke(state, config={'configurable': {'thread_id': 'mock-normal'}})
+        finally:
+            clear_bus_context()
         print("=== 正常路径 ===")
         print(f"执行顺序: {call_log}")
         print(f"replan_count: {result.get('replan_count')}")
@@ -103,8 +108,9 @@ def cmd_mock() -> int:
 
 
 def cmd_mock_failure() -> int:
-    from emily_core.workitem.langgraph_engine.graph import build_workitem_graph, make_initial_state
+    from emily_core.workitem.langgraph_engine.graph import build_workitem_graph
     from emily_core.workitem.langgraph_engine.hook_adapter import build_hook_adapter_from_config
+    from emily_core.workitem.langgraph_engine.state import set_bus_context, clear_bus_context, make_initial_state
     from emily_core.workitem.pipeline.context import BusContext
     from emily_core.workitem.workitem import WorkItem
 
@@ -112,18 +118,20 @@ def cmd_mock_failure() -> int:
     async def main():
         g = build_workitem_graph(FailureAgent(), build_hook_adapter_from_config({}, {}), max_replan=1)
         ctx = BusContext(); ctx.work_item = WorkItem()
-        state = make_initial_state(ctx, max_replan=1)
-        result = await g.ainvoke(state, config={'configurable': {'thread_id': 'mock-failure'}})
+        set_bus_context(ctx)
+        state = make_initial_state(pipeline_run_id="mock-failure", max_replan=1)
+        try:
+            result = await g.ainvoke(state, config={'configurable': {'thread_id': 'mock-failure'}})
+        finally:
+            clear_bus_context()
         print("=== 失败纠错路径 ===")
         print(f"执行顺序: {call_log}")
         print(f"error_type: {result.get('error_type')}")
         print(f"replan_count: {result.get('replan_count')}")
-        print(f"最终 should_abort: {ctx.should_abort}")
-        # 验证 error_analysis 已运行（error_type 和 error_analysis 字段均由它写入 state）
+        print(f"flow_control: {result.get('flow_control')}")
         assert result.get('error_type'), 'error_analysis 未产出 error_type'
         assert result.get('error_analysis', {}).get('should_retry') or result.get('error_analysis', {}).get('should_replan'), \
             'error_analysis 应建议 retry 或 replan'
-        # node3 第一次失败后重试成功了（出现了2次 node3），且最后到达 node4
         assert call_log.count('node3') == 2, '应有一次失败+一次重试'
         assert call_log[-1] == 'node4', '最后应到达 node4'
         print("PASS 失败纠错路径通过（error_analysis 触发→retry→成功）")
@@ -132,8 +140,9 @@ def cmd_mock_failure() -> int:
 
 
 def cmd_mock_permission() -> int:
-    from emily_core.workitem.langgraph_engine.graph import build_workitem_graph, make_initial_state
+    from emily_core.workitem.langgraph_engine.graph import build_workitem_graph
     from emily_core.workitem.langgraph_engine.hook_adapter import build_hook_adapter_from_config
+    from emily_core.workitem.langgraph_engine.state import set_bus_context, clear_bus_context, make_initial_state
     from emily_core.workitem.pipeline.context import BusContext
     from emily_core.workitem.workitem import WorkItem
 
@@ -141,14 +150,19 @@ def cmd_mock_permission() -> int:
     async def main():
         g = build_workitem_graph(PermissionAgent(), build_hook_adapter_from_config({}, {}), max_replan=1)
         ctx = BusContext(); ctx.work_item = WorkItem()
-        state = make_initial_state(ctx, max_replan=1)
-        result = await g.ainvoke(state, config={'configurable': {'thread_id': 'mock-perm'}})
+        set_bus_context(ctx)
+        state = make_initial_state(pipeline_run_id="mock-perm", max_replan=1)
+        try:
+            result = await g.ainvoke(state, config={'configurable': {'thread_id': 'mock-perm'}})
+        finally:
+            clear_bus_context()
         print("=== 权限失败路径 ===")
         print(f"执行顺序: {call_log}")
         print(f"error_type: {result.get('error_type')}")
-        print(f"should_abort: {ctx.should_abort}")
+        fc = result.get("flow_control", {})
+        print(f"should_abort: {fc.get('should_abort')}")
         assert result.get('error_type') == 'permission_denied', '权限失败应分类为 permission_denied'
-        assert ctx.should_abort, '权限失败应 abort'
+        assert fc.get('should_abort'), '权限失败应 abort'
         assert 'node4' not in call_log, '权限失败不应到 node4'
         print("PASS 权限失败路径通过（代码预分类 abort，未调 LLM）")
     asyncio.run(main())

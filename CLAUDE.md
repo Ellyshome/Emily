@@ -89,6 +89,7 @@ QQ → NapCat → AstrBot → emily_agent 薄插件
 
 | # | 约束 | 说明 |
 |----|------|------|
+| 0 | **根治而非迁就** | 遇到问题时，优先选择系统性解决根源的方案，而非为迁就当前项目条件而采取的凑合/绕过方案。典型例子：State 持有不可序列化对象导致 checkpoint 不可用 → 重构 State 为纯数据 + contextvars 传递，而非关闭 checkpoint。当下多花的时间是未来省下的故障排查时间。 |
 | 1 | **业务内核独立** | `emily_core` 不 import 任何 `astrbot.*` 包 |
 | 2 | **分层不可跳** | `API → EmilyCore → Session → WorkItem → Application → Service → Repository → DB` |
 | 3 | **SOP 即路由** | 新增 SOP = 放 `.md` 到 `emily-data/sops/` → 重启生效。SkillRegistry 管理目录索引，LLM 做语义匹配 |

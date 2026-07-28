@@ -53,9 +53,10 @@ class EmilyCore:
         # 邮箱服务
         self._email_service = None
 
-        # 公共 Pipeline BUS + WorkItem-Agent
-        self._bus = None
+        # WorkItem 执行引擎（LangGraph StateGraph，5 节点 + error_analysis 纠错闭环）
         self._workitem_agent = None
+        self._workitem_graph = None
+        self._hook_adapter = None
 
         # Session 池
         self._session_pool = None
@@ -252,9 +253,10 @@ class EmilyCore:
         self._build_session_pool()
 
         self._initialized = True
+        hook_count = self._hook_adapter._registry.hook_count() if self._hook_adapter else 0
         logger.info(
-            "EmilyCore initialized: bus_hooks=%d, session_pool ready",
-            self._bus.hook_count() if self._bus else 0,
+            "EmilyCore initialized: hooks=%d, engine=langgraph, session_pool ready",
+            hook_count,
         )
 
     def _init_email_module(self) -> None:
@@ -460,72 +462,50 @@ class EmilyCore:
             self._business_flow_tools = None
 
     def _build_pipeline_bus(self) -> None:
-        """构建系统级公共 Pipeline BUS（蓝图 §5.4）。"""
-        from .workitem import WorkItemAgent, PipelineBUS, KnowledgeInjector
+        """构建 WorkItemAgent + LangGraph 执行引擎。
 
-        injector = KnowledgeInjector(
-            sop_loader=None,
-        )
+        旧 PipelineBUS 已废弃（2026-07-28），WorkItemAgent 仍然提供 4 个节点 handler，
+        但执行路径统一为 LangGraph StateGraph（5 节点含 error_analysis 纠错闭环）。
+        """
+        from .workitem import WorkItemAgent, KnowledgeInjector
+
+        injector = KnowledgeInjector(sop_loader=None)
         self._workitem_agent = WorkItemAgent(
             injector=injector,
             llm_client=self._llm_client,
             config=self.config,
-            # 执行依赖
             business_flow_tools=self._business_flow_tools,
             rag_provider=self._rag_provider,
-            # 三维鉴权引擎
             permission_engine=self._permission_auth_engine,
-            # Skill 模块
             skill_registry=self._skill_registry,
             skill_executor=self._skill_executor,
         )
-        self._bus = PipelineBUS.build_default(
-            node_handlers=self._workitem_agent.node_handlers(),
-            name="emily_bus",
-            outbound_bus=self.outbound_bus,
+
+        # ── LangGraph 执行引擎（唯一路径）──
+        from .workitem.langgraph_engine.graph import build_workitem_graph
+        from .workitem.langgraph_engine.hook_adapter import build_hook_adapter_from_config
+
+        hook_cfg = self._load_hook_config() or {"hooks": {}}
+        injected = self._collect_injected_services()
+        self._hook_adapter = build_hook_adapter_from_config(hook_cfg, injected)
+
+        self._workitem_graph = build_workitem_graph(
+            agent=self._workitem_agent,
+            hook_adapter=self._hook_adapter,
+            max_replan=getattr(self.config, "langgraph_max_replan", 1),
         )
-
-        # Hook 配置
-        hook_config = self._load_hook_config()
-        if hook_config:
-            injected = self._collect_injected_services()
-            self._bus.register_hooks_from_config(hook_config, **injected)
-
-        # ── LangGraph 引擎旁路构建（feature flag 控制）──
-        self._workitem_graph = None
-        self._hook_adapter = None
-        if getattr(self.config, "workitem_engine", "pipeline_bus") == "langgraph":
-            try:
-                from .workitem.langgraph_engine.graph import build_workitem_graph
-                from .workitem.langgraph_engine.hook_adapter import build_hook_adapter_from_config
-
-                hook_cfg = self._load_hook_config() or {"hooks": {}}
-                injected2 = self._collect_injected_services()
-                self._hook_adapter = build_hook_adapter_from_config(hook_cfg, injected2)
-
-                self._workitem_graph = build_workitem_graph(
-                    agent=self._workitem_agent,
-                    hook_adapter=self._hook_adapter,
-                    max_replan=getattr(self.config, "langgraph_max_replan", 1),
-                    checkpointer=None,  # 本期 MemorySaver，后续切 PostgresSaver
-                )
-                logger.info(
-                    "LangGraph engine built: 5 nodes (含 error_analysis), max_replan=%d, checkpointer=MemorySaver",
-                    getattr(self.config, "langgraph_max_replan", 1),
-                )
-            except Exception as e:
-                logger.error("LangGraph engine build failed, fallback to pipeline_bus: %s", e)
-                self._workitem_graph = None
-                self._hook_adapter = None
+        logger.info(
+            "LangGraph engine built: 5 nodes (含 error_analysis), max_replan=%d, checkpointer=MemorySaver",
+            getattr(self.config, "langgraph_max_replan", 1),
+        )
 
     def _build_session_pool(self) -> None:
         """构建 Session 池（蓝图 §3.4）。"""
         from .adapters.session import SessionPoolManager, SessionConfig, SessionFactory
 
         session_config = SessionConfig.from_config(self.config)
-        factory = SessionFactory(self._bus, core=self)
+        factory = SessionFactory(core=self)
         self._session_pool = SessionPoolManager(
-            bus=self._bus,
             config=session_config,
             factory=factory,
             core=self,
