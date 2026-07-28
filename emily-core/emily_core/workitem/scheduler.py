@@ -32,14 +32,14 @@ class SessionScheduler:
     - 不直接将权限数据传递给 WorkItemAgent，避免上下文污染
     """
 
-    def __init__(self, session_id: str, bus: PipelineBUS, session_context=None, core=None):
+    def __init__(self, session_id: str, bus: PipelineBUS = None, session_context=None, core=None):
         self.session_id = session_id
-        self._bus = bus                       # 公共 Pipeline BUS（全局共享）
-        self._session_context = session_context  # SessionContext（只读访问）
-        self._core = core                     # EmilyCore 实例（graph 引擎取 _workitem_graph）
-        self._queue: list[WorkItem] = []      # 待执行队列（按 priority 排序）
-        self._active: dict[str, WorkItem] = {}  # 执行中
-        self._done: list[WorkItem] = []       # 已完成
+        self._bus = bus                       # 保留以兼容旧调用（已废弃，2026-07-28 起不再使用）
+        self._session_context = session_context
+        self._core = core                     # EmilyCore 实例（取 _workitem_graph）
+        self._queue: list[WorkItem] = []
+        self._active: dict[str, WorkItem] = {}
+        self._done: list[WorkItem] = []
 
     def enqueue(self, work_item: WorkItem) -> None:
         """将 WorkItem 加入队列（按 priority 排序，0 最高）。"""
@@ -129,18 +129,9 @@ class SessionScheduler:
                 if stored is not None:
                     context.message = stored
 
-            # PLANNING → EXECUTING（节点内部经过 node1/node2 规划 + node3 执行）
+            # PLANNING → EXECUTING（LangGraph StateGraph 5 节点 + error_analysis 纠错闭环）
             wi.transition_to(WorkItemState.EXECUTING)
-
-            # ── 引擎选择：feature flag 切换 ──
-            core = getattr(self, "_core", None)
-            graph = getattr(core, "_workitem_graph", None) if core else None
-            engine = getattr(getattr(core, "config", None), "workitem_engine", "pipeline_bus") if core else "pipeline_bus"
-
-            if engine == "langgraph" and graph is not None:
-                await self._run_graph(context, graph)
-            else:
-                await self._bus.run(context)
+            await self._run_graph(context)
 
             if context.should_abort:
                 wi.transition_to(WorkItemState.FAILED)
@@ -164,15 +155,23 @@ class SessionScheduler:
             self._done.append(wi)
         return wi
 
-    async def _run_graph(self, context, graph) -> None:
-        """通过 LangGraph 引擎执行 WorkItem（含 error_analysis 纠错闭环）。
+    async def _run_graph(self, context) -> None:
+        """通过 LangGraph 引擎执行 WorkItem（含 error_analysis 纠错闭环）。"""
 
-        对齐 PipelineBUS.run 的日志上下文注入 + per-message progress_sender 注入，
-        确保 Hook/归档/trace 行为与旧引擎一致。
-        """
         from emily_core.infrastructure.logging.llm_logger import LLMInteractionLogger
         from emily_core.infrastructure.logging.business_event_logger import BusinessEventLogger
-        from emily_core.workitem.langgraph_engine.graph import make_initial_state
+        from emily_core.workitem.langgraph_engine.state import (
+            set_bus_context, clear_bus_context, make_initial_state,
+        )
+
+        # ── 取 graph 实例 ──
+        core = getattr(self, "_core", None)
+        graph = getattr(core, "_workitem_graph", None) if core else None
+        if graph is None:
+            raise RuntimeError("LangGraph engine not built — check EmilyCore._build_pipeline_bus()")
+
+        # ── 设置 contextvars ──
+        set_bus_context(context)
 
         # 注入日志上下文（对齐 pipeline/bus.py 的 run 方法）
         LLMInteractionLogger.set_context(
@@ -198,11 +197,15 @@ class SessionScheduler:
 
         try:
             max_replan = getattr(getattr(core, "config", None), "langgraph_max_replan", 1) if core else 1
-            state = make_initial_state(context, max_replan=max_replan)
+            state = make_initial_state(
+                pipeline_run_id=context.pipeline_run_id,
+                max_replan=max_replan,
+            )
             # thread_id = pipeline_run_id，对接现有 trace/归档/LLM 日志
             config = {"configurable": {"thread_id": context.pipeline_run_id}}
             await graph.ainvoke(state, config=config)
         finally:
+            clear_bus_context()
             LLMInteractionLogger.clear_context()
             BusinessEventLogger.clear_context()
 

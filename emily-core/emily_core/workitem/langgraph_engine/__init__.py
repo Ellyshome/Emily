@@ -23,13 +23,16 @@
 保留不变：WorkItemAgent / BusContext / Hook 体系 / WorkItem 状态机 / SessionAgent
 """
 
-from .state import WorkItemGraphState
-from .graph import build_workitem_graph, make_initial_state
+from .state import WorkItemGraphState, set_bus_context, get_bus_context, clear_bus_context, make_initial_state
+from .graph import build_workitem_graph
 from .hook_adapter import build_hook_adapter_from_config
 
 __all__ = [
     "WorkItemGraphState",
-    "build_workitem_graph",
+    "set_bus_context",
+    "get_bus_context",
+    "clear_bus_context",
     "make_initial_state",
+    "build_workitem_graph",
     "build_hook_adapter_from_config",
 ]
