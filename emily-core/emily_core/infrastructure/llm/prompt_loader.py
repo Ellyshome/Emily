@@ -95,6 +95,9 @@ _DEFAULTS: dict[str, str] = {
 ## SOP 参考
 {sop_text}
 
+## 执行约束（来自上游意图识别）
+{result_constraints}
+
 ## 用户输入
 {user_input}
 
@@ -108,6 +111,7 @@ _DEFAULTS: dict[str, str] = {
 4. 步骤间如有依赖关系，在 depends_on 中标明
 5. 评估整体风险等级：L1(低风险-查询类) / L2(中风险-录入类) / L3(高风险-删除/批量修改)
 6. 对于需要工具调用的步骤，在 tool_params 中提供完整的参数对象
+7. 如果存在"执行约束"，必须在规划时考虑：scope 限定工具参数的查询范围，filters/must_not 在步骤中添加过滤条件
 
 ## 输出格式
 仅输出一个 JSON 对象（不要包含其他文字）：

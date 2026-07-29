@@ -100,6 +100,7 @@ QQ → NapCat → AstrBot → emily_agent 薄插件
 | 8 | **`agent/` 已删除** | 原 MasterAgent/BusinessFlowAgent 等已提取到 SessionAgent/WorkItemAgent。SOPIntentRegistry 和 ToolRegistry 已废弃删除，`agent/sop_parser.py`（SOP §3.2 白名单提取，已无调用者）随之清理，整个 `agent/` 目录移除。工具白名单现由 Skill YAML 的 tools 字段声明，SkillExecutor 执行时校验 |
 | 9 | **PipelineBUS 已废弃** | 2026-07-28 起，WorkItem 执行引擎统一为 LangGraph StateGraph（5 节点含 error_analysis 纠错闭环）。PipelineBUS / BusContext / WorkItemState / confirm_queue 代码保留在 `pipeline/` 目录下供历史参考，但不再被任何执行路径调用。唯一执行路径是 `SessionScheduler._run_one()` → `_run_graph()` → `graph.ainvoke()` |
 | 10 | **ToolManager vs ScriptManager 边界** | ToolManager 管 LLM 运行时工具（`BusinessFlowTool.handler`，进程内 async）；ScriptManager 管 `scripts/` 开发者脚本（subprocess CLI），共享 service 层，互不调用。脚本元信息声明在 `emily-data/config/scripts_registry.yaml`，目录由 `scriptmgr export` 生成。 |
+| 11 | **工具必须带参数 schema** | 所有需要 LLM 填参数的业务工具，注册时必须提供 JSON Schema（`params` 参数）。Schema 定义在工具源文件中（如 `_EVENT_TOOL_SCHEMA`），在 `registry.py` 中注册时通过 `params=_XXX_S` 传入。`_reg_biz()` 缺少 schema 时会在启动日志打印 SchemaGuard WARNING；CI `check_tools_consistency.py` V5/V14 会将其报告为 error。此前 16 个工具在 `_reg_biz()` 中硬编码空 schema 导致 LLM 填参时完全不知道约束（如 project_id 应是 UUID 而非项目名称），是系统性事故。新工具添加流程：① 在 tool 源文件定义 `_XXX_SCHEMA` 常量 → ② 在 `registry.py` 注册时传 `params=_XXX_S` → ③ 在 `tools_consistency.py` 的 `TOOL_SCHEMA_MAP` 添加映射条目。三步缺一不可。 |
 
 ---
 

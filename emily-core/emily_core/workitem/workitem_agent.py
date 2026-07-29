@@ -25,6 +25,7 @@ from .pipeline.interfaces.planning import ExecutionPlan, PlanStep
 from .pipeline.interfaces.execution import StepResult, ToolCallRecord, DbResult, RagResult, RagChunk, GuardianStepVerdict, StructuredResult
 from .pipeline.interfaces.auth import AuthResult, AuthDecision
 from .pipeline.real_guardian import RealGuardian, GuardianNote
+from .workitem_state import WorkItemState
 from ..session.session_context import format_message_history
 
 logger = logging.getLogger("emily.workitem_agent")
@@ -329,12 +330,27 @@ class WorkItemAgent:
         else:
             tools_text = "（无可用工具）"
 
+        import json as _json
+        rc = getattr(wi, "result_constraints", {}) or {}
+        rc_text = _json.dumps(rc, ensure_ascii=False) if rc else "{}"
+        
         planner_prompt = _load_planner_prompt()
         system_prompt = planner_prompt.format(
             sop_text=sop_text[:4000] if sop_text else f"SOP: {wi.sop_id or '未知'}（全文未加载）",
             user_input=wi.user_input,
             available_tools=tools_text,
+            result_constraints=rc_text,
         )
+
+        # ★ 多轮续接：注入上一轮收集到的信息
+        if wi.additional_input:
+            additional_context = (
+                f"\n\n【续接上下文】\n"
+                f"用户上一轮补充的信息：{wi.additional_input}\n"
+                f"Emily 上轮问的问题：{wi.question}\n"
+                f"请基于这些新信息继续规划，跳过已收集的字段。\n"
+            )
+            system_prompt += additional_context
 
         # ── 归档：存储 Node2 Prompt 注入信息到 BusContext.baggage ──
         try:
@@ -432,6 +448,16 @@ class WorkItemAgent:
         else:
             # ── RealExecutor 路径 ──
             step_results = await self._real_execute(wi.execution_plan, context)
+
+        # ★ 多轮续接：检测最后一个 step 是否请求用户输入
+        last_sr = step_results[-1] if step_results else None
+        if last_sr:
+            output = getattr(last_sr, "output", None)
+            if isinstance(output, dict) and output.get("needs_input"):
+                wi.question = output.get("question", "")
+                logger.info("WI %s node3: WAITING_FOR_INPUT — question=%s", wi.id, wi.question[:60])
+                wi.state = WorkItemState.WAITING_FOR_INPUT
+                return  # 跳过 Guardian 审核和 step_results 收集（用户还没给出最终答案）
 
         # Guardian 并进审核：每个 step 的 review 作为后台 Task，
         # 在全部步骤执行完后 gather() 汇合，不阻塞主链路。
@@ -766,6 +792,25 @@ class WorkItemAgent:
             guardian = getattr(sr, "guardian", None)
             if guardian and getattr(guardian, "reason", ""):
                 issues.append(f"[{getattr(sr, 'step_id', '?')}] {guardian.reason}")
+
+        # ── result_constraints 校验 ──
+        rc = getattr(wi, "result_constraints", {}) or {}
+        if rc:
+            must_include = rc.get("must_include", [])
+            if must_include:
+                # 检查必须包含的维度是否在 summary_facts 中
+                combined = " ".join(summary_facts) if summary_facts else ""
+                for item in must_include:
+                    if item not in combined:
+                        issues.append(f"[constraint] 缺少必须信息: {item}")
+            must_not = rc.get("must_not", [])
+            if must_not:
+                combined = " ".join(summary_facts) if summary_facts else ""
+                for item in must_not:
+                    # 简单关键词匹配
+                    clean = item.replace("不要", "").replace("别", "").strip()
+                    if clean and clean in combined:
+                        issues.append(f"[constraint] 包含违规内容: {item}")
 
         # needs_confirm：从 step_results 推断（如 handler 返回 needs_confirm）
         needs_confirm = any(

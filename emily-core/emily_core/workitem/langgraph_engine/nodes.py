@@ -110,6 +110,7 @@ def make_node2(agent, hook_adapter):
         entered_before = state.get("_entered_node2", False)
         if entered_before:
             state["replan_count"] = state.get("replan_count", 0) + 1
+            state["retry_count"] = 0  # 重规划后重置 retry 预算
         state["_entered_node2"] = True
 
         # 注入 replan_hint 到 baggage

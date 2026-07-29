@@ -180,6 +180,10 @@ class Config:
     0 = 禁用重规划（node3 失败直接走 error_analysis 分类，但不重规划）。
     1 = 允许 1 次重规划（默认，平衡纠错能力与成本）。"""
 
+    langgraph_max_retry: int = 2
+    """LangGraph 引擎最大直接重试次数（node3→error_analysis→node3 循环上限，防死循环）。
+    超过后升级为 REPLAN（回 node2 重规划），避免 transient_failure 分类导致的无限重试。"""
+
     # ── Checkpoint 持久化 ──
     checkpoint_enabled: bool = True
     """检查点持久化开关"""

@@ -45,6 +45,24 @@ class WorkItem:
     output_spec: dict = field(default_factory=dict)
     """M1: Session 下发的成果规格：intent/detail/format/cite_source/max_length/data_fields"""
 
+    # ── M2: Session 下发的执行约束（scope/filters/must_include/must_not）──
+    result_constraints: dict = field(default_factory=dict)
+    """SessionAgent 从用户表达中提取的结果约束，供 node2 规划和 node4 验证使用。
+    
+    Structure:
+        scope: dict       — {"project": "...", "responsible_user": "...", "time_range": "..."}
+        filters: list[str] — ["exclude_completed", "only_pending"]
+        must_include: list[str] — ["节点名称", "截止日期"]
+        must_not: list[str] — ["不要已完成节点"]
+    """
+
+    # ── 多轮续接 ──
+    question: str = ""
+    """Emily 上一轮问用户的问题（挂起时写入，供续接判断用）"""
+
+    additional_input: str = ""
+    """续接时用户补充的消息内容（SessionAgent 注入，node2 消费）"""
+
     # ── Node 2（计划+标准）产出 ──
     execution_plan: Any = None           # ExecutionPlan | None
     risk_level: str = ""

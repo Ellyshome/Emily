@@ -98,8 +98,13 @@ class SessionScheduler:
         """在公共 BUS 上执行单个 WorkItem，驱动其状态机。"""
         self._active[wi.id] = wi
         try:
-            # CREATED → PLANNING（KnowledgeInjector 增量灌注在 BUS node1 内触发）
-            wi.transition_to(WorkItemState.PLANNING)
+            # ★ 多轮续接：WAITING_FOR_INPUT 状态跳过 PLANNING，直接从 EXECUTING 恢复
+            is_resuming = (wi.state == WorkItemState.WAITING_FOR_INPUT)
+            if is_resuming:
+                wi.transition_to(WorkItemState.EXECUTING)
+            else:
+                # CREATED → PLANNING（KnowledgeInjector 增量灌注在 BUS node1 内触发）
+                wi.transition_to(WorkItemState.PLANNING)
 
             # 权限架构 v1.2：将 SessionContext 注入 BusContext（只读）
             # WorkItemAgent 通过 context.get_permissions() 等方法访问权限信息
@@ -129,8 +134,15 @@ class SessionScheduler:
                     context.message = stored
 
             # PLANNING → EXECUTING（LangGraph StateGraph 5 节点 + error_analysis 纠错闭环）
-            wi.transition_to(WorkItemState.EXECUTING)
+            if not is_resuming:
+                wi.transition_to(WorkItemState.EXECUTING)
             await self._run_graph(context)
+
+            # ★ 多轮续接：检查 WI 是否被 node3 标记为 WAITING_FOR_INPUT
+            if wi.state == WorkItemState.WAITING_FOR_INPUT:
+                logger.info("Scheduler[%s] WI %s WAITING_FOR_INPUT: %s",
+                            self.session_id, wi.id, wi.question[:60])
+                return wi  # 不标 DONE/FAILED，由 SessionAgent 持有等待续接
 
             if context.should_abort:
                 wi.transition_to(WorkItemState.FAILED)
@@ -195,10 +207,13 @@ class SessionScheduler:
             context.baggage.setdefault("progress_sender", _send_progress)
 
         try:
-            max_replan = getattr(getattr(core, "config", None), "langgraph_max_replan", 1) if core else 1
+            _cfg = getattr(core, "config", None) if core else None
+            max_replan = getattr(_cfg, "langgraph_max_replan", 1) if _cfg else 1
+            max_retry = getattr(_cfg, "langgraph_max_retry", 2) if _cfg else 2
             state = make_initial_state(
                 pipeline_run_id=context.pipeline_run_id,
                 max_replan=max_replan,
+                max_retry=max_retry,
             )
             # thread_id = pipeline_run_id，对接现有 trace/归档/LLM 日志
             config = {"configurable": {"thread_id": context.pipeline_run_id}}

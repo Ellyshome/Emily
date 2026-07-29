@@ -15,12 +15,14 @@
   replan_hint: str             — 给 node2 的修复建议
   error_type: str              — 错误分类
   replan_count: int            — 重规划次数
+  retry_count: int             — 直接重试次数（transient_failure 路径，防 node3↔error_analysis 死循环）
   node_timings: dict[str,int]  — 节点耗时 ms
   started_at: str              — graph 开始时间 ISO
   pipeline_run_id: str         — = BusContext.pipeline_run_id = thread_id
   current_stage: str           — 当前节点名
   _entered_node2: bool         — 是否已进入 node2
   _max_replan: int             — 最大重规划次数
+  _max_retry: int              — 最大直接重试次数（超过则升级为 REPLAN）
 """
 
 from __future__ import annotations
@@ -72,15 +74,17 @@ class WorkItemGraphState(TypedDict, total=False):
     replan_hint: str           # 给 node2 的修复建议
     error_type: str            # 错误分类
     replan_count: int          # 重规划次数
+    retry_count: int           # 直接重试次数（transient_failure 路径）
     node_timings: dict         # 节点耗时 ms
     started_at: str            # graph 开始时间 ISO
     pipeline_run_id: str       # = BusContext.pipeline_run_id = thread_id
     current_stage: str         # 当前节点名
     _entered_node2: bool       # 是否已进入 node2
     _max_replan: int           # 最大重规划次数
+    _max_retry: int            # 最大直接重试次数（超过则升级为 REPLAN）
 
 
-def make_initial_state(*, pipeline_run_id: str, max_replan: int = 1) -> dict:
+def make_initial_state(*, pipeline_run_id: str, max_replan: int = 1, max_retry: int = 2) -> dict:
     """构建 graph 初始 state。"""
     return {
         "flow_control": {
@@ -92,10 +96,12 @@ def make_initial_state(*, pipeline_run_id: str, max_replan: int = 1) -> dict:
         "replan_hint": "",
         "error_type": "",
         "replan_count": 0,
+        "retry_count": 0,
         "node_timings": {},
         "started_at": "",
         "pipeline_run_id": pipeline_run_id,
         "current_stage": "",
         "_entered_node2": False,
         "_max_replan": max_replan,
+        "_max_retry": max_retry,
     }
