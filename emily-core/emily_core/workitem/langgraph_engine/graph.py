@@ -1,26 +1,10 @@
 # emily-core/emily_core/workitem/langgraph_engine/graph.py
-"""StateGraph 构建 —— 5 节点 + 条件边（Self-Reflection 纠错闭环）。
+"""统一生命周期 StateGraph —— created→routing→executing(agent loop)→summarizing→done/failed。
 
-Graph 拓扑：
-  START → node1 → node2 → node3 → [route_after_node3] → node4 → END
-                 ↑       │            │
-                 │       │            └→ error_analysis → [route_after_analysis]
-                 │       │                      │
-                 │       │                      ├→ node2（param_error/tool_mismatch，带 replan_hint 重规划）
-                 ↑───────┘ ←── replan ──────────┤
-                 │                              ├→ node3（transient_failure，直接重试）
-                 │                              └→ END（permission_denied/permanent_failure/missing_info）
-                 │
-                 └── node3 ←── retry ────────────┘
-
-State 设计（方案 C：纯可序列化 + contextvars）：
-  - State 仅含基础类型（str/int/bool/dict），100% msgpack 兼容 → MemorySaver 可用
-  - BusContext 通过 contextvars 传递，node handler 零改动
-  - 条件边从 state["flow_control"] 读流程控制信号
-
-thread_id = pipeline_run_id，对接现有 trace/归档/LLM 日志。
+executing 内嵌 agent loop：executing(agent_node) ↔ tool_node，由条件边驱动循环。
+WAITING_FOR_INPUT 用 LangGraph interrupt()（在 tool_node 的 ask_user 分支触发）。
+error_analysis 作 iteration cap 兜底。
 """
-
 from __future__ import annotations
 
 import logging
@@ -28,151 +12,123 @@ import logging
 from langgraph.graph import StateGraph, START, END
 from langgraph.checkpoint.memory import MemorySaver
 
-from .state import WorkItemGraphState, get_bus_context
+from .state import AgentLoopState
 from .nodes import (
-    make_node1, make_node2, make_node3, make_node4, make_error_analysis,
-    node_retry_policies,
+    make_created, make_routing, make_executing, make_summarizing, make_error_analysis,
 )
-from .error_analysis import REPLAN_TYPES, RETRY_TYPES, ABORT_TYPES
+from .agent.loop import route_after_agent, route_after_tool
 
 logger = logging.getLogger("emily.langgraph.graph")
 
 
-def route_after_node3(state: dict) -> str:
-    """node3 之后的条件边路由。
-
-    路由优先级（从 state 读 flow_control，从 contextvars 读 BusContext）：
-      1. flow_control["should_abort"] → "end"
-      2. flow_control["has_failed_step"] 且 replan_count < max_replan → "error_analysis"
-      3. 否则 → "node4"
-    """
-    fc = state.get("flow_control", {})
-    max_replan = state.get("_max_replan", 1)
-    replan_count = state.get("replan_count", 0)
-
-    if fc.get("should_abort"):
-        logger.info("route_after_node3: should_abort=True → end")
-        return "end"
-
-    if fc.get("has_failed_step") and replan_count < max_replan:
-        logger.info("route_after_node3: failed step + replan_count=%d < %d → error_analysis",
-                    replan_count, max_replan)
-        return "error_analysis"
-
-    return "node4"
-
-
-def route_after_analysis(state: dict) -> str:
-    """error_analysis 之后的条件边路由（按错误类型路由）。
-
-    retry_count 防无限重试：RetryPathGuard —
-      当 RETRY 路径被连续选择 >= _max_retry 次时，升级为 REPLAN（回 node2 重规划），
-      避免 node3 → error_analysis → node3 的死循环。
-    """
-    fc = state.get("flow_control", {})
-    if fc.get("should_abort"):
-        logger.info("route_after_analysis: should_abort=True → end")
-        return "end"
-
-    error_type = state.get("error_type", "")
-    analysis = state.get("error_analysis", {})
-    max_retry = state.get("_max_retry", 2)
-
-    if error_type in ABORT_TYPES or analysis.get("should_abort"):
-        logger.info("route_after_analysis: error_type=%s (ABORT) → end", error_type)
-        return "end"
-
-    if error_type in REPLAN_TYPES or analysis.get("should_replan"):
-        state["retry_count"] = 0
-        logger.info("route_after_analysis: error_type=%s (REPLAN) → node2", error_type)
-        return "node2"
-
-    if error_type in RETRY_TYPES or analysis.get("should_retry"):
-        retry_count = state.get("retry_count", 0)
-        if retry_count >= max_retry:
-            logger.warning(
-                "route_after_analysis: retry_count=%d >= max_retry=%d, "
-                "escalating RETRY → REPLAN to break infinite retry loop",
-                retry_count, max_retry,
-            )
-            # 仅重置 retry 预算；replan_count 由 node2 统一递增（_entered_node2=True 分支）
-            state["retry_count"] = 0
-            return "node2"
-        state["retry_count"] = retry_count + 1
-        logger.info("route_after_analysis: error_type=%s (RETRY #%d/%d) → node3",
-                    error_type, retry_count + 1, max_retry)
-        return "node3"
-
-    logger.warning("route_after_analysis: unknown error_type=%s → end", error_type)
-    return "end"
-
-
-def route_after_node2(state: dict) -> str:
-    """node2 之后的路由：should_abort → end，否则 → node3。"""
-    fc = state.get("flow_control", {})
-    if fc.get("should_abort"):
-        return "end"
-    return "node3"
-
-
 def build_workitem_graph(
-    agent,
+    *,
     hook_adapter,
-    max_replan: int = 1,
-) -> StateGraph:
-    """构建 WorkItem 执行 StateGraph（含 error_analysis 纠错闭环）。
+    llm_client,
+    business_tools,
+    resolvers,
+    config,
+    max_iterations: int = 12,
+) -> "StateGraph":
+    """构建统一生命周期图。
 
     Args:
-        agent: WorkItemAgent 实例
         hook_adapter: HookAdapter 实例
-        max_replan: 最大重规划次数
-
-    Returns:
-        编译后的 LangGraph CompiledGraph（带 MemorySaver checkpoint）
+        llm_client: LLMClient 实例
+        business_tools: BusinessFlowToolRegistry 实例
+        resolvers: ResolverRegistry 实例
+        config: Config 实例
+        max_iterations: agent loop 最大迭代数
     """
-    graph_builder = StateGraph(WorkItemGraphState)
+    gs = StateGraph(AgentLoopState)
 
-    # ── 注册节点（5 个）──
-    graph_builder.add_node("wi_node1", make_node1(agent, hook_adapter))
-    graph_builder.add_node("wi_node2", make_node2(agent, hook_adapter))
-    graph_builder.add_node("wi_node3", make_node3(agent, hook_adapter))
-    graph_builder.add_node("wi_node4", make_node4(agent, hook_adapter))
-    graph_builder.add_node("error_analysis", make_error_analysis(agent, hook_adapter))
+    # ── 注册节点 ──
+    gs.add_node("created", make_created(hook_adapter))
+    gs.add_node("routing", make_routing(hook_adapter))
+    gs.add_node("executing", make_executing(
+        hook_adapter, llm_client=llm_client, business_tools=business_tools,
+        resolvers=resolvers, config=config))
+    gs.add_node("agent_node", _make_agent_loop_entry(
+        llm_client=llm_client, business_tools=business_tools,
+        resolvers=resolvers, config=config))
+    gs.add_node("tool_node", _make_tool_loop_entry(
+        llm_client=llm_client, business_tools=business_tools, resolvers=resolvers))
+    gs.add_node("summarizing", make_summarizing(hook_adapter))
+    gs.add_node("error_analysis", make_error_analysis(
+        hook_adapter, llm_client=llm_client, config=config))
 
     # ── 边 ──
-    graph_builder.add_edge(START, "wi_node1")
-    graph_builder.add_edge("wi_node1", "wi_node2")
+    gs.add_edge(START, "created")
+    gs.add_edge("created", "routing")
+    gs.add_edge("routing", "executing")
 
-    # node2 → node3（带 should_abort 条件）
-    graph_builder.add_conditional_edges(
-        "wi_node2",
-        route_after_node2,
-        {"node3": "wi_node3", "end": END},
+    # executing 触发首轮 agent_node
+    gs.add_edge("executing", "agent_node")
+
+    # agent_node → 条件路由（tool_node / summarizing / error_analysis）
+    gs.add_conditional_edges(
+        "agent_node",
+        route_after_agent,
+        {"tool_node": "tool_node", "summarizing": "summarizing",
+         "error_analysis": "error_analysis"},
     )
 
-    # node3 → 条件路由（error_analysis / node4 / end）
-    graph_builder.add_conditional_edges(
-        "wi_node3",
-        route_after_node3,
-        {"error_analysis": "error_analysis", "node4": "wi_node4", "end": END},
+    # tool_node → 条件路由（complete_work→summarizing / 否则→agent_node 循环）
+    gs.add_conditional_edges(
+        "tool_node",
+        route_after_tool,
+        {"agent_node": "agent_node", "summarizing": "summarizing"},
     )
 
-    # error_analysis → 条件路由（node2 重规划 / node3 重试 / end）
-    graph_builder.add_conditional_edges(
+    # summarizing → END
+    gs.add_edge("summarizing", END)
+
+    # error_analysis → 条件路由（failed→END / agent_node 重试）
+    gs.add_conditional_edges(
         "error_analysis",
-        route_after_analysis,
-        {"node2": "wi_node2", "node3": "wi_node3", "end": END},
+        route_after_error,
+        {"failed": END, "agent_node": "agent_node"},
     )
 
-    # node4 → END
-    graph_builder.add_edge("wi_node4", END)
-
-    # ── 编译（MemorySaver — State 纯可序列化，checkpoint 可用）──
-    graph = graph_builder.compile(checkpointer=MemorySaver())
-    graph._max_replan = max_replan  # type: ignore[attr-defined]
-
-    logger.info(
-        "WorkItem graph built: 5 nodes (含 error_analysis), max_replan=%d, checkpointer=MemorySaver",
-        max_replan,
-    )
+    graph = gs.compile(checkpointer=MemorySaver())
+    logger.info("Unified lifecycle graph built: created→routing→executing(agent loop)→summarizing, "
+                "max_iterations=%d, checkpointer=MemorySaver", max_iterations)
     return graph
+
+
+def route_after_error(state: dict) -> str:
+    """error_analysis 之后路由：should_abort→failed(END)，否则→agent_node 重试。"""
+    ea = state.get("error_analysis", {}) or {}
+    if ea.get("should_abort"):
+        return "failed"
+    return "agent_node"
+
+
+def _make_agent_loop_entry(*, llm_client, business_tools, resolvers, config):
+    """agent_node 节点入口（直接调 loop.agent_node，不经 hook 包装——executing 节点已 fire hook）。"""
+    from .agent.loop import agent_node
+
+    async def _node(state: dict) -> dict:
+        ctx = None
+        try:
+            from .state import get_bus_context
+            ctx = get_bus_context()
+        except RuntimeError:
+            pass
+        sop_text = ctx.get("sop_text", "") if ctx else ""
+        return await agent_node(
+            state, llm_client=llm_client, business_tools=business_tools,
+            resolvers=resolvers, sop_text=sop_text, config=config)
+    _node.__name__ = "agent_node"
+    return _node
+
+
+def _make_tool_loop_entry(*, llm_client, business_tools, resolvers):
+    """tool_node 节点入口（直接调 loop.tool_node）。"""
+    from .agent.loop import tool_node
+
+    async def _node(state: dict) -> dict:
+        return await tool_node(state, llm_client=llm_client,
+                               business_tools=business_tools, resolvers=resolvers)
+    _node.__name__ = "tool_node"
+    return _node

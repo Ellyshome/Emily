@@ -96,6 +96,14 @@ SOP-999 不手写 tools 列表。每次 SkillRegistry.load/reload 时，`_derive
 3. 若无 confirm_callback → 拒绝执行（安全优先）
 4. 仅 permission_flag=all 的只读工具可无需确认直接执行
 
+### 3.4 Agent 调用指引（L3 agent loop）
+
+1. **自由推理**：本 SOP 为兜底流程，无固定步骤。Agent 基于用户意图自由推理，选择合适的可见工具
+2. **UUID 解析**：任何工具参数需要 UUID（如 project_id）时，**必须先调 `resolve_project`** 解析
+3. **工具失败自纠**：调用工具返回错误时，分析 tool_result 调整参数后重试，不要原样重试
+4. **信息不足**：无法确定用户意图或缺少关键信息时，调用 `ask_user` 工具向用户提问
+5. **完成回复**：操作完成后简洁回复结果，用中文
+
 ---
 
 ## 4. 异常处理

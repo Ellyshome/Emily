@@ -135,7 +135,7 @@ class LLMClient:
             response = await self._client.chat.completions.create(**kwargs)
         except Exception as e:
             # tools 不被支持时的回退
-            if tools and "tools" in str(e).lower():
+            if tools and "tools " in str(e).lower() and "tool_calls" not in str(e).lower():
                 logger.warning("Tools not supported, falling back: %s", e)
                 del kwargs["tools"]
                 try:

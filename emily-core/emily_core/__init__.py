@@ -53,10 +53,11 @@ class EmilyCore:
         # 邮箱服务
         self._email_service = None
 
-        # WorkItem 执行引擎（LangGraph StateGraph，5 节点 + error_analysis 纠错闭环）
+        # WorkItem 执行引擎（LangGraph StateGraph，统一生命周期图 + L3 agent loop）
         self._workitem_agent = None
         self._workitem_graph = None
         self._hook_adapter = None
+        self._resolvers = None
 
         # Session 池
         self._session_pool = None
@@ -275,10 +276,9 @@ class EmilyCore:
             self._email_service = None
 
     def _init_skill_module(self) -> None:
-        """初始化 Skill 模块：Registry + Executor。fail-open。"""
+        """初始化 Skill 模块：SOP .md 索引器（降级后）。fail-open。"""
         try:
             from .skill.registry import SkillRegistry
-            from .skill.executor import SkillExecutor
 
             # 使用统一路径解析：config → 容器 → 开发回退
             skill_dir = resolve_data_path(
@@ -289,8 +289,8 @@ class EmilyCore:
 
             self._skill_registry = SkillRegistry(skill_directory=skill_dir)
             status = self._skill_registry.load()
-            self._skill_executor = SkillExecutor()
-            logger.info("Skill module initialized: %s — dir=%s", status, skill_dir)
+            self._skill_executor = None  # SkillExecutor 已删除（L3 agent loop 迁移）
+            logger.info("Skill module initialized (SOP indexer): %s — dir=%s", status, skill_dir)
 
             # 将 SkillRegistry 注入 PermissionService（使 sop_allow fallback 生效）
             if self._permission_service is not None:
@@ -462,41 +462,32 @@ class EmilyCore:
             self._business_flow_tools = None
 
     def _build_pipeline_bus(self) -> None:
-        """构建 WorkItemAgent + LangGraph 执行引擎。
+        """构建统一生命周期 LangGraph 引擎（L3 agent loop）。
 
-        旧 PipelineBUS 已废弃（2026-07-28），WorkItemAgent 仍然提供 4 个节点 handler，
-        但执行路径统一为 LangGraph StateGraph（5 节点含 error_analysis 纠错闭环）。
+        旧 5 节点图 + WorkItemAgent 4 节点 handler 已移除（大爆炸切换）。
+        新图：created→routing→executing(agent loop)→summarizing→done/failed。
         """
-        from .workitem import WorkItemAgent, KnowledgeInjector
-
-        injector = KnowledgeInjector(sop_loader=None)
-        self._workitem_agent = WorkItemAgent(
-            injector=injector,
-            llm_client=self._llm_client,
-            config=self.config,
-            business_flow_tools=self._business_flow_tools,
-            rag_provider=self._rag_provider,
-            permission_engine=self._permission_auth_engine,
-            skill_registry=self._skill_registry,
-            skill_executor=self._skill_executor,
-        )
-
-        # ── LangGraph 执行引擎（唯一路径）──
         from .workitem.langgraph_engine.graph import build_workitem_graph
         from .workitem.langgraph_engine.hook_adapter import build_hook_adapter_from_config
+        from .workitem.langgraph_engine.agent.resolver import build_default_resolvers
 
         hook_cfg = self._load_hook_config() or {"hooks": {}}
         injected = self._collect_injected_services()
         self._hook_adapter = build_hook_adapter_from_config(hook_cfg, injected)
 
+        self._resolvers = build_default_resolvers()
+
         self._workitem_graph = build_workitem_graph(
-            agent=self._workitem_agent,
             hook_adapter=self._hook_adapter,
-            max_replan=getattr(self.config, "langgraph_max_replan", 1),
+            llm_client=self._llm_client,
+            business_tools=self._business_flow_tools,
+            resolvers=self._resolvers,
+            config=self.config,
+            max_iterations=getattr(self.config, "agent_loop_max_iterations", 12),
         )
         logger.info(
-            "LangGraph engine built: 5 nodes (含 error_analysis), max_replan=%d, checkpointer=MemorySaver",
-            getattr(self.config, "langgraph_max_replan", 1),
+            "Unified lifecycle graph built: agent loop, max_iterations=%d, checkpointer=MemorySaver",
+            getattr(self.config, "agent_loop_max_iterations", 12),
         )
 
     def _build_session_pool(self) -> None:
@@ -1075,7 +1066,7 @@ class EmilyCore:
             "initialized": self._initialized,
             "sessions": pool.size if pool else 0,
             "uptime": pool.uptime_seconds if pool else 0,
-            "bus_hooks": self._bus.hook_count() if self._bus else 0,
+            "langgraph_engine": self._graph is not None if hasattr(self, '_graph') else False,
         }
         return result
 

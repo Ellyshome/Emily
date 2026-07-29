@@ -6,9 +6,7 @@
 验证项：
   V1  — 注册工具数（硬编码集合大小）
   V5  — business 类空 schema 检测
-  V10 — Skill YAML tools[].name 在 REGISTERED_TOOLS
-  V11 — Skill YAML steps[].tool_name 在 REGISTERED_TOOLS
-  V12 — Skill YAML steps[].tool_params 参数名在对应工具 schema
+  V10-V12 — Skill YAML 检查（已砍：M8 删除 Skill YAML）
   V13a — 内存已注册工具在 tool_registry 表也存在
   V13b — tool_registry 表工具在内存也已注册
 
@@ -157,76 +155,8 @@ def _load_tool_schemas() -> dict[str, set[str] | None]:
     return result
 
 
-def _load_skills(skill_dir: str | Path) -> list[tuple[str, dict, Path]]:
-    """加载 Skill YAML 列表（轻量，不依赖 SkillRegistry 初始化）。
-
-    Returns:
-        [(skill_id, data_dict, file_path), ...]
-    """
-    import yaml
-    skills: list[tuple[str, dict, Path]] = []
-    skill_path = Path(skill_dir)
-    if not skill_path.exists():
-        return skills
-    for yfile in sorted(skill_path.glob("*.skill.yaml")):
-        try:
-            data = yaml.safe_load(yfile.read_text(encoding="utf-8"))
-            if isinstance(data, dict):
-                skills.append((data.get("skill_id", yfile.stem), data, yfile))
-        except Exception as e:
-            logger.warning("parse skill %s failed: %s", yfile.name, e)
-    return skills
-
-
-def _check_skill_yaml(
-    skills: list[tuple[str, dict, Path]],
-    tool_schemas: dict[str, set[str] | None],
-    issues: list[dict],
-) -> None:
-    """V10/V11/V12: Skill YAML 工具名存在性 + 参数 schema 匹配。"""
-    for skill_id, data, _yfile in skills:
-        # V10: tools[].name 存在（M3: 跳过 auto_generate: true 的 tools 段）
-        raw_tools = data.get("tools", [])
-        if isinstance(raw_tools, dict) and raw_tools.get("auto_generate"):
-            raw_tools = []  # 运行时派生，不检查
-        for t in raw_tools or []:
-            if isinstance(t, dict) and "name" in t and t["name"] not in REGISTERED_TOOLS:
-                issues.append({
-                    "severity": "fatal", "check": "V10_tool_name_missing",
-                    "skill": skill_id, "detail": f"tools 引用不存在的工具: {t['name']}",
-                })
-        # V11/V12: steps[].tool_name + tool_params
-        for s in data.get("steps", []) or []:
-            if not isinstance(s, dict):
-                continue
-            tn = s.get("tool_name")
-            if not tn:
-                continue
-            # M3: __DYNAMIC__ 是合法特殊值，跳过 V11 检查
-            if tn == "__DYNAMIC__":
-                continue
-            if tn not in REGISTERED_TOOLS:
-                issues.append({
-                    "severity": "fatal", "check": "V11_step_tool_missing",
-                    "skill": skill_id, "step": s.get("id"),
-                    "detail": f"step 引用不存在的工具: {tn}",
-                })
-                continue
-            # V12: tool_params 参数在 schema
-            expected = tool_schemas.get(tn)
-            if expected is None:
-                continue  # 无 schema 的工具跳过参数检查
-            actual: set[str] = set()
-            for p in s.get("tool_params", []) or []:
-                if isinstance(p, dict) and "name" in p:
-                    actual.add(p["name"])
-            extra = actual - expected
-            if extra:
-                issues.append({
-                    "severity": "fatal", "check": "V12_param_mismatch",
-                    "skill": skill_id, "step": s.get("id"), "tool": tn,
-                    "detail": f"传了 schema 外参数: {sorted(extra)}，schema 实际: {sorted(expected)}",
-                })
+# M8: _load_skills / _check_skill_yaml / _check_meta_tools_whitelist / _check_dark_tools 已删除
+# Skill YAML 体系已移除，相关检查不再需要
 
 
 def _check_tool_registry(issues: list[dict]) -> dict:
@@ -257,73 +187,8 @@ def _check_tool_registry(issues: list[dict]) -> dict:
     }
 
 
-# ── M5: V14 + V15 新增检查 ──
-
-def _check_meta_tools_whitelist(skills: list, issues: list[dict]) -> None:
-    """V14: SOP-999 派生白名单 ⊆ REGISTERED_TOOLS。
-
-    从 Skill YAML 检查 SOP-999 的 tools 是否引用了不存在的工具（仅检查非 auto_generate 的手写 tools）。
-    auto_generate 的 tools 由 SkillRegistry 运行时派生，不在此处检查。
-    """
-    for skill_id, data, _yfile in skills:
-        if "SOP-999" not in skill_id:
-            continue
-        raw_tools = data.get("tools", [])
-        # auto_generate 的工具不在此处检查（运行时派生）
-        if isinstance(raw_tools, dict) and raw_tools.get("auto_generate"):
-            continue
-        for t in raw_tools or []:
-            if isinstance(t, dict) and "name" in t and t["name"] not in REGISTERED_TOOLS:
-                issues.append({
-                    "severity": "fatal", "check": "V14_meta_tool_not_registered",
-                    "skill": skill_id,
-                    "detail": f"SOP-999 tools 引用不存在的工具: {t['name']}",
-                })
-
-
-def _check_dark_tools(skills: list, issues: list[dict]) -> None:
-    """V15: 暗工具检测——每个 REGISTERED_TOOLS 的工具必须满足以下之一，否则 warning：
-    - 被某专属 SOP 的 tools[].name 引用
-    - 在 tool_registry 中标 exposure_mode == 'sop_only'
-    - 否则：将自动进入 SOP-999 派生白名单（warning 提示开发者确认）
-    """
-    # 收集所有 Skill YAML 的 tools[].name
-    referenced: set[str] = set()
-    for skill_id, data, _yfile in skills:
-        raw_tools = data.get("tools", [])
-        if isinstance(raw_tools, dict) and raw_tools.get("auto_generate"):
-            continue
-        for t in raw_tools or []:
-            if isinstance(t, dict) and "name" in t:
-                referenced.add(t["name"])
-
-    # 从 tool_registry 取 exposure_mode 映射
-    exposure_map: dict[str, str] = {}
-    try:
-        from emily_core.repositories.tool_registry_repo import ToolRegistryRepo
-        db_tools = ToolRegistryRepo.get_all_active()
-        for row in db_tools:
-            exposure_map[row["api_id"]] = row.get("exposure_mode", "meta")
-    except Exception as e:
-        logger.warning("_check_dark_tools: tool_registry unavailable: %s", e)
-
-    for tool in sorted(REGISTERED_TOOLS):
-        if tool in referenced:
-            continue  # 有专属 SOP 引用
-        if exposure_map.get(tool) == "sop_only":
-            continue  # 显式标为 sop_only
-        # 暗工具：将自动进入 SOP-999 派生白名单
-        issues.append({
-            "severity": "warning", "check": "V15_dark_tool",
-            "tool": tool,
-            "detail": (
-                f"工具 {tool} 无专属 SOP、未标 sop_only，"
-                f"将自动进入 SOP-999 直调白名单。"
-                f"若需专属流程，请创建 SOP-XXX；"
-                f"若不应被 LLM 自主调用，标 sop_only"
-            ),
-        })
-
+# M8: _check_meta_tools_whitelist (V14) 和 _check_dark_tools (V15) 已删除
+# Skill YAML 体系已移除，相关检查不再需要
 
 def _check_v14_schema_map_coverage(
     tool_schemas: dict[str, set[str] | None],
@@ -360,16 +225,15 @@ def _check_v14_schema_map_coverage(
             })
 
 
-def check_all(skill_dir: str, check_tool_registry: bool = True) -> dict:
+def check_all(check_tool_registry: bool = True) -> dict:
     """全量一致性检查。返回结构化报告 dict。
 
     Args:
-        skill_dir: Skill YAML 目录路径
         check_tool_registry: 是否检查 tool_registry 表（需 DB 连接）
 
     Returns:
         {
-            "summary": {registered, with_schema, skills, total_issues, fatal_issues},
+            "summary": {registered, with_schema, total_issues, fatal_issues},
             "empty_schema_tools": [...],   # V5
             "tool_registry": {...} or None,  # V13
             "issues": [{severity, check, ...}, ...],
@@ -402,15 +266,7 @@ def check_all(skill_dir: str, check_tool_registry: bool = True) -> dict:
     # V14: 所有 REGISTERED_TOOLS 必须出现在 TOOL_SCHEMA_MAP 中（write_user_memory 除外）
     _check_v14_schema_map_coverage(tool_schemas, issues)
 
-    # V10/V11/V12: Skill YAML 一致性
-    skills = _load_skills(skill_dir)
-    _check_skill_yaml(skills, tool_schemas, issues)
-
-    # M5 V14: SOP-999 派生白名单 ⊆ REGISTERED_TOOLS
-    _check_meta_tools_whitelist(skills, issues)
-
-    # M5 V15: 暗工具检测
-    _check_dark_tools(skills, issues)
+    # V10/V11/V12: Skill YAML 一致性 — M8 已删除 Skill YAML，检查不再需要
 
     # V13: tool_registry 表同步（可选）
     tool_registry_report = None
@@ -422,7 +278,6 @@ def check_all(skill_dir: str, check_tool_registry: bool = True) -> dict:
         "summary": {
             "registered": len(REGISTERED_TOOLS),
             "with_schema": sum(1 for v in tool_schemas.values() if v is not None),
-            "skills": len(skills),
             "total_issues": len(issues),
             "fatal_issues": fatal_count,
         },
@@ -474,28 +329,25 @@ def _ensure_tool_registry_seed() -> dict:
         return {"synced": 0, "error": str(e)}
 
 
-def check_quick(skill_dir: str) -> dict:
-    """快速检查（供 self_check 启动集成）。启动时自动种子 tool_registry + Skill YAML 一致性。
+def check_quick() -> dict:
+    """快速检查（供 self_check 启动集成）。启动时自动种子 tool_registry。
+
+    M8: Skill YAML 体系已移除，Skill YAML 相关检查不再需要。
 
     fail-open：任何异常返回 {"ok": False, "error": ...}，不阻断 self_check。
 
     Returns:
-        {"skills": N, "issues": M, "fatal": K, "ok": bool}
+        {"issues": M, "fatal": K, "ok": bool}
     """
     # 自动种子（即使 check_quick 后续失败，种子也已写入）
     seed_result = _ensure_tool_registry_seed()
     try:
         tool_schemas = _load_tool_schemas()
-        skills = _load_skills(skill_dir)
         issues: list[dict] = []
-        _check_skill_yaml(skills, tool_schemas, issues)
-        # M5 V14: SOP-999 派生白名单 ⊆ REGISTERED_TOOLS
-        _check_meta_tools_whitelist(skills, issues)
-        # M5 V15: 暗工具检测
-        _check_dark_tools(skills, issues)
+        # V14: schema map 覆盖率检查
+        _check_v14_schema_map_coverage(tool_schemas, issues)
         fatal = sum(1 for i in issues if i["severity"] == "fatal")
         return {
-            "skills": len(skills),
             "issues": len(issues),
             "fatal": fatal,
             "ok": fatal == 0,
@@ -503,4 +355,4 @@ def check_quick(skill_dir: str) -> dict:
         }
     except Exception as e:
         logger.warning("check_quick failed: %s", e)
-        return {"skills": 0, "issues": 0, "fatal": 0, "ok": False, "error": str(e), "seed": seed_result}
+        return {"issues": 0, "fatal": 0, "ok": False, "error": str(e), "seed": seed_result}

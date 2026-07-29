@@ -579,6 +579,9 @@ class SessionAgent:
             )
             wi.output_spec = self._derive_output_spec(intent, None)  # M1
             wi.result_constraints = self._derive_constraints(intent)
+            wi.work_spec = self._build_work_spec(
+                intent, wi.sop_id, content, wi.output_spec, wi.result_constraints,
+                getattr(wi, "required_tools", set()))
             return [wi]
 
         if is_compound and sub_tasks:
@@ -595,6 +598,10 @@ class SessionAgent:
                 wi.output_spec = self._derive_output_spec(st if isinstance(st, dict) else intent,
                                                           wi.sop_id)  # M1
                 wi.result_constraints = self._derive_constraints(intent)
+                wi.work_spec = self._build_work_spec(
+                    intent, wi.sop_id, st.get("user_input", content) if isinstance(st, dict) else content,
+                    wi.output_spec, wi.result_constraints,
+                    getattr(wi, "required_tools", set()))
                 items.append(wi)
             return items
 
@@ -608,6 +615,9 @@ class SessionAgent:
         )
         wi.output_spec = self._derive_output_spec(intent, sop_id)  # M1
         wi.result_constraints = self._derive_constraints(intent)
+        wi.work_spec = self._build_work_spec(
+            intent, wi.sop_id, content, wi.output_spec, wi.result_constraints,
+            getattr(wi, "required_tools", set()))
         # M2: 路由派生的 query_type 预填给 SkillExecutor，省掉 step-01 的 LLM 参数提取
         query_type = intent.get("query_type")
         if sop_id == "SOP-005-QRY" and query_type:
@@ -660,6 +670,22 @@ class SessionAgent:
             return ["event_no", "status"]
         # 默认：让 WorkItem 自行决定
         return []
+
+    def _build_work_spec(self, intent: dict, sop_id: str, content: str,
+                         output_spec: dict, constraints: dict,
+                         required_tools: set | None = None) -> dict:
+        """M0: 组装 work_spec（规则化，不调 LLM）。
+
+        复用意图识别产出，把 user_input 原文 + 路由结果任务化为执行指令。
+        """
+        return {
+            "objective": (output_spec or {}).get("intent", "") or sop_id or "fallback",
+            "sop_id": sop_id or "",
+            "user_request": (content or "")[:500],
+            "output_spec": output_spec or {},
+            "constraints": constraints or {},
+            "required_tools": sorted(required_tools or set()),
+        }
 
     # ── M4: Session 回复合成层 ──
 
@@ -720,6 +746,8 @@ class SessionAgent:
                 data = result.get("data", {})
                 reply = data.get("reply", "") if isinstance(data, dict) else ""
                 if reply and len(reply) > 10:
+                    # M3: 成果规则约束校验——检查回复是否满足 must_include / must_not
+                    reply = self._enforce_result_constraints(reply, done_workitems)
                     # M4: review_reply 上移——审核合适性
                     await self._review_final_reply(reply, done_workitems)
                     return reply
@@ -753,6 +781,25 @@ class SessionAgent:
                 f"- suggested_followup: {sr.suggested_followup}\n"
             )
         return "\n".join(parts)
+
+    def _enforce_result_constraints(self, reply: str, done_workitems: list) -> str:
+        """M3: 成果规则约束校验——must_include 必须出现，must_not 不得出现。
+
+        违规时追加提示，不删减回复（fail-open，避免过度干预）。
+        """
+        for wi in done_workitems:
+            rc = getattr(wi, "result_constraints", {}) or {}
+            must_include = rc.get("must_include", []) or []
+            must_not = rc.get("must_not", []) or []
+            for item in must_include:
+                clean = item.replace("必须", "").replace("包含", "").strip()
+                if clean and clean not in reply:
+                    reply += f"\n（提示：{item}）"
+            for item in must_not:
+                clean = item.replace("不要", "").replace("别", "").strip()
+                if clean and clean in reply:
+                    reply += f"\n（注意：{item}）"
+        return reply
 
     async def _review_final_reply(self, reply: str, done_workitems: list) -> None:
         """M4: review_reply 上移——审回复合适性，只标记不拦截（沿用 RealGuardian 语义）。"""

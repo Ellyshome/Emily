@@ -575,26 +575,45 @@ class SessionArchiveWriter:
                             prompt_info_guardian=None) -> str:
         """渲染单个 BUS 节点的归档段落（含 Prompt 注入信息）。"""
         node_labels = {
+            "created": "初始化",
+            "routing": "路由验证",
+            "executing": "Agent 执行循环",
+            "summarizing": "成果总结",
+            "error_analysis": "错误分析",
+            # 保留旧名兼容（ArchiveHook 在旧 PipelineBUS 路径仍可能被调用）
             "wi_node1": "意图验证",
             "wi_node2": "规划",
             "wi_node3": "执行+验收",
             "wi_node4": "成果总结",
         }
         label = node_labels.get(node_name, node_name)
-        node_idx = node_name[-1] if node_name else "?"
-        lines = [f"### 🔧 {label} (Node{node_idx})"]
+        lines = [f"### 🔧 {label}"]
 
         wi = work_item
 
-        if node_name == "wi_node1":
+        if node_name in ("created", "wi_node1"):
             sop_id = getattr(wi, "sop_id", "") or "unknown"
             intent_type = getattr(wi, "intent_type", "") or "fallback"
             route = getattr(wi, "route_decision", None)
             source = getattr(route, "_source", "") if route else ""
             lines.append(f"- sop={sop_id}, 意图类型={intent_type}, _source={source or 'session_agent'}")
-            lines.append("- Prompt: (node1 无 LLM 调用，仅验证路由)")
 
-        elif node_name == "wi_node2":
+        elif node_name in ("routing",):
+            route = getattr(wi, "route_decision", None)
+            if route:
+                lines.append(f"- 意图类型: {getattr(route, 'intent_type', '?')}")
+                lines.append(f"- 置信度: {getattr(route, 'confidence', '?')}")
+                sub_tasks = getattr(route, 'sub_tasks', []) or []
+                if sub_tasks:
+                    lines.append(f"- 子任务: {len(sub_tasks)} 个")
+                    for st in sub_tasks[:5]:
+                        lines.append(f"  - {getattr(st, 'id', '?')}: {getattr(st, 'sop_id', '?' )} "
+                                     f"\"{(getattr(st, 'user_input', '') or '')[:60]}\"")
+            if prompt_info:
+                lines.extend(SessionArchiveWriter._render_prompt_info(prompt_info))
+
+        elif node_name in ("executing", "wi_node2", "wi_node3"):
+            # Agent 执行循环：涵盖规划 + 工具执行 + Guardian 审核
             plan = getattr(wi, "execution_plan", None)
             if plan:
                 risk = getattr(plan, "risk_level", "?")
@@ -602,15 +621,12 @@ class SessionArchiveWriter:
                 lines.append(f"- 风险等级: {risk}, _source={source}")
                 steps = getattr(plan, "steps", []) or []
                 if steps:
-                    lines.append("- 步骤:")
+                    lines.append("- 执行步骤:")
                     for s in steps:
                         tool = getattr(s, "tool_name", "") or "(无工具)"
                         desc = (getattr(s, "description", "") or "")[:80]
                         lines.append(f"  - {getattr(s, 'step_id', '?')} ({tool}) — {desc}")
-            if prompt_info:
-                lines.extend(SessionArchiveWriter._render_prompt_info(prompt_info))
-
-        elif node_name == "wi_node3":
+            # 工具调用详情
             step_results = getattr(wi, "step_results", []) or []
             if step_results:
                 lines.append("- 工具调用:")
@@ -620,8 +636,8 @@ class SessionArchiveWriter:
                         success = "✓" if getattr(tc, "is_success", True) else "✗"
                         elapsed = getattr(tc, "elapsed_ms", 0) or 0
                         args = getattr(tc, "tool_input", "{}") or "{}"
-                    arg_preview = (str(args)[:120] + "...") if len(str(args)) > 120 else str(args)
-                    lines.append(f"  - {success} {name} ({elapsed}ms)  参数: {arg_preview}")
+                        arg_preview = (str(args)[:120] + "...") if len(str(args)) > 120 else str(args)
+                        lines.append(f"  - {success} {name} ({elapsed}ms)  参数: {arg_preview}")
             # Guardian 并进审核
             guardian_notes: list[str] = []
             for sr in step_results:
@@ -639,7 +655,19 @@ class SessionArchiveWriter:
                 for pi in pis:
                     lines.extend(SessionArchiveWriter._render_prompt_info(pi))
 
-        elif node_name == "wi_node4":
+        elif node_name in ("summarizing", "wi_node4"):
+            # 成果总结：StructuredResult + reply 合成 + Guardian 出站审核
+            structured = getattr(wi, "structured_result", None)
+            if structured:
+                lines.append(f"- 状态: {getattr(structured, 'status', '?')}")
+                biz_no = getattr(structured, "business_object_no", "") or ""
+                if biz_no:
+                    lines.append(f"- 业务对象: {biz_no}")
+                issues = getattr(structured, "issues", []) or []
+                if issues:
+                    lines.append("- 问题:")
+                    for iss in issues[-5:]:
+                        lines.append(f"  - {iss[:150]}")
             lines.append(f"- 回复合成: {getattr(wi, 'llm_call_count', 0)} 次 LLM 调用")
             if getattr(wi, "warnings", None):
                 lines.append("- Guardian 出站审核:")
@@ -649,6 +677,18 @@ class SessionArchiveWriter:
                 lines.extend(SessionArchiveWriter._render_prompt_info(prompt_info))
             if prompt_info_guardian:
                 lines.extend(SessionArchiveWriter._render_prompt_info(prompt_info_guardian))
+
+        elif node_name in ("error_analysis",):
+            # 错误分析节点：错误类型 + 根因 + 是否可恢复
+            ea = getattr(wi, "error_analysis", None) or {}
+            lines.append(f"- 错误类型: {ea.get('error_type', 'unknown')}")
+            lines.append(f"- 根因: {(ea.get('root_cause', '') or '无')[:200]}")
+            if ea.get("should_abort"):
+                lines.append("- 结果: 中止执行")
+            else:
+                lines.append("- 结果: 重试执行")
+            if prompt_info:
+                lines.extend(SessionArchiveWriter._render_prompt_info(prompt_info))
 
         # LLM 调用明细（按 call_category 分组）
         if llm_logs:

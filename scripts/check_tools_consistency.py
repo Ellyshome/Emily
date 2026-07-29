@@ -1,11 +1,10 @@
 """check_tools_consistency.py — BusinessFlowToolRegistry 一致性检查 CLI。
 
 薄壳脚本，核心逻辑在 emily_core.infrastructure.tools_consistency。
-方案 B：独立审核脚本，供开发者改完 Skill YAML / 工具后验证 + 回归保障。
+方案 B：独立审核脚本，供开发者改完工具后验证 + 回归保障。
 
 用法：
     uv run python scripts/check_tools_consistency.py
-    uv run python scripts/check_tools_consistency.py --skill-dir emily-data/skills
     uv run python scripts/check_tools_consistency.py --json
     uv run python scripts/check_tools_consistency.py --no-tool-registry
 
@@ -26,23 +25,6 @@ if str(_CORE_DIR) not in sys.path:
     sys.path.insert(0, str(_CORE_DIR))
 
 
-def _find_skill_dir(explicit: str = "") -> str:
-    """多级回退查找 skills 目录：--skill-dir 参数 → 容器 /app/skills → 开发 emily-data/skills。"""
-    if explicit:
-        p = Path(explicit)
-        if p.exists():
-            return str(p)
-        print(f"[WARN] --skill-dir 指定路径不存在: {explicit}", file=sys.stderr)
-    candidates = [
-        Path("/app/skills"),
-        _HERE.parent / "emily-data" / "skills",
-    ]
-    for c in candidates:
-        if c.exists():
-            return str(c)
-    return str(_HERE.parent / "emily-data" / "skills")  # 默认值（可能不存在，check_all 会返回空 skills）
-
-
 def _format_report(r: dict) -> str:
     """格式化报告为终端可读文本。"""
     lines = []
@@ -52,7 +34,7 @@ def _format_report(r: dict) -> str:
 
     s = r.get("summary", {})
     lines.append(f"\n[摘要] 注册工具 {s.get('registered', 0)} | 有 schema {s.get('with_schema', 0)} | "
-                 f"Skill 文件 {s.get('skills', 0)} | 问题 {s.get('total_issues', 0)} (fatal {s.get('fatal_issues', 0)})")
+                 f"问题 {s.get('total_issues', 0)} (fatal {s.get('fatal_issues', 0)})")
 
     # V5: 空 schema
     empty = r.get("empty_schema_tools", [])
@@ -105,17 +87,14 @@ def main():
     parser = argparse.ArgumentParser(
         description="BusinessFlowToolRegistry 一致性检查（方案 B：独立审核脚本）",
     )
-    parser.add_argument("--skill-dir", default="", help="Skill YAML 目录（默认多级回退）")
     parser.add_argument("--json", action="store_true", help="JSON 格式输出")
     parser.add_argument("--no-tool-registry", action="store_true",
                         help="跳过 tool_registry 表检查（不连 DB）")
     args = parser.parse_args()
 
-    skill_dir = _find_skill_dir(args.skill_dir)
-
     from emily_core.infrastructure.tools_consistency import check_all
 
-    result = check_all(skill_dir, check_tool_registry=not args.no_tool_registry)
+    result = check_all(check_tool_registry=not args.no_tool_registry)
 
     if args.json:
         print(json.dumps(result, ensure_ascii=False, indent=2))

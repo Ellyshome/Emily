@@ -11,7 +11,6 @@ from typing import Any, TYPE_CHECKING
 
 if TYPE_CHECKING:
     from .routing import RouteDecision
-    from .planning import ExecutionPlan
 
 
 @dataclass
@@ -122,10 +121,14 @@ class StepResult:
 
 @dataclass
 class StructuredResult:
-    """WorkItem 回传给 Session 的结构化成果（M2: 分层合成）。
+    """WorkItem 回传给 Session 的结构化成果。
 
-    WorkItem node4 规则提炼产出，Session 据此组织最终回复。
-    WorkItem 不做任何语言组织。
+    LangGraph agent loop 职责重构后的定位：
+    - **权威成果**由 agent loop 的 complete_work 控制工具显式构造（status/summary/data
+      由 LLM 返回），存于 wi.structured_result。
+    - SessionAgent 据此组织给用户的回复（_synthesize_final_reply），并做成果规则约束校验。
+    - 归档（ArchiveHook）、审计（AuditHook）、回复审核（RealGuardian）均消费此对象。
+    - checkpoint 请求不走此对象——ask_user 走 WAITING_FOR_INPUT 状态机，SessionAgent 直接转达。
     """
     # ── 状态 ──
     status: str = ""               # success | partial | failed
@@ -162,40 +165,21 @@ class StructuredResult:
 
 
 class WorkAgent(ABC):
-    """执行 Agent 接口。
+    """执行 Agent 接口（M8 清理：ExecutionPlan 已删除，泛化为 Any）。
 
-    Plan 模式 (Step 4): 输入 RouteDecision → 输出 ExecutionPlan
-    Execute 模式 (Step 5): 输入 ExecutionPlan → 逐步输出 StepResult[]
-
-    WorkAgent ABC 保留作为扩展接口，当前主路径由 WorkItemAgent 直接实现。
+    WorkAgent ABC 保留作为扩展接口，当前主路径由 LangGraph agent loop 实现。
     """
 
     @abstractmethod
     async def plan(
         self, route_decision: "RouteDecision", context: Any
-    ) -> "ExecutionPlan":
-        """制定执行计划（Plan 模式）。
-
-        Args:
-            route_decision: 路由决策结果
-            context: 管道上下文
-
-        Returns:
-            ExecutionPlan: 执行计划
-        """
+    ) -> Any:
+        """制定执行计划（Plan 模式）。"""
         ...
 
     @abstractmethod
     async def execute(
-        self, plan: "ExecutionPlan", context: Any
+        self, plan: Any, context: Any
     ) -> list[StepResult]:
-        """执行计划（Execute 模式）。
-
-        Args:
-            plan: 执行计划
-            context: 管道上下文
-
-        Returns:
-            list[StepResult]: 逐步执行结果
-        """
+        """执行计划（Execute 模式）。"""
         ...

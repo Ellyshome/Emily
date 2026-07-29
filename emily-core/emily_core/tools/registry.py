@@ -150,13 +150,13 @@ def _register_base(core, reg):
     _bc = 0
 
     # query_data
-    from .query_tool import handle_query_data
+    from .query_tool import handle_query_data, _QUERY_TOOL_SCHEMA
     qs = getattr(core, "_query_service", None)
     if qs is None:
         from ..services.query_service import QueryService
         qs = QueryService()
     reg.register(_tool("query_data", "查询项目数据（事件/任务/会议/文件/消息/用户/项目/日志）",
-                       {"type": "object", "properties": {}},
+                       _QUERY_TOOL_SCHEMA,
                        partial(handle_query_data, query_service=qs)))
     _bc += 1
 
@@ -212,76 +212,93 @@ def _register_business(core, reg):
     _buc = 0
     cfg = core.config
 
+    # ── 工具 schema 导入 ──
+    from .event_tool import _EVENT_TOOL_SCHEMA
+    from .task_tool import _TASK_TOOL_SCHEMA
+    from .meeting_tool import _MEETING_TOOL_SCHEMA
+    from .file_tool import (
+        _FILE_TOOL_SCHEMA, _QUERY_FILES_SCHEMA, _UPDATE_CATEGORY_SCHEMA,
+        _SEND_FILE_SCHEMA, _LINK_FILE_SCHEMA, _NEW_FILE_VERSION_SCHEMA,
+        _DELETE_FILE_SCHEMA, _LIST_FILE_VERSIONS_SCHEMA, _LINK_TO_MASTER_SCHEMA,
+        _UNLINK_ATTACHMENT_SCHEMA, _LIST_ATTACHMENTS_SCHEMA, _UPDATE_PURPOSE_SCHEMA,
+    )
+
     # 5 个核心 CRUD
     _buc += _reg_biz(reg, "record_event", "记录项目事件",
                      partial(_h("event_tool", "handle_record_event"),
-                             event_app=core._event_app), "business", "write")
+                             event_app=core._event_app),
+                     params=_EVENT_TOOL_SCHEMA, category="business", permission_flag="write")
     _buc += _reg_biz(reg, "record_task", "创建任务",
                      partial(_h("task_tool", "handle_record_task"),
-                             task_app=core._task_app), "business", "write")
+                             task_app=core._task_app),
+                     params=_TASK_TOOL_SCHEMA, category="business", permission_flag="write")
     _buc += _reg_biz(reg, "record_meeting", "归档会议纪要",
                      partial(_h("meeting_tool", "handle_record_meeting"),
-                             meeting_app=core._meeting_app), "business", "write")
+                             meeting_app=core._meeting_app),
+                     params=_MEETING_TOOL_SCHEMA, category="business", permission_flag="write")
     _buc += _reg_biz(reg, "record_file", "记录文件元数据",
                      partial(_h("file_tool", "handle_record_file"),
                              file_app=core._file_app,
                              file_manager=core._file_manager,
                              tei_client=core._tei_client,
-                             kc_repo=core._knowledge_chunk_repo), "business", "write")
+                             kc_repo=core._knowledge_chunk_repo),
+                     params=_FILE_TOOL_SCHEMA, category="business", permission_flag="write")
 
     # 文件查询 + 分类修改 (2 tools)
     _buc += _reg_biz(reg, "query_files", "按分类或关键词查询项目文件",
                      partial(_h("file_tool", "handle_query_files"),
-                             file_app=core._file_app), "business", "all")
+                             file_app=core._file_app),
+                     params=_QUERY_FILES_SCHEMA, category="business", permission_flag="all")
     _buc += _reg_biz(reg, "update_file_category", "修改文件分类归属",
                      partial(_h("file_tool", "handle_update_file_category"),
-                             file_app=core._file_app), "business", "write")
+                             file_app=core._file_app),
+                     params=_UPDATE_CATEGORY_SCHEMA, category="business", permission_flag="write")
 
     # M2: send_file — Emily 主动发送文件
     _buc += _reg_biz(reg, "send_file", "向用户发送已有文件",
                      partial(_h("file_tool", "handle_send_file"),
                              file_manager=core._file_manager,
                              outbound_bus=core.outbound_bus),
-                     "business", "all")
+                     params=_SEND_FILE_SCHEMA, category="business", permission_flag="all")
 
     # M4: 文件关联与版本 (4 tools)
     _buc += _reg_biz(reg, "link_file", "关联文件到业务对象",
                      partial(_h("file_tool", "handle_link_file"),
                              file_manager=core._file_manager),
-                     "business", "write")
+                     params=_LINK_FILE_SCHEMA, category="business", permission_flag="write")
     _buc += _reg_biz(reg, "new_file_version", "创建文件新版本",
                      partial(_h("file_tool", "handle_new_file_version"),
                              file_app=core._file_app,
                              file_manager=core._file_manager),
-                     "business", "write")
+                     params=_NEW_FILE_VERSION_SCHEMA, category="business", permission_flag="write")
     _buc += _reg_biz(reg, "delete_file", "软删除文件",
                      partial(_h("file_tool", "handle_delete_file"),
                              file_manager=core._file_manager),
-                     "business", "write")
+                     params=_DELETE_FILE_SCHEMA, category="business", permission_flag="write")
     _buc += _reg_biz(reg, "list_file_versions", "列出文件版本",
                      partial(_h("file_tool", "handle_list_file_versions"),
                              file_manager=core._file_manager),
-                     "business", "all")
+                     params=_LIST_FILE_VERSIONS_SCHEMA, category="business", permission_flag="all")
 
     # M5: 附件链工具 (3 tools)
     _buc += _reg_biz(reg, "link_to_master", "挂载附件到主文件",
                      partial(_h("file_tool", "handle_link_to_master"),
                              file_manager=core._file_manager),
-                     "business", "write")
+                     params=_LINK_TO_MASTER_SCHEMA, category="business", permission_flag="write")
     _buc += _reg_biz(reg, "unlink_attachment", "卸载附件为独立文件",
                      partial(_h("file_tool", "handle_unlink_attachment"),
                              file_manager=core._file_manager),
-                     "business", "write")
+                     params=_UNLINK_ATTACHMENT_SCHEMA, category="business", permission_flag="write")
     _buc += _reg_biz(reg, "list_attachments", "列出主文件下的附件",
                      partial(_h("file_tool", "handle_list_attachments"),
                              file_manager=core._file_manager),
-                     "business", "all")
+                     params=_LIST_ATTACHMENTS_SCHEMA, category="business", permission_flag="all")
 
     # M5: purpose 校正工具
     _buc += _reg_biz(reg, "update_file_purpose", "校正文件的业务意图",
                      partial(_h("file_tool", "handle_update_file_purpose"),
                              file_manager=core._file_manager),
-                     "business", "write")
+                     params=_UPDATE_PURPOSE_SCHEMA, category="business", permission_flag="write")
 
     # 计划任务工具已废弃（由 node_task_tool 替代），不再注册
 
@@ -340,6 +357,10 @@ def _reg_biz(reg, name, desc, handler, params=None,
     Returns:
         int — 成功返回 1，失败返回 0，方便累加计数。
     """
+    # 防护：params 应为 dict/None，若收到 str 则是调用方位置参数错位
+    if isinstance(params, str):
+        logger.warning("_reg_biz(%s): params 收到字符串 '%s'，位置参数错位！已自动修正为 None", name, params)
+        params = None
     try:
         schema = params if params else {"type": "object", "properties": {}}
         # SchemaGuard: 缺少参数约束告警 — 提醒开发者为新工具补充 JSON Schema
@@ -431,21 +452,24 @@ def _register_project(core, reg):
                     handle_create_task_node, handle_submit_node_deliverable,
                     handle_confirm_node_deliverable, handle_return_node_deliverable,
                     handle_query_my_nodes,
+                    _CREATE_TASK_NODE_SCHEMA, _SUBMIT_DELIVERABLE_SCHEMA,
+                    _CONFIRM_DELIVERABLE_SCHEMA, _RETURN_DELIVERABLE_SCHEMA,
+                    _QUERY_MY_NODES_SCHEMA,
                 )
-                for name, desc, handler in [
+                for name, desc, handler, schema in [
                     ("create_task_node", "创建TASK类型叶子节点（替代record_plan_task）",
-                     partial(handle_create_task_node, node_service=ns)),
+                     partial(handle_create_task_node, node_service=ns), _CREATE_TASK_NODE_SCHEMA),
                     ("submit_node_deliverable", "提交节点成果（替代submit_plan_task）",
-                     partial(handle_submit_node_deliverable, node_service=ns)),
+                     partial(handle_submit_node_deliverable, node_service=ns), _SUBMIT_DELIVERABLE_SCHEMA),
                     ("confirm_node_deliverable", "确认节点成果",
-                     partial(handle_confirm_node_deliverable, node_service=ns)),
+                     partial(handle_confirm_node_deliverable, node_service=ns), _CONFIRM_DELIVERABLE_SCHEMA),
                     ("return_node_deliverable", "退回节点成果",
-                     partial(handle_return_node_deliverable, node_service=ns)),
+                     partial(handle_return_node_deliverable, node_service=ns), _RETURN_DELIVERABLE_SCHEMA),
                     ("query_my_nodes", "查询我负责的节点（替代query_plan_tasks）",
-                     partial(handle_query_my_nodes, node_service=ns)),
+                     partial(handle_query_my_nodes, node_service=ns), _QUERY_MY_NODES_SCHEMA),
                 ]:
                     if not reg.has(name):
-                        reg.register(_tool(name, desc, {"type": "object", "properties": {}}, handler,
+                        reg.register(_tool(name, desc, schema, handler,
                                           category="business", permission_flag="write"))
                         _pjc += 1
             except Exception as e:
