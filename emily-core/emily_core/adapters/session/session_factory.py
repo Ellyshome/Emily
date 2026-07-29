@@ -14,7 +14,6 @@ from ...session.session_context import SessionContext
 
 if TYPE_CHECKING:
     from ...adapters.standard.message import StandardMessage
-    from ...workitem.pipeline.bus import PipelineBUS
 
 logger = logging.getLogger("emily.session_factory")
 
@@ -22,13 +21,11 @@ logger = logging.getLogger("emily.session_factory")
 class SessionFactory:
     """Session 工厂 —— 创建 + 全量知识灌注。"""
 
-    def __init__(self, bus: "PipelineBUS", core=None):
+    def __init__(self, core=None):
         """
         Args:
-            bus: 全局公共 Pipeline BUS（所有 Session 共享）。
             core: EmilyCore 实例。
         """
-        self._bus = bus
         self._core = core
 
     def create(self, message: "StandardMessage", user_id: str = "") -> SessionAgent:
@@ -58,7 +55,6 @@ class SessionFactory:
         agent = SessionAgent(
             conversation_id=conv_id,
             context=context,
-            bus=self._bus,
             llm_client=llm,
             skill_registry=skill_registry,
             journal=journal,

@@ -35,8 +35,5 @@
   "checkpoint_ttl_seconds": 300,
 
   "session_archive_enabled": true,
-  "session_archive_dir": "",
-
-  "workitem_engine": "langgraph",
-  "langgraph_max_replan": 1
+  "session_archive_dir": ""
 }

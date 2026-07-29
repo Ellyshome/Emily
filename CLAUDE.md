@@ -15,7 +15,7 @@ Emily V1.0 是面向企业的 AI Agent 工具，通过 IM（QQ）与员工交互
 - 企业知识库 RAG（MaxKB hit_test 纯向量检索，Qwen3-Embedding-0.6B + pgvector）
 - 全景节点图（V2 重构中：文件级依赖 + 父子权重聚合 + 三态流转模型）
 
-**当前架构一句话**：双容器系统（薄插件 `emily_agent` + 独立 `emily-core` FastAPI 内核），采用 **Session 主线 + WorkItem + 4 节点 PipelineBUS** 的消息处理架构。旧 M15 八阶段 WorkOrder 管道已完全移除，旧 `sm_*` 全局状态机模块已清理，全景节点 V2 重构进行中。
+**当前架构一句话**：双容器系统（薄插件 `emily_agent` + 独立 `emily-core` FastAPI 内核），采用 **Session 主线 + WorkItem + LangGraph StateGraph（5 节点含 error_analysis 纠错闭环）** 的消息处理架构。旧 M15 八阶段 WorkOrder 管道已完全移除，旧 `sm_*` 全局状态机模块已清理，PipelineBUS 4 节点总线已被 LangGraph 执行引擎替换（2026-07-28）。全景节点 V2 重构进行中。
 
 **Python 环境管理**：本项目基于 uv。请使用 `uv run python ...` 而非裸 `python`。
 
@@ -98,7 +98,7 @@ QQ → NapCat → AstrBot → emily_agent 薄插件
 | 6 | **Sync repo + `asyncio.to_thread`** | Repository 全 sync，async Service 用 `asyncio.to_thread()` 包裹 |
 | 7 | **Hook 三态 deny-wins** | ALLOW/WARN/BLOCK。before 异常=BLOCK；after 异常不阻断 |
 | 8 | **`agent/` 已删除** | 原 MasterAgent/BusinessFlowAgent 等已提取到 SessionAgent/WorkItemAgent。SOPIntentRegistry 和 ToolRegistry 已废弃删除，`agent/sop_parser.py`（SOP §3.2 白名单提取，已无调用者）随之清理，整个 `agent/` 目录移除。工具白名单现由 Skill YAML 的 tools 字段声明，SkillExecutor 执行时校验 |
-| 9 | **M15 WorkOrder 已弃用** | 旧 M15 8 阶段 WorkOrder 管道已完全移除，当前唯一路径是 `WorkItem` + `BusContext` + 4 节点 `PipelineBUS` |
+| 9 | **PipelineBUS 已废弃** | 2026-07-28 起，WorkItem 执行引擎统一为 LangGraph StateGraph（5 节点含 error_analysis 纠错闭环）。PipelineBUS / BusContext / WorkItemState / confirm_queue 代码保留在 `pipeline/` 目录下供历史参考，但不再被任何执行路径调用。唯一执行路径是 `SessionScheduler._run_one()` → `_run_graph()` → `graph.ainvoke()` |
 | 10 | **ToolManager vs ScriptManager 边界** | ToolManager 管 LLM 运行时工具（`BusinessFlowTool.handler`，进程内 async）；ScriptManager 管 `scripts/` 开发者脚本（subprocess CLI），共享 service 层，互不调用。脚本元信息声明在 `emily-data/config/scripts_registry.yaml`，目录由 `scriptmgr export` 生成。 |
 
 ---

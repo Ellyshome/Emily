@@ -77,7 +77,6 @@ class SessionAgent:
         self,
         conversation_id: str,
         context: SessionContext,
-        bus: "PipelineBUS",
         llm_client=None,
         skill_registry=None,
         journal=None,
@@ -91,7 +90,7 @@ class SessionAgent:
 
         # 延迟导入避免循环依赖
         from ..workitem import SessionScheduler
-        self.scheduler = SessionScheduler(conversation_id, bus, session_context=context, core=None)
+        self.scheduler = SessionScheduler(conversation_id, session_context=context, core=None)
 
         self._llm = llm_client
         self._skill_registry = skill_registry
