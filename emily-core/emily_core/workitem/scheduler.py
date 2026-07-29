@@ -34,7 +34,6 @@ class SessionScheduler:
 
     def __init__(self, session_id: str, bus: PipelineBUS = None, session_context=None, core=None):
         self.session_id = session_id
-        self._bus = bus                       # 保留以兼容旧调用（已废弃，2026-07-28 起不再使用）
         self._session_context = session_context
         self._core = core                     # EmilyCore 实例（取 _workitem_graph）
         self._queue: list[WorkItem] = []

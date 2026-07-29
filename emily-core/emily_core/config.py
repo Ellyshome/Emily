@@ -174,13 +174,7 @@ class Config:
     workitem_max_per_session: int = 5
     """每 Session 最大 WorkItem 数。"""
 
-    # ── WorkItem 执行引擎（LangGraph 替换）──
-    workitem_engine: str = "pipeline_bus"
-    """WorkItem 内部执行引擎选择。
-    - "pipeline_bus"：旧引擎（PipelineBUS + 4 节点顺序总线，保留回退）
-    - "langgraph"：新引擎（StateGraph + 5 节点含 error_analysis 纠错闭环 + Checkpoint）
-    切换后重启 emily-core 生效。"""
-
+    # ── WorkItem 执行引擎（LangGraph StateGraph）──
     langgraph_max_replan: int = 1
     """LangGraph 引擎最大重规划次数（node3 失败→error_analysis→node2 循环上限，防死循环）。
     0 = 禁用重规划（node3 失败直接走 error_analysis 分类，但不重规划）。

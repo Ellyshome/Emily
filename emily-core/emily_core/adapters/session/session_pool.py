@@ -51,13 +51,12 @@ class SessionPoolManager:
 
     def __init__(
         self,
-        bus: "PipelineBUS",
         config: SessionConfig | None = None,
         factory: SessionFactory | None = None,
         core=None,
     ):
         self._config = config or SessionConfig()
-        self._factory = factory or SessionFactory(bus, core=core)
+        self._factory = factory or SessionFactory(core=core)
         self._sessions: dict[str, _Entry] = {}
         self._start_time = time.time()
         self._sweeper_task: asyncio.Task | None = None
