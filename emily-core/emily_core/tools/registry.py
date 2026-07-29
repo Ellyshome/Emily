@@ -324,7 +324,8 @@ def _register_business(core, reg):
         _buc += 1
 
 
-def _reg_biz(reg, name, desc, handler, category="business", permission_flag="write"):
+def _reg_biz(reg, name, desc, handler, params=None,
+             category="business", permission_flag="write"):
     """注册一个业务工具（fail-safe），异常时仅打日志不抛错。
 
     Args:
@@ -332,6 +333,7 @@ def _reg_biz(reg, name, desc, handler, category="business", permission_flag="wri
         name: 工具名称。
         desc: 工具描述。
         handler: 异步处理函数。
+        params: 工具参数 JSON Schema（dict），可选。传入 None 时使用空 schema（向后兼容）。
         category: 工具分类，默认 business。
         permission_flag: 权限标识，默认 write。
 
@@ -339,7 +341,14 @@ def _reg_biz(reg, name, desc, handler, category="business", permission_flag="wri
         int — 成功返回 1，失败返回 0，方便累加计数。
     """
     try:
-        reg.register(_tool(name, desc, {"type": "object", "properties": {}}, handler,
+        schema = params if params else {"type": "object", "properties": {}}
+        # SchemaGuard: 缺少参数约束告警 — 提醒开发者为新工具补充 JSON Schema
+        if not params:
+            logger.warning(
+                "SchemaGuard: 工具 '%s' 注册时未提供 params schema —— "
+                "LLM 规划时将看不到该工具的参数约束。请在该工具的源文件中定义 schema 常量，"
+                "并在 _reg_biz() 调用处通过 params= 参数传入。", name)
+        reg.register(_tool(name, desc, schema, handler,
                           category=category, permission_flag=permission_flag))
         return 1
     except Exception as e:

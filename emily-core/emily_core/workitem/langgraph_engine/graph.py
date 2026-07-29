@@ -63,7 +63,12 @@ def route_after_node3(state: dict) -> str:
 
 
 def route_after_analysis(state: dict) -> str:
-    """error_analysis 之后的条件边路由（按错误类型路由）。"""
+    """error_analysis 之后的条件边路由（按错误类型路由）。
+
+    retry_count 防无限重试：RetryPathGuard —
+      当 RETRY 路径被连续选择 >= _max_retry 次时，升级为 REPLAN（回 node2 重规划），
+      避免 node3 → error_analysis → node3 的死循环。
+    """
     fc = state.get("flow_control", {})
     if fc.get("should_abort"):
         logger.info("route_after_analysis: should_abort=True → end")
@@ -71,18 +76,32 @@ def route_after_analysis(state: dict) -> str:
 
     error_type = state.get("error_type", "")
     analysis = state.get("error_analysis", {})
+    max_retry = state.get("_max_retry", 2)
 
     if error_type in ABORT_TYPES or analysis.get("should_abort"):
         logger.info("route_after_analysis: error_type=%s (ABORT) → end", error_type)
         return "end"
 
-    if error_type in RETRY_TYPES or analysis.get("should_retry"):
-        logger.info("route_after_analysis: error_type=%s (RETRY) → node3", error_type)
-        return "node3"
-
     if error_type in REPLAN_TYPES or analysis.get("should_replan"):
+        state["retry_count"] = 0
         logger.info("route_after_analysis: error_type=%s (REPLAN) → node2", error_type)
         return "node2"
+
+    if error_type in RETRY_TYPES or analysis.get("should_retry"):
+        retry_count = state.get("retry_count", 0)
+        if retry_count >= max_retry:
+            logger.warning(
+                "route_after_analysis: retry_count=%d >= max_retry=%d, "
+                "escalating RETRY → REPLAN to break infinite retry loop",
+                retry_count, max_retry,
+            )
+            # 仅重置 retry 预算；replan_count 由 node2 统一递增（_entered_node2=True 分支）
+            state["retry_count"] = 0
+            return "node2"
+        state["retry_count"] = retry_count + 1
+        logger.info("route_after_analysis: error_type=%s (RETRY #%d/%d) → node3",
+                    error_type, retry_count + 1, max_retry)
+        return "node3"
 
     logger.warning("route_after_analysis: unknown error_type=%s → end", error_type)
     return "end"

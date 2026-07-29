@@ -22,6 +22,8 @@ class WorkItemState(Enum):
     PLANNING = "PLANNING"                # Node 1+2：意图分析 + 制定计划
     EXECUTING = "EXECUTING"              # Node 3：在公共 Pipeline BUS 上执行 + 验收
     WAITING_CONFIRM = "WAITING_CONFIRM"  # 挂起，等 Session-Agent 代理交互
+    WAITING_FOR_INPUT = "WAITING_FOR_INPUT"  # 挂起等待用户补充信息（非终态）
+    ABANDONED = "ABANDONED"                # 用户切换话题后放弃（终态）
     DONE = "DONE"                        # Node 4：成果总结完成（终态）
     FAILED = "FAILED"                    # 不可恢复错误（终态）
 
@@ -33,12 +35,15 @@ TRANSITIONS: dict[WorkItemState, list[WorkItemState]] = {
     WorkItemState.EXECUTING:       [
         WorkItemState.DONE,
         WorkItemState.WAITING_CONFIRM,
+        WorkItemState.WAITING_FOR_INPUT,  # node3 检测到 needs_input
         WorkItemState.FAILED,
     ],
     WorkItemState.WAITING_CONFIRM: [WorkItemState.EXECUTING, WorkItemState.FAILED],
+    WorkItemState.WAITING_FOR_INPUT: [WorkItemState.EXECUTING, WorkItemState.ABANDONED, WorkItemState.FAILED],
     WorkItemState.DONE:            [],   # 终态
     WorkItemState.FAILED:          [],   # 终态
+    WorkItemState.ABANDONED:       [],   # 终态
 }
 
 # 终态集合
-TERMINAL_STATES = frozenset({WorkItemState.DONE, WorkItemState.FAILED})
+TERMINAL_STATES = frozenset({WorkItemState.DONE, WorkItemState.FAILED, WorkItemState.ABANDONED})

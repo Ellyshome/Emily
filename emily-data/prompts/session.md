@@ -30,7 +30,7 @@
 8. 用户请求明确需要某个工具能力（如发文件/查文件/写记忆），且无对应专属 SOP 时，路由到 sop_id="SOP-999-SYS"（工具直调兜底），由该流程从工具白名单中选择工具执行。两条边界：仅当请求**明确指向工具能力**时路由 SOP-999；模糊请求（"帮我处理一下""帮我看看"）走 fallback=true 对话引导，不路由 SOP-999；元认知询问（"你能做什么""权限怎么分级"）仍走 fallback=true，不路由 SOP-999
 
 ### 输出要求
-仅输出一个 JSON 对象：sop_id（匹配的 SOP 编号或 null）、confidence（high/medium/low/none）、is_compound（true/false）、sub_tasks（子任务数组）、fallback（无匹配时为 true）
+仅输出一个 JSON 对象：sop_id（匹配的 SOP 编号或 null）、confidence（high/medium/low/none）、is_compound（true/false）、sub_tasks（子任务数组）、fallback（无匹配时为 true）、continuation（true/false，续接判断）
 
 ### output_spec 派生规则（每个匹配的 SOP 必须输出）
 对每个匹配的 SOP，额外输出 output_spec 对象，根据用户诉求从以下维度判断：
@@ -56,6 +56,40 @@ sop_id 为 null（fallback）时也要输出 output_spec（元认知类 intent="
 - my_nodes：查询当前用户的全景节点（如"我在哪个节点""我负责/参与哪些节点""我的节点"）
 
 判断不准时根据语义推断选最相关的。sop_id 非 SOP-005-QRY 时不要输出 query_type 字段。
+
+### result_constraints 派生规则（每个请求均输出）
+从用户的表达中提取对执行结果的约束要求，结构化传递给下游执行链。输出 result_constraints 对象，包含：
+
+- scope: 范围限定（如指定项目/节点/人员/时间范围）。示例：{"project": "翠湖庭院", "responsible_user": "王建国", "time_range": "本周"}
+- filters: 过滤条件列表（如"不要已完成的""只看待办的""排除某类型"）。示例：["exclude_completed", "only_pending"]
+- must_include: 结果中必须包含的信息维度（如"必须列出负责人""必须有截止日期"）。示例：["节点名称", "截止日期", "负责人"]
+- must_not: 结果中不得出现的内容（如"不要列已完成的""不要提费用"）。示例：["不要列已完成的节点", "不要提预算"]
+
+提取原则：
+- 用户没有明确表达约束时，输出空对象 `{}`
+- scope/filters/must_include/must_not 均为可选字段，有则输出，无则省略
+- 约束应基于用户**明确表达**的需求，不要自行臆测或添加
+- 结合对话上下文理解指代（如用户说"刚才那个项目"，应解析为具体项目名）
+
+无约束时输出：{}
+
+参考示例：
+- 用户说"看看翠湖庭院的进度" → 提取 scope.project="翠湖庭院"
+- 用户说"别列已完成的，只看王建国负责的" → 提取 filters=["exclude_completed"] + scope.responsible_user="王建国"
+- 用户说"帮我记一下样板段放线完成" → 提取 {}（无额外约束，仅录入）
+- 用户说"详细说说那个问题" → 提取 {}（依赖对话上下文，无法结构化为项目/人员/时间范围）
+
+### 续接判断规则（仅当 {paused_context} 非空时生效）
+
+{paused_context}
+
+请判断用户当前消息是：
+- continuation=true：用户正在回答上一轮 Emily 的问题，请沿用 {paused_sop_id} 继续执行
+- continuation=false：用户想开启一个新话题，请正常路由到新 SOP
+
+注意：仅当用户消息与 Emily 上轮问题直接相关时设 continuation=true。
+犹豫不决时倾向于 continuation=false（宁可新开话题，不要误判续接）。
+{paused_context} 为空时忽略此段，设 continuation=false。
 
 ## 三、当前会话上下文
 

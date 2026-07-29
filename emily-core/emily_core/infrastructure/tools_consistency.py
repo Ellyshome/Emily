@@ -95,7 +95,8 @@ TOOL_META_MAP: dict[str, tuple[str, str, str, str]] = {
 }
 
 # ── 工具名 → (模块路径, schema 变量名) ─────────────────────────────
-# 无 schema 常量的工具（write_user_memory / node_task 5 个）不在此映射，V12 对其跳过。
+# 所有需要 LLM 填参的工具必须在此映射中有条目。V14 会检测缺失。
+# write_user_memory 的 schema 由 create_memory_tool() 动态生成，不在此静态映射。
 TOOL_SCHEMA_MAP: dict[str, tuple[str, str]] = {
     "query_data": ("emily_core.tools.query_tool", "_QUERY_TOOL_SCHEMA"),
     "knowledge_search": ("emily_core.tools.knowledge_search_tool", "_KNOWLEDGE_SEARCH_SCHEMA"),
@@ -114,6 +115,11 @@ TOOL_SCHEMA_MAP: dict[str, tuple[str, str]] = {
     "unlink_attachment": ("emily_core.tools.file_tool", "_UNLINK_ATTACHMENT_SCHEMA"),
     "list_attachments": ("emily_core.tools.file_tool", "_LIST_ATTACHMENTS_SCHEMA"),
     "update_file_purpose": ("emily_core.tools.file_tool", "_UPDATE_PURPOSE_SCHEMA"),
+    "create_task_node": ("emily_core.tools.node_task_tool", "_CREATE_TASK_NODE_SCHEMA"),
+    "submit_node_deliverable": ("emily_core.tools.node_task_tool", "_SUBMIT_DELIVERABLE_SCHEMA"),
+    "confirm_node_deliverable": ("emily_core.tools.node_task_tool", "_CONFIRM_DELIVERABLE_SCHEMA"),
+    "return_node_deliverable": ("emily_core.tools.node_task_tool", "_RETURN_DELIVERABLE_SCHEMA"),
+    "query_my_nodes": ("emily_core.tools.node_task_tool", "_QUERY_MY_NODES_SCHEMA"),
     "create_node": ("emily_core.tools.node_tool", "_CREATE_NODE_SCHEMA"),
     "query_node": ("emily_core.tools.node_tool", "_QUERY_NODE_SCHEMA"),
     "update_node_progress": ("emily_core.tools.node_tool", "_UPDATE_PROGRESS_SCHEMA"),
@@ -319,6 +325,41 @@ def _check_dark_tools(skills: list, issues: list[dict]) -> None:
         })
 
 
+def _check_v14_schema_map_coverage(
+    tool_schemas: dict[str, set[str] | None],
+    issues: list[dict],
+) -> None:
+    """V14: REGISTERED_TOOLS 中的工具（write_user_memory 除外）必须出现在 TOOL_SCHEMA_MAP。
+
+    防止新增工具时忘记将 schema 映射加到 TOOL_SCHEMA_MAP 和 TOOL_META_MAP。
+    write_user_memory 的 schema 由 create_memory_tool() 动态生成，是唯一的例外。
+    """
+    for tool in sorted(REGISTERED_TOOLS):
+        if tool in TOOL_SCHEMA_MAP or tool == "write_user_memory":
+            continue
+        issues.append({
+            "severity": "error",
+            "check": "V14_schema_map_missing",
+            "tool": tool,
+            "detail": (
+                f"工具 '{tool}' 在 REGISTERED_TOOLS 中但不在 TOOL_SCHEMA_MAP 中。"
+                f"请在 tools_consistency.py 的 TOOL_SCHEMA_MAP 中添加映射条目。"
+            ),
+        })
+    # 反向检查：TOOL_SCHEMA_MAP 中的工具也应在 REGISTERED_TOOLS（避免僵尸条目）
+    for tool in sorted(TOOL_SCHEMA_MAP):
+        if tool not in REGISTERED_TOOLS:
+            issues.append({
+                "severity": "error",
+                "check": "V14_zombie_schema_map",
+                "tool": tool,
+                "detail": (
+                    f"工具 '{tool}' 在 TOOL_SCHEMA_MAP 中但不在 REGISTERED_TOOLS 中。"
+                    f"可能是工具已被移除但映射条目残留。请清理 TOOL_SCHEMA_MAP。"
+                ),
+            })
+
+
 def check_all(skill_dir: str, check_tool_registry: bool = True) -> dict:
     """全量一致性检查。返回结构化报告 dict。
 
@@ -337,16 +378,29 @@ def check_all(skill_dir: str, check_tool_registry: bool = True) -> dict:
     issues: list[dict] = []
     tool_schemas = _load_tool_schemas()
 
-    # V5: business 类空 schema 检测
+    # V5: 空 schema 检测（升级为 error：LLM 填参场景 schema 为空是严重质量问题）
     empty_schema_tools = [
         tool for tool, params in tool_schemas.items()
         if params is not None and len(params) == 0
     ]
-    for tool in empty_schema_tools:
+    empty_or_missing = [
+        tool for tool in sorted(REGISTERED_TOOLS)
+        if tool not in TOOL_SCHEMA_MAP
+        or tool_schemas.get(tool) is None
+        or len(tool_schemas.get(tool) or set()) == 0
+    ]
+    for tool in empty_or_missing:
+        severity = "error" if tool != "write_user_memory" else "warning"
         issues.append({
-            "severity": "warning", "check": "V5_empty_schema",
-            "tool": tool, "detail": f"工具 {tool} 的 schema properties 为空",
+            "severity": severity, "check": "V5_empty_schema",
+            "tool": tool, "detail": (
+                f"工具 {tool} 缺少参数 schema —— LLM 规划时将看不到该工具的参数约束。"
+                f"请在源文件中定义 schema 常量并在注册时传入。"
+            ),
         })
+
+    # V14: 所有 REGISTERED_TOOLS 必须出现在 TOOL_SCHEMA_MAP 中（write_user_memory 除外）
+    _check_v14_schema_map_coverage(tool_schemas, issues)
 
     # V10/V11/V12: Skill YAML 一致性
     skills = _load_skills(skill_dir)

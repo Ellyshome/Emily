@@ -28,6 +28,7 @@ from ..adapters.standard.reply import ReplyMessage
 from ..services.event_journal import EventJournal
 
 from ..workitem import WorkItem
+from ..workitem.workitem_state import WorkItemState
 
 if TYPE_CHECKING:
     from ..adapters.standard.message import StandardMessage
@@ -106,6 +107,8 @@ class SessionAgent:
         self._archive_md_path = ""
         self._last_turn_workitems: list = []
         self._turn_counter: int = 0
+        # ── 多轮续接 ──
+        self._paused_workitem = None  # 挂起等待用户补充信息的 WorkItem
         # 意图识别阶段 Prompt 注入信息（_recognize_intent 暂存，归档段读取）
         self._last_intent_prompt_info: dict | None = None
         if self._archive_writer is not None:
@@ -307,8 +310,33 @@ class SessionAgent:
             self.focus.clear_focus()
             logger.debug("Session[%s] focus cleared by user switch", self.conversation_id)
 
-        # ② LLM 意图识别 + WorkItem 拆分
-        work_items = await self._split_into_workitems(message)
+        # ★ 多轮续接：检查是否有挂起的 WorkItem
+        paused_wi = getattr(self, "_paused_workitem", None)
+        continue_wi = None
+        if paused_wi and paused_wi.state == WorkItemState.WAITING_FOR_INPUT:
+            intent = await self._recognize_intent(message)
+            await self._append_archive_intent(intent)
+            if intent.get("continuation"):
+                continue_wi = paused_wi
+                continue_wi.additional_input = content
+                self._paused_workitem = None
+                # state 保持 WAITING_FOR_INPUT，由 scheduler._run_one 处理转换
+                logger.info("Session[%s] continuing paused WI %s with input: %s",
+                            self.conversation_id, continue_wi.id, content[:60])
+            else:
+                try:
+                    paused_wi.transition_to(WorkItemState.ABANDONED)
+                except ValueError:
+                    paused_wi.state = WorkItemState.ABANDONED
+                self._paused_workitem = None
+                logger.info("Session[%s] abandoned paused WI %s (user switched topic)",
+                            self.conversation_id, paused_wi.id)
+
+        # ② LLM 意图识别 + WorkItem 拆分（续接模式跳过）
+        if continue_wi:
+            work_items = [continue_wi]
+        else:
+            work_items = await self._split_into_workitems(message)
         if not work_items:
             return self._reply(
                 message,
@@ -334,6 +362,14 @@ class SessionAgent:
             self.scheduler.enqueue(wi)
         done = await self.scheduler.run_all_with_message(message, db_message_id=db_message_id, actor_snapshot=getattr(self, "_current_actor", None))
         self._last_turn_workitems = done
+
+        # ★ 多轮续接：检查是否有 WI 进入 WAITING_FOR_INPUT
+        for wi in done:
+            if wi.state == WorkItemState.WAITING_FOR_INPUT:
+                self._paused_workitem = wi
+                logger.info("Session[%s] WI %s waiting for input: %s",
+                            self.conversation_id, wi.id, wi.question[:60])
+                return self._reply(message, wi.question)  # 直接返回问题，不调 LLM 合成
 
         # ③b 待确认队列
         pending = self._collect_pending_confirms(done)
@@ -369,6 +405,21 @@ class SessionAgent:
 
         # 渲染 system prompt（权限变量用当前操作者，群聊多用户权限修复 BUG #3）
         system_prompt = self._build_rendered_system_prompt(getattr(self, "_current_actor", None))
+
+        # ── 多轮续接：注入挂起 WI 上下文 ──
+        paused_wi = getattr(self, "_paused_workitem", None)
+        if paused_wi and paused_wi.state == WorkItemState.WAITING_FOR_INPUT:
+            paused_text = (
+                f"⚠️ 当前有一个未完成的信息收集任务：\n"
+                f"  任务意图：{paused_wi.sop_id or '未知'} — {paused_wi.user_input[:120]}\n"
+                f"  Emily 上一轮问的是：{paused_wi.question}\n"
+                f"  请判断用户当前消息是否为对此问题的回答。"
+            )
+            system_prompt = system_prompt.replace("{paused_context}", paused_text)
+            system_prompt = system_prompt.replace("{paused_sop_id}", paused_wi.sop_id or "")
+        else:
+            system_prompt = system_prompt.replace("{paused_context}", "")
+            system_prompt = system_prompt.replace("{paused_sop_id}", "")
 
         # 组装 messages
         full_messages = [{"role": "system", "content": system_prompt}]
@@ -527,6 +578,7 @@ class SessionAgent:
                 priority=1,
             )
             wi.output_spec = self._derive_output_spec(intent, None)  # M1
+            wi.result_constraints = self._derive_constraints(intent)
             return [wi]
 
         if is_compound and sub_tasks:
@@ -542,6 +594,7 @@ class SessionAgent:
                 )
                 wi.output_spec = self._derive_output_spec(st if isinstance(st, dict) else intent,
                                                           wi.sop_id)  # M1
+                wi.result_constraints = self._derive_constraints(intent)
                 items.append(wi)
             return items
 
@@ -554,6 +607,7 @@ class SessionAgent:
             priority=1,
         )
         wi.output_spec = self._derive_output_spec(intent, sop_id)  # M1
+        wi.result_constraints = self._derive_constraints(intent)
         # M2: 路由派生的 query_type 预填给 SkillExecutor，省掉 step-01 的 LLM 参数提取
         query_type = intent.get("query_type")
         if sop_id == "SOP-005-QRY" and query_type:
@@ -561,6 +615,22 @@ class SessionAgent:
             logger.debug("Session[%s] prefilled query_type=%s for SOP-005-QRY",
                          self.conversation_id, query_type)
         return [wi]
+
+    @staticmethod
+    def _derive_constraints(intent: dict) -> dict:
+        """从路由 LLM 输出解析 result_constraints，兜底返回空 dict。"""
+        raw = intent.get("result_constraints") or {}
+        if not isinstance(raw, dict):
+            return {}
+        # 仅保留已知四个子字段，过滤 LLM 可能产生的多余字段
+        constraints = {}
+        for key in ("scope", "filters", "must_include", "must_not"):
+            val = raw.get(key)
+            if key == "scope" and isinstance(val, dict) and val:
+                constraints["scope"] = val
+            elif key in ("filters", "must_include", "must_not") and isinstance(val, list) and val:
+                constraints[key] = val
+        return constraints
 
     def _derive_output_spec(self, intent: dict, sop_id: str | None) -> dict:
         """M1: 从路由 LLM 输出解析 output_spec，代码补全 max_length/data_fields。"""
