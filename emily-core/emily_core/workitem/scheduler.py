@@ -95,54 +95,50 @@ class SessionScheduler:
         return results
 
     async def _run_one(self, wi: WorkItem, message=None, db_message_id: str = "") -> WorkItem:
-        """在公共 BUS 上执行单个 WorkItem，驱动其状态机。"""
+        """在统一生命周期图上执行单个 WorkItem。
+
+        职责瘦身：建 BusContext + 调图 + interrupt 检测/resume + 持久化。
+        不做手写状态转换（由图驱动）。
+        """
         self._active[wi.id] = wi
         try:
-            # ★ 多轮续接：WAITING_FOR_INPUT 状态跳过 PLANNING，直接从 EXECUTING 恢复
+            # 多轮续接：WAITING_FOR_INPUT 直接回 EXECUTING（图用 Command(resume=...) 恢复）
             is_resuming = (wi.state == WorkItemState.WAITING_FOR_INPUT)
             if is_resuming:
                 wi.transition_to(WorkItemState.EXECUTING)
             else:
-                # CREATED → PLANNING（KnowledgeInjector 增量灌注在 BUS node1 内触发）
                 wi.transition_to(WorkItemState.PLANNING)
+                wi.transition_to(WorkItemState.EXECUTING)
 
-            # 权限架构 v1.2：将 SessionContext 注入 BusContext（只读）
-            # WorkItemAgent 通过 context.get_permissions() 等方法访问权限信息
             context = BusContext(
                 work_item=wi,
                 message=message,
                 user_id=wi.user_id,
                 is_admin=wi.is_admin,
                 db_message_id=db_message_id,
-                _session_context=self._session_context,  # 私有字段，仅初始化时设置
-                _actor_snapshot=getattr(self, "_current_actor", None),  # 群聊当前操作者权限快照
+                _session_context=self._session_context,
+                _actor_snapshot=getattr(self, "_current_actor", None),
             )
-            # 回填 pipeline_run_id 到 WorkItem，供 Session 归档回查 LLM 日志
             wi.pipeline_run_id = context.pipeline_run_id
 
-            # 归档：注入归档文件路径到 baggage，供 ArchiveHook 逐段追加
-            # archive_md_path 由 SessionAgent 在 __init__ 中设置到 scheduler 实例
             archive_md_path = getattr(self, "archive_md_path", "")
             if archive_md_path:
                 context.baggage["archive_md_path"] = archive_md_path
 
-            # 文件上传链路：确保 context.message 携带原始消息附件
-            # 回退路径——从 WorkItem 上存储的原始消息对象恢复
             if context.message is None:
                 stored = getattr(wi, '_source_message', None)
                 if stored is not None:
                     context.message = stored
 
-            # PLANNING → EXECUTING（LangGraph StateGraph 5 节点 + error_analysis 纠错闭环）
-            if not is_resuming:
-                wi.transition_to(WorkItemState.EXECUTING)
-            await self._run_graph(context)
+            # 调图（含 interrupt 检测/resume）
+            await self._run_graph(context, is_resuming=is_resuming,
+                                  resume_input=getattr(wi, "additional_input", "") or "")
 
-            # ★ 多轮续接：检查 WI 是否被 node3 标记为 WAITING_FOR_INPUT
+            # 检查是否 interrupt 挂起（WAITING_FOR_INPUT）
             if wi.state == WorkItemState.WAITING_FOR_INPUT:
                 logger.info("Scheduler[%s] WI %s WAITING_FOR_INPUT: %s",
                             self.session_id, wi.id, wi.question[:60])
-                return wi  # 不标 DONE/FAILED，由 SessionAgent 持有等待续接
+                return wi
 
             if context.should_abort:
                 wi.transition_to(WorkItemState.FAILED)
@@ -166,25 +162,22 @@ class SessionScheduler:
             self._done.append(wi)
         return wi
 
-    async def _run_graph(self, context) -> None:
-        """通过 LangGraph 引擎执行 WorkItem（含 error_analysis 纠错闭环）。"""
-
+    async def _run_graph(self, context, is_resuming: bool = False, resume_input: str = "") -> None:
+        """通过统一生命周期图执行 WorkItem（含 interrupt/resume）。"""
+        from langgraph.types import Command
         from emily_core.infrastructure.logging.llm_logger import LLMInteractionLogger
         from emily_core.infrastructure.logging.business_event_logger import BusinessEventLogger
         from emily_core.workitem.langgraph_engine.state import (
             set_bus_context, clear_bus_context, make_initial_state,
         )
 
-        # ── 取 graph 实例 ──
         core = getattr(self, "_core", None)
         graph = getattr(core, "_workitem_graph", None) if core else None
         if graph is None:
             raise RuntimeError("LangGraph engine not built — check EmilyCore._build_pipeline_bus()")
 
-        # ── 设置 contextvars ──
         set_bus_context(context)
 
-        # 注入日志上下文（对齐 pipeline/bus.py 的 run 方法）
         LLMInteractionLogger.set_context(
             pipeline_run_id=context.pipeline_run_id,
             conversation_id=context.message.conversation_id if context.message else "",
@@ -195,7 +188,6 @@ class SessionScheduler:
             conversation_id=context.message.conversation_id if context.message else "",
         )
 
-        # 注入 per-message progress_sender（对齐 bus.py:157-168）
         core = getattr(self, "_core", None)
         outbound_bus = getattr(core, "outbound_bus", None) if core else None
         if outbound_bus is not None and context.message is not None:
@@ -208,16 +200,23 @@ class SessionScheduler:
 
         try:
             _cfg = getattr(core, "config", None) if core else None
-            max_replan = getattr(_cfg, "langgraph_max_replan", 1) if _cfg else 1
-            max_retry = getattr(_cfg, "langgraph_max_retry", 2) if _cfg else 2
-            state = make_initial_state(
-                pipeline_run_id=context.pipeline_run_id,
-                max_replan=max_replan,
-                max_retry=max_retry,
-            )
-            # thread_id = pipeline_run_id，对接现有 trace/归档/LLM 日志
+            max_iter = getattr(_cfg, "agent_loop_max_iterations", 12) if _cfg else 12
             config = {"configurable": {"thread_id": context.pipeline_run_id}}
-            await graph.ainvoke(state, config=config)
+
+            if is_resuming and resume_input:
+                # 续接：用 Command(resume=...) 把用户回复注入 interrupt 断点
+                result = await graph.ainvoke(
+                    Command(resume=resume_input), config=config,
+                )
+            else:
+                state = make_initial_state(
+                    pipeline_run_id=context.pipeline_run_id,
+                    max_iterations=max_iter,
+                )
+                result = await graph.ainvoke(state, config=config)
+
+            # 检测 interrupt 挂起
+            _check_interrupt(self, context, config, graph)
         finally:
             clear_bus_context()
             LLMInteractionLogger.clear_context()
@@ -232,3 +231,38 @@ class SessionScheduler:
     def active_count(self) -> int:
         """执行中的 WorkItem 数量。"""
         return len(self._active)
+
+
+def _check_interrupt(scheduler, context, config, graph) -> None:
+    """检测图是否因 interrupt 挂起（WAITING_FOR_INPUT），若是则标记 WorkItem 状态。"""
+    try:
+        # langgraph 1.x：get_state 读 checkpoint，interrupt 时 __interrupt__ 非空
+        snap = graph.get_state(config)
+        tasks = getattr(snap, "tasks", {}) or {}
+        next_nodes = getattr(snap, "next", ()) or ()
+        # interrupt 挂起时 next 含 tool_node（ask_user 在 tool_node 内 interrupt）
+        if next_nodes or (hasattr(snap, "values") and snap.values.get("wi_state") == "executing"
+                          and snap.values.get("waiting_question")):
+            wi = context.work_item
+            wi.state = WorkItemState.WAITING_FOR_INPUT
+            wi.question = snap.values.get("waiting_question", "") or _extract_interrupt_question(snap)
+            _logger = logging.getLogger("emily.scheduler")
+            _logger.info("Scheduler interrupt detected: WI %s question=%s",
+                        wi.id, wi.question[:60])
+    except Exception as e:
+        logging.getLogger("emily.scheduler").debug("interrupt check skipped: %s", e)
+
+
+def _extract_interrupt_question(snap) -> str:
+    """从 interrupt 快照提取问题文本。"""
+    try:
+        tasks = getattr(snap, "tasks", {}) or {}
+        for t in tasks.values():
+            interrupts = getattr(t, "interrupts", []) or []
+            for intr in interrupts:
+                val = getattr(intr, "value", None)
+                if isinstance(val, str):
+                    return val
+    except Exception:
+        pass
+    return "请补充信息"

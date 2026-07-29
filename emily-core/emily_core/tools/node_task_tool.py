@@ -11,6 +11,66 @@ from typing import Any
 
 logger = logging.getLogger("emily.tools.node_task")
 
+# ── Schema 常量（供 registry.py 注册时传递）──
+
+_CREATE_TASK_NODE_SCHEMA = {
+    "type": "object",
+    "properties": {
+        "project_id": {"type": "string", "description": "项目ID（UUID）"},
+        "title": {"type": "string", "description": "任务标题"},
+        "node_name": {"type": "string", "description": "节点名称（与title二选一）"},
+        "executor_id": {"type": "string", "description": "执行人用户ID（UUID）"},
+        "responsible_user_id": {"type": "string", "description": "负责人用户ID（UUID，与executor_id二选一）"},
+        "deadline_at": {"type": "string", "description": "截止日期（ISO格式）"},
+        "parent_node_id": {"type": "string", "description": "父节点ID（UUID）"},
+        "node_id": {"type": "string", "description": "节点ID（UUID，与parent_node_id二选一）"},
+        "owner_dept_id": {"type": "string", "description": "负责部门ID"},
+        "description": {"type": "string", "description": "任务描述"},
+    },
+    "required": ["project_id", "title"],
+}
+
+_SUBMIT_DELIVERABLE_SCHEMA = {
+    "type": "object",
+    "properties": {
+        "deliverable_id": {"type": "string", "description": "成果ID（UUID）"},
+        "content": {"type": "string", "description": "成果内容描述"},
+        "file_url": {"type": "string", "description": "附件URL"},
+        "file_name": {"type": "string", "description": "附件文件名"},
+        "attachment_file_id": {"type": "string", "description": "附件文件ID（UUID）"},
+        "is_acceptance_check": {"type": "boolean", "description": "是否为验收检查"},
+    },
+    "required": ["content"],
+}
+
+_CONFIRM_DELIVERABLE_SCHEMA = {
+    "type": "object",
+    "properties": {
+        "deliverable_id": {"type": "string", "description": "成果ID（UUID）"},
+        "reason": {"type": "string", "description": "确认理由/备注"},
+    },
+    "required": ["deliverable_id"],
+}
+
+_RETURN_DELIVERABLE_SCHEMA = {
+    "type": "object",
+    "properties": {
+        "deliverable_id": {"type": "string", "description": "成果ID（UUID）"},
+        "reason": {"type": "string", "description": "退回原因"},
+    },
+    "required": ["deliverable_id", "reason"],
+}
+
+_QUERY_MY_NODES_SCHEMA = {
+    "type": "object",
+    "properties": {
+        "project_id": {"type": "string", "description": "项目ID（UUID，可选筛选）"},
+        "node_type": {"type": "string", "description": "节点类型筛选（TASK/MILESTONE等）"},
+        "limit": {"type": "integer", "description": "返回数量上限（默认20）"},
+    },
+    "required": [],
+}
+
 
 async def handle_create_task_node(
     params: dict[str, Any],

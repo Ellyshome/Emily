@@ -1,26 +1,10 @@
 # emily-core/emily_core/skill/__init__.py
-"""Skill 模块 —— SOP 结构化执行定义。"""
+"""Skill 模块 —— 降级为 SOP .md 索引器（L3 agent loop 迁移后）。"""
 
-from .definition import ParamMapping, SkillStep, SkillTool, SkillDefinition
-from .validator import validate_skill, SkillValidationResult
-from .parser import parse_skill_text, parse_skill_file, SkillParseError
-from .registry import SkillRegistry, SkillRegistryStatus
-from .executor import SkillExecutor, SkillExecutionContext
-from .param_extractor import ParamExtractor
+from .registry import SkillRegistry, SkillRegistryStatus, SopDoc
 
 __all__ = [
-    "ParamMapping",
-    "SkillStep",
-    "SkillTool",
-    "SkillDefinition",
-    "validate_skill",
-    "SkillValidationResult",
-    "parse_skill_text",
-    "parse_skill_file",
-    "SkillParseError",
     "SkillRegistry",
     "SkillRegistryStatus",
-    "SkillExecutor",
-    "SkillExecutionContext",
-    "ParamExtractor",
+    "SopDoc",
 ]

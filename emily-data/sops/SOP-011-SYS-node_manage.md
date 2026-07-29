@@ -98,6 +98,13 @@ COMPLETED（已完成·终态）
 | 挂载子节点 | Level3 |
 | 废弃节点 | Level2 |
 
+### 3.6 Agent 调用指引（L3 agent loop）
+
+1. **工具选择**：根据操作类型选择对应工具（create_node / query_node / update_node_progress 等），节点工具 schema 含完整参数约束
+2. **工具失败自纠**：调用返回错误时，分析 tool_result 中的 error 信息，调整参数后重试
+3. **信息不足**：操作需要 project_id 时若只有项目名称，先调 `resolve_project` 解析
+4. **完成回复**：操作成功后简洁确认结果，包含关键节点编号
+
 ## 4. 输出规范
 
 操作完成后返回：

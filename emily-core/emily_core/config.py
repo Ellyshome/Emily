@@ -184,6 +184,11 @@ class Config:
     """LangGraph 引擎最大直接重试次数（node3→error_analysis→node3 循环上限，防死循环）。
     超过后升级为 REPLAN（回 node2 重规划），避免 transient_failure 分类导致的无限重试。"""
 
+    # ── Agent loop（L3）──
+    agent_loop_max_iterations: int = 12
+    """Agent loop 最大迭代次数（agent_node↔tool_node 循环上限，防 runaway）。
+    超限升级外层 error_analysis 兜底。"""
+
     # ── Checkpoint 持久化 ──
     checkpoint_enabled: bool = True
     """检查点持久化开关"""

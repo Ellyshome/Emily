@@ -363,11 +363,15 @@ class ArchiveHook(Hook):
 
             # 按当前节点阶段过滤 + 排除已归档日志（跨节点去重）
             stage = context.current_stage
+            # LangGraph 引擎节点名（created/routing/executing/summarizing/error_analysis）
+            # executing 覆盖 agent loop 内所有 LLM 日志（planning/execution/guardian）
+            # summarizing 补遗（去重后覆盖 execution/guardian 中未归档的日志）
             category_map = {
-                "wi_node1": {"intent"},
-                "wi_node2": {"planning"},
-                "wi_node3": {"execution", "guardian"},
-                "wi_node4": {"execution", "guardian"},
+                "created": set(),
+                "routing": set(),
+                "executing": {"planning", "execution", "guardian"},
+                "summarizing": {"execution", "guardian"},
+                "error_analysis": {"execution"},
             }
             expected_cats = category_map.get(stage, set())
             archived_ids = context.baggage.setdefault("_archive_log_ids", set())
@@ -382,12 +386,11 @@ class ArchiveHook(Hook):
                     archived_ids.add(lid)
 
             # 读取本节点 Prompt 注入信息（由节点 handler 存入 baggage）
-            # 存储 key 为 prompt_info_node2/node3/node4（不含 wi_ 前缀），此处对齐
-            node_suffix = stage.replace("wi_", "")  # wi_node2 → node2
-            prompt_info = context.baggage.get(f"prompt_info_{node_suffix}", None)
+            # 存储 key 为 prompt_info_{stage}（如 prompt_info_created / prompt_info_summarizing）
+            prompt_info = context.baggage.get(f"prompt_info_{stage}", None)
             prompt_info_guardian = None
-            if stage == "wi_node4":
-                prompt_info_guardian = context.baggage.get("prompt_info_node4_guardian", None)
+            if stage == "summarizing":
+                prompt_info_guardian = context.baggage.get("prompt_info_summarizing_guardian", None)
 
             content = self.archive_writer.render_node_section(
                 node_name=stage,

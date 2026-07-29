@@ -107,12 +107,7 @@ def self_check(*, db_url: str = "", dry_run: bool = False) -> dict:
     # 工具一致性快速检查（方案 B：复用 self_check 启动链路）
     try:
         from emily_core.infrastructure.tools_consistency import check_quick
-        skill_dir = "/app/skills"
-        if not Path(skill_dir).exists():
-            dev_dir = str(Path(__file__).resolve().parent.parent / "emily-data" / "skills")
-            if Path(dev_dir).exists():
-                skill_dir = dev_dir
-        result["tools_consistency"] = check_quick(skill_dir)
+        result["tools_consistency"] = check_quick()
     except Exception as e:
         result["tools_consistency"] = {"ok": False, "error": str(e)}
 

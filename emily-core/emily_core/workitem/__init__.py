@@ -6,23 +6,17 @@ Session-Scheduler 将 WorkItem 分配到系统级公共 Pipeline BUS（4 节点�
 
 from .workitem import WorkItem
 from .workitem_state import WorkItemState, TRANSITIONS, TERMINAL_STATES
-from .workitem_agent import WorkItemAgent
 from .scheduler import SessionScheduler
-from .injector import KnowledgeInjector, InjectionResult
-from .pipeline.bus import PipelineBUS
-from .pipeline.node import PipelineNode
 from .pipeline.context import BusContext
+
+# M8 清理：WorkItemAgent / KnowledgeInjector / PipelineBUS / PipelineNode 已删除
+# _workitem_agent 和 injector 移至 langgraph_engine
 
 __all__ = [
     "WorkItem",
     "WorkItemState",
     "TRANSITIONS",
     "TERMINAL_STATES",
-    "WorkItemAgent",
     "SessionScheduler",
-    "KnowledgeInjector",
-    "InjectionResult",
-    "PipelineBUS",
-    "PipelineNode",
     "BusContext",
 ]

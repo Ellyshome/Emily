@@ -1,44 +1,57 @@
 {
   "_comment": "Emily Hook 声明式配置（蓝图 §7.5）。挂载点格式 {phase}:{node}，phase ∈ before/after/on_error。业务人员可编辑，重启生效。三态决策 ALLOW/WARN/BLOCK，deny always wins。",
   "hooks": {
-    "before:wi_node1": [
+    "before:created": [
       { "type": "auth", "name": "auth.sop_access", "resource_type": "sop", "action": "execute", "enabled": true }
     ],
-    "after:wi_node1": [
-      { "type": "audit", "name": "audit.intent_result", "event_type": "intent_completed", "enabled": true },
-      { "type": "progress", "name": "progress.processing", "enabled": true },
-      { "type": "archive", "name": "archive.node1", "enabled": true }
+    "after:created": [
+      { "type": "archive", "name": "archive.created", "enabled": true }
     ],
-    "on_error:wi_node1": [
-      { "type": "audit", "name": "audit.intent_failed", "event_type": "intent_failed", "enabled": true }
+    "on_error:created": [
+      { "type": "audit", "name": "audit.init_failed", "event_type": "init_failed", "enabled": true }
     ],
-    "before:wi_node2": [
+
+    "before:routing": [
       { "type": "auth", "name": "auth.resource_check", "resource_type": "table", "action": "read", "enabled": true }
     ],
-    "after:wi_node2": [
+    "after:routing": [
+      { "type": "audit", "name": "audit.intent_result", "event_type": "intent_completed", "enabled": true },
+      { "type": "progress", "name": "progress.processing", "enabled": true },
+      { "type": "archive", "name": "archive.routing", "enabled": true }
+    ],
+    "on_error:routing": [
+      { "type": "audit", "name": "audit.routing_failed", "event_type": "routing_failed", "enabled": true }
+    ],
+
+    "before:executing": [
+    ],
+    "after:executing": [
       { "type": "audit", "name": "audit.plan_created", "event_type": "plan_completed", "enabled": true },
-      { "type": "archive", "name": "archive.node2", "enabled": true }
+      { "type": "archive", "name": "archive.executing", "enabled": true }
     ],
-    "on_error:wi_node2": [
-      { "type": "audit", "name": "audit.plan_failed", "event_type": "plan_failed", "enabled": true }
-    ],
-    "before:wi_node3": [
-    ],
-    "after:wi_node3": [
-      { "type": "audit", "name": "audit.sop_completed", "event_type": "execution_completed", "enabled": true },
-      { "type": "archive", "name": "archive.node3", "enabled": true }
-    ],
-    "on_error:wi_node3": [
+    "on_error:executing": [
       { "type": "audit", "name": "audit.execution_error", "event_type": "execution_failed", "enabled": true }
     ],
-    "before:wi_node4": [
+
+    "before:summarizing": [
     ],
-    "after:wi_node4": [
+    "after:summarizing": [
+      { "type": "audit", "name": "audit.execution_completed", "event_type": "execution_completed", "enabled": true },
       { "type": "audit", "name": "audit.result_final", "event_type": "result_completed", "enabled": true },
-      { "type": "archive", "name": "archive.node4", "enabled": true }
+      { "type": "archive", "name": "archive.summarizing", "enabled": true }
     ],
-    "on_error:wi_node4": [
+    "on_error:summarizing": [
       { "type": "audit", "name": "audit.summary_failed", "event_type": "summary_failed", "enabled": true }
+    ],
+
+    "before:error_analysis": [
+    ],
+    "after:error_analysis": [
+      { "type": "audit", "name": "audit.error_handled", "event_type": "error_handled", "enabled": true },
+      { "type": "archive", "name": "archive.error_analysis", "enabled": true }
+    ],
+    "on_error:error_analysis": [
+      { "type": "audit", "name": "audit.error_analysis_failed", "event_type": "error_analysis_failed", "enabled": true }
     ]
   }
 }

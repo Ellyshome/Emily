@@ -56,6 +56,19 @@ class WorkItem:
         must_not: list[str] — ["不要已完成节点"]
     """
 
+    # ── M0: Session 下发的工作要求（任务化指令）──
+    work_spec: dict = field(default_factory=dict)
+    """SessionAgent 组装的结构化工作要求，agent loop 据此执行（非用户原文）。
+
+    Structure:
+        objective: str       — 任务目标（如 "record_event"）
+        sop_id: str          — 匹配的 SOP
+        user_request: str    — 用户原始请求（上下文附注，非主指令）
+        output_spec: dict    — 成果规格（intent/detail/format/data_fields）
+        constraints: dict    — 成果约束（scope/must_include/must_not）
+        required_tools: set  — 建议工具集
+    """
+
     # ── 多轮续接 ──
     question: str = ""
     """Emily 上一轮问用户的问题（挂起时写入，供续接判断用）"""
@@ -72,7 +85,7 @@ class WorkItem:
     step_results: list[Any] = field(default_factory=list)  # list[StepResult]
 
     # ── Node 4（成果总结）产出 ──
-    result_text: str = ""                # 人类可读的最终成果（M3 后仅兜底用，正常路径由 Session 合成）
+    result_text: str = ""                # 兜底用（type=text 异常路径保留），正常路径成果在 structured_result
     structured_result: Any = None        # M2: StructuredResult，回传给 Session 做语言组织
 
     # ── 增量灌注记录（KnowledgeInjector 写入）──

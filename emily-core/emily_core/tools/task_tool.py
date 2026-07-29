@@ -19,11 +19,15 @@ _TASK_TOOL_SCHEMA = {
     "properties": {
         "project_name": {
             "type": "string",
-            "description": "项目名称（如 '未来城'），可选",
+            "description": "项目名称（如 '翠湖庭院'）。若只知道名称不知 UUID，先调 resolve_project 拿 project_id",
         },
         "project_id": {
             "type": "string",
-            "description": "项目 UUID，可选",
+            "format": "uuid",
+            "description": "项目 UUID。若未提供但有 project_name，必须先调 resolve_project 解析",
+            "fk_target": "projects.id",
+            "resolvable_from": "project_name",
+            "resolver": "resolve_project",
         },
         "data": {
             "type": "object",

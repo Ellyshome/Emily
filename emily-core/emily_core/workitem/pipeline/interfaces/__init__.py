@@ -5,7 +5,7 @@
 """
 
 from .routing import IntentType, SubTask, RouteDecision
-from .planning import PlanStep, ExecutionPlan
+# M8 清理：planning.py（ExecutionPlan/PlanStep）已删除
 from .execution import (
     ToolCallRecord,
     RagChunk,
@@ -21,8 +21,6 @@ __all__ = [
     "IntentType",
     "SubTask",
     "RouteDecision",
-    "PlanStep",
-    "ExecutionPlan",
     "ToolCallRecord",
     "RagChunk",
     "RagResult",
