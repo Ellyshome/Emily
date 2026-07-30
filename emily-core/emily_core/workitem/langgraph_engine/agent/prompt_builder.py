@@ -103,6 +103,19 @@ def build_system_prompt(
 - 看到 tool_result 报错时，分析原因并调整参数重试，不要原样重试
 - **完成工作必调 complete_work，信息不足必调 ask_user，二者必居其一，不要返回纯文本**
 - summary 字段是给上层组织回复的关键事实，应包含业务编号（如 EVT-xxx）和核心结论
+
+# 严格禁止
+- **禁止返回纯文本回复**——你必须调用工具，不要用自然语言回答用户
+- **禁止**在文本中输出任何工具调用格式（如 <｜DSML｜tool_calls> 标签），这不是工具调用
+- 正确做法：通过 function calling API 调用工具（系统自动处理）
+- 完成工作→调用 complete_work；信息不足→调用 ask_user；查询数据→调用业务工具
+
+**错误示例（禁止）**：
+  "好的，我来查询项目进度" ← 纯文本，禁止！
+  "根据查询结果，共3条记录" ← 纯文本，禁止！
+
+**正确示例（必须）**：
+  调用 complete_work(status="success", summary=["共查到3条事件记录"], data={{"events": [...]}})
 {rc_text}{cont_text}
 """
     return prompt

@@ -14,6 +14,8 @@
 
   "llm_model": "deepseek-v4-flash",
   "llm_temperature": 0.1,
+  "llm_agent_loop_model": "deepseek-v4-pro",
+  "llm_agent_loop_max_tokens": 8192,
   "agent_max_iterations": 10,
   "agent_context_max_turns": 10,
   "agent_context_ttl_seconds": 600,

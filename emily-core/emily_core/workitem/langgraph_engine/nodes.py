@@ -174,8 +174,15 @@ def _extract_structured_result(wi, ctx) -> "StructuredResult":
     )
 
 
-def make_created(hook_adapter):
-    """created 节点：初始化 BusContext + 灌注。"""
+def make_created(hook_adapter, *, business_tools, resolvers):
+    """created 节点：初始化 BusContext + 灌注 + 固化 tool_specs 到 state。
+
+    tool_specs 在 workitem 拉起时构建一次，固化到 state._tool_specs，
+    后续 agent_node / tool_node 等全 loop 只读取用、不重建（LangGraph
+    "不 return 即保持"保证跨轮不丢）。
+    """
+    from .agent.tool_adapter import build_tool_specs, _session_api_ids
+
     async def created(state: dict) -> dict:
         ctx = _get_context()
         t = _enter_stage(state, "created")
@@ -190,6 +197,9 @@ def make_created(hook_adapter):
                 sop_text = _load_sop_text(sop_id)
                 ctx.set("sop_text", sop_text)
                 state["current_sop_id"] = sop_id
+            # 构建 tool_specs 并固化到 state（workitem 拉起后工具集固定，全 loop 只读取用）
+            session_api_ids = _session_api_ids(ctx)
+            tool_specs = build_tool_specs(business_tools, resolvers, session_api_ids)
             # prompt_info 供 ArchiveHook 使用
             ctx.set("prompt_info_created", {
                 "sop_id": sop_id,
@@ -201,7 +211,7 @@ def make_created(hook_adapter):
             ctx.should_abort = True
             return {**_exit_stage(state, "created", t), "wi_state": "failed"}
         await hook_adapter.fire_after("created", ctx)
-        return {**_exit_stage(state, "created", t), "wi_state": "routing"}
+        return {**_exit_stage(state, "created", t), "wi_state": "routing", "_tool_specs": tool_specs}
     created.__name__ = "created"
     return created
 
@@ -318,6 +328,13 @@ def make_summarizing(hook_adapter):
     return summarizing
 
 
+def _write_error_analysis_to_wi(ctx, result: dict) -> None:
+    """将 error_analysis 结果写入 work_item，供 SessionArchiveWriter.render_node_section 读取。"""
+    wi = getattr(ctx, "work_item", None)
+    if wi is not None:
+        wi.error_analysis = result
+
+
 def make_error_analysis(hook_adapter, *, llm_client, config):
     """error_analysis 节点：iteration cap / LLM 异常兜底。复用 ErrorAnalyzer。"""
     from .error_analysis import ErrorAnalyzer
@@ -329,6 +346,22 @@ def make_error_analysis(hook_adapter, *, llm_client, config):
         if not await hook_adapter.fire_before("error_analysis", ctx):
             ctx.should_abort = True
             return {**_exit_stage(state, "error_analysis", t), "wi_state": "failed"}
+
+        # ── 硬上限防死循环：连续 3 次 error_analysis 强制 abort ──
+        ea_count = state.get("_error_analysis_count", 0) + 1
+        MAX_EA_RETRIES = 3
+        if ea_count > MAX_EA_RETRIES:
+            logger.critical("error_analysis: %d consecutive runs, forcing abort to prevent infinite loop", ea_count)
+            result = {"error_type": "transient_failure", "should_abort": True,
+                      "root_cause": f"error_analysis 触发 {ea_count} 次，超过硬上限 {MAX_EA_RETRIES}，强制终止",
+                      "should_escalate": False}
+            ctx.should_abort = True
+            ctx.abort_reason = result["root_cause"]
+            state["error_analysis"] = result
+            _write_error_analysis_to_wi(ctx, result)
+            await hook_adapter.fire_after("error_analysis", ctx)
+            return {**_exit_stage(state, "error_analysis", t), "wi_state": "failed",
+                    "_error_analysis_count": ea_count}
         try:
             result = await analyzer.analyze(ctx)
         except Exception as e:
@@ -336,10 +369,15 @@ def make_error_analysis(hook_adapter, *, llm_client, config):
             result = {"error_type": "transient_failure", "should_abort": False,
                       "root_cause": f"分析器异常: {e}"}
         try:
-            # iteration cap 触发的 should_escalate → 默认 abort
-            if state.get("error_analysis", {}).get("should_escalate"):
+            # agent_node 传入的 state.error_analysis（text fallback / iteration cap）
+            state_ea = state.get("error_analysis", {}) or {}
+            if state_ea.get("should_abort"):
+                # agent_node 已判定 abort，直接覆盖分析结果
+                result = {**state_ea}
+            elif state_ea.get("should_escalate"):
+                # iteration cap 触发 → 默认 abort
                 result = {**result, "should_abort": True,
-                          "root_cause": result.get("root_cause", "iteration cap")}
+                          "root_cause": state_ea.get("root_cause") or result.get("root_cause", "iteration cap")}
             if result.get("should_abort"):
                 ctx.should_abort = True
                 ctx.abort_reason = result.get("root_cause", "error_analysis abort")
@@ -347,6 +385,8 @@ def make_error_analysis(hook_adapter, *, llm_client, config):
                 if user_prompt and ctx.work_item is not None:
                     ctx.work_item.add_warning(f"需追问用户: {user_prompt}")
             state["error_analysis"] = result
+            # 写入 work_item 供归档读取
+            _write_error_analysis_to_wi(ctx, result)
             # prompt_info 供 ArchiveHook 使用
             ctx.set("prompt_info_error_analysis", {
                 "error_type": result.get("error_type", "unknown"),
@@ -359,6 +399,68 @@ def make_error_analysis(hook_adapter, *, llm_client, config):
         await hook_adapter.fire_after("error_analysis", ctx)
         wi_state = "failed" if result.get("should_abort") else "executing"
         return {**_exit_stage(state, "error_analysis", t), "wi_state": wi_state,
+                "_error_analysis_count": ea_count,
                 "iteration_count": 0}
     error_analysis.__name__ = "error_analysis"
     return error_analysis
+
+
+def make_quality_gate():
+    """quality_gate 节点：规则校验 StructuredResult 是否实质性满足要求。
+
+    替代 Guardian LLM 审核——纯规则校验，无额外 LLM 调用。
+    不合格 → 退回 agent_node 重做（最多 1 次），第二次仍不通过 → 标记 partial 诚实回复。
+    """
+
+    # 对话承诺式文本关键词（非实质性结果）
+    _PROMISE_PATTERNS = [
+        "正在查询", "请稍候", "我来帮您", "正在为您", "正在处理",
+        "马上为您", "正在获取", "让我查一下", "正在检索",
+    ]
+
+    async def quality_gate(state: dict) -> dict:
+        ctx = _get_context()
+        wi = ctx.work_item
+        sr = getattr(wi, "structured_result", None)
+
+        # 无结构化结果 → pass（fail-open）
+        if sr is None:
+            return {"wi_state": "done"}
+
+        # 快速预检：有明显成果 → pass
+        if sr.status == "success" and (sr.business_object_no or sr.data):
+            return {"wi_state": "done"}
+
+        # 检查：status=success 但 data 为空 + summary_facts 含对话承诺
+        if sr.status == "success" and not sr.data:
+            combined = " ".join(sr.summary_facts or [])
+            if any(p in combined for p in _PROMISE_PATTERNS):
+                reject_count = state.get("_quality_gate_reject_count", 0) + 1
+                if reject_count > 1:
+                    # 第二次仍不通过：标记 partial，诚实回复
+                    sr.status = "partial"
+                    sr.summary_facts = ["查询结果质量不完整"] + list(sr.summary_facts or [])
+                    logger.warning("quality_gate: WI %s rejected twice, marking partial",
+                                   getattr(wi, "id", "?"))
+                    return {"wi_state": "done", "_quality_gate_reject_count": reject_count}
+
+                # 第 1 次不通过：退回 agent_node 重做
+                messages = list(state.get("messages", []))
+                correction = (
+                    "[quality_gate 纠正] 上次执行结果未通过质量检查：结果包含对话承诺而非实际数据。"
+                    "请重新执行查询工具获取真实结果，确保 complete_work 的 data 包含实际查询结果。"
+                )
+                messages.append({"role": "user", "content": correction})
+                # 清除 structured_result，让 agent loop 重新执行
+                wi.structured_result = None
+                logger.warning("quality_gate: WI %s rejected (attempt %d), routing back to agent_node",
+                               getattr(wi, "id", "?"), reject_count)
+                return {"messages": messages, "wi_state": "executing",
+                        "_quality_gate_reject_count": reject_count,
+                        "iteration_count": state.get("iteration_count", 0)}
+
+        # 其他情况 → pass（fail-open）
+        return {"wi_state": "done"}
+
+    quality_gate.__name__ = "quality_gate"
+    return quality_gate

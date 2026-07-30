@@ -16,6 +16,18 @@ if TYPE_CHECKING:
 logger = logging.getLogger("emily.langgraph.tool_adapter")
 
 
+def _session_api_ids(ctx) -> set[str]:
+    """从 SessionContext.available_tools 提取 api_id 集合。参照 workitem_agent.py:547。"""
+    session_ctx = ctx.get_session_context() if ctx else None
+    ids: set[str] = set()
+    if session_ctx:
+        for t in getattr(session_ctx, "available_tools", []) or []:
+            api_id = t.get("api_id") if isinstance(t, dict) else None
+            if api_id:
+                ids.add(api_id)
+    return ids
+
+
 def build_tool_specs(
     business_tools: "BusinessFlowToolRegistry",
     resolvers: "ResolverRegistry",

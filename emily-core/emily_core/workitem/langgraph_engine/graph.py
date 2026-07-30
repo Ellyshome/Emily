@@ -15,6 +15,7 @@ from langgraph.checkpoint.memory import MemorySaver
 from .state import AgentLoopState
 from .nodes import (
     make_created, make_routing, make_executing, make_summarizing, make_error_analysis,
+    make_quality_gate,
 )
 from .agent.loop import route_after_agent, route_after_tool
 
@@ -43,7 +44,8 @@ def build_workitem_graph(
     gs = StateGraph(AgentLoopState)
 
     # ── 注册节点 ──
-    gs.add_node("created", make_created(hook_adapter))
+    gs.add_node("created", make_created(
+        hook_adapter, business_tools=business_tools, resolvers=resolvers))
     gs.add_node("routing", make_routing(hook_adapter))
     gs.add_node("executing", make_executing(
         hook_adapter, llm_client=llm_client, business_tools=business_tools,
@@ -56,6 +58,7 @@ def build_workitem_graph(
     gs.add_node("summarizing", make_summarizing(hook_adapter))
     gs.add_node("error_analysis", make_error_analysis(
         hook_adapter, llm_client=llm_client, config=config))
+    gs.add_node("quality_gate", make_quality_gate())
 
     # ── 边 ──
     gs.add_edge(START, "created")
@@ -65,12 +68,12 @@ def build_workitem_graph(
     # executing 触发首轮 agent_node
     gs.add_edge("executing", "agent_node")
 
-    # agent_node → 条件路由（tool_node / summarizing / error_analysis）
+    # agent_node → 条件路由（tool_node / summarizing / error_analysis / agent_node 自循环）
     gs.add_conditional_edges(
         "agent_node",
         route_after_agent,
         {"tool_node": "tool_node", "summarizing": "summarizing",
-         "error_analysis": "error_analysis"},
+         "error_analysis": "error_analysis", "agent_node": "agent_node"},
     )
 
     # tool_node → 条件路由（complete_work→summarizing / 否则→agent_node 循环）
@@ -80,8 +83,13 @@ def build_workitem_graph(
         {"agent_node": "agent_node", "summarizing": "summarizing"},
     )
 
-    # summarizing → END
-    gs.add_edge("summarizing", END)
+    # summarizing → quality_gate → 条件路由（pass→END / reject→agent_node）
+    gs.add_edge("summarizing", "quality_gate")
+    gs.add_conditional_edges(
+        "quality_gate",
+        route_after_quality_gate,
+        {"agent_node": "agent_node", "done": END},
+    )
 
     # error_analysis → 条件路由（failed→END / agent_node 重试）
     gs.add_conditional_edges(
@@ -102,6 +110,14 @@ def route_after_error(state: dict) -> str:
     if ea.get("should_abort"):
         return "failed"
     return "agent_node"
+
+
+def route_after_quality_gate(state: dict) -> str:
+    """quality_gate 之后路由：executing → agent_node 重做，否则 → done(END)。"""
+    wi_state = state.get("wi_state", "")
+    if wi_state == "executing":
+        return "agent_node"
+    return "done"
 
 
 def _make_agent_loop_entry(*, llm_client, business_tools, resolvers, config):
