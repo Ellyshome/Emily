@@ -370,8 +370,8 @@ class ArchiveHook(Hook):
                 "created": set(),
                 "routing": set(),
                 "executing": {"planning", "execution", "guardian"},
-                "summarizing": {"execution", "guardian"},
-                "error_analysis": {"execution"},
+                "summarizing": {"execution", "guardian", "agent_loop"},          # +agent_loop（成功路径归档）
+                "error_analysis": {"execution", "agent_loop", "error_analysis"}, # +agent_loop +error_analysis（失败现场）
             }
             expected_cats = category_map.get(stage, set())
             archived_ids = context.baggage.setdefault("_archive_log_ids", set())

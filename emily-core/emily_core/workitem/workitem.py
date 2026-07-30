@@ -88,6 +88,10 @@ class WorkItem:
     result_text: str = ""                # 兜底用（type=text 异常路径保留），正常路径成果在 structured_result
     structured_result: Any = None        # M2: StructuredResult，回传给 Session 做语言组织
 
+    # ── error_analysis 节点产出 ──
+    error_analysis: dict = field(default_factory=dict)
+    """error_analysis 节点的分析结果，供归档渲染读取"""
+
     # ── 增量灌注记录（KnowledgeInjector 写入）──
     injected_sops: set[str] = field(default_factory=set)
     injected_tools: set[str] = field(default_factory=set)

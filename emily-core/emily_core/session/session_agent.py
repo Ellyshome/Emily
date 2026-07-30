@@ -802,18 +802,12 @@ class SessionAgent:
         return reply
 
     async def _review_final_reply(self, reply: str, done_workitems: list) -> None:
-        """M4: review_reply 上移——审回复合适性，只标记不拦截（沿用 RealGuardian 语义）。"""
-        if not done_workitems:
-            return
-        from ..workitem.pipeline.real_guardian import RealGuardian
-        guardian = RealGuardian(llm_client=self._llm, config=None)
-        for wi in done_workitems:
-            try:
-                note = await guardian.review_reply(reply, wi)
-                if note and note.issues:
-                    logger.info("M4 review_reply issues: %s", note.issues)
-            except Exception as e:
-                logger.debug("M4 review_reply failed (silent skip): %s", e)
+        """Guardian 已停用（观察期），由 quality_gate 节点（LangGraph 图内）替代拦截。
+
+        review_step / review_reply 均只标记不拦截，实际拦截效果为零，
+        且每次调用消耗 LLM token。此方法保留签名，观察期后若无回退需求可删除。
+        """
+        return
 
     def _fallback_join_results(self, done_workitems: list) -> str:
         """M4: LLM 不可用时的兜底拼串（fail-open）。"""

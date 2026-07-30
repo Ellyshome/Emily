@@ -154,6 +154,7 @@ class EmilyCore:
                     max_tokens=self.config.llm_max_tokens,
                     router_model=getattr(self.config, "llm_router_model", "") or self.config.llm_model,
                     guardian_model=getattr(self.config, "llm_guardian_model", "") or self.config.llm_model,
+                    agent_loop_model=getattr(self.config, "llm_agent_loop_model", "") or "",
                 )
                 # ── 进化日志：接入 LLM trace callback ──
                 try:

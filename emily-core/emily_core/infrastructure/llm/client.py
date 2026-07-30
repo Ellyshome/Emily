@@ -13,6 +13,9 @@ from typing import Callable, Optional
 
 from openai import AsyncOpenAI
 
+# 工具调用依赖 agent_loop_model (v4-pro) 标准 function calling，不再使用 DSML 正则解析。
+# text fallback 精准纠错兜底：agent 返回文本时诊断内容特征（DSML/JSON/纯文本）并给出针对性纠正。
+
 logger = logging.getLogger("emily.llm")
 
 
@@ -36,10 +39,12 @@ class LLMClient:
         max_tokens: int = 1024,
         router_model: str = "",
         guardian_model: str = "",
+        agent_loop_model: str = "",
     ):
         self.model = model
         self.router_model = router_model or model
         self.guardian_model = guardian_model or model
+        self.agent_loop_model = agent_loop_model or self.router_model
         self.temperature = temperature
         self.max_tokens = max_tokens
         self._client = AsyncOpenAI(
@@ -198,6 +203,7 @@ class LLMClient:
             }
 
         content = choice.message.content or ""
+
         logger.debug("LLM chat_messages: %d chars, finish=%s, elapsed=%dms",
                      len(content), finish_reason, elapsed_ms)
 

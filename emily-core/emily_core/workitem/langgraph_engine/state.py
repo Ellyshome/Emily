@@ -41,10 +41,15 @@ class AgentLoopState(TypedDict, total=False):
     iteration_count: int        # agent loop 迭代次数
     _tool_specs: list           # 缓存 tool spec（避免每轮重建）
     _pending_tool_call: dict    # 当前待执行的 tool_call
+    # ── text fallback 追踪 ──
+    _text_fallback_count: int   # 连续 text-instead-of-tool_call 计数
+    # ── quality_gate 追踪 ──
+    _quality_gate_reject_count: int  # quality_gate 退回重做计数
     # ── WAITING_FOR_INPUT ──
     waiting_question: str       # interrupt 时的问题
     # ── 兜底 ──
     error_analysis: dict        # iteration cap / LLM 异常时的兜底分析
+    _error_analysis_count: int   # error_analysis 触发次数（硬上限防死循环）
     # ── 元数据 ──
     node_timings: dict
     pipeline_run_id: str
@@ -61,8 +66,11 @@ def make_initial_state(*, pipeline_run_id: str, max_iterations: int = 12) -> dic
         "iteration_count": 0,
         "_tool_specs": [],
         "_pending_tool_call": None,
+        "_text_fallback_count": 0,
+        "_quality_gate_reject_count": 0,
         "waiting_question": "",
         "error_analysis": {},
+        "_error_analysis_count": 0,
         "node_timings": {},
         "pipeline_run_id": pipeline_run_id,
         "current_stage": "",

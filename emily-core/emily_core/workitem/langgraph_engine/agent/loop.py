@@ -16,7 +16,7 @@ from typing import Any
 
 from ....infrastructure.logging.llm_logger import LLMInteractionLogger
 from ...pipeline.interfaces.execution import StepResult, ToolCallRecord, DbResult
-from .tool_adapter import build_tool_specs
+from .tool_adapter import _session_api_ids
 from .prompt_builder import build_system_prompt
 
 logger = logging.getLogger("emily.langgraph.loop")
@@ -25,18 +25,6 @@ logger = logging.getLogger("emily.langgraph.loop")
 def _get_ctx():
     from ..state import get_bus_context
     return get_bus_context()
-
-
-def _session_api_ids(ctx) -> set[str]:
-    """从 SessionContext.available_tools 提取 api_id 集合。参照 workitem_agent.py:547。"""
-    session_ctx = ctx.get_session_context() if ctx else None
-    ids: set[str] = set()
-    if session_ctx:
-        for t in getattr(session_ctx, "available_tools", []) or []:
-            api_id = t.get("api_id") if isinstance(t, dict) else None
-            if api_id:
-                ids.add(api_id)
-    return ids
 
 
 def _inject_runtime_params(tool_params: dict, ctx) -> dict:
@@ -64,13 +52,12 @@ async def agent_node(state: dict, *, llm_client, business_tools, resolvers, sop_
     wi = ctx.work_item
     messages = list(state.get("messages", []))
 
+    # tool_specs 由 created 节点固化到 state，全 loop 只读取用、不重建
+    tool_specs = state.get("_tool_specs") or []
+
     # ── 首次进入：构建 system prompt + 初始 messages ──
     if not messages:
         session_ctx = ctx.get_session_context()
-        session_api_ids = _session_api_ids(ctx)
-        tool_specs = build_tool_specs(business_tools, resolvers, session_api_ids)
-        # 暂存 tool_specs 到 state 供后续轮复用（避免每轮重建）
-        state["_tool_specs"] = tool_specs
         system_prompt = build_system_prompt(
             sop_text=sop_text,
             tool_specs=tool_specs,
@@ -84,11 +71,6 @@ async def agent_node(state: dict, *, llm_client, business_tools, resolvers, sop_
         if session_ctx is not None:
             messages.extend(getattr(session_ctx, "message_history", []) or [])
         messages.append({"role": "user", "content": wi.user_input})
-    else:
-        # 后续轮：tool_result 已由 tool_node 追加，直接调 LLM
-        pass
-
-    tool_specs = state.get("_tool_specs") or []
 
     # ── iteration cap 检查 ──
     iteration_count = state.get("iteration_count", 0)
@@ -96,9 +78,10 @@ async def agent_node(state: dict, *, llm_client, business_tools, resolvers, sop_
     if iteration_count >= max_iter:
         logger.warning("agent_node: iteration_count=%d >= cap=%d, escalate to error_analysis",
                        iteration_count, max_iter)
-        state["error_analysis"] = {"should_abort": False, "should_escalate": True,
-                                   "root_cause": f"agent loop 达到 iteration cap ({max_iter})"}
-        return {"wi_state": "error_analysis", "iteration_count": iteration_count}
+        return {"wi_state": "error_analysis",
+                "error_analysis": {"should_abort": False, "should_escalate": True,
+                                   "root_cause": f"agent loop 达到 iteration cap ({max_iter})"},
+                "iteration_count": iteration_count}
 
     # ── 调 LLM ──
     LLMInteractionLogger.set_context(
@@ -108,9 +91,12 @@ async def agent_node(state: dict, *, llm_client, business_tools, resolvers, sop_
         call_category="agent_loop",
     )
     try:
-        # 用 router_model（fast）做 agent loop 调用（PRD 决策 #12）
-        model = getattr(llm_client, "router_model", None) or llm_client.model
-        result = await llm_client.chat_messages(messages, tools=tool_specs, model=model)
+        # 优先 agent_loop_model（v4-flash DSML 泄漏规避），回退 router_model → model
+        model = (getattr(llm_client, "agent_loop_model", None)
+                 or getattr(llm_client, "router_model", None)
+                 or llm_client.model)
+        result = await llm_client.chat_messages(messages, tools=tool_specs, model=model,
+                                                 max_tokens=getattr(config, "llm_agent_loop_max_tokens", 8192))
     except Exception as e:
         logger.error("agent_node LLM failed: %s", e, exc_info=True)
         # 防止死循环：连续 3 次 LLM 失败则强制 abort
@@ -121,6 +107,7 @@ async def agent_node(state: dict, *, llm_client, business_tools, resolvers, sop_
         state["error_analysis"] = {"should_abort": should_abort, "should_escalate": True,
                                    "root_cause": f"LLM 调用异常(第{fail_count}次): {e}"}
         return {"wi_state": "error_analysis", "_llm_fail_count": fail_count,
+                "error_analysis": state["error_analysis"],
                 "messages": [],  # 重置 messages 防止 stale tool_calls
                 "_pending_tool_call": None}
     finally:
@@ -153,33 +140,59 @@ async def agent_node(state: dict, *, llm_client, business_tools, resolvers, sop_
             "arguments": result.get("tool_arguments", {}),
         }
         wi.llm_call_count += 1
+        state["_text_fallback_count"] = 0  # 重置 text fallback 计数
         return {"messages": messages, "wi_state": "executing",
                 "_pending_tool_call": state.get("_pending_tool_call"),
                 "iteration_count": iteration_count + 1}
 
-    # type == "text" → LLM 未遵守 prompt（应调 complete_work）。兜底转为 StructuredResult
+    # type == "text" → LLM 未遵守 prompt（应调 complete_work/ask_user/tool）
     content = result.get("content", "")
     messages.append({"role": "assistant", "content": content})
     wi.llm_call_count += 1
-    logger.warning("agent_node got type=text (expected complete_work), "
-                   "fallback-converting to StructuredResult: %s", content[:80])
-    from ...pipeline.interfaces.execution import StructuredResult
-    wi.structured_result = StructuredResult(
-        status="success",
-        intent=(getattr(wi, "output_spec", {}) or {}).get("intent", wi.sop_id or "fallback"),
-        sop_id=wi.sop_id or "",
-        risk_level=getattr(wi, "risk_level", "L2") or "L2",
-        data={},
-        summary_facts=[content[:200]] if content else [],
-        rag_sources=[],
-        business_object_no="",
-        issues=[],
-        needs_confirm=False,
-        error_category="",
-        suggested_followup="",
-    )
-    ctx.set("agent_final_reply", content)  # 兜底保留，供归档
-    return {"messages": messages, "wi_state": "summarizing",
+
+    text_fallback_count = state.get("_text_fallback_count", 0) + 1
+    max_text_fallback = 3
+
+    if text_fallback_count < max_text_fallback:
+        # 诊断文本特征，给出具体纠错方向
+        if "<｜" in content or "DSML" in content or "<\u2016" in content:
+            diagnosis = ("你返回了 DSML/XML 文本标签格式（如 <｜tool_calls>），"
+                         "这不是有效的工具调用。请直接通过 function calling 接口调用工具，"
+                         "不要在回复内容里写任何 XML/DSML 标签。")
+        elif content.strip().startswith("{") or content.strip().startswith("["):
+            diagnosis = ("你返回了 JSON 文本，但工具调用必须通过 function calling 接口输出，"
+                         "不能在 content 里写 JSON。请直接调用对应工具。")
+        else:
+            diagnosis = ("你返回了纯文本回复，但当前阶段必须调用工具才能执行操作。"
+                         f"可用工具：{', '.join(t['function']['name'] for t in tool_specs)}。")
+        if text_fallback_count == 1:
+            correction = (
+                f"[系统纠正] {diagnosis}\n请立即通过 function calling 接口调用正确的工具。"
+            )
+        else:
+            correction = (
+                f"[系统警告] {diagnosis}\n正确示例：调用 complete_work(status=\"success\", summary=[\"具体事实\"], data={{...}})\n"
+                "或调用 ask_user(question=\"需要补充什么信息？\")\n"
+                "请立即调用工具，不要返回文本。"
+            )
+        messages.append({"role": "user", "content": correction})
+        logger.warning("agent_node got type=text (attempt %d/%d), retrying with correction",
+                       text_fallback_count, max_text_fallback)
+        return {"messages": messages, "wi_state": "executing",
+                "_text_fallback_count": text_fallback_count,
+                "iteration_count": iteration_count + 1}
+
+    # Tier C: 超过重试次数，升级 error_analysis（直接 abort 防止死循环）
+    logger.error("agent_node: %d consecutive text responses, escalating to error_analysis",
+                 text_fallback_count)
+    return {"wi_state": "error_analysis",
+            "error_analysis": {
+                "should_abort": True,
+                "should_escalate": False,
+                "root_cause": f"LLM 连续 {text_fallback_count} 次返回文本而非工具调用",
+                "error_type": "transient_failure",
+            },
+            "_text_fallback_count": text_fallback_count,
             "iteration_count": iteration_count + 1}
 
 
@@ -343,10 +356,11 @@ def _append_step_result(wi, tool_name, tool_params, handler_dict, t_start, succe
 def route_after_agent(state: dict) -> str:
     """agent_node 之后的条件边路由。
 
-    - wi_state == 'summarizing' → summarizing
-    - wi_state == 'error_analysis' → error_analysis
+    - wi_state == 'summarizing' → summarizing（complete_work 完成）
+    - wi_state == 'error_analysis' → error_analysis（text fallback 超限 / iteration cap）
     - 有 pending_tool_call → tool_node
-    - 否则 → summarizing（兜底）
+    - wi_state == 'executing' → agent_node（text fallback 重试）
+    - 兜底 → summarizing
     """
     wi_state = state.get("wi_state", "")
     if wi_state == "summarizing":
@@ -355,6 +369,9 @@ def route_after_agent(state: dict) -> str:
         return "error_analysis"
     if state.get("_pending_tool_call"):
         return "tool_node"
+    # text fallback 重试：wi_state="executing" 但无 pending tool_call → 回 agent_node 继续
+    if wi_state == "executing":
+        return "agent_node"
     return "summarizing"
 
 

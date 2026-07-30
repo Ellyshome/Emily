@@ -510,7 +510,10 @@ class SessionArchiveWriter:
         """
         if not prompt_info or not isinstance(prompt_info, dict):
             return []
-        template = prompt_info.get("template", "?")
+        template = prompt_info.get("template", "")
+        # 无 template 字段 → 非 prompt 模板信息（如节点摘要数据），不渲染 Prompt 行
+        if not template:
+            return []
         chars = prompt_info.get("rendered_chars", 0)
         chars_display = f"渲染后 {chars} 字" if chars else "（未追踪）"
         lines = [f"- Prompt: {template} ({chars_display})"]
@@ -577,7 +580,7 @@ class SessionArchiveWriter:
         node_labels = {
             "created": "初始化",
             "routing": "路由验证",
-            "executing": "Agent 执行循环",
+            "executing": "任务执行",
             "summarizing": "成果总结",
             "error_analysis": "错误分析",
             # 保留旧名兼容（ArchiveHook 在旧 PipelineBUS 路径仍可能被调用）
@@ -613,7 +616,8 @@ class SessionArchiveWriter:
                 lines.extend(SessionArchiveWriter._render_prompt_info(prompt_info))
 
         elif node_name in ("executing", "wi_node2", "wi_node3"):
-            # Agent 执行循环：涵盖规划 + 工具执行 + Guardian 审核
+            # 任务执行段：规划 + 工具执行 + Guardian 审核
+            # 注意：Agent 循环的 LLM 日志由 summarizing / error_analysis 段承载（executing 段在 agent_node 之前运行）
             plan = getattr(wi, "execution_plan", None)
             if plan:
                 risk = getattr(plan, "risk_level", "?")
@@ -681,9 +685,14 @@ class SessionArchiveWriter:
         elif node_name in ("error_analysis",):
             # 错误分析节点：错误类型 + 根因 + 是否可恢复
             ea = getattr(wi, "error_analysis", None) or {}
-            lines.append(f"- 错误类型: {ea.get('error_type', 'unknown')}")
-            lines.append(f"- 根因: {(ea.get('root_cause', '') or '无')[:200]}")
-            if ea.get("should_abort"):
+            # 兜底：当 wi.error_analysis 为空时，从 prompt_info 读取（nodes.py 已有正确数据）
+            pi_ea = prompt_info if isinstance(prompt_info, dict) else {}
+            error_type = ea.get("error_type") or pi_ea.get("error_type", "unknown")
+            root_cause = (ea.get("root_cause") or pi_ea.get("root_cause") or "无")[:200]
+            should_abort = ea.get("should_abort") if "should_abort" in ea else pi_ea.get("should_abort")
+            lines.append(f"- 错误类型: {error_type}")
+            lines.append(f"- 根因: {root_cause}")
+            if should_abort:
                 lines.append("- 结果: 中止执行")
             else:
                 lines.append("- 结果: 重试执行")
@@ -702,8 +711,10 @@ class SessionArchiveWriter:
                 "planning": "规划",
                 "execution": "执行/合成",
                 "guardian": "审核",
+                "agent_loop": "Agent 循环",
+                "error_analysis": "错误分析",
             }
-            for phase in ["intent", "planning", "execution", "guardian"]:
+            for phase in ["intent", "planning", "execution", "guardian", "agent_loop", "error_analysis"]:
                 group = phase_groups.get(phase, [])
                 if not group:
                     continue

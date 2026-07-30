@@ -42,11 +42,18 @@ class Config:
     llm_max_tokens: int = 1024
     """LLM 最大输出 token 数"""
 
+    llm_agent_loop_max_tokens: int = 8192
+    """Agent loop 专用 max_tokens（v4-pro reasoner 需更大余量，按实际用量计费，设大不等于花得多）"""
+
     llm_router_model: str = "deepseek-v4-flash"
     """路由/意图识别用模型（轻量结构化任务，用 flash 而非 pro，快且省）"""
 
     llm_guardian_model: str = "deepseek-v4-flash"
     """Guardian 审核用模型（轻量结构化任务，用 flash 而非 pro）"""
+
+    llm_agent_loop_model: str = "deepseek-v4-pro"
+    """Agent loop 用模型（空则回退 router_model → model）。
+    默认 v4-pro：标准 function calling 稳定，避免 v4-flash 的 DSML tool_call 泄漏问题。"""
 
     # ---- 数据库 (PostgreSQL) ----
     database_url: str = ""
