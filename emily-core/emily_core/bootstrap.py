@@ -66,6 +66,9 @@ def _config_from_env(config_data: dict | None) -> dict:
         "EMILY_VLM_MODEL": "vlm_model",
         "EMILY_KB_ENABLED": "kb_enabled",
         "EMILY_PROMPTS_DIR": "prompts_dir",
+        "EMILY_EMBEDDING_API_URL": "embedding_api_url",
+        "EMILY_EMBEDDING_API_KEY": "embedding_api_key",
+        "EMILY_EMBEDDING_MODEL": "embedding_model",
     }
     # 布尔字段：环境变量为字符串，需显式转换
     bool_fields = {"llm_console_trace_enabled", "kb_enabled"}
@@ -139,22 +142,41 @@ def init(config_data: dict | None = None, rag_provider=None) -> "EmilyCore":
     except Exception as e:
         _logger.warning("bootstrap auto-run scripts skipped: %s", e)
 
-    # 初始化 RAG Provider（pgvector + TEI）
+    # 初始化 RAG Provider（pgvector + 嵌入服务）
+    # 优先级：远程 Embedding API > 本地 TEI 容器
     tei_client = None
     kc_repo = None
     if rag_provider is None and config.kb_enabled:
         try:
-            if config.tei_url:
+            from .repositories.knowledge_chunk_repo import KnowledgeChunkRepo
+            from .providers.rag.pgvector_provider import PgVectorRagProvider
+
+            kc_repo = KnowledgeChunkRepo()
+
+            # 优先使用远程 Embedding API
+            if config.embedding_api_url and config.embedding_api_key and config.embedding_model:
+                from .infrastructure.embedding.remote_client import RemoteEmbeddingClient
+                tei_client = RemoteEmbeddingClient(
+                    api_url=config.embedding_api_url,
+                    api_key=config.embedding_api_key,
+                    model=config.embedding_model,
+                )
+                _logger.info(
+                    "Remote embedding client created: %s (model=%s)",
+                    config.embedding_api_url, config.embedding_model,
+                )
+            elif config.tei_url:
                 from .infrastructure.embedding.tei_client import TeiClient
-                from .repositories.knowledge_chunk_repo import KnowledgeChunkRepo
-                from .providers.rag.pgvector_provider import PgVectorRagProvider
                 tei_client = TeiClient(config.tei_url)
-                kc_repo = KnowledgeChunkRepo()
+                _logger.info("Local TEI client created: %s", config.tei_url)
+
+            if tei_client is not None:
                 rag_provider = PgVectorRagProvider(
                     tei=tei_client, repo=kc_repo,
                     similarity=config.rag_similarity_threshold,
                 )
-                _logger.info("PgVector RAG provider created")
+                _logger.info("PgVector RAG provider created (embedding: %s)",
+                             "remote" if config.embedding_api_url else "local TEI")
         except Exception as e:
             _logger.warning("PgVector RAG provider init failed: %s", e)
 

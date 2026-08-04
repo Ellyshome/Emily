@@ -105,6 +105,9 @@ import yaml
 
 # ── 项目根目录 ──
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
+_CORE_DIR = PROJECT_ROOT / "emily-core"
+if str(_CORE_DIR) not in sys.path:
+    sys.path.insert(0, str(_CORE_DIR))
 
 logging.basicConfig(
     level=logging.INFO,
