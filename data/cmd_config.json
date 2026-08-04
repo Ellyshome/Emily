@@ -45,7 +45,7 @@
   "provider_sources": [],
   "provider": [],
   "provider_settings": {
-    "enable": true,
+    "enable": false,
     "default_provider_id": "",
     "fallback_chat_models": [],
     "default_image_caption_provider_id": "",
@@ -199,8 +199,8 @@
     "password": "3b67ccb995adf97220c236e785583b9e",
     "pbkdf2_password": "pbkdf2_sha256$600000$5da2a9d282b79446ce89b3169faa07a1$6e368ddfbab08155b7cb4bdf7fa68a65bbee4e3ce1e91e5cbdf144572a71a957",
     "password_storage_upgraded": true,
-    "password_change_required": true,
-    "jwt_secret": "8867ea004ab623aef8ec48a92352843d5215e890b34680fb97406dcbb4dfe038",
+    "password_change_required": false,
+    "jwt_secret": "ff62d536b0089bb3e1ce4666f15c163d0bb8e9c1795769284e94f39f27ce8cf0",
     "host": "0.0.0.0",
     "port": 6185,
     "disable_access_log": true,
@@ -222,7 +222,23 @@
       "ca_certs": ""
     }
   },
-  "platform": [],
+  "platform": [
+    {
+      "id": "Emily",
+      "type": "wecom",
+      "enable": true,
+      "corpid": " ww1994648105a74a7c",
+      "secret": "111",
+      "token": "dS8tnYG7xFgGCDBJqR9BgPjNp8O",
+      "encoding_aes_key": "1shr2l2ky5xDK8KCIgSvFltmfYDp6DgqpciQj78FsGc",
+      "kf_name": "emily",
+      "api_base_url": "https://qyapi.weixin.qq.com/cgi-bin/",
+      "unified_webhook_mode": true,
+      "webhook_uuid": "c416608290f44816",
+      "callback_server_host": "0.0.0.0",
+      "port": 6195
+    }
+  ],
   "platform_specific": {
     "lark": {
       "pre_ack_emoji": {
