@@ -114,6 +114,15 @@ class Config:
     tei_url: str = "http://tei:80"
     """TEI embedding 服务地址"""
 
+    # ---- 远程 Embedding API（替代本地 TEI）----
+    embedding_api_url: str = ""
+    """远程 Embedding API 地址（OpenAI 兼容 /v1/embeddings）。
+    设置后优先使用远程 API，不使用本地 TEI 容器。"""
+    embedding_api_key: str = ""
+    """远程 Embedding API 密钥"""
+    embedding_model: str = ""
+    """远程 Embedding 模型名，如 BAAI/bge-m3"""
+
     rag_similarity_threshold: float = 0.3
     """RAG 检索相似度阈值（0.0-1.0）"""
 
