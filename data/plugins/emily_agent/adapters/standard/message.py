@@ -48,3 +48,6 @@ class StandardMessage:
     msg_type: int = 1              # 1=text 2=image 3=file 4=voice 5=video 6=card
     attachments: list[dict] = field(default_factory=list)
         # [{"type": 2, "url": "...", "file_name": "...", "file_size": 0}, ...]
+
+    # ── 企微插件去重 ──
+    event_id: str = ""             # 插件层消息去重 ID（UUID4）

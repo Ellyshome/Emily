@@ -4,6 +4,7 @@ Service 层只调 repo 方法，不碰 SQL。
 """
 
 import logging
+import uuid
 from typing import Tuple
 
 from ..infrastructure.database.session import get_session
@@ -60,9 +61,12 @@ class UserRepository:
             (User, UserImBinding) 元组
         """
         with get_session() as session:
-            # 创建 User
+            # 创建 User（自注册：creator_id = 自身 id）
+            new_id = str(uuid.uuid4())
             user = User(
+                id=new_id,
                 username=im_display_name or im_user_id,
+                creator_id=new_id,
             )
             session.add(user)
             session.flush()  # 获取 user.id

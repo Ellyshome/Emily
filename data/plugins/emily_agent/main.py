@@ -17,7 +17,7 @@ from collections import deque
 from sys import maxsize
 
 from astrbot.api import star
-from astrbot.api.event import AstrMessageEvent, filter
+from astrbot.api.event import AstrMessageEvent, filter, MessageChain
 
 from .adapters.astrbot.inbound_adapter import AstrBotInboundAdapter
 from .adapters.astrbot.outbound_sender import AstrBotOutboundSender
@@ -40,11 +40,13 @@ class Main(star.Star):
     def __init__(self, context: star.Context, config: dict | None = None) -> None:
         super().__init__(context, config=config)
         cfg = dict(config) if config else {}
-        base_url = cfg.get("emycore_url", "http://emily-core:18080")
-        api_token = cfg.get("emycore_api_token", "")
+        base_url = cfg.get("emily_core_url", cfg.get("emycore_url", "http://emily-core:18080"))
+        api_token = cfg.get("emily_api_token", cfg.get("emycore_api_token", ""))
 
         self.inbound = AstrBotInboundAdapter()
         self.outbound = AstrBotOutboundSender()
+        self.outbound.context = context  # 注入 context 供企微路径回退使用
+        AstrBotOutboundSender._context = context  # 静态方法回退路径
         self.api = EmilyApiClient(base_url=base_url, api_token=api_token)
         # conversation_id → 最近 event，供异步 SSE 出站回复定位
         self._event_registry: dict = {}
@@ -102,6 +104,13 @@ class Main(star.Star):
 
     @filter.event_message_type(filter.EventMessageType.ALL, priority=maxsize)
     async def on_message(self, event: AstrMessageEvent) -> None:
+        """QQ 消息入口（跳过企微事件，交由 on_wecom_message 处理）。"""
+        # 企微消息由专用处理器处理
+        if getattr(event, "get_platform_name", None):
+            platform = event.get_platform_name()
+            if platform == "wecom":
+                return
+
         # 1. 去重
         event_id = _event_fingerprint(event)
         if event_id in self._seen:
@@ -112,6 +121,37 @@ class Main(star.Star):
         msg = await self.inbound.to_standard_message(event)
 
         # 注册 event 供异步 SSE 出站回复定位
+        if msg.conversation_id:
+            self._event_registry[msg.conversation_id] = event
+
+        # 3. HTTP 转发到 Core
+        reply = await self.api.send_message(msg)
+
+        # 4. 同步回复直接发送；异步回复（reply 为 None）将通过 SSE 通道送达
+        if reply is not None:
+            await self.outbound.send(reply, event)
+
+    # ── 企业微信消息入口 ────────────────────────────────────────────
+
+    @filter.platform_adapter_type(filter.PlatformAdapterType.WECOM)
+    async def on_wecom_message(self, event: AstrMessageEvent) -> None:
+        """企业微信消息入口。
+
+        流程同 QQ 处理器，区别：
+          - 入站适配用 convert_wecom()（静态方法，企微专用字段提取）
+          - 出站可能有 event 也可能没有（企微 AstrBot 适配器差异）
+          - 阻止 AstrBot 默认 LLM 处理链
+        """
+        event.call_llm = True
+
+        # 1. 转换为 StandardMessage
+        msg = self.inbound.convert_wecom(event)
+        logger.debug(
+            "收到企微消息: sender=%s conv=%s content=%.80s",
+            msg.sender_id, msg.conversation_id, msg.content,
+        )
+
+        # 2. 注册 event 供异步 SSE 出站回复定位
         if msg.conversation_id:
             self._event_registry[msg.conversation_id] = event
 

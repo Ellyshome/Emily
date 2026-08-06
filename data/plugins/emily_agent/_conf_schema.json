@@ -1,8 +1,14 @@
 {
   "emycore_url": {
-    "description": "Emily Core 容器 API 地址",
+    "description": "Emily Core 容器 API 地址（QQ 通道兼容键名）",
     "type": "string",
     "hint": "独立业务核心容器的 HTTP 地址（Docker 内网用服务名）",
+    "default": "http://emily-core:18080"
+  },
+  "emily_core_url": {
+    "description": "Emily 内核地址（企微通道兼容键名，与 emycore_url 等效）",
+    "type": "string",
+    "hint": "AstrBot 容器通过 emily_network 访问 emily-core",
     "default": "http://emily-core:18080"
   },
   "emycore_sse_url": {
@@ -12,9 +18,33 @@
     "default": ""
   },
   "emycore_api_token": {
-    "description": "Emily Core API 鉴权令牌",
+    "description": "Emily Core API 鉴权令牌（QQ 通道兼容键名）",
     "type": "string",
     "hint": "与 Core 容器 EMILY_API_TOKEN 一致；为空时不做鉴权（仅内网部署）",
     "default": ""
+  },
+  "emily_api_token": {
+    "description": "Emily API 认证令牌（企微通道兼容键名，与 emycore_api_token 等效）",
+    "type": "string",
+    "hint": "与 Core 容器 EMILY_API_TOKEN 一致；为空时不做鉴权",
+    "default": ""
+  },
+  "sse_reconnect_delay": {
+    "description": "SSE 断线重连延迟（秒）",
+    "type": "float",
+    "default": 5.0,
+    "hint": "SSE 连接断开后等待多少秒重连"
+  },
+  "forward_progress": {
+    "description": "是否将 emily-core 的处理进度转发为可见消息",
+    "type": "bool",
+    "default": false,
+    "hint": "开启后用户会收到「正在处理中...」等进度提示"
+  },
+  "request_timeout": {
+    "description": "HTTP 请求超时（秒）",
+    "type": "float",
+    "default": 120.0,
+    "hint": "POST 到 emily-core 的等待超时"
   }
 }

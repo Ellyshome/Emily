@@ -1,4 +1,23 @@
 name: emily_agent
-desc: "Emily 薄通信层插件 —— 消息去重 + 格式转换 + HTTP 转发到 emily-core 容器 + SSE 出站推送（业务逻辑全部在独立 Core 容器）"
-version: 1.0.0
-author: Emily
+display_name: Emily Agent 桥接插件（QQ + 企业微信双通道）
+short_desc: 将 QQ/企微消息桥接到 Emily 业务内核，无业务逻辑的薄插件
+desc: |
+  Emily V1.0 的 AstrBot 薄插件。支持 QQ（NapCat 桥接）和企业微信（wecom 适配器）双通道。
+
+  **职责**：
+  - 接收入站 QQ / 企业微信消息 → 转换为 StandardMessage → HTTP POST 到 emily-core
+  - SSE 监听 emily-core 出站事件 → 转换为对应平台消息发送
+
+  **不包含**任何业务逻辑。所有意图识别、SOP 路由、LLM 调用由 emily-core 独立处理。
+version: 1.1.0
+author: Emily Team
+astrbot_version: ">=4.27.1"
+support_platforms:
+  - napcat
+  - wecom
+tags:
+  - emily
+  - enterprise
+  - bridge
+  - qq
+  - wecom
