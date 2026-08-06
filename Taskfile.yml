@@ -1,0 +1,357 @@
+# yaml-language-server: $schema=https://taskfile.dev/schema.json
+# Emily 部署工具 — 基于 go-task 的任务编排
+# 安装 task: sh -c "$(curl --location https://taskfile.dev/install.sh)" -- -d -b /usr/local/bin
+version: '3'
+
+env:
+  COMPOSE_MINIMAL: docker-compose-minimal.yml
+  COMPOSE_NAPCAT: docker-compose-napcat.yml
+
+# ───────────────────── 部署 ─────────────────────
+
+tasks:
+
+  # ── 环境检查 ──
+  env:check:
+    desc: 检查运行环境是否就绪
+    preconditions:
+      - sh: command -v docker >/dev/null 2>&1
+        msg: "❌ 未找到 docker 命令，请先安装 Docker"
+      - sh: docker compose version >/dev/null 2>&1
+        msg: "❌ 未找到 docker compose 插件，请先安装"
+    cmds:
+      - |
+        if [ ! -f .env ]; then
+          echo "❌ 缺少 .env 文件，请从 .env.example 复制并配置"
+          echo "   cp .env.example .env"
+          exit 1
+        fi
+      - |
+        if ! grep -q "^EMILY_LLM_API_KEY=" .env 2>/dev/null || grep -q "^EMILY_LLM_API_KEY=your-api-key-here" .env 2>/dev/null; then
+          echo "⚠️  .env 中 EMILY_LLM_API_KEY 未配置或为默认值"
+          if ! grep -q "^EMILY_LLM_API_KEY=" .env 2>/dev/null; then
+            echo "❌ 请先配置 EMILY_LLM_API_KEY"
+            exit 1
+          fi
+        fi
+      - echo "✅ 环境检查通过"
+
+  # ── 最小部署（core + postgres，无 QQ / RAG / 代理）──
+  deploy:minimal:
+    desc: 最小化部署 — 仅 core + postgres（无 QQ 接入）
+    deps: [env:check]
+    cmds:
+      - docker compose -f {{.COMPOSE_MINIMAL}} up -d --build
+      - task: wait:healthy
+        vars: {SERVICE: "emily-core"}
+    postconditions:
+      - sh: "curl -sf http://localhost:18080/api/v1/health >/dev/null 2>&1"
+        msg: "⚠️  emily-core 健康检查未通过"
+
+  # ── 带 QQ 的完整部署 ──
+  deploy:napcat:
+    desc: 完整部署 — core + postgres + embed + napcat + astrbot + mitmproxy
+    deps: [env:check]
+    cmds:
+      - docker compose -f {{.COMPOSE_NAPCAT}} up -d --build
+      - echo "等待 core 就绪..."
+      - sleep 5
+      - task: wait:healthy
+        vars: {SERVICE: "emily-core"}
+    postconditions:
+      - sh: "curl -sf http://localhost:18080/api/v1/health >/dev/null 2>&1"
+        msg: "⚠️  emily-core 健康检查未通过"
+
+  # ── 全部服务 ──
+  deploy:all:
+    desc: 完整部署（同 deploy:napcat）
+    deps: [deploy:napcat]
+
+  # ── 内部：等待服务健康 ──
+  wait:healthy:
+    internal: true
+    desc: 等待指定容器健康（默认 emily-core）
+    vars:
+      SERVICE: '{{.SERVICE | default "emily-core"}}'
+    cmds:
+      - |
+        RETRIES=30
+        for i in $(seq 1 $RETRIES); do
+          STATUS=$(docker inspect -f '{{.State.Health.Status}}' {{.SERVICE}} 2>/dev/null || echo "unknown")
+          if [ "$STATUS" = "healthy" ]; then
+            echo "✅ {{.SERVICE}} 健康检查通过"
+            exit 0
+          fi
+          if [ "$STATUS" = "" ] || [ "$STATUS" = "unknown" ] || [ "$STATUS" = "starting" ]; then
+            echo "⏳ 等待 {{.SERVICE}} 就绪... ($i/$RETRIES)"
+            sleep 2
+          else
+            echo "⚠️  {{.SERVICE}} 状态: $STATUS，继续等待... ($i/$RETRIES)"
+            sleep 2
+          fi
+        done
+        echo "⚠️  {{.SERVICE}} 启动超时，请手动检查: task logs SERVICE={{.SERVICE}}"
+        exit 1
+
+# ───────────────────── 启停管理 ─────────────────────
+
+  up:
+    desc: 启动已部署的服务（不重新构建）
+    vars:
+      PROFILE: '{{.PROFILE | default "minimal"}}'
+    cmds:
+      - |
+        case "{{.PROFILE}}" in
+          minimal) docker compose -f {{.COMPOSE_MINIMAL}} up -d ;;
+          napcat)  docker compose -f {{.COMPOSE_NAPCAT}} up -d ;;
+          all)     docker compose -f {{.COMPOSE_NAPCAT}} up -d ;;
+          *)       echo "未知配置: {{.PROFILE}}，可选: minimal / napcat" ; exit 1 ;;
+        esac
+
+  down:
+    desc: 停止并移除容器
+    vars:
+      PROFILE: '{{.PROFILE | default "minimal"}}'
+    cmds:
+      - |
+        case "{{.PROFILE}}" in
+          minimal) docker compose -f {{.COMPOSE_MINIMAL}} down ;;
+          napcat)  docker compose -f {{.COMPOSE_NAPCAT}} down ;;
+          all)     docker compose -f {{.COMPOSE_NAPCAT}} down ;;
+          *)       echo "未知配置: {{.PROFILE}}，可选: minimal / napcat" ; exit 1 ;;
+        esac
+
+  restart:
+    desc: 重启服务
+    vars:
+      PROFILE: '{{.PROFILE | default "minimal"}}'
+      SERVICE: '{{.SERVICE | default ""}}'
+    preconditions:
+      - sh: "docker ps --format '{{"{{"}}.Names{{"}}"}}' | grep -q emily-core"
+        msg: "⚠️  未检测到运行中的 Emily 容器，请先执行 task deploy:minimal 或 task deploy:napcat"
+    cmds:
+      - |
+        if [ -n "{{.SERVICE}}" ]; then
+          docker compose -f {{.COMPOSE_MINIMAL}} restart {{.SERVICE}}
+        else
+          case "{{.PROFILE}}" in
+            minimal) docker compose -f {{.COMPOSE_MINIMAL}} restart ;;
+            napcat)  docker compose -f {{.COMPOSE_NAPCAT}} restart ;;
+            all)     docker compose -f {{.COMPOSE_NAPCAT}} restart ;;
+            *)       echo "未知配置: {{.PROFILE}}" ; exit 1 ;;
+          esac
+        fi
+
+# ───────────────────── 状态与日志 ─────────────────────
+
+  status:
+    desc: 查看所有 Emily 容器运行状态
+    cmds:
+      - docker ps -a --filter "name=emily" --format "table {{"{{"}}.Names{{"}}"}}\t{{"{{"}}.Status{{"}}"}}\t{{"{{"}}.Ports{{"}}"}}"
+
+  logs:
+    desc: 查看服务日志（默认 core）
+    vars:
+      SERVICE: '{{.SERVICE | default "emily-core"}}'
+      LINES:  '{{.LINES | default "100"}}'
+      FOLLOW: '{{.FOLLOW | default "false"}}'
+    cmds:
+      - |
+        if [ "{{.FOLLOW}}" = "true" ]; then
+          docker logs -f --tail {{.LINES}} {{.SERVICE}}
+        else
+          docker logs --tail {{.LINES}} {{.SERVICE}}
+        fi
+
+  compose:logs:
+    desc: 通过 compose 查看日志（支持多服务）
+    vars:
+      PROFILE: '{{.PROFILE | default "minimal"}}'
+      FOLLOW: '{{.FOLLOW | default "false"}}'
+    cmds:
+      - |
+        FOLLOW_FLAG=""
+        [ "{{.FOLLOW}}" = "true" ] && FOLLOW_FLAG="-f"
+        case "{{.PROFILE}}" in
+          minimal) docker compose -f {{.COMPOSE_MINIMAL}} logs $FOLLOW_FLAG ;;
+          napcat)  docker compose -f {{.COMPOSE_NAPCAT}} logs $FOLLOW_FLAG ;;
+          all)     docker compose -f {{.COMPOSE_NAPCAT}} logs $FOLLOW_FLAG ;;
+          *)       echo "未知配置: {{.PROFILE}}" ; exit 1 ;;
+        esac
+
+  ps:
+    desc: 查看 compose 管理的容器列表
+    vars:
+      PROFILE: '{{.PROFILE | default "minimal"}}'
+    cmds:
+      - |
+        case "{{.PROFILE}}" in
+          minimal) docker compose -f {{.COMPOSE_MINIMAL}} ps ;;
+          napcat)  docker compose -f {{.COMPOSE_NAPCAT}} ps ;;
+          all)     docker compose -f {{.COMPOSE_NAPCAT}} ps ;;
+          *)       echo "未知配置: {{.PROFILE}}" ; exit 1 ;;
+        esac
+
+# ───────────────────── 数据库维护 ─────────────────────
+
+  db:backup:
+    desc: 备份 PostgreSQL 数据库到 backups/ 目录
+    cmds:
+      - |
+        TS=$(date +%Y%m%d_%H%M%S)
+        BACKUP_DIR="./backups/${TS}"
+        mkdir -p "${BACKUP_DIR}"
+        echo "备份数据库到 ${BACKUP_DIR} ..."
+        docker exec emily-postgres pg_dump -U emily emily > "${BACKUP_DIR}/emily_db.sql"
+        echo "数据库备份完成: ${BACKUP_DIR}/emily_db.sql ($(wc -c < "${BACKUP_DIR}/emily_db.sql") bytes)"
+
+        # 同时备份配置
+        echo "备份配置文件..."
+        cp -r ./emily-data/config "${BACKUP_DIR}/config" 2>/dev/null || true
+        cp -r ./emily-data/sops "${BACKUP_DIR}/sops" 2>/dev/null || true
+        cp -r ./emily-data/skills "${BACKUP_DIR}/skills" 2>/dev/null || true
+        cp -r ./emily-data/prompts "${BACKUP_DIR}/prompts" 2>/dev/null || true
+
+        echo "========================================"
+        echo "✅ 备份完成: ${BACKUP_DIR}"
+        echo "========================================"
+
+  db:restore:
+    desc: 从 SQL 文件恢复数据库
+    vars:
+      FILE: '{{.FILE | default ""}}'
+    preconditions:
+      - sh: "[ -n '{{.FILE}}' ]"
+        msg: "❌ 请指定备份文件路径，例如: task db:restore FILE=backups/20250101_120000/emily_db.sql"
+      - sh: "[ -f '{{.FILE}}' ]"
+        msg: "❌ 备份文件不存在: {{.FILE}}"
+    cmds:
+      - |
+        echo "⚠️  即将从 {{.FILE}} 恢复数据库，当前数据将被覆盖"
+        echo "按 Ctrl+C 取消，或等待 5 秒继续..."
+        sleep 5
+        docker exec -i emily-postgres psql -U emily emily < "{{.FILE}}"
+        echo "✅ 数据库恢复完成"
+
+  db:psql:
+    desc: 进入 PostgreSQL 交互终端
+    cmds:
+      - docker exec -it emily-postgres psql -U emily emily
+
+# ───────────────────── 健康检查 ─────────────────────
+
+  health:
+    desc: 运行全面健康检查
+    cmds:
+      - echo "═══ Emily 健康检查 ═══"
+      - echo ""
+      - echo "▸ 容器状态："
+      - docker ps -a --filter "name=emily" --format "  {{"{{"}}.Names{{"}}"}}\t{{"{{"}}.Status{{"}}"}}"
+      - echo ""
+      - echo "▸ core API 健康检查："
+      - "curl -sf http://localhost:18080/api/v1/health 2>/dev/null && echo '  ✅ OK' || echo '  ❌ 不可达'"
+      - echo ""
+      - echo "▸ 数据库连接："
+      - "docker exec emily-postgres pg_isready -U emily 2>/dev/null && echo '  ✅ OK' || echo '  ❌ 不可达'"
+      - echo ""
+      - echo "▸ 磁盘使用："
+      - "df -h ./emily-data 2>/dev/null || true"
+      - echo ""
+      - echo "▸ 最近 5 条错误日志："
+      - "docker logs emily-core 2>&1 | grep -i 'error\|exception\|traceback' | tail -5 || echo '  (无)'"
+
+# ───────────────────── 运维 ─────────────────────
+
+  cold-start:
+    desc: 冷启动：初始化检查 + 世界书构建 + 启动报告
+    cmds:
+      - |
+        if docker ps --format '{{"{{"}}.Names{{"}}"}}' | grep -q emily-core; then
+          docker exec emily-core python -m scripts.cold_start
+        else
+          echo "⚠️  emily-core 容器未运行，请在容器内手动执行"
+          echo "   docker exec emily-core python -m scripts.cold_start"
+        fi
+
+  prune:
+    desc: 清理未使用的 Docker 资源（镜像、容器、网络、构建缓存）
+    preconditions:
+      - sh: "docker ps --format '{{"{{"}}.Names{{"}}"}}' | grep -q emily-core && echo '⚠️  emily-core 正在运行，请先停止' && exit 1 || true"
+        msg: ""
+    cmds:
+      - docker system prune -af --volumes
+      - echo "✅ 已清理所有未使用的 Docker 资源"
+
+  clean:
+    desc: 停止服务并清理数据卷（危险，会删除数据库）
+    vars:
+      PROFILE: '{{.PROFILE | default "minimal"}}'
+    cmds:
+      - |
+        echo "⚠️  此操作将删除容器和数据卷（数据库数据将丢失！）"
+        echo "按 Ctrl+C 取消，或等待 5 秒继续..."
+        sleep 5
+        case "{{.PROFILE}}" in
+          minimal) docker compose -f {{.COMPOSE_MINIMAL}} down -v ;;
+          napcat)  docker compose -f {{.COMPOSE_NAPCAT}} down -v ;;
+          all)     docker compose -f {{.COMPOSE_NAPCAT}} down -v ;;
+          *)       echo "未知配置: {{.PROFILE}}" ; exit 1 ;;
+        esac
+        echo "✅ 已停止服务并清理数据卷"
+
+  shell:
+    desc: 进入 emily-core 容器 shell
+    cmds:
+      - docker exec -it emily-core /bin/bash
+
+# ───────────────────── 快捷别名 ─────────────────────
+
+  default:
+    desc: 默认任务 — 显示帮助
+    cmds:
+      - task: help
+
+  help:
+    desc: 显示所有可用任务
+    cmds:
+      - |
+        echo ""
+        echo "  ╔══════════════════════════════════════════════╗"
+        echo "  ║         Emily 部署工具 v1.0                 ║"
+        echo "  ╚══════════════════════════════════════════════╝"
+        echo ""
+        echo "  部署："
+        echo "    task deploy:minimal     最小部署（core + postgres）"
+        echo "    task deploy:napcat      完整部署（含 QQ 接入）"
+        echo "    task deploy:all         完整部署（同 napcat）"
+        echo ""
+        echo "  生命周期："
+        echo "    task up PROFILE=minimal 启动服务"
+        echo "    task down PROFILE=minimal 停止并移除容器"
+        echo "    task restart            重启全部服务"
+        echo "    task restart SERVICE=emily-postgres  仅重启指定服务"
+        echo ""
+        echo "  状态与日志："
+        echo "    task status             查看所有 Emily 容器"
+        echo "    task ps PROFILE=minimal compose 容器列表"
+        echo "    task logs SERVICE=emily-core       查看日志"
+        echo "    task logs SERVICE=emily-core FOLLOW=true  实时跟踪"
+        echo "    task compose:logs PROFILE=minimal FOLLOW=true  多服务日志"
+        echo ""
+        echo "  数据库："
+        echo "    task db:backup          备份数据库 + 配置"
+        echo "    task db:restore FILE=./backups/xxx/emily_db.sql  恢复数据库"
+        echo "    task db:psql            进入 psql 终端"
+        echo ""
+        echo "  运维："
+        echo "    task health             全面健康检查"
+        echo "    task cold-start         冷启动检查"
+        echo "    task shell              进入 core 容器"
+        echo "    task clean PROFILE=minimal   停止并清理所有数据"
+        echo "    task prune              清理 Docker 系统资源"
+        echo "    task env:check          环境检查"
+        echo ""
+        echo "  帮助："
+        echo "    task help               显示此帮助"
+        echo "    task --list             列出所有任务"
+        echo ""
