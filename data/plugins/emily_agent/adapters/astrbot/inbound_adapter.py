@@ -176,3 +176,49 @@ class AstrBotInboundAdapter:
         )
 
         return standard
+
+    # ── 企业微信适配 ────────────────────────────────────────────────
+
+    @staticmethod
+    def convert_wecom(event: "AstrMessageEvent") -> "StandardMessage":
+        """企业微信事件 → StandardMessage（静态方法，企微无群聊需缓存）。
+
+        Args:
+            event: AstrBot 的 wecom 平台事件
+
+        Returns:
+            填充完整的 StandardMessage
+        """
+        import uuid
+
+        message_obj = event.message_obj
+
+        # 提取附件信息
+        attachments: list[dict] = []
+        for comp in message_obj.message:
+            comp_type = getattr(comp, "type", None)
+            if comp_type == "Image":
+                attachments.append({
+                    "type": 2,
+                    "url": getattr(comp, "url", ""),
+                    "file_name": getattr(comp, "file", ""),
+                })
+            elif comp_type == "File":
+                attachments.append({
+                    "type": 3,
+                    "url": getattr(comp, "url", ""),
+                    "file_name": getattr(comp, "file", ""),
+                })
+
+        return StandardMessage(
+            message_id=message_obj.message_id or "",
+            platform="wecom",
+            conversation_type="private",  # 企微客服/应用均为私聊
+            conversation_id=event.unified_msg_origin,
+            sender_id=event.get_sender_id(),
+            sender_name=event.get_sender_name(),
+            content=event.message_str,
+            msg_type=1 if not attachments else attachments[0]["type"],
+            attachments=attachments,
+            event_id=str(uuid.uuid4()),
+        )
