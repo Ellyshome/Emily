@@ -20,8 +20,18 @@
 from __future__ import annotations
 
 import importlib
-import logging
+import sys as _sys
 from pathlib import Path
+
+# 防止 infrastructure/logging/ 包遮蔽 stdlib logging：
+# 直接运行此脚本时 PYTHONPATH 会包含本目录，导致 import logging
+# 找到本地 infrastructure/logging/__init__.py 而非标准库。
+_self_dir = str(Path(__file__).resolve().parent)
+if _self_dir in _sys.path:
+    _sys.path.remove(_self_dir)
+    _sys.path.append(_self_dir)
+
+import logging
 
 logger = logging.getLogger("emily.infrastructure.tools_consistency")
 
@@ -43,6 +53,8 @@ REGISTERED_TOOLS: set[str] = {
     "create_node", "query_node", "update_node_progress", "add_node_dependency",
     "mount_child_node", "update_nodes", "activate_nodes", "discard_nodes",
     "send_email", "fetch_inbox", "chat_archive", "manage_pending_issues", "voice_entry",
+    # expert_agent
+    "create_expert", "approve_expert", "toggle_expert", "query_experts",
 }
 
 # ── 工具名 → (display_name, category, permission_flag, exposure_mode) ──
@@ -58,6 +70,11 @@ TOOL_META_MAP: dict[str, tuple[str, str, str, str]] = {
     "chat_archive":       ("聊天归档查询",          "base",     "all",   "meta"),
     "manage_pending_issues": ("管理待解决问题",     "base",     "all",   "meta"),
     "voice_entry":        ("语音入口",              "base",     "all",   "meta"),
+    # expert_agent
+    "create_expert":     ("新建专家",              "business", "write", "sop_only"),
+    "approve_expert":    ("审批专家",              "project",  "admin", "sop_only"),
+    "toggle_expert":     ("启停专家",              "project",  "admin", "sop_only"),
+    "query_experts":     ("查询专家列表",          "base",     "all",   "meta"),
     # business — permission_flag=all → exposure_mode=meta（只读可直调）
     "query_files":        ("按分类查询项目文件", "business", "all",   "meta"),
     "send_file":          ("向用户发送已有文件", "business", "all",   "meta"),
@@ -131,6 +148,10 @@ TOOL_SCHEMA_MAP: dict[str, tuple[str, str]] = {
     "chat_archive": ("emily_core.tools.project", "_CHAT_ARCHIVE_SCHEMA"),
     "manage_pending_issues": ("emily_core.tools.project", "_PENDING_ISSUE_SCHEMA"),
     "voice_entry": ("emily_core.tools.project", "_VOICE_ENTRY_SCHEMA"),
+    "create_expert": ("emily_core.tools.expert_manage_tool", "_EXPERT_CREATE_SCHEMA"),
+    "approve_expert": ("emily_core.tools.expert_manage_tool", "_EXPERT_APPROVE_SCHEMA"),
+    "toggle_expert": ("emily_core.tools.expert_manage_tool", "_EXPERT_TOGGLE_SCHEMA"),
+    "query_experts": ("emily_core.tools.expert_manage_tool", "_EXPERT_QUERY_SCHEMA"),
 }
 
 

@@ -1,11 +1,12 @@
 """SQLAlchemy ORM 模型 —— 关系型数据库 PostgreSQL 表结构。
 
-54 张表（33 张业务表 + 21 张权限管理/系统支持表）：
+56 张表（35 张业务表 + 21 张权限管理/系统支持表）：
   原有表（扩展）：users / user_im_bindings / conversations / messages / projects
                   / events / tasks / meetings / files
   新增表：company_info / project_indicator_details
           / business_flow_orders / instruction_orders / project_plans / plan_items
           / hook_execution_logs (M12a)
+          / experts / expert_approvals (专家Agent)
 
 users 表已合并原 employee 的人事档案字段（gender/id_card/qq/wechat/grouping/position 等），
 不再需要独立的 employees 表。
@@ -1087,15 +1088,21 @@ class ProjectNode(Base):
         String(30), nullable=False, default="specific",
         comment="文件可见模式：specific（按 node_accessible_files 绑定）/ all_project_files（全项目文件默认可见）"
     )
+    # ── 进度与层级（mount_child / _recalc_node_status 使用）──
+    progress = Column(String, default="0.00", comment="完成进度百分比（0.00-100.00，存为字符串，由成果完成度汇总）")
+    parent_node_id = Column(String(100), default="", comment="父节点ID（FK→project_nodes.node_id，挂载子节点时设置）")
+    child_weight = Column(String, default="1.0000", comment="子节点对父节点的权重（0.0000-1.0000，存为字符串）")
     updated_at = Column(String(50), nullable=False, default=_utc_now, onupdate=_utc_now, comment="最后更新时间（ISO8601）")
 
     # ── 主键 ──
     id = Column(String, primary_key=True, default=_new_uuid)
 
     __table_args__ = (
+        UniqueConstraint("node_id", name="uq_pn_node_id"),
         Index("idx_nodes_project", "project_id"),
         Index("idx_nodes_status", "status"),
         Index("idx_nodes_owner", "owner_dept_id"),
+        Index("idx_nodes_parent", "parent_node_id"),
     )
 
 
@@ -1736,4 +1743,54 @@ class GroupMemory(Base):
 
     __table_args__ = (
         Index("idx_gm_group_id", "group_id"),
+    )
+
+
+# ══════════════════════════════════════════════════════════════════════════════
+# 专家Agent — 2 张新表（experts + expert_approvals）
+# ══════════════════════════════════════════════════════════════════════════════
+
+
+class Expert(Base):
+    """专家库表 —— 窄域业务专家定义与状态管理。
+
+    状态机：PENDING → ACTIVE/REJECTED；ACTIVE ↔ DISABLED。
+    每个专家绑定一份职能手册 + 一份任务手册，供评审节点加载注入 prompt。
+    """
+    __tablename__ = "experts"
+
+    id = Column(String, primary_key=True, default=_new_uuid)
+    expert_no = Column(String(32), unique=True, nullable=False, comment="业务编号 EXP-001")
+    name = Column(String(100), nullable=False, comment="专家名称")
+    function_desc = Column(String(200), nullable=False, comment="一句话职能描述")
+    manual_path = Column(String(500), nullable=False, comment="职能手册文件名（相对手册目录）")
+    task_manual_path = Column(String(500), nullable=False, comment="任务手册文件名（相对手册目录）")
+    review_schema = Column(Text, default="{}", comment="评审成果 JSON schema（注入 prompt）")
+    sop_id = Column(String(64), default="", comment="绑定 SOP ID，可空=通用专家")
+    status = Column(String(16), nullable=False, default="PENDING", comment="PENDING/ACTIVE/REJECTED/DISABLED")
+    creator_id = Column(String, nullable=False, comment="创建人 FK→users.id（软关联）")
+    approver_id = Column(String, default="", comment="审批人 FK→users.id（软关联）")
+    created_at = Column(String(50), nullable=False, default=_utc_now, comment="创建时间 ISO")
+    approved_at = Column(String(50), default="", comment="审批时间 ISO")
+    updated_at = Column(String(50), nullable=False, default=_utc_now, onupdate=_utc_now, comment="更新时间 ISO")
+
+    __table_args__ = (
+        Index("idx_experts_status", "status"),
+        Index("idx_experts_sop_id", "sop_id"),
+    )
+
+
+class ExpertApproval(Base):
+    """专家审批记录表 —— 只增不删，记录每次审批/启停操作。"""
+    __tablename__ = "expert_approvals"
+
+    id = Column(String, primary_key=True, default=_new_uuid)
+    expert_id = Column(String, nullable=False, comment="关联专家 FK→experts.id（软关联）")
+    action = Column(String(16), nullable=False, comment="APPROVE/REJECT/ENABLE/DISABLE")
+    operator_id = Column(String, nullable=False, comment="操作人 FK→users.id（软关联）")
+    reason = Column(Text, default="", comment="操作理由")
+    created_at = Column(String(50), nullable=False, default=_utc_now, comment="操作时间 ISO")
+
+    __table_args__ = (
+        Index("idx_expert_approvals_expert_id", "expert_id"),
     )

@@ -1,5 +1,10 @@
 ﻿{
-    "emycore_url": "http://emily-core:18080",
-    "emycore_sse_url": "",
-    "emycore_api_token": ""
+  "emycore_url": "http://emily-core:18080",
+  "emily_core_url": "http://emily-core:18080",
+  "emycore_sse_url": "",
+  "emycore_api_token": "",
+  "emily_api_token": "",
+  "sse_reconnect_delay": 5.0,
+  "forward_progress": false,
+  "request_timeout": 120.0
 }

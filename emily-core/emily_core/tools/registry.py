@@ -340,6 +340,26 @@ def _register_business(core, reg):
                           category="business", permission_flag="write"))
         _buc += 1
 
+    # ── 专家库管理工具 (4 tools) ──
+    from .expert_manage_tool import (
+        handle_create_expert, handle_approve_expert,
+        handle_toggle_expert, handle_query_experts,
+        _EXPERT_CREATE_SCHEMA, _EXPERT_APPROVE_SCHEMA,
+        _EXPERT_TOGGLE_SCHEMA, _EXPERT_QUERY_SCHEMA,
+    )
+    _buc += _reg_biz(reg, "create_expert", "新建专家（需管理员审批）",
+                     partial(_h("expert_manage_tool", "handle_create_expert")),
+                     params=_EXPERT_CREATE_SCHEMA, category="business", permission_flag="write")
+    _buc += _reg_biz(reg, "approve_expert", "审批专家（L5+管理员）",
+                     partial(_h("expert_manage_tool", "handle_approve_expert")),
+                     params=_EXPERT_APPROVE_SCHEMA, category="project", permission_flag="admin")
+    _buc += _reg_biz(reg, "toggle_expert", "启停专家（L5+管理员）",
+                     partial(_h("expert_manage_tool", "handle_toggle_expert")),
+                     params=_EXPERT_TOGGLE_SCHEMA, category="project", permission_flag="admin")
+    _buc += _reg_biz(reg, "query_experts", "查询专家列表",
+                     partial(_h("expert_manage_tool", "handle_query_experts")),
+                     params=_EXPERT_QUERY_SCHEMA, category="base", permission_flag="all")
+
 
 def _reg_biz(reg, name, desc, handler, params=None,
              category="business", permission_flag="write"):

@@ -456,15 +456,27 @@ def main():
         use_llm = args.llm or bool(get_llm_config())
 
         with EmysTester(use_llm=use_llm) as emy:
-            # 构建附件
+            # 构建附件（自动复制到 Docker volume 目录，解决跨 OS 文件传递问题）
             attachments = None
             if args.files:
+                import shutil
+                # 项目根目录 emily-data/attachments → 容器内 /app/attachments
+                _root = Path(__file__).resolve().parents[3]  # .claude/skills/emy-test → root
+                _att_dir = _root / "emily-data" / "attachments"
+                _att_dir.mkdir(parents=True, exist_ok=True)
+
                 attachments = []
                 for fpath in args.files:
                     p = Path(fpath)
                     if not p.exists():
                         print(f"[警告] 文件不存在: {fpath}", file=sys.stderr)
                         continue
+                    # 复制到 volume 挂载目录，使用容器内可访问路径
+                    _dst = _att_dir / p.name
+                    shutil.copy2(str(p), str(_dst))
+                    container_path = f"/app/attachments/{p.name}"
+                    print(f"[附件] {p.name} → {container_path}", file=sys.stderr)
+
                     # 推断附件类型
                     ext = p.suffix.lower()
                     atype = 3  # 默认 file
@@ -476,9 +488,10 @@ def main():
                         atype = 5  # video
                     attachments.append({
                         "type": atype,
-                        "url": p.as_uri(),
+                        "url": p.resolve().as_uri(),
                         "file_name": p.name,
                         "file_size": p.stat().st_size,
+                        "file_path": container_path,  # 容器内可访问路径
                     })
 
             reply = emy.send_sync(
