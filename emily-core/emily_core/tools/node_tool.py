@@ -96,9 +96,11 @@ _ADD_DEPENDENCY_DESCRIPTION = (
 _MOUNT_CHILD_SCHEMA = {
     "type": "object",
     "properties": {
-        "child_node_id": {"type": "string", "description": "子节点编号"},
+        "parent_node_id": {"type": "string", "description": "父节点编号（业务主键）"},
+        "child_node_id": {"type": "string", "description": "子节点编号（业务主键）"},
+        "child_weight": {"type": "number", "description": "子节点对父节点的权重（0.0000-1.0000，默认1.0）"},
     },
-    "required": ["child_node_id"],
+    "required": ["parent_node_id", "child_node_id"],
 }
 
 _MOUNT_CHILD_DESCRIPTION = (
@@ -261,7 +263,9 @@ async def handle_mount_child_node(
 
     svc = NodeService(user_repo=PermissionRepository())
     cmd = MountChildCommand(
+        parent_node_id=params.get("parent_node_id", ""),
         child_node_id=params.get("child_node_id", ""),
+        child_weight=float(params.get("child_weight", 1.0)),
         operator_id=user_id,
     )
     result = await svc.mount_child(cmd)

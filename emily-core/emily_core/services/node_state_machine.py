@@ -47,11 +47,12 @@ VALID_TRANSITIONS: dict[str, frozenset[str]] = {
 
 class NodeSnapshot:
     """节点快照 —— 引擎计算的输入单元。"""
-    __slots__ = ("node_id", "status", "dependencies", "deliverables", "children")
+    __slots__ = ("node_id", "status", "progress", "dependencies", "deliverables", "children")
 
-    def __init__(self, node_id: str, status: str = NOT_ACTIVATED):
+    def __init__(self, node_id: str, status: str = NOT_ACTIVATED, progress: float = 0.0):
         self.node_id = node_id
         self.status = status
+        self.progress = progress
         self.dependencies: list[DependencySnapshot] = []
         self.deliverables: list[DeliverableSnapshot] = []
         self.children: list[ChildSnapshot] = []

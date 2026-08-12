@@ -34,6 +34,8 @@ from .node_commands import (
     AddParticipantCompanyCommand,
     RemoveParticipantCompanyCommand,
     SetParticipantCompaniesCommand,
+    MountChildCommand,
+    UnmountChildCommand,
     NodeOperationResult,
     CycleCheckResult,
     StateTransitionResult,
@@ -105,6 +107,12 @@ def _derive_related_company_from_participants(
 # ══════════════════════════════════════════════════════════════════════════════
 # NodeService
 # ══════════════════════════════════════════════════════════════════════════════
+
+# 单父节点子节点数量上限（需求 §3.4 父子节点层级）
+MAX_CHILDREN_PER_PARENT = 100
+# 父子嵌套深度上限（含根节点最多 3 层）
+MAX_PARENT_DEPTH = 3
+
 
 class NodeService:
     """全景节点图核心业务 Service。"""
@@ -710,6 +718,117 @@ class NodeService:
         await self._recalc_node_status(node_id)
 
         return NodeOperationResult(success=True, node_id=node_id, message="依赖已移除")
+
+    # ── 父子节点挂载 ──
+
+    async def mount_child(self, cmd: MountChildCommand) -> NodeOperationResult:
+        """挂载子节点。
+
+        校验：数量上限、嵌套深度（最多 3 层）、循环依赖（parent 不能是 child 的后代）。
+        通过后设置 child 的 parent_node_id + child_weight，并触发父节点状态重算。
+        """
+        # 1. 数量上限检查
+        count = await asyncio.to_thread(self._node_repo.count_children, cmd.parent_node_id)
+        if count >= MAX_CHILDREN_PER_PARENT:
+            return NodeOperationResult(
+                success=False, node_id=cmd.parent_node_id,
+                message=f"子节点数量已达上限（{MAX_CHILDREN_PER_PARENT}）",
+                error_code="40002",
+            )
+
+        # 2. 深度检查 + 循环检查共用 parent 祖先链（一次查询）
+        #    深度：parent 祖先链最多 MAX_PARENT_DEPTH-1 层（挂载后含 child 共 MAX_PARENT_DEPTH 层）
+        parent_ancestors = await asyncio.to_thread(
+            self._node_repo.get_ancestor_chain, cmd.parent_node_id, max_depth=MAX_PARENT_DEPTH,
+        )
+        if len(parent_ancestors) >= MAX_PARENT_DEPTH - 1:
+            return NodeOperationResult(
+                success=False, node_id=cmd.parent_node_id,
+                message=f"嵌套深度已达上限（{MAX_PARENT_DEPTH}层），无法继续挂载子节点",
+            )
+        parent_ancestor_ids = {a.node_id for a in parent_ancestors}
+
+        # 3. 循环检查：parent 与 child 不能已是祖先-后代关系（任一方向）
+        #    - parent 已是 child 的后代 → 挂载后形成 parent→child→...→parent 循环
+        #    - child 已是 parent 的祖先 → 挂载后形成 child→parent→...→child 循环
+        # 3a. parent 不能等于 child（自挂载）
+        if cmd.parent_node_id == cmd.child_node_id:
+            return NodeOperationResult(
+                success=False, node_id=cmd.parent_node_id,
+                message="节点不能挂载为自身的子节点",
+                error_code="40001",
+            )
+        # 3b. child 若是 parent 的祖先 → 反向挂载形成循环
+        if cmd.child_node_id in parent_ancestor_ids:
+            return NodeOperationResult(
+                success=False, node_id=cmd.parent_node_id,
+                message="不能将祖先节点挂载为子节点（会形成循环）",
+                error_code="40001",
+            )
+        # 3c. parent 若是 child 的后代 → 正向挂载形成循环
+        child_ancestors = await asyncio.to_thread(
+            self._node_repo.get_ancestor_chain, cmd.child_node_id, max_depth=MAX_PARENT_DEPTH,
+        )
+        child_descendants_check = cmd.parent_node_id in {a.node_id for a in child_ancestors}
+        if child_descendants_check:
+            return NodeOperationResult(
+                success=False, node_id=cmd.parent_node_id,
+                message="不能将后代节点挂载为父节点（会形成循环）",
+                error_code="40001",
+            )
+
+        # 4. 更新子节点的 parent_node_id + child_weight
+        weight_str = _to_decimal_str(cmd.child_weight, precision=4)
+        await asyncio.to_thread(
+            self._node_repo.update_fields,
+            cmd.child_node_id,
+            parent_node_id=cmd.parent_node_id,
+            child_weight=weight_str,
+        )
+
+        self._record_event(
+            node_id=cmd.child_node_id,
+            event_type="child_node_mounted",
+            new_value=json.dumps({"parent_node_id": cmd.parent_node_id, "child_weight": weight_str}),
+            operator_id=cmd.operator_id,
+            remark=f"挂载到父节点 {cmd.parent_node_id}",
+        )
+
+        # 父子关系变更 → 重新计算父节点状态（进度由子节点加权汇总）
+        await self._recalc_node_status(cmd.parent_node_id)
+
+        logger.info("Node %s mounted under %s (weight=%s)",
+                    cmd.child_node_id, cmd.parent_node_id, weight_str)
+        return NodeOperationResult(
+            success=True,
+            node_id=cmd.child_node_id,
+            message=f"子节点「{cmd.child_node_id}」已挂载到 {cmd.parent_node_id}",
+        )
+
+    async def unmount_child(self, cmd: UnmountChildCommand) -> NodeOperationResult:
+        """移除子节点（清空 parent_node_id + child_weight）。"""
+        await asyncio.to_thread(
+            self._node_repo.update_fields,
+            cmd.child_node_id,
+            parent_node_id="",
+            child_weight="1.0000",
+        )
+
+        self._record_event(
+            node_id=cmd.child_node_id,
+            event_type="child_node_unmounted",
+            old_value=json.dumps({"parent_node_id": cmd.parent_node_id}),
+            operator_id=cmd.operator_id,
+            remark=f"从父节点 {cmd.parent_node_id} 移除",
+        )
+
+        await self._recalc_node_status(cmd.parent_node_id)
+
+        return NodeOperationResult(
+            success=True,
+            node_id=cmd.child_node_id,
+            message=f"子节点「{cmd.child_node_id}」已从 {cmd.parent_node_id} 移除",
+        )
 
     # ── 责任人管理 ──
 

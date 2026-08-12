@@ -268,12 +268,12 @@ class LLMClient:
         ])
         return result["content"]
 
-    async def chat_json(self, system_prompt: str, user_message: str, model: str | None = None) -> dict:
+    async def chat_json(self, system_prompt: str, user_message: str, model: str | None = None, max_tokens: int | None = None) -> dict:
         """单轮对话，强制 JSON 输出，返回解析后的 dict。"""
         result = await self.chat_messages([
             {"role": "system", "content": system_prompt},
             {"role": "user", "content": user_message},
-        ], json_mode=True, model=model)
+        ], json_mode=True, model=model, max_tokens=max_tokens)
         return result["data"]
 
     # ── M7: Tool Calling ──

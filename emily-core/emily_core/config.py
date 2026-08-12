@@ -200,6 +200,16 @@ class Config:
     """LangGraph 引擎最大直接重试次数（node3→error_analysis→node3 循环上限，防死循环）。
     超过后升级为 REPLAN（回 node2 重规划），避免 transient_failure 分类导致的无限重试。"""
 
+    # ── 专家Agent 配置 ──
+    expert_review_enabled: bool = True
+    """专家评审功能开关"""
+
+    expert_model: str = "deepseek-chat"
+    """专家评审用模型（chat 类，支持 temperature + json_mode）"""
+
+    llm_expert_max_tokens: int = 16384
+    """专家评审 LLM 最大输出 token 数（复杂评审需足够 token 输出完整 JSON）"""
+
     # ── Agent loop（L3）──
     agent_loop_max_iterations: int = 12
     """Agent loop 最大迭代次数（agent_node↔tool_node 循环上限，防 runaway）。

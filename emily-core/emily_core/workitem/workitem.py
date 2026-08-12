@@ -92,6 +92,16 @@ class WorkItem:
     error_analysis: dict = field(default_factory=dict)
     """error_analysis 节点的分析结果，供归档渲染读取"""
 
+    # ── 专家Agent 字段 ──
+    expert_id: str = ""
+    """匹配到的专家 UUID（非空时 routing 后走 expert_review）"""
+
+    expert_required: bool = False
+    """是否需要专家评审"""
+
+    expert_review_result: dict = field(default_factory=dict)
+    """专家评审成果，供 summarizing 构造 StructuredResult"""
+
     # ── 增量灌注记录（KnowledgeInjector 写入）──
     injected_sops: set[str] = field(default_factory=set)
     injected_tools: set[str] = field(default_factory=set)

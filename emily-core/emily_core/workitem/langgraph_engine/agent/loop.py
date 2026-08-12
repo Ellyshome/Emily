@@ -120,9 +120,12 @@ async def agent_node(state: dict, *, llm_client, business_tools, resolvers, sop_
 
     if rtype == "tool_call":
         # 追加 assistant tool_call message（OpenAI 格式）
-        messages.append({
+        # DeepSeek reasoner 模型要求把 reasoning_content 作为独立字段回传，
+        # 不能合并进 content（合并会导致下一轮 400：reasoning_content must be passed back）。
+        # content 用 LLM 实际返回的 content（reasoner 模式下通常为空）。
+        assistant_msg: dict = {
             "role": "assistant",
-            "content": result.get("reasoning_content") or "",
+            "content": result.get("content") or "",
             "tool_calls": [{
                 "id": result.get("tool_call_id", ""),
                 "type": "function",
@@ -132,7 +135,11 @@ async def agent_node(state: dict, *, llm_client, business_tools, resolvers, sop_
                                             ensure_ascii=False),
                 },
             }],
-        })
+        }
+        reasoning_content = result.get("reasoning_content") or ""
+        if reasoning_content:
+            assistant_msg["reasoning_content"] = reasoning_content
+        messages.append(assistant_msg)
         # 暂存当前 tool_call 供 tool_node 取
         state["_pending_tool_call"] = {
             "id": result.get("tool_call_id", ""),
@@ -147,7 +154,12 @@ async def agent_node(state: dict, *, llm_client, business_tools, resolvers, sop_
 
     # type == "text" → LLM 未遵守 prompt（应调 complete_work/ask_user/tool）
     content = result.get("content", "")
-    messages.append({"role": "assistant", "content": content})
+    # reasoner 模型 text 分支同样需要回传 reasoning_content（独立字段，不合并进 content）
+    text_msg: dict = {"role": "assistant", "content": content}
+    reasoning_content = result.get("reasoning_content") or ""
+    if reasoning_content:
+        text_msg["reasoning_content"] = reasoning_content
+    messages.append(text_msg)
     wi.llm_call_count += 1
 
     text_fallback_count = state.get("_text_fallback_count", 0) + 1

@@ -15,7 +15,7 @@ from langgraph.checkpoint.memory import MemorySaver
 from .state import AgentLoopState
 from .nodes import (
     make_created, make_routing, make_executing, make_summarizing, make_error_analysis,
-    make_quality_gate,
+    make_quality_gate, make_expert_review,
 )
 from .agent.loop import route_after_agent, route_after_tool
 
@@ -59,11 +59,18 @@ def build_workitem_graph(
     gs.add_node("error_analysis", make_error_analysis(
         hook_adapter, llm_client=llm_client, config=config))
     gs.add_node("quality_gate", make_quality_gate())
+    gs.add_node("expert_review", make_expert_review(
+        hook_adapter, llm_client=llm_client, config=config))
 
     # ── 边 ──
     gs.add_edge(START, "created")
     gs.add_edge("created", "routing")
-    gs.add_edge("routing", "executing")
+    # routing → 条件路由（expert_required → expert_review，否则 → executing）
+    gs.add_conditional_edges(
+        "routing",
+        route_after_routing,
+        {"executing": "executing", "expert_review": "expert_review"},
+    )
 
     # executing 触发首轮 agent_node
     gs.add_edge("executing", "agent_node")
@@ -85,6 +92,8 @@ def build_workitem_graph(
 
     # summarizing → quality_gate → 条件路由（pass→END / reject→agent_node）
     gs.add_edge("summarizing", "quality_gate")
+    # expert_review → summarizing（专家评审完成后直接进总结）
+    gs.add_edge("expert_review", "summarizing")
     gs.add_conditional_edges(
         "quality_gate",
         route_after_quality_gate,
@@ -110,6 +119,23 @@ def route_after_error(state: dict) -> str:
     if ea.get("should_abort"):
         return "failed"
     return "agent_node"
+
+
+def route_after_routing(state: dict) -> str:
+    """routing 之后路由：expert_required → expert_review，否则 → executing。"""
+    ctx = None
+    try:
+        from .state import get_bus_context
+        ctx = get_bus_context()
+    except RuntimeError:
+        pass
+    if ctx:
+        wi = getattr(ctx, "work_item", None)
+        if wi and getattr(wi, "expert_required", False) and getattr(wi, "expert_id", ""):
+            logger.info("route_after_routing: WI %s → expert_review (expert=%s)",
+                        getattr(wi, "id", "?"), wi.expert_id)
+            return "expert_review"
+    return "executing"
 
 
 def route_after_quality_gate(state: dict) -> str:

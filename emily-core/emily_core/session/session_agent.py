@@ -491,24 +491,26 @@ class SessionAgent:
         )
         try:
             # M5: 路由用 router_model（v4-flash，便宜快）。M4 已缓存稳定 prompt，flash 可靠性提升。
-            # fallback：flash 返回空白/解析失败/异常时回退主模型（v4-pro），避免路由退化。
+            # fallback 链：router_model 解析失败/空白 → 主模型 → 仍失败则 fallback=True。
+            # v4-flash 是 reasoner 模型，json_mode 下约 14% 概率 content 空白（输出落在
+            # reasoning_content），_parse_json_response 会抛 ValueError，需显式兜底。
             router_model = getattr(self._llm, "router_model", None) or self._llm.model
-            data = {}
-            try:
-                result = await self._llm.chat_messages(full_messages, json_mode=True, model=router_model)
-                data = result.get("data", {}) or {}
-            except Exception as router_err:
-                logger.warning("router_model (%s) intent failed, fallback to main model: %s",
-                               router_model, router_err)
-                result = await self._llm.chat_messages(full_messages, json_mode=True)
-                data = result.get("data", {}) or {}
+            main_model = self._llm.model
 
-            # flash 可能把输出放进 reasoning_content 返回空白 content → data 为空 dict
-            # 注意：sop_id=null 是合法路由结果（无 SOP 匹配），不能误判为空白触发 fallback
+            # ① router_model 尝试
+            data = await self._try_intent_llm(full_messages, router_model, label="router")
+
+            # ② router 返回空或解析失败 → 主模型兜底
+            if not data and router_model != main_model:
+                logger.warning("router_model (%s) returned empty/invalid, fallback to main model (%s)",
+                               router_model, main_model)
+                data = await self._try_intent_llm(full_messages, main_model, label="main")
+
+            # ③ 仍无数据 → fallback 路由（交给 agent loop 处理，但限制工具集避免乱写 DB）
             if not data:
-                logger.warning("router_model returned empty data, fallback to main model")
-                result = await self._llm.chat_messages(full_messages, json_mode=True)
-                data = result.get("data", {}) or {}
+                logger.warning("intent recognition: both router and main model returned empty, fallback=True")
+                return {"sop_id": None, "confidence": "none", "reasoning": "LLM 两次返回空白",
+                        "is_compound": False, "sub_tasks": [], "fallback": True}
 
             logger.debug("SessionAgent intent for '%s': sop=%s conf=%s compound=%s",
                          content[:40], data.get("sop_id"), data.get("confidence"),
@@ -520,6 +522,27 @@ class SessionAgent:
                     "is_compound": False, "sub_tasks": [], "fallback": True}
         finally:
             LLMInteractionLogger.clear_context()
+
+    async def _try_intent_llm(self, full_messages: list[dict], model: str, label: str) -> dict:
+        """单次意图识别 LLM 调用，失败/空白返回空 dict（不抛异常）。
+
+        封装 chat_messages(json_mode) + _parse_json_response 的异常处理：
+        - LLM 调用异常 → 返回 {}
+        - content 空白（reasoner 输出落在 reasoning_content）→ 返回 {}
+        - JSON 解析失败 → 返回 {}
+        - 成功 → 返回解析后的 dict
+        """
+        try:
+            result = await self._llm.chat_messages(full_messages, json_mode=True, model=model)
+        except Exception as e:
+            logger.warning("intent %s model=%s LLM call failed: %s", label, model, e)
+            return {}
+        data = result.get("data", {}) or {}
+        # data 为空 dict 表示 content 空白或 JSON 解析返回 None
+        if not data:
+            logger.debug("intent %s model=%s returned empty data (content blank or unparseable)",
+                         label, model)
+        return data
 
     async def _split_into_workitems(self, message: "StandardMessage") -> list[WorkItem]:
         """Phase B: 基于 LLM 意图识别的 WorkItem 拆分。"""
@@ -618,6 +641,8 @@ class SessionAgent:
         wi.work_spec = self._build_work_spec(
             intent, wi.sop_id, content, wi.output_spec, wi.result_constraints,
             getattr(wi, "required_tools", set()))
+        # 专家Agent: SOP 绑定专家 → 设置 expert_id + expert_required
+        self._match_expert(wi, sop_id)
         # M2: 路由派生的 query_type 预填给 SkillExecutor，省掉 step-01 的 LLM 参数提取
         query_type = intent.get("query_type")
         if sop_id == "SOP-005-QRY" and query_type:
@@ -625,6 +650,23 @@ class SessionAgent:
             logger.debug("Session[%s] prefilled query_type=%s for SOP-005-QRY",
                          self.conversation_id, query_type)
         return [wi]
+
+    @staticmethod
+    def _match_expert(wi: "WorkItem", sop_id: str) -> None:
+        """专家Agent: 检查 SOP 是否绑定 ACTIVE 专家，设置 wi.expert_id / wi.expert_required。"""
+        if not sop_id:
+            return
+        try:
+            from emily_core.repositories.expert_repo import ExpertRepository
+            expert = ExpertRepository.get_by_sop_id(sop_id)
+            if expert and expert.status == "ACTIVE":
+                wi.expert_id = expert.id
+                wi.expert_required = True
+                logger.info("Session[%s] matched expert %s (%s) for sop=%s",
+                            wi.session_id, expert.expert_no, expert.name, sop_id)
+        except Exception as e:
+            logger.warning("Session[%s] expert match failed for sop=%s: %s",
+                           wi.session_id, sop_id, e)
 
     @staticmethod
     def _derive_constraints(intent: dict) -> dict:

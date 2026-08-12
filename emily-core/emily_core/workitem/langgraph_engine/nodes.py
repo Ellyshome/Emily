@@ -199,7 +199,10 @@ def make_created(hook_adapter, *, business_tools, resolvers):
                 state["current_sop_id"] = sop_id
             # 构建 tool_specs 并固化到 state（workitem 拉起后工具集固定，全 loop 只读取用）
             session_api_ids = _session_api_ids(ctx)
-            tool_specs = build_tool_specs(business_tools, resolvers, session_api_ids)
+            # fallback 路径（意图识别失败）限制为查询类白名单工具，避免 LLM 乱写 DB
+            fallback_mode = (getattr(wi, "intent_type", "") == "fallback")
+            tool_specs = build_tool_specs(business_tools, resolvers, session_api_ids,
+                                          fallback_mode=fallback_mode)
             # prompt_info 供 ArchiveHook 使用
             ctx.set("prompt_info_created", {
                 "sop_id": sop_id,
@@ -295,10 +298,28 @@ def make_summarizing(hook_adapter):
             ctx.should_abort = True
             return {**_exit_stage(state, "summarizing", t), "wi_state": "failed"}
         try:
+            # ── 专家成果优先：expert_review_result → StructuredResult ──
+            if wi.expert_review_result:
+                er = wi.expert_review_result
+                from ..pipeline.interfaces.execution import StructuredResult
+                wi.structured_result = StructuredResult(
+                    status=er.get("status", "partial"),
+                    intent="expert_review",
+                    sop_id=wi.sop_id or "",
+                    risk_level=getattr(wi, "risk_level", "L2") or "L2",
+                    data={
+                        "score": er.get("score", 0),
+                        "details": er.get("score_dimensions", {}),
+                    },
+                    summary_facts=[er.get("conclusion", "")],
+                    issues=er.get("issues", []),
+                )
+                logger.info("summarizing: structured_result from expert_review, status=%s",
+                            wi.structured_result.status)
             # M2: 优先使用 complete_work 已构造的 StructuredResult
             # agent loop 完成 work 后由 complete_work 控制工具构造（权威成果）；
             # 若缺失（异常路径），回退到 _extract_structured_result 从 step_results 提取
-            if wi.structured_result is None:
+            elif wi.structured_result is None:
                 wi.structured_result = _extract_structured_result(wi, ctx)
                 logger.info("summarizing: structured_result from fallback extraction, status=%s",
                             wi.structured_result.status if wi.structured_result else 'None')
@@ -464,3 +485,184 @@ def make_quality_gate():
 
     quality_gate.__name__ = "quality_gate"
     return quality_gate
+
+
+# ══════════════════════════════════════════════════════════════════════════════
+# 专家Agent: expert_review 节点
+# ══════════════════════════════════════════════════════════════════════════════
+
+
+def build_expert_prompt(
+    *,
+    manual_text: str,
+    task_manual_text: str,
+    file_text: str,
+    review_requirement: str,
+    review_schema: dict | None = None,
+) -> str:
+    """构建窄域系统 prompt：职能手册 + 任务手册 + 待审文件 + 评审要求。
+
+    不含工具表/agent loop 规则，专注让 LLM 单次调用完成评审。
+    """
+    import json
+    schema_str = json.dumps(review_schema or {}, ensure_ascii=False, indent=2)
+
+    prompt = f"""# 专家评审系统
+
+你是一位专业的业务评审专家。你将收到以下内容：
+1. 职能手册（你的专业领域规范）
+2. 任务手册（当前评审任务的具体要求）
+3. 待审文件内容（需要你评审的材料）
+
+## 核心原则
+- 严格依据职能手册的标准进行评审
+- 按任务手册的要求逐项检查
+- 输出必须为 JSON 格式
+- 打分客观、结论明确
+
+---
+
+## 职能手册
+{manual_text[:8000]}
+
+---
+
+## 任务手册
+{task_manual_text[:8000]}
+
+---
+
+## 待审文件内容
+{file_text[:12000]}
+
+---
+
+## 评审要求
+{review_requirement}
+
+---
+
+## 输出格式（必须严格遵循以下 JSON Schema）
+{{"status": "success|partial|failed", "score": 0-100, "score_dimensions": {{"维度名": 分数, ...}}, "issues": [{{"location": "问题位置", "standard": "依据标准", "severity": "高|中|低", "description": "问题描述"}}], "conclusion": "总体结论", "recommendation": "处置建议（通过/退回修改/重做）"}}
+{schema_str}
+
+请严格按照输出格式返回 JSON，不要输出其他任何内容。"""
+    return prompt
+
+
+def make_expert_review(hook_adapter, *, llm_client, config):
+    """expert_review 节点工厂：替代通用 agent loop，单次 chat_json 完成专家评审。
+
+    Args:
+        hook_adapter: HookAdapter 实例
+        llm_client: LLMClient 实例
+        config: Config 实例
+    """
+    import asyncio
+
+    async def expert_review(state: dict) -> dict:
+        ctx = _get_context()
+        wi = ctx.work_item
+        t = _enter_stage(state, "expert_review")
+
+        if not await hook_adapter.fire_before("expert_review", ctx):
+            ctx.should_abort = True
+            return {**_exit_stage(state, "expert_review", t), "wi_state": "failed"}
+
+        try:
+            expert_id = wi.expert_id
+            if not expert_id:
+                logger.warning("expert_review: expert_id is empty, fallback to executing")
+                await hook_adapter.fire_after("expert_review", ctx)
+                return {**_exit_stage(state, "expert_review", t), "wi_state": "executing"}
+
+            # 查专家定义 + 加载手册
+            from emily_core.repositories.expert_repo import ExpertRepository
+            from emily_core.services.expert_manual_loader import ExpertManualLoader
+
+            expert = await asyncio.to_thread(ExpertRepository.get_by_id, expert_id)
+            if not expert or expert.status != "ACTIVE":
+                logger.warning("expert_review: expert %s not found or not ACTIVE, fallback", expert_id)
+                return {**_exit_stage(state, "expert_review", t), "wi_state": "executing"}
+
+            # 加载手册
+            manual_text = await asyncio.to_thread(
+                ExpertManualLoader.load_manual, expert.manual_path)
+            task_manual_text = await asyncio.to_thread(
+                ExpertManualLoader.load_manual, expert.task_manual_path)
+
+            # 加载待审文件
+            file_text = await asyncio.to_thread(
+                ExpertManualLoader.load_review_files,
+                getattr(wi, "attachments", None),
+                wi.user_input)
+
+            # 构建 prompt + 调用 LLM
+            import json
+            review_schema = json.loads(expert.review_schema) if expert.review_schema else {}
+            system_prompt = build_expert_prompt(
+                manual_text=manual_text,
+                task_manual_text=task_manual_text,
+                file_text=file_text,
+                review_requirement=wi.user_input or "",
+                review_schema=review_schema,
+            )
+
+            # 固定用 expert_model
+            model = getattr(config, "expert_model", "deepseek-chat") if config else "deepseek-chat"
+            max_tokens = getattr(config, "llm_expert_max_tokens", 16384) if config else 16384
+            llm_start = time.monotonic()
+            result = await llm_client.chat_json(
+                system_prompt, wi.user_input, model=model, max_tokens=max_tokens)
+            elapsed_ms = int((time.monotonic() - llm_start) * 1000)
+
+            # 标准化成果
+            er = _normalize_expert_result(result, elapsed_ms)
+            wi.expert_review_result = er
+
+            # prompt_info 供 ArchiveHook 使用
+            ctx.set("prompt_info_expert_review", {
+                "expert_no": expert.expert_no,
+                "expert_name": expert.name,
+                "status": er.get("status", "?"),
+                "score": er.get("score", 0),
+                "issues_count": len(er.get("issues", [])),
+                "elapsed_ms": elapsed_ms,
+            })
+
+            logger.info("expert_review: WI %s expert=%s score=%.1f status=%s",
+                        getattr(wi, "id", "?"), expert.expert_no, er.get("score", 0), er.get("status"))
+
+        except Exception as e:
+            logger.error("expert_review failed: %s", e, exc_info=True)
+            wi.add_warning(f"专家评审异常: {e}")
+            wi.expert_review_result = {
+                "status": "partial",
+                "score": 0,
+                "score_dimensions": {},
+                "issues": [],
+                "conclusion": f"评审过程异常: {e}",
+                "recommendation": "人工复核",
+                "elapsed_ms": 0,
+            }
+            await hook_adapter.fire_error("expert_review", ctx, e)
+            # 不 abort，降级进 summarizing
+
+        await hook_adapter.fire_after("expert_review", ctx)
+        return {**_exit_stage(state, "expert_review", t), "wi_state": "summarizing"}
+
+    expert_review.__name__ = "expert_review"
+    return expert_review
+
+
+def _normalize_expert_result(raw: dict, elapsed_ms: int) -> dict:
+    """标准化 LLM 返回的评审成果为 ExpertReviewResult dict。"""
+    return {
+        "status": raw.get("status", "partial"),
+        "score": float(raw.get("score", 0)),
+        "score_dimensions": raw.get("score_dimensions", {}) or {},
+        "issues": raw.get("issues", []) or [],
+        "conclusion": raw.get("conclusion", "") or "",
+        "recommendation": raw.get("recommendation", "") or "",
+        "elapsed_ms": elapsed_ms,
+    }

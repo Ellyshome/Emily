@@ -84,6 +84,11 @@ def _ensure_columns(engine) -> list[dict]:
         "tool_registry": [
             ("exposure_mode", "VARCHAR(20)", "'meta'"),
         ],
+        "project_nodes": [
+            ("progress", "VARCHAR", "'0.00'"),
+            ("parent_node_id", "VARCHAR(100)", "''"),
+            ("child_weight", "VARCHAR", "'1.0000'"),
+        ],
     }
 
     from sqlalchemy import text as sa_text
@@ -136,6 +141,52 @@ def _ensure_columns(engine) -> list[dict]:
                     col_name, table_name,
                 )
                 migrations.append({"table": table_name, "column": col_name})
+
+    # ── 补齐 unique 约束（create_all 不 ALTER 已有表）──
+    # 检查 pg_indexes 中是否已存在同名约束，缺失则 ALTER TABLE ADD CONSTRAINT
+    _PENDING_CONSTRAINTS = {
+        "project_nodes": [
+            ("uq_pn_node_id", "UNIQUE (node_id)"),
+        ],
+    }
+    with engine.connect() as conn:
+        for table_name, constraints in _PENDING_CONSTRAINTS.items():
+            table_exists = conn.execute(
+                sa_text(
+                    "SELECT EXISTS ("
+                    "  SELECT 1 FROM information_schema.tables"
+                    "  WHERE table_name = :tbl"
+                    ")"
+                ),
+                {"tbl": table_name},
+            ).scalar()
+            if not table_exists:
+                continue
+            for cname, definition in constraints:
+                already = conn.execute(
+                    sa_text(
+                        "SELECT EXISTS ("
+                        "  SELECT 1 FROM pg_indexes"
+                        "  WHERE indexname = :idx"
+                        ")"
+                    ),
+                    {"idx": cname},
+                ).scalar()
+                if already:
+                    continue
+                try:
+                    conn.execute(
+                        sa_text(f"ALTER TABLE {table_name} ADD CONSTRAINT {cname} {definition}")
+                    )
+                    conn.commit()
+                    logger.info("Schema migration: added constraint %s to %s", cname, table_name)
+                    migrations.append({"table": table_name, "constraint": cname})
+                except Exception as e:
+                    # 约束添加失败（如已有重复数据）只警告不阻塞启动
+                    logger.warning(
+                        "Schema migration: failed to add constraint %s to %s: %s",
+                        cname, table_name, e,
+                    )
 
     return migrations
 

@@ -102,6 +102,31 @@ class RemoveDependencyCommand:
 
 
 # ══════════════════════════════════════════════════════════════════════════════
+# 父子节点挂载 Commands
+# ══════════════════════════════════════════════════════════════════════════════
+
+@dataclass
+class MountChildCommand:
+    """挂载子节点命令 —— 需求文档 §8.4.1。
+
+    将 child 挂载到 parent 下，子节点进度按 child_weight 计入父节点。
+    嵌套深度上限 3 层，单父节点子节点上限由 NodeService.MAX_CHILDREN_PER_PARENT 控制。
+    """
+    parent_node_id: str
+    child_node_id: str
+    child_weight: float = 1.0
+    operator_id: str = ""
+
+
+@dataclass
+class UnmountChildCommand:
+    """移除子节点命令。"""
+    parent_node_id: str
+    child_node_id: str
+    operator_id: str = ""
+
+
+# ══════════════════════════════════════════════════════════════════════════════
 # 结果 DTO
 # ══════════════════════════════════════════════════════════════════════════════
 

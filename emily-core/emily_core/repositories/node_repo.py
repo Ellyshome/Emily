@@ -56,11 +56,20 @@ class ProjectNodeRepo:
 
     @staticmethod
     def create(**kwargs) -> ProjectNode:
-        """创建节点。
+        """创建节点（幂等：node_id 已存在则返回已有节点，不重复写入）。
 
         必填参数：project_id, node_id, node_name, creator_id, deadline
         可选参数：owner_dept_id, related_company_id, remark
         """
+        node_id = kwargs.get("node_id", "")
+        if node_id:
+            existing = ProjectNodeRepo.get_by_node_id(node_id)
+            if existing is not None:
+                logger.info(
+                    "ProjectNode already exists (idempotent skip): %s (project=%s)",
+                    existing.node_id, existing.project_id,
+                )
+                return existing
         with get_session() as session:
             node = ProjectNode(**kwargs)
             session.add(node)
