@@ -1,0 +1,41 @@
+<mxfile host="Electron" modified="2026-08-13T09:06:58.132Z" agent="EmilyAgentEngine" version="21.0.0" type="device">
+  <diagram id="EmilyOverallArch" name="系统总体架构图">
+    <mxGraphModel dx="1680" dy="980" grid="1" gridSize="10" guides="1" tooltips="1" connect="1" arrows="1" fold="1" page="1" pageScale="1" pageWidth="1680" pageHeight="980" background="none" math="0" shadow="0">
+      <root>
+        <mxCell id="0" />
+        <mxCell id="1" parent="0" />
+        <!-- Layers -->
+        <mxCell id="L1" value="L1: 接入层" style="swimlane;whiteSpace=wrap;html=1;fillColor=#f8fafc;strokeColor=#cbd5e1;fontStyle=1;" vertex="1" parent="1">
+          <mxGeometry x="40" y="40" width="1220" height="120" as="geometry" />
+        </mxCell>
+        <mxCell id="IM" value="IM 渠道（即时通信软件）" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#dae8fc;strokeColor=#6c8ebf;fontStyle=1;" vertex="1" parent="L1">
+          <mxGeometry x="60" y="30" width="240" height="70" as="geometry" />
+        </mxCell>
+        <mxCell id="PLUGIN" value="薄插件 (Thin Plugin)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#f5f5f5;strokeColor=#6c6c6c;fontStyle=1;" vertex="1" parent="L1">
+          <mxGeometry x="440" y="30" width="380" height="70" as="geometry" />
+        </mxCell>
+        <mxCell id="L2" value="L2: 会话层" style="swimlane;whiteSpace=wrap;html=1;fillColor=#f0f7ff;strokeColor=#bfdbfe;fontStyle=1;" vertex="1" parent="1">
+          <mxGeometry x="40" y="180" width="1220" height="150" as="geometry" />
+        </mxCell>
+        <mxCell id="SA" value="会话智能体 SessionAgent&#xa;携带：项目态势书 + 系统能力书" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#dae8fc;strokeColor=#6c8ebf;fontStyle=1;" vertex="1" parent="L2">
+          <mxGeometry x="380" y="25" width="500" height="105" as="geometry" />
+        </mxCell>
+        <mxCell id="L3" value="L3: 执行层" style="swimlane;whiteSpace=wrap;html=1;fillColor=#faf5ff;strokeColor=#e9d5ff;fontStyle=1;" vertex="1" parent="1">
+          <mxGeometry x="40" y="350" width="1220" height="180" as="geometry" />
+        </mxCell>
+        <mxCell id="WA" value="任务智能体 WorkItemAgent&#xa;状态图编排的五节点引擎" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#e1d5e7;strokeColor=#9673a6;fontStyle=1;" vertex="1" parent="L3">
+          <mxGeometry x="140" y="35" width="380" height="120" as="geometry" />
+        </mxCell>
+        <mxCell id="GA" value="审核智能体 GuardianAgent&#xa;携带：组织规则书" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#e1d5e7;strokeColor=#9673a6;fontStyle=1;" vertex="1" parent="L3">
+          <mxGeometry x="720" y="35" width="380" height="120" as="geometry" />
+        </mxCell>
+        <mxCell id="L6" value="L6: 自进化机制（贯穿各层侧翼）" style="swimlane;whiteSpace=wrap;html=1;fillColor=#fff1f2;strokeColor=#f43f5e;fontStyle=1;dashed=1;" vertex="1" parent="1">
+          <mxGeometry x="1280" y="40" width="360" height="900" as="geometry" />
+        </mxCell>
+        <mxCell id="EVO" value="自进化机制核心引擎&#xa;用户反馈信号 → 日洞察 → 规则 → 配置补丁" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffe4e6;strokeColor=#e11d48;fontStyle=1;" vertex="1" parent="L6">
+          <mxGeometry x="30" y="200" width="300" height="480" as="geometry" />
+        </mxCell>
+      </root>
+    </mxGraphModel>
+  </diagram>
+</mxfile>

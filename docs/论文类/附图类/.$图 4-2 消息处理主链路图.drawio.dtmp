@@ -1,0 +1,65 @@
+<mxfile host="Electron" agent="EmilyAgentEngine">
+  <diagram id="EmilyFlowchart" name="系统架构范式">
+    <mxGraphModel dx="23389" dy="13940" grid="1" gridSize="10" guides="1" tooltips="1" connect="1" arrows="1" fold="1" page="1" pageScale="1" pageWidth="1169" pageHeight="827" background="none" math="0" shadow="0">
+      <root>
+        <mxCell id="0" />
+        <mxCell id="1" parent="0" />
+        <mxCell id="U" parent="1" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#e1d5e7;strokeColor=#9673a6;fontStyle=1;" value="团队成员" vertex="1">
+          <mxGeometry height="80" width="90" x="30" y="240" as="geometry" />
+        </mxCell>
+        <mxCell id="oprmWWaWrpZmoKLqdpTJ-2" edge="1" parent="1" source="IM" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;" target="P" value="">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="IM" parent="1" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#dae8fc;strokeColor=#6c8ebf;fontStyle=1;" value="IM 渠道" vertex="1">
+          <mxGeometry height="80" width="120" x="180" y="240" as="geometry" />
+        </mxCell>
+        <mxCell id="oprmWWaWrpZmoKLqdpTJ-1" edge="1" parent="1" source="P" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;" target="API" value="">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="P" parent="1" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#f5f5f5;strokeColor=#6c6c6c;" value="薄插件&lt;br&gt;去重 · 标准化" vertex="1">
+          <mxGeometry height="100" width="140" x="360" y="230" as="geometry" />
+        </mxCell>
+        <mxCell id="oprmWWaWrpZmoKLqdpTJ-3" edge="1" parent="1" source="API" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;" target="T" value="">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="API" parent="1" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#d5e8d4;strokeColor=#82b366;fontStyle=1;" value="业务内核 API" vertex="1">
+          <mxGeometry height="90" width="130" x="550" y="235" as="geometry" />
+        </mxCell>
+        <mxCell id="T" parent="1" style="rhombus;whiteSpace=wrap;html=1;fillColor=#fff2cc;strokeColor=#d6b656;fontStyle=1;" value="快速通道？&lt;br&gt;问候/致谢/告别" vertex="1">
+          <mxGeometry height="120" width="120" x="740" y="220" as="geometry" />
+        </mxCell>
+        <mxCell id="R1" parent="1" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#d5e8d4;strokeColor=#82b366;" value="直接应答&lt;br&gt;（200 同步返回）" vertex="1">
+          <mxGeometry height="80" width="130" x="870" y="90" as="geometry" />
+        </mxCell>
+        <mxCell id="SA" parent="1" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#dae8fc;strokeColor=#6c8ebf;fontStyle=1;" value="会话智能体&lt;br&gt;意图识别（目录索引注入）" vertex="1">
+          <mxGeometry height="100" width="160" x="870" y="370" as="geometry" />
+        </mxCell>
+        <mxCell id="C" parent="1" style="rhombus;whiteSpace=wrap;html=1;fillColor=#fff2cc;strokeColor=#d6b656;fontStyle=1;" value="复合请求？" vertex="1">
+          <mxGeometry height="100" width="100" x="1080" y="370" as="geometry" />
+        </mxCell>
+        <mxCell id="WIn" parent="1" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#f5f5f5;strokeColor=#6c6c6c;" value="拆解为 N 个 WorkItem" vertex="1">
+          <mxGeometry height="75" width="140" x="1180" y="290" as="geometry" />
+        </mxCell>
+        <mxCell id="WI1" parent="1" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#f5f5f5;strokeColor=#6c6c6c;" value="创建 1 个 WorkItem" vertex="1">
+          <mxGeometry height="75" width="140" x="1180" y="460" as="geometry" />
+        </mxCell>
+        <mxCell id="EX" parent="1" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#e1d5e7;strokeColor=#9673a6;fontStyle=1;" value="任务智能体执行&lt;br&gt;+ 审核智能体审核" vertex="1">
+          <mxGeometry height="110" width="170" x="1390" y="360" as="geometry" />
+        </mxCell>
+        <mxCell id="SYN" parent="1" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#dae8fc;strokeColor=#6c8ebf;fontStyle=1;" value="会话智能体&lt;br&gt;参考产出组织回复" vertex="1">
+          <mxGeometry height="90" width="150" x="1170" y="230" as="geometry" />
+        </mxCell>
+        <mxCell id="R2" parent="1" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#d5e8d4;strokeColor=#82b366;fontStyle=1;" value="回复用户" vertex="1">
+          <mxGeometry height="60" width="130" x="870" y="180" as="geometry" />
+        </mxCell>
+        <mxCell id="e1" edge="1" parent="1" source="U" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;" target="IM" value="自然语言消息" />
+        <mxCell id="e2" edge="1" parent="1" source="P" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;" target="API" value="HTTP POST" />
+        <mxCell id="e3" edge="1" parent="1" source="T" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;" target="R1" value="是" />
+        <mxCell id="e4" edge="1" parent="1" source="T" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;" target="SA" value="否" />
+        <mxCell id="e5" edge="1" parent="1" source="C" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;" target="WIn" value="是" />
+        <mxCell id="e6" edge="1" parent="1" source="C" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;" target="WI1" value="否" />
+        <mxCell id="e7" edge="1" parent="1" source="SYN" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;" target="R2" value="SSE 推送" />
+      </root>
+    </mxGraphModel>
+  </diagram>
+</mxfile>

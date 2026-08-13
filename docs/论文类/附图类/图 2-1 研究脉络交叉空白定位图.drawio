@@ -1,0 +1,31 @@
+<mxfile host="CanvasApp" version="1.0" type="device">
+  <diagram id="Engineering_Org_AI_Intersection" name="Engineering &amp; Organizational AI Intersection">
+    <mxGraphModel dx="1200" dy="800" grid="1" gridSize="10" guides="1" tooltips="1" connect="1" arrows="1" fold="1" page="1" pageScale="1" pageWidth="1169" pageHeight="827" background="#ffffff" math="0" shadow="0">
+      <root>
+        <mxCell id="0" />
+        <mxCell id="1" parent="0" />
+        <mxCell id="sub_A" value="工程 AI 方向" style="swimlane;fontStyle=1;align=center;verticalAlign=top;childLayout=stackLayout;horizontal=1;startSize=30;horizontalStack=0;resizeParent=1;resizeParentMax=0;resizeLast=0;collapsible=0;marginBottom=0;whiteSpace=wrap;html=1;fillColor=#eef2ff;strokeColor=#6366f1;fontColor=#3730a3;dashed=1;strokeWidth=2;rounded=1;arcSize=8;" vertex="1" parent="1">
+          <mxGeometry x="80" y="50" width="340" height="160" as="geometry" />
+        </mxCell>
+        <mxCell id="sub_B" value="组织 AI 方向" style="swimlane;fontStyle=1;align=center;verticalAlign=top;childLayout=stackLayout;horizontal=1;startSize=30;horizontalStack=0;resizeParent=1;resizeParentMax=0;resizeLast=0;collapsible=0;marginBottom=0;whiteSpace=wrap;html=1;fillColor=#f5f3ff;strokeColor=#8b5cf6;fontColor=#5b21b6;dashed=1;strokeWidth=2;rounded=1;arcSize=8;" vertex="1" parent="1">
+          <mxGeometry x="480" y="50" width="340" height="160" as="geometry" />
+        </mxCell>
+        <mxCell id="A1" value="&lt;b&gt;具体业务任务&lt;/b&gt;&lt;hr size=&quot;1&quot;&gt;规范问答 · 设计辅助&lt;br/&gt;风险分析 · 文档处理" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#cbd5e1;fontColor=#0f172a;arcSize=10;strokeWidth=2;" vertex="1" parent="sub_A">
+          <mxGeometry x="20" y="45" width="300" height="90" as="geometry" />
+        </mxCell>
+        <mxCell id="B1" value="&lt;b&gt;组织协同能力&lt;/b&gt;&lt;hr size=&quot;1&quot;&gt;组织学习 · 人机协作&lt;br/&gt;知识管理 · 经验沉淀" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#cbd5e1;fontColor=#0f172a;arcSize=10;strokeWidth=2;" vertex="1" parent="sub_B">
+          <mxGeometry x="20" y="45" width="300" height="90" as="geometry" />
+        </mxCell>
+        <mxCell id="X" value="&lt;b&gt;★ 交叉空白&lt;/b&gt;&lt;hr size=&quot;1&quot;&gt;团队级 AI 智能体&lt;br/&gt;（本文定位）" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#fef3c7;strokeColor=#f59e0b;fontColor=#92400e;arcSize=10;strokeWidth=2;" vertex="1" parent="1">
+          <mxGeometry x="280" y="290" width="340" height="110" as="geometry" />
+        </mxCell>
+        <mxCell id="e1" value="工程业务融合" style="edgeStyle=orthogonalEdgeStyle;rounded=1;orthogonalLoop=1;jettySize=auto;html=1;strokeColor=#3B82F6;strokeWidth=2;dashed=1;fontColor=#3B82F6;labelBackgroundColor=#ffffff" edge="1" parent="1" source="A1" target="X">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e2" value="组织知识赋能" style="edgeStyle=orthogonalEdgeStyle;rounded=1;orthogonalLoop=1;jettySize=auto;html=1;strokeColor=#8B5CF6;strokeWidth=2;dashed=1;fontColor=#8B5CF6;labelBackgroundColor=#ffffff" edge="1" parent="1" source="B1" target="X">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+      </root>
+    </mxGraphModel>
+  </diagram>
+</mxfile>
