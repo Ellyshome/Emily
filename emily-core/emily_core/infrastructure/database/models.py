@@ -212,6 +212,7 @@ class Event(Base):
     status = Column(String(50), default="pending")
     created_at = Column(String, default=_utc_now)
     confirmed_at = Column(String)
+    confirmed_by = Column(String, ForeignKey("users.id"), nullable=True)  # 认证人（确认录入的用户 ID，溯源到人）
     related_event_ids = Column(String, default="[]")   # 关联事件ID（JSON数组），如 ["EVT-20260612-0001"]
     conversation_id = Column(String(200), nullable=True, index=True)  # BUG-005: 来源会话 ID，直查用
     project = relationship("Project", back_populates="events")

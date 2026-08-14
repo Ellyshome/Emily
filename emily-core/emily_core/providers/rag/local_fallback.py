@@ -30,53 +30,65 @@ class LocalFileRagProvider(RagProvider):
     查询时用 TF（词频）评分，支持 stage/role 过滤。
     """
 
-    def __init__(self, search_dir: str | None = None):
+    def __init__(self, search_dir: str | list[str] | None = None):
         # rag/ → providers/ → emily_core/ → emily-core/ → Emily/（项目根）
-        if search_dir:
-            self._search_dir = Path(search_dir)
-        else:
+        if search_dir is None:
             project_root = Path(__file__).resolve().parents[4]
-            self._search_dir = project_root / _DEFAULT_SEARCH_DIR
+            self._search_dirs: list[Path] = [project_root / _DEFAULT_SEARCH_DIR]
+        elif isinstance(search_dir, str):
+            self._search_dirs = [Path(search_dir)]
+        else:
+            self._search_dirs = [Path(d) for d in search_dir]
         self._chunks: list[dict] = []
         self._loaded: bool = False
 
     def _load(self) -> None:
-        """扫描目录，加载所有文件并按标题分块，附带 metadata。"""
+        """扫描所有目录，加载所有文件并按标题分块，附带 metadata。
+
+        多目录支持：每个目录中的文件按「目录名/相对路径」标记来源，
+        使检索结果能区分项目资料与公司制度等不同知识来源。
+        """
         if self._loaded:
             return
 
-        if not self._search_dir.exists():
-            logger.info("LocalFileRag: 目录不存在 %s", self._search_dir)
-            self._loaded = True
-            return
-
-        for file_path in self._search_dir.rglob("*"):
-            if file_path.suffix.lower() not in (".md", ".txt", ".markdown"):
+        loaded_any = False
+        for dir_path in self._search_dirs:
+            if not dir_path.exists():
+                logger.info("LocalFileRag: 目录不存在 %s", dir_path)
                 continue
-            try:
-                content = file_path.read_text(encoding="utf-8")
-            except Exception:
-                continue
+            loaded_any = True
 
-            source_name = str(file_path.relative_to(self._search_dir))
-            # 按 ## 或 # 标题分块
-            sections = _split_by_headings(content)
-            for title, body in sections:
-                if body.strip():
-                    # M10: 提取 metadata
-                    metadata = _extract_metadata(source_name, title, body)
-                    self._chunks.append({
-                        "title": title or file_path.name,
-                        "body": body.strip(),
-                        "source": source_name,
-                        **metadata,
-                    })
+            for file_path in dir_path.rglob("*"):
+                if file_path.suffix.lower() not in (".md", ".txt", ".markdown"):
+                    continue
+                try:
+                    content = file_path.read_text(encoding="utf-8")
+                except Exception:
+                    continue
+
+                # 来源名带上目录名，区分不同知识来源（如 项目资料/xx、company_policies/xx）
+                source_name = f"{dir_path.name}/{file_path.relative_to(dir_path)}"
+                # 按 ## 或 # 标题分块
+                sections = _split_by_headings(content)
+                for title, body in sections:
+                    if body.strip():
+                        # M10: 提取 metadata
+                        metadata = _extract_metadata(source_name, title, body)
+                        self._chunks.append({
+                            "title": title or file_path.name,
+                            "body": body.strip(),
+                            "source": source_name,
+                            **metadata,
+                        })
 
         self._loaded = True
-        logger.info(
-            "LocalFileRag: 已加载 %d 个文本块 (目录: %s)",
-            len(self._chunks), self._search_dir,
-        )
+        if loaded_any:
+            logger.info(
+                "LocalFileRag: 已加载 %d 个文本块 (目录: %s)",
+                len(self._chunks), ", ".join(str(d) for d in self._search_dirs),
+            )
+        else:
+            logger.info("LocalFileRag: 无可用目录，0 文本块")
 
     async def is_available(self) -> bool:
         self._load()

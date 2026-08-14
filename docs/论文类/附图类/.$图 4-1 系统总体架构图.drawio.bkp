@@ -1,0 +1,169 @@
+<mxfile host="Electron" modified="2026-08-14T02:00:00.000Z" agent="EmilyAgentEngine" version="21.0.0" type="device">
+  <diagram id="EmilyOverallArch" name="系统总体架构图">
+    <mxGraphModel dx="1680" dy="1200" grid="1" gridSize="10" guides="1" tooltips="1" connect="1" arrows="1" fold="1" page="1" pageScale="1" pageWidth="1680" pageHeight="1200" background="none" math="0" shadow="0">
+      <root>
+        <mxCell id="0" />
+        <mxCell id="1" parent="0" />
+        <mxCell id="L1" value="L1 接入层" style="swimlane;whiteSpace=wrap;html=1;fillColor=#f8fafc;strokeColor=#94a3b8;fontStyle=1;startSize=28;" vertex="1" parent="1">
+          <mxGeometry x="40" y="40" width="1220" height="120" as="geometry" />
+        </mxCell>
+        <mxCell id="IM" value="IM 渠道（即时通信软件）" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#dbeafe;strokeColor=#3b82f6;fontStyle=1;strokeWidth=1.5;" vertex="1" parent="L1">
+          <mxGeometry x="60" y="40" width="240" height="60" as="geometry" />
+        </mxCell>
+        <mxCell id="PLUGIN" value="薄插件&lt;br&gt;去重 · 标准化 · HTTP 转发 · SSE 监听" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#f1f5f9;strokeColor=#64748b;fontStyle=1;strokeWidth=1.5;" vertex="1" parent="L1">
+          <mxGeometry x="440" y="30" width="380" height="70" as="geometry" />
+        </mxCell>
+        <mxCell id="L2" value="L2 会话层" style="swimlane;whiteSpace=wrap;html=1;fillColor=#eff6ff;strokeColor=#93c5fd;fontStyle=1;startSize=28;" vertex="1" parent="1">
+          <mxGeometry x="40" y="180" width="1220" height="150" as="geometry" />
+        </mxCell>
+        <mxCell id="SA" value="会话智能体 SessionAgent&lt;br&gt;&lt;span style=&quot;font-size:11px&quot;&gt;携带：项目态势书 + 系统能力书&lt;/span&gt;&lt;br&gt;&lt;span style=&quot;font-size:11px&quot;&gt;快回 / 意图识别 / 任务下放 / 回复合成&lt;/span&gt;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#dbeafe;strokeColor=#3b82f6;fontStyle=1;strokeWidth=1.5;" vertex="1" parent="L2">
+          <mxGeometry x="360" y="30" width="500" height="100" as="geometry" />
+        </mxCell>
+        <mxCell id="L3" value="L3 执行层" style="swimlane;whiteSpace=wrap;html=1;fillColor=#faf5ff;strokeColor=#c4b5fd;fontStyle=1;startSize=28;" vertex="1" parent="1">
+          <mxGeometry x="40" y="350" width="1220" height="180" as="geometry" />
+        </mxCell>
+        <mxCell id="WA" value="任务智能体 WorkItemAgent&lt;br&gt;&lt;span style=&quot;font-size:11px&quot;&gt;状态图编排的五节点引擎&lt;/span&gt;&lt;br&gt;&lt;span style=&quot;font-size:11px&quot;&gt;单任务聚焦小型驾驭层&lt;/span&gt;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ddd6fe;strokeColor=#7c3aed;fontStyle=1;strokeWidth=1.5;" vertex="1" parent="L3">
+          <mxGeometry x="120" y="35" width="400" height="120" as="geometry" />
+        </mxCell>
+        <mxCell id="GA" value="审核智能体 GuardianAgent&lt;br&gt;&lt;span style=&quot;font-size:11px&quot;&gt;携带：组织规则书&lt;/span&gt;&lt;br&gt;&lt;span style=&quot;font-size:11px&quot;&gt;执行审核 + 点评&lt;/span&gt;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ddd6fe;strokeColor=#7c3aed;fontStyle=1;strokeWidth=1.5;" vertex="1" parent="L3">
+          <mxGeometry x="700" y="35" width="400" height="120" as="geometry" />
+        </mxCell>
+        <mxCell id="L4" value="L4 知识层" style="swimlane;whiteSpace=wrap;html=1;fillColor=#f0fdf4;strokeColor=#86efac;fontStyle=1;startSize=28;" vertex="1" parent="1">
+          <mxGeometry x="40" y="550" width="1220" height="160" as="geometry" />
+        </mxCell>
+        <mxCell id="SOP" value="SOP 业务流&lt;br&gt;&lt;span style=&quot;font-size:11px&quot;&gt;（持续自更新的工作流集）&lt;/span&gt;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#bbf7d0;strokeColor=#16a34a;fontStyle=1;strokeWidth=1.5;" vertex="1" parent="L4">
+          <mxGeometry x="60" y="40" width="260" height="80" as="geometry" />
+        </mxCell>
+        <mxCell id="EXP" value="专家智能体&lt;br&gt;&lt;span style=&quot;font-size:11px&quot;&gt;（集团管控标准进化体）&lt;/span&gt;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#bbf7d0;strokeColor=#16a34a;fontStyle=1;strokeWidth=1.5;" vertex="1" parent="L4">
+          <mxGeometry x="480" y="40" width="260" height="80" as="geometry" />
+        </mxCell>
+        <mxCell id="RET" value="信息检索&lt;br&gt;&lt;span style=&quot;font-size:11px&quot;&gt;RAG / 文档索引 / 备注标记&lt;/span&gt;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#bbf7d0;strokeColor=#16a34a;fontStyle=1;strokeWidth=1.5;" vertex="1" parent="L4">
+          <mxGeometry x="900" y="40" width="260" height="80" as="geometry" />
+        </mxCell>
+        <mxCell id="L5" value="L5 数据层" style="swimlane;whiteSpace=wrap;html=1;fillColor=#fff7ed;strokeColor=#fdba74;fontStyle=1;startSize=28;" vertex="1" parent="1">
+          <mxGeometry x="40" y="730" width="1220" height="150" as="geometry" />
+        </mxCell>
+        <mxCell id="DB" value="关系型数据库" style="shape=cylinder3;whiteSpace=wrap;html=1;boundedLbl=1;backgroundOutline=1;size=15;fillColor=#fed7aa;strokeColor=#ea580c;fontStyle=1;strokeWidth=1.5;" vertex="1" parent="L5">
+          <mxGeometry x="80" y="40" width="120" height="80" as="geometry" />
+        </mxCell>
+        <mxCell id="NODE" value="全景节点" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#fed7aa;strokeColor=#ea580c;fontStyle=1;strokeWidth=1.5;" vertex="1" parent="L5">
+          <mxGeometry x="320" y="50" width="160" height="60" as="geometry" />
+        </mxCell>
+        <mxCell id="LOG" value="项目日志" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#fed7aa;strokeColor=#ea580c;fontStyle=1;strokeWidth=1.5;" vertex="1" parent="L5">
+          <mxGeometry x="560" y="50" width="160" height="60" as="geometry" />
+        </mxCell>
+        <mxCell id="PERM" value="权限体系 + 声明式拦截器" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#fed7aa;strokeColor=#ea580c;fontStyle=1;strokeWidth=1.5;" vertex="1" parent="L5">
+          <mxGeometry x="820" y="50" width="320" height="60" as="geometry" />
+        </mxCell>
+        <mxCell id="L6" value="L6 自进化机制（贯穿各层）" style="swimlane;whiteSpace=wrap;html=1;fillColor=#fff1f2;strokeColor=#fda4af;dashed=1;fontStyle=1;startSize=28;" vertex="1" parent="1">
+          <mxGeometry x="1280" y="40" width="340" height="840" as="geometry" />
+        </mxCell>
+        <mxCell id="EVO" value="自进化机制&lt;br&gt;&lt;span style=&quot;font-size:11px&quot;&gt;用户反馈信号 → 日洞察 → 规则 → 配置补丁&lt;/span&gt;&lt;br&gt;&lt;span style=&quot;font-size:11px&quot;&gt;三书周期性自更新&lt;/span&gt;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#fecdd3;strokeColor=#e11d48;fontStyle=1;strokeWidth=1.5;" vertex="1" parent="L6">
+          <mxGeometry x="30" y="300" width="280" height="200" as="geometry" />
+        </mxCell>
+        <mxCell id="e1" style="edgeStyle=orthogonalEdgeStyle;rounded=1;orthogonalLoop=1;jettySize=auto;html=1;strokeColor=#334155;strokeWidth=1.5;" edge="1" parent="1" source="IM" target="PLUGIN">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e2" style="edgeStyle=orthogonalEdgeStyle;rounded=1;orthogonalLoop=1;jettySize=auto;html=1;strokeColor=#334155;strokeWidth=1.5;" edge="1" parent="1" source="PLUGIN" target="SA">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e3" value="创建 WorkItem&lt;br&gt;资源范围 + 成果约束" style="edgeStyle=orthogonalEdgeStyle;rounded=1;orthogonalLoop=1;jettySize=auto;html=1;strokeColor=#334155;strokeWidth=1.5;labelBackgroundColor=#ffffff;fontSize=11;" edge="1" parent="1" source="SA" target="WA">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e4" value="产出" style="edgeStyle=orthogonalEdgeStyle;rounded=1;orthogonalLoop=1;jettySize=auto;html=1;strokeColor=#334155;strokeWidth=1.5;labelBackgroundColor=#ffffff;fontSize=11;" edge="1" parent="1" source="WA" target="GA">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e5" value="审核意见回传" style="edgeStyle=orthogonalEdgeStyle;rounded=1;orthogonalLoop=1;jettySize=auto;html=1;strokeColor=#64748b;strokeWidth=1.5;dashed=1;labelBackgroundColor=#ffffff;fontSize=11;" edge="1" parent="1" source="GA" target="SA">
+          <mxGeometry relative="1" as="geometry">
+            <Array as="points">
+              <mxPoint x="1120" y="380" />
+              <mxPoint x="1180" y="380" />
+              <mxPoint x="1180" y="260" />
+              <mxPoint x="880" y="260" />
+            </Array>
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="e6" style="edgeStyle=orthogonalEdgeStyle;rounded=1;orthogonalLoop=1;jettySize=auto;html=1;strokeColor=#334155;strokeWidth=1.5;" edge="1" parent="1" source="WA" target="SOP">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e7" style="edgeStyle=orthogonalEdgeStyle;rounded=1;orthogonalLoop=1;jettySize=auto;html=1;strokeColor=#334155;strokeWidth=1.5;" edge="1" parent="1" source="WA" target="RET">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e8" value="审核请求时按需加载" style="edgeStyle=orthogonalEdgeStyle;rounded=1;orthogonalLoop=1;jettySize=auto;html=1;strokeColor=#16a34a;strokeWidth=1.5;dashed=1;labelBackgroundColor=#ffffff;fontSize=11;" edge="1" parent="1" source="EXP" target="WA">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e9" style="edgeStyle=orthogonalEdgeStyle;rounded=1;orthogonalLoop=1;jettySize=auto;html=1;strokeColor=#334155;strokeWidth=1.5;" edge="1" parent="1" source="SA" target="DB">
+          <mxGeometry relative="1" as="geometry">
+            <Array as="points">
+              <mxPoint x="400" y="330" />
+              <mxPoint x="200" y="330" />
+              <mxPoint x="200" y="730" />
+            </Array>
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="e10" style="edgeStyle=orthogonalEdgeStyle;rounded=1;orthogonalLoop=1;jettySize=auto;html=1;strokeColor=#334155;strokeWidth=1.5;" edge="1" parent="1" source="WA" target="DB">
+          <mxGeometry relative="1" as="geometry">
+            <Array as="points">
+              <mxPoint x="200" y="530" />
+              <mxPoint x="140" y="530" />
+              <mxPoint x="140" y="730" />
+            </Array>
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="e11" style="edgeStyle=orthogonalEdgeStyle;rounded=1;orthogonalLoop=1;jettySize=auto;html=1;strokeColor=#334155;strokeWidth=1.5;" edge="1" parent="1" source="GA" target="DB">
+          <mxGeometry relative="1" as="geometry">
+            <Array as="points">
+              <mxPoint x="900" y="530" />
+              <mxPoint x="180" y="530" />
+              <mxPoint x="180" y="730" />
+            </Array>
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="e12" style="edgeStyle=orthogonalEdgeStyle;rounded=1;orthogonalLoop=1;jettySize=auto;html=1;strokeColor=#334155;strokeWidth=1.5;" edge="1" parent="1" source="DB" target="NODE">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e13" style="edgeStyle=orthogonalEdgeStyle;rounded=1;orthogonalLoop=1;jettySize=auto;html=1;strokeColor=#334155;strokeWidth=1.5;" edge="1" parent="1" source="DB" target="LOG">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e14" style="edgeStyle=orthogonalEdgeStyle;rounded=1;orthogonalLoop=1;jettySize=auto;html=1;strokeColor=#334155;strokeWidth=1.5;dashed=1;endArrow=none;" edge="1" parent="1" source="PERM" target="DB">
+          <mxGeometry relative="1" as="geometry">
+            <Array as="points">
+              <mxPoint x="820" y="80" />
+              <mxPoint x="300" y="80" />
+            </Array>
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="e15" value="更新 SOP / 规则" style="edgeStyle=orthogonalEdgeStyle;rounded=1;orthogonalLoop=1;jettySize=auto;html=1;strokeColor=#e11d48;strokeWidth=1.5;dashed=1;labelBackgroundColor=#ffffff;fontSize=11;" edge="1" parent="1" source="EVO" target="SOP">
+          <mxGeometry relative="1" as="geometry">
+            <Array as="points">
+              <mxPoint x="1280" y="400" />
+              <mxPoint x="1260" y="400" />
+              <mxPoint x="1260" y="590" />
+              <mxPoint x="320" y="590" />
+            </Array>
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="e16" value="更新三书" style="edgeStyle=orthogonalEdgeStyle;rounded=1;orthogonalLoop=1;jettySize=auto;html=1;strokeColor=#e11d48;strokeWidth=1.5;dashed=1;labelBackgroundColor=#ffffff;fontSize=11;" edge="1" parent="1" source="EVO" target="SA">
+          <mxGeometry relative="1" as="geometry">
+            <Array as="points">
+              <mxPoint x="1280" y="350" />
+              <mxPoint x="1260" y="350" />
+              <mxPoint x="1260" y="260" />
+              <mxPoint x="880" y="260" />
+            </Array>
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="e17" value="更新三书" style="edgeStyle=orthogonalEdgeStyle;rounded=1;orthogonalLoop=1;jettySize=auto;html=1;strokeColor=#e11d48;strokeWidth=1.5;dashed=1;labelBackgroundColor=#ffffff;fontSize=11;" edge="1" parent="1" source="EVO" target="GA">
+          <mxGeometry relative="1" as="geometry">
+            <Array as="points">
+              <mxPoint x="1280" y="450" />
+              <mxPoint x="1260" y="450" />
+              <mxPoint x="1260" y="440" />
+              <mxPoint x="1120" y="440" />
+            </Array>
+          </mxGeometry>
+        </mxCell>
+      </root>
+    </mxGraphModel>
+  </diagram>
+</mxfile>

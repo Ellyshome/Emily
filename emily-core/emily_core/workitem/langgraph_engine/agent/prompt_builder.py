@@ -74,6 +74,23 @@ def build_system_prompt(
     data_fields = output_spec.get("data_fields", [])
     data_fields_text = f"\n- 成果数据字段：{data_fields}" if data_fields else ""
 
+    # ── 可达信息来源（告知 LLM 有哪些数据源，而非仅靠 RAG 相似度）──
+    # 四类来源：DB 业务数据库 / 项目文件 / RAG 知识库(项目资料+公司制度) / 人员溯源
+    source_lines: list[str] = []
+    if session_ctx is not None:
+        schema = getattr(session_ctx, "visible_schema_summary", "") or ""
+        if schema:
+            source_lines.append(f"- 业务数据库（query_data 工具）：{schema}")
+        files = getattr(session_ctx, "visible_files_summary", "") or ""
+        if files:
+            source_lines.append(f"- 项目文件（query_files 工具）：{files}")
+        if getattr(session_ctx, "rag_available", False):
+            collections = getattr(session_ctx, "rag_collections", []) or []
+            col_text = "、".join(collections) if collections else "项目资料 + 公司制度"
+            source_lines.append(f"- 知识库（knowledge_search 工具）：{col_text}（项目规范/标准/公司规章制度）")
+        source_lines.append("- 人员溯源：query_data 返回的 trace 字段（谁记录/谁确认/谁负责），追问时可用")
+    sources_text = "\n".join(source_lines) if source_lines else "（无明确数据来源）"
+
     prompt = f"""你是 Emily 的工作执行引擎。你的职责是按工作要求调用工具获取/写入数据，**不要直接回复用户**。
 
 # 你的工作方式（agent loop）
@@ -83,6 +100,9 @@ def build_system_prompt(
 4. 调用工具后，查看 tool_result：成功则继续下一步；失败则根据错误自行调整重试
 5. **完成工作要求后，必须调用 `complete_work` 工具返回结构化成果**（status/summary/data/business_object_no）——禁止用纯文本回复用户，回复由上层组织
 6. **信息不足无法继续时，调用 `ask_user` 工具提问**（由上层转达用户）——不要用 complete_work 返回疑问
+
+# 可达信息来源
+{sources_text}
 
 # 工作要求
 - 目标：{objective or '（按 SOP 指导处理）'}
@@ -103,6 +123,7 @@ def build_system_prompt(
 - 看到 tool_result 报错时，分析原因并调整参数重试，不要原样重试
 - **完成工作必调 complete_work，信息不足必调 ask_user，二者必居其一，不要返回纯文本**
 - summary 字段是给上层组织回复的关键事实，应包含业务编号（如 EVT-xxx）和核心结论
+- **信息溯源到人**：query_data 返回的 `trace` 字段记录了每条信息的 uploader（上传/记录人）、confirmed_by（认证人）、responsible（任务责任人）、host（会议主持人），每个人含 name（姓名）与 position（岗位）。这是系统「把人关联起来」的数据基础。默认不要把它塞进 summary——只在用户追问「这是谁记录的/谁确认的/谁负责的/谁主持的」时，从 trace 中提取对应姓名（及其岗位，如"李景利（工程部经理）"），作为 data 的一部分通过 complete_work 返回（例如 data={{trace: [...]}}）。若 trace 为空或姓名为空，如实说明「系统未记录该信息的上传人」。
 
 # 严格禁止
 - **禁止返回纯文本回复**——你必须调用工具，不要用自然语言回答用户

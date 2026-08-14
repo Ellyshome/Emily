@@ -156,11 +156,16 @@ async def handle_query_data(
         results = query_service.execute(cmd)
         reply = query_service.format_reply(cmd.query_type, results)
 
+        # 溯源到人：附带结构化溯源数据，默认不渲染进 reply 文本，
+        # LLM 在用户追问「谁记录的/谁确认的/谁负责的」时据此回答。
+        trace = query_service.build_trace(cmd.query_type, results.get("items") or [])
+
         return {
             "success": True,
             "query_type": cmd.query_type,
             "total": results.get("total", 0),
             "reply": reply,
+            "trace": trace,
         }
     except Exception as e:
         logger.error("query_data tool failed: %s", e, exc_info=True)

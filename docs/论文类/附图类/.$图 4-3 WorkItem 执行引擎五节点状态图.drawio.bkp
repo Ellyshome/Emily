@@ -1,0 +1,102 @@
+<mxfile host="CanvasApp" version="1.0" type="device">
+  <diagram id="stateDiagram" name="WorkItem 五节点状态图">
+    <mxGraphModel dx="1200" dy="700" grid="1" gridSize="10" guides="1" tooltips="1" connect="1" arrows="1" fold="1" page="1" pageScale="1" pageWidth="1200" pageHeight="600" background="#ffffff" math="0" shadow="0">
+      <root>
+        <mxCell id="0" />
+        <mxCell id="1" parent="0" />
+
+        <!-- 起始圆点 -->
+        <mxCell id="start" value="" style="ellipse;whiteSpace=wrap;html=1;aspect=fixed;fillColor=#334155;strokeColor=#334155;" vertex="1" parent="1">
+          <mxGeometry x="50" y="185" width="24" height="24" as="geometry" />
+        </mxCell>
+
+        <!-- N1 意图补充 -->
+        <mxCell id="N1" value="&lt;b&gt;意图补充&lt;/b&gt;&lt;hr size=&quot;1&quot; color=&quot;#cbd5e1&quot;&gt;&lt;span style=&quot;font-size:11px&quot;&gt;资源范围与成果约束确认&lt;/span&gt;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#f8fafc;strokeColor=#64748b;fontColor=#1e293b;arcSize=8;strokeWidth=1.5;align=center;verticalAlign=middle;spacing=6;" vertex="1" parent="1">
+          <mxGeometry x="140" y="140" width="170" height="110" as="geometry" />
+        </mxCell>
+
+        <!-- N2 计划生成 -->
+        <mxCell id="N2" value="&lt;b&gt;计划生成&lt;/b&gt;&lt;hr size=&quot;1&quot; color=&quot;#cbd5e1&quot;&gt;&lt;span style=&quot;font-size:11px&quot;&gt;任务编排 · 工具与节点路径规划&lt;/span&gt;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#f8fafc;strokeColor=#64748b;fontColor=#1e293b;arcSize=8;strokeWidth=1.5;align=center;verticalAlign=middle;spacing=6;" vertex="1" parent="1">
+          <mxGeometry x="370" y="140" width="200" height="110" as="geometry" />
+        </mxCell>
+
+        <!-- N3 执行 -->
+        <mxCell id="N3" value="&lt;b&gt;执行&lt;/b&gt;&lt;hr size=&quot;1&quot; color=&quot;#cbd5e1&quot;&gt;&lt;span style=&quot;font-size:11px&quot;&gt;结构化输出直调业务工具&lt;/span&gt;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#f8fafc;strokeColor=#64748b;fontColor=#1e293b;arcSize=8;strokeWidth=1.5;align=center;verticalAlign=middle;spacing=6;" vertex="1" parent="1">
+          <mxGeometry x="630" y="140" width="180" height="110" as="geometry" />
+        </mxCell>
+
+        <!-- N4 成果总结 -->
+        <mxCell id="N4" value="&lt;b&gt;成果总结&lt;/b&gt;&lt;hr size=&quot;1&quot; color=&quot;#cbd5e1&quot;&gt;&lt;span style=&quot;font-size:11px&quot;&gt;产出合成 + 回复生成&lt;/span&gt;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#f8fafc;strokeColor=#64748b;fontColor=#1e293b;arcSize=8;strokeWidth=1.5;align=center;verticalAlign=middle;spacing=6;" vertex="1" parent="1">
+          <mxGeometry x="870" y="140" width="170" height="110" as="geometry" />
+        </mxCell>
+
+        <!-- 结束圆点（主路径） -->
+        <mxCell id="end_main" value="" style="ellipse;html=1;shape=endState;fillColor=#334155;strokeColor=#334155;" vertex="1" parent="1">
+          <mxGeometry x="1096" y="183" width="28" height="28" as="geometry" />
+        </mxCell>
+
+        <!-- EA 错误分析 -->
+        <mxCell id="EA" value="&lt;b&gt;错误分析&lt;/b&gt;&lt;hr size=&quot;1&quot; color=&quot;#fcd34d&quot;&gt;&lt;span style=&quot;font-size:11px&quot;&gt;代码预分类 → LLM 归因&lt;/span&gt;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#fef3c7;strokeColor=#d97706;fontColor=#92400e;arcSize=8;strokeWidth=1.5;align=center;verticalAlign=middle;spacing=6;" vertex="1" parent="1">
+          <mxGeometry x="480" y="340" width="200" height="100" as="geometry" />
+        </mxCell>
+
+        <!-- 结束圆点（错误分支） -->
+        <mxCell id="end_ea" value="" style="ellipse;html=1;shape=endState;fillColor=#334155;strokeColor=#334155;" vertex="1" parent="1">
+          <mxGeometry x="566" y="490" width="28" height="28" as="geometry" />
+        </mxCell>
+
+        <!-- 边：start → N1 -->
+        <mxCell id="e1" style="edgeStyle=orthogonalEdgeStyle;rounded=1;orthogonalLoop=1;jettySize=auto;html=1;strokeColor=#334155;strokeWidth=1.5;" edge="1" parent="1" source="start" target="N1">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+
+        <!-- 边：N1 → N2 -->
+        <mxCell id="e2" style="edgeStyle=orthogonalEdgeStyle;rounded=1;orthogonalLoop=1;jettySize=auto;html=1;strokeColor=#334155;strokeWidth=1.5;" edge="1" parent="1" source="N1" target="N2">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+
+        <!-- 边：N2 → N3 -->
+        <mxCell id="e3" style="edgeStyle=orthogonalEdgeStyle;rounded=1;orthogonalLoop=1;jettySize=auto;html=1;strokeColor=#334155;strokeWidth=1.5;" edge="1" parent="1" source="N2" target="N3">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+
+        <!-- 边：N3 → N4 -->
+        <mxCell id="e4" style="edgeStyle=orthogonalEdgeStyle;rounded=1;orthogonalLoop=1;jettySize=auto;html=1;strokeColor=#334155;strokeWidth=1.5;" edge="1" parent="1" source="N3" target="N4">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+
+        <!-- 边：N4 → end_main -->
+        <mxCell id="e5" style="edgeStyle=orthogonalEdgeStyle;rounded=1;orthogonalLoop=1;jettySize=auto;html=1;strokeColor=#334155;strokeWidth=1.5;" edge="1" parent="1" source="N4" target="end_main">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+
+        <!-- 边：N2 → EA 失败 -->
+        <mxCell id="e6" value="失败" style="edgeStyle=orthogonalEdgeStyle;rounded=1;orthogonalLoop=1;jettySize=auto;html=1;strokeColor=#d97706;strokeWidth=1.5;fontColor=#d97706;labelBackgroundColor=#ffffff;fontSize=11;" edge="1" parent="1" source="N2" target="EA">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+
+        <!-- 边：N3 → EA 失败 -->
+        <mxCell id="e7" value="失败" style="edgeStyle=orthogonalEdgeStyle;rounded=1;orthogonalLoop=1;jettySize=auto;html=1;strokeColor=#d97706;strokeWidth=1.5;fontColor=#d97706;labelBackgroundColor=#ffffff;fontSize=11;" edge="1" parent="1" source="N3" target="EA">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+
+        <!-- 边：EA → N2 重试 -->
+        <mxCell id="e8" value="重试（修正建议）" style="edgeStyle=orthogonalEdgeStyle;rounded=1;orthogonalLoop=1;jettySize=auto;html=1;strokeColor=#0284c7;strokeWidth=1.5;fontColor=#0284c7;labelBackgroundColor=#ffffff;fontSize=11;" edge="1" parent="1" source="EA" target="N2">
+          <mxGeometry relative="1" as="geometry">
+            <Array as="points">
+              <mxPoint x="470" y="340" />
+              <mxPoint x="470" y="100" />
+              <mxPoint x="370" y="100" />
+            </Array>
+          </mxGeometry>
+        </mxCell>
+
+        <!-- 边：EA → end_ea 降级/放弃 -->
+        <mxCell id="e9" value="降级 / 放弃" style="edgeStyle=orthogonalEdgeStyle;rounded=1;orthogonalLoop=1;jettySize=auto;html=1;strokeColor=#64748b;strokeWidth=1.5;fontColor=#64748b;labelBackgroundColor=#ffffff;fontSize=11;" edge="1" parent="1" source="EA" target="end_ea">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+
+      </root>
+    </mxGraphModel>
+  </diagram>
+</mxfile>

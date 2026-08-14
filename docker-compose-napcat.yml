@@ -40,13 +40,14 @@ services:
       - EMILY_LLM_API_KEY=${EMILY_LLM_API_KEY:-}
       - EMILY_LLM_BASE_URL=${EMILY_LLM_BASE_URL:-https://api.deepseek.com}
       - EMILY_LLM_MODEL=${EMILY_LLM_MODEL:-deepseek-v4-flash}
-      # ── RAG (pgvector + SiliconFlow Embedding API) ──
+      # ── RAG (pgvector + 本地 TEI Embedding) ──
       - EMILY_KB_ENABLED=true
-      - EMILY_EMBEDDING_API_URL=${EMILY_EMBEDDING_API_URL:-https://api.siliconflow.cn/v1/embeddings}
-      - EMILY_EMBEDDING_API_KEY=${SILICONFLOW_API_KEY:-}
-      - EMILY_EMBEDDING_MODEL=${EMILY_EMBEDDING_MODEL:-BAAI/bge-m3}
-      # ── 本地 TEI 容器（已停用，改用远程 API）──
-      # EMILY_TEI_URL=http://emily-embed:8000
+      # ── 远程 SiliconFlow Embedding（key 失效，临时停用；修好 key 后恢复这三行并注释 EMILY_TEI_URL）──
+      # EMILY_EMBEDDING_API_URL=${EMILY_EMBEDDING_API_URL:-https://api.siliconflow.cn/v1/embeddings}
+      # EMILY_EMBEDDING_API_KEY=${SILICONFLOW_API_KEY:-}
+      # EMILY_EMBEDDING_MODEL=${EMILY_EMBEDDING_MODEL:-BAAI/bge-m3}
+      # ── 本地 TEI 容器（已启用，替代失效的远程 API）──
+      - EMILY_TEI_URL=http://emily-embed:8000
       # ── VLM OCR（共用 SiliconFlow Key）──
       - EMILY_VLM_API_URL=${EMILY_VLM_API_URL:-https://api.siliconflow.cn/v1/chat/completions}
       - EMILY_VLM_API_KEY=${SILICONFLOW_API_KEY:-}
@@ -70,6 +71,7 @@ services:
       - ./emily-data/config:/app/config:ro
       - ./emily-data/mitmproxy/mitmproxy-ca-cert.pem:/app/certs/mitmproxy-ca-cert.pem:ro
       - ./emily-data/baseknowledge:/app/baseknowledge:ro
+      - ./emily-data/company_policies:/app/company_policies:ro
       - ./emily-data/tools:/app/tools:ro
       - ./emily-data/db_seeds:/app/db_seeds:ro
       - ./emily-data/rules:/app/rules:ro
@@ -89,27 +91,26 @@ services:
       - emily_network
     depends_on:
       - emily-postgres
-      # - emily-embed   # 已停用：改用远程 Embedding API
+      - emily-embed
 
-  # ── emily-embed 已停用（本地 BGE-m3 替换为 SiliconFlow Embedding API）──
-  # 如需恢复本地 embedding，取消下面注释并注释掉上方 EMILY_EMBEDDING_API_* 三个环境变量。
-  # emily-embed:
-  #   image: emily-core:latest
-  #   container_name: emily-embed
-  #   ports:
-  #     - "127.0.0.1:8082:8000"
-  #   command: ["python", "-m", "emily_core.infrastructure.embedding.server"]
-  #   environment:
-  #     - EMBEDDING_MODEL_ID=BAAI/bge-m3
-  #     - EMBEDDING_PORT=8000
-  #     - HF_HUB_ENABLE_HF_TRANSFER=1
-  #     - HF_HOME=/app/hf_cache
-  #   volumes:
-  #     - ./emily-data/hf_cache:/app/hf_cache
-  #     - ./emily-core/emily_core:/app/emily_core:ro
-  #   networks:
-  #     - emily_network
-  #   restart: always
+  # ── 本地 TEI Embedding 服务（BGE-m3）──
+  emily-embed:
+    image: emily-core:latest
+    container_name: emily-embed
+    ports:
+      - "127.0.0.1:8082:8000"
+    command: ["python", "-m", "emily_core.infrastructure.embedding.server"]
+    environment:
+      - EMBEDDING_MODEL_ID=BAAI/bge-m3
+      - EMBEDDING_PORT=8000
+      - HF_HUB_ENABLE_HF_TRANSFER=1
+      - HF_HOME=/app/hf_cache
+    volumes:
+      - ./emily-data/hf_cache:/app/hf_cache
+      - ./emily-core/emily_core:/app/emily_core:ro
+    networks:
+      - emily_network
+    restart: always
 
   # ── MaxKB 已关闭（RAG 基座已替换为 pgvector + TEI）──
 

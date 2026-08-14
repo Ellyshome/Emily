@@ -907,7 +907,11 @@ class SessionAgent:
                 journal = EventJournal(path="", enabled=True)
             event_app.set_journal(journal)
 
-            result = event_app.handle_confirmation(event_id=event_id, action=action)
+            # 认证人 = 当前操作者（溯源到人：谁确认的）
+            confirmed_by = getattr(self, "_current_actor", {}).get("user_id") or self.context.user_id
+            result = event_app.handle_confirmation(
+                event_id=event_id, action=action, confirmed_by=confirmed_by,
+            )
             logger.info(
                 "SYS-confirm: event=%s action=%s success=%s",
                 event.event_no, action, result.success,

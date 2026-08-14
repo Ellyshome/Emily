@@ -180,6 +180,22 @@ def init(config_data: dict | None = None, rag_provider=None) -> "EmilyCore":
         except Exception as e:
             _logger.warning("PgVector RAG provider init failed: %s", e)
 
+    # 降级：pgvector 不可用（无 embedding client / 未配置远程 API）→ 本地关键词检索兜底。
+    # 多来源目录：项目资料（规范/指南）+ 公司制度（company_policies），使 LLM 能综合
+    # 「项目经验 + 规章制度」两类知识，而非仅单一 RAG 相似度检索。
+    if rag_provider is None and config.kb_enabled:
+        try:
+            from .providers.rag.local_fallback import LocalFileRagProvider
+            search_dirs = _resolve_local_rag_dirs(config)
+            if search_dirs:
+                rag_provider = LocalFileRagProvider(search_dirs)
+                _logger.info("LocalFile RAG fallback created (dirs=%d): %s",
+                             len(search_dirs), search_dirs)
+            else:
+                _logger.warning("LocalFile RAG fallback: no search dir found")
+        except Exception as e:
+            _logger.warning("LocalFile RAG fallback init failed: %s", e)
+
     # VLM client 初始化（OCR 用）
     vlm_client = None
     if config.vlm_api_key:
@@ -256,6 +272,45 @@ def init(config_data: dict | None = None, rag_provider=None) -> "EmilyCore":
         pass  # 无事件循环时跳过
 
     return core
+
+
+def _resolve_local_rag_dirs(config: Config) -> list[str]:
+    """解析本地 RAG 检索目录（多来源：项目资料 + 公司制度）。
+
+    路径优先级：容器内 /app 挂载 > 环境变量 > 宿主机开发路径。
+    返回存在的目录列表，用于 LocalFileRagProvider 多目录检索。
+    """
+    candidates: list[str] = []
+
+    # 公司制度仓库（新来源）
+    env_policy_dir = os.environ.get("EMILY_COMPANY_POLICY_DIR", "")
+    if env_policy_dir:
+        candidates.append(env_policy_dir)
+    candidates.append("/app/company_policies")
+
+    # 项目资料（既有来源）
+    if config.kb_local_fallback_dir:
+        candidates.append(config.kb_local_fallback_dir)
+    candidates.append("/app/baseknowledge/项目资料")
+    candidates.append("/app/baseknowledge")
+
+    # 宿主机开发回退
+    dev_root = Path(__file__).resolve().parents[2]  # Emily/ 项目根
+    candidates.append(str(dev_root / "emily-data" / "company_policies"))
+    candidates.append(str(dev_root / "emily-data" / "baseknowledge" / "项目资料"))
+    candidates.append(str(dev_root / "emily-data" / "baseknowledge"))
+
+    # 去重 + 仅保留存在目录
+    seen: set[str] = set()
+    result: list[str] = []
+    for c in candidates:
+        c = str(c).strip()
+        if not c or c in seen:
+            continue
+        seen.add(c)
+        if Path(c).exists():
+            result.append(c)
+    return result
 
 
 def _check_base_tools_readiness(rag_provider) -> list[dict]:

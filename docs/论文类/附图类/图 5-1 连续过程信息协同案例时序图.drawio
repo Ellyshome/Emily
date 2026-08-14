@@ -1,0 +1,115 @@
+<mxfile host="CanvasApp" version="1.0" type="device">
+  <diagram id="Continuous_Case_Swimlane" name="连续过程信息协同案例泳道图">
+    <mxGraphModel dx="1400" dy="900" grid="1" gridSize="10" guides="1" tooltips="1" connect="1" arrows="1" fold="1" page="1" pageScale="1" pageWidth="1500" pageHeight="800" background="#ffffff" math="0" shadow="0">
+      <root>
+        <mxCell id="0" />
+        <mxCell id="1" parent="0" />
+
+        <!-- ============ 泳道背景（底层） ============ -->
+        <mxCell id="bg_pm" value="" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#eff6ff;strokeColor=#bfdbfe;strokeWidth=1;opacity=60;" vertex="1" parent="1">
+          <mxGeometry x="20" y="100" width="1440" height="110" as="geometry" />
+        </mxCell>
+        <mxCell id="bg_ds" value="" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#f0fdf4;strokeColor=#bbf7d0;strokeWidth=1;opacity=60;" vertex="1" parent="1">
+          <mxGeometry x="20" y="230" width="1440" height="110" as="geometry" />
+        </mxCell>
+        <mxCell id="bg_en" value="" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#fefce8;strokeColor=#fde68a;strokeWidth=1;opacity=60;" vertex="1" parent="1">
+          <mxGeometry x="20" y="360" width="1440" height="110" as="geometry" />
+        </mxCell>
+        <mxCell id="bg_dir" value="" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#f5f3ff;strokeColor=#ddd6fe;strokeWidth=1;opacity=60;" vertex="1" parent="1">
+          <mxGeometry x="20" y="490" width="1440" height="110" as="geometry" />
+        </mxCell>
+        <mxCell id="bg_base" value="" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#f8fafc;strokeColor=#cbd5e1;strokeWidth=1;" vertex="1" parent="1">
+          <mxGeometry x="20" y="640" width="1440" height="90" as="geometry" />
+        </mxCell>
+
+        <!-- ============ 泳道标题方块 ============ -->
+        <mxCell id="lane_pm" value="&lt;b&gt;项目经理&lt;/b&gt;&lt;br&gt;&lt;span style=&quot;font-size:10px&quot;&gt;张正宏&lt;/span&gt;" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#e0f2fe;strokeColor=#0284c7;fontColor=#0c4a6e;fontSize=12;verticalAlign=middle;align=center;strokeWidth=1.5;" vertex="1" parent="1">
+          <mxGeometry x="20" y="100" width="140" height="110" as="geometry" />
+        </mxCell>
+        <mxCell id="lane_ds" value="&lt;b&gt;设计负责人&lt;/b&gt;&lt;br&gt;&lt;span style=&quot;font-size:10px&quot;&gt;赵明远&lt;/span&gt;" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#dcfce7;strokeColor=#16a34a;fontColor=#14532d;fontSize=12;verticalAlign=middle;align=center;strokeWidth=1.5;" vertex="1" parent="1">
+          <mxGeometry x="20" y="230" width="140" height="110" as="geometry" />
+        </mxCell>
+        <mxCell id="lane_en" value="&lt;b&gt;工程负责人&lt;/b&gt;&lt;br&gt;&lt;span style=&quot;font-size:10px&quot;&gt;李景利&lt;/span&gt;" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#fef9c3;strokeColor=#ca8a04;fontColor=#713f12;fontSize=12;verticalAlign=middle;align=center;strokeWidth=1.5;" vertex="1" parent="1">
+          <mxGeometry x="20" y="360" width="140" height="110" as="geometry" />
+        </mxCell>
+        <mxCell id="lane_dir" value="&lt;b&gt;项目总监&lt;/b&gt;&lt;br&gt;&lt;span style=&quot;font-size:10px&quot;&gt;王建国（未参与）&lt;/span&gt;" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#ede9fe;strokeColor=#7c3aed;fontColor=#4c1d95;fontSize=12;verticalAlign=middle;align=center;strokeWidth=1.5;" vertex="1" parent="1">
+          <mxGeometry x="20" y="490" width="140" height="110" as="geometry" />
+        </mxCell>
+        <mxCell id="lane_base" value="&lt;b&gt;Emily 系统&lt;/b&gt;&lt;br&gt;&lt;span style=&quot;font-size:10px&quot;&gt;项目数据底座&lt;/span&gt;" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#f1f5f9;strokeColor=#64748b;fontColor=#1e293b;fontSize=12;verticalAlign=middle;align=center;strokeWidth=1.5;" vertex="1" parent="1">
+          <mxGeometry x="20" y="640" width="140" height="90" as="geometry" />
+        </mxCell>
+
+        <!-- ============ 时间轴标签 ============ -->
+        <mxCell id="tline" style="line;strokeWidth=1;strokeColor=#cbd5e1;html=1;" vertex="1" parent="1">
+          <mxGeometry x="200" y="70" width="1250" height="1" as="geometry" />
+        </mxCell>
+        <mxCell id="time1" value="Day 1" style="text;html=1;align=center;verticalAlign=middle;fontSize=12;fontColor=#64748b;fontStyle=1;" vertex="1" parent="1">
+          <mxGeometry x="265" y="40" width="80" height="25" as="geometry" />
+        </mxCell>
+        <mxCell id="time2" value="Day 3" style="text;html=1;align=center;verticalAlign=middle;fontSize=12;fontColor=#64748b;fontStyle=1;" vertex="1" parent="1">
+          <mxGeometry x="525" y="40" width="80" height="25" as="geometry" />
+        </mxCell>
+        <mxCell id="time3" value="Day 5" style="text;html=1;align=center;verticalAlign=middle;fontSize=12;fontColor=#64748b;fontStyle=1;" vertex="1" parent="1">
+          <mxGeometry x="785" y="40" width="80" height="25" as="geometry" />
+        </mxCell>
+        <mxCell id="time4" value="Day 7" style="text;html=1;align=center;verticalAlign=middle;fontSize=12;fontColor=#64748b;fontStyle=1;" vertex="1" parent="1">
+          <mxGeometry x="1045" y="40" width="80" height="25" as="geometry" />
+        </mxCell>
+        <mxCell id="time5" value="Day 8+" style="text;html=1;align=center;verticalAlign=middle;fontSize=12;fontColor=#64748b;fontStyle=1;" vertex="1" parent="1">
+          <mxGeometry x="1305" y="40" width="80" height="25" as="geometry" />
+        </mxCell>
+
+        <!-- ============ 事件节点（落入对应角色泳道） ============ -->
+        <mxCell id="E1" value="&lt;b&gt;事件 E1&lt;/b&gt;&lt;hr size=&quot;1&quot; color=&quot;#cbd5e1&quot;&gt;&lt;span style=&quot;font-size:11px&quot;&gt;铺装颜色与效果图差异大&lt;br&gt;quality_issue · 锚点&lt;/span&gt;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#fef3c7;strokeColor=#d97706;fontColor=#92400e;arcSize=8;strokeWidth=2;align=center;verticalAlign=middle;spacing=6;" vertex="1" parent="1">
+          <mxGeometry x="200" y="113" width="210" height="84" as="geometry" />
+        </mxCell>
+        <mxCell id="E2" value="&lt;b&gt;事件 E2&lt;/b&gt;&lt;hr size=&quot;1&quot; color=&quot;#cbd5e1&quot;&gt;&lt;span style=&quot;font-size:11px&quot;&gt;铺装色差系材料批次&lt;br&gt;decision&lt;/span&gt;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#64748b;fontColor=#1e293b;arcSize=8;strokeWidth=1.5;align=center;verticalAlign=middle;spacing=6;" vertex="1" parent="1">
+          <mxGeometry x="460" y="243" width="210" height="84" as="geometry" />
+        </mxCell>
+        <mxCell id="E3" value="&lt;b&gt;事件 E3&lt;/b&gt;&lt;hr size=&quot;1&quot; color=&quot;#cbd5e1&quot;&gt;&lt;span style=&quot;font-size:11px&quot;&gt;铺装样品重新送样&lt;br&gt;quality_issue&lt;/span&gt;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#64748b;fontColor=#1e293b;arcSize=8;strokeWidth=1.5;align=center;verticalAlign=middle;spacing=6;" vertex="1" parent="1">
+          <mxGeometry x="720" y="373" width="210" height="84" as="geometry" />
+        </mxCell>
+        <mxCell id="E4" value="&lt;b&gt;事件 E4&lt;/b&gt;&lt;hr size=&quot;1&quot; color=&quot;#cbd5e1&quot;&gt;&lt;span style=&quot;font-size:11px&quot;&gt;样板区铺装定样&lt;br&gt;decision · 闭环&lt;/span&gt;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#fef3c7;strokeColor=#d97706;fontColor=#92400e;arcSize=8;strokeWidth=2;align=center;verticalAlign=middle;spacing=6;" vertex="1" parent="1">
+          <mxGeometry x="980" y="113" width="210" height="84" as="geometry" />
+        </mxCell>
+        <mxCell id="Q" value="&lt;b&gt;回溯查询&lt;/b&gt;&lt;hr size=&quot;1&quot; color=&quot;#bbf7d0&quot;&gt;&lt;span style=&quot;font-size:11px&quot;&gt;铺装问题后来怎么处理的？&lt;br&gt;（未参与人提问）&lt;/span&gt;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#dcfce7;strokeColor=#16a34a;fontColor=#14532d;arcSize=8;strokeWidth=2;align=center;verticalAlign=middle;spacing=6;" vertex="1" parent="1">
+          <mxGeometry x="1240" y="503" width="210" height="84" as="geometry" />
+        </mxCell>
+
+        <!-- ============ 事件关联链（核心信息，橙色虚线） ============ -->
+        <mxCell id="rel_E2E1" value="关联 E1" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;strokeColor=#d97706;strokeWidth=1.5;dashed=1;fontColor=#d97706;fontSize=10;labelBackgroundColor=#ffffff;" edge="1" parent="1" source="E2" target="E1">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="rel_E3E1" value="关联 E1" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;strokeColor=#d97706;strokeWidth=1.5;dashed=1;fontColor=#d97706;fontSize=10;labelBackgroundColor=#ffffff;" edge="1" parent="1" source="E3" target="E1">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="rel_E4E1" value="显式关联 E1" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;strokeColor=#d97706;strokeWidth=1.5;dashed=1;fontColor=#d97706;fontSize=10;labelBackgroundColor=#ffffff;" edge="1" parent="1" source="E4" target="E1">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="rel_E4E3" value="自动补全关联 E3" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;strokeColor=#d97706;strokeWidth=1.5;dashed=1;fontColor=#d97706;fontSize=10;labelBackgroundColor=#ffffff;" edge="1" parent="1" source="E4" target="E3">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+
+        <!-- ============ 回溯查询线（绿色） ============ -->
+        <mxCell id="rel_Q" value="还原 E1→E2→E3→E4 完整时间线" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;strokeColor=#16a34a;strokeWidth=2;dashed=1;fontColor=#14532d;fontSize=10;labelBackgroundColor=#ffffff;" edge="1" parent="1" source="Q" target="E4">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+
+        <!-- ============ 数据底座汇聚（淡灰虚线） ============ -->
+        <mxCell id="base_E1" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;strokeColor=#cbd5e1;strokeWidth=1;dashed=1;" edge="1" parent="1" source="E1" target="lane_base">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="base_E2" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;strokeColor=#cbd5e1;strokeWidth=1;dashed=1;" edge="1" parent="1" source="E2" target="lane_base">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="base_E3" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;strokeColor=#cbd5e1;strokeWidth=1;dashed=1;" edge="1" parent="1" source="E3" target="lane_base">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="base_E4" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;strokeColor=#cbd5e1;strokeWidth=1;dashed=1;" edge="1" parent="1" source="E4" target="lane_base">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+
+      </root>
+    </mxGraphModel>
+  </diagram>
+</mxfile>

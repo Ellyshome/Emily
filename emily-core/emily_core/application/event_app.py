@@ -107,18 +107,20 @@ class EventApplication:
         self,
         event_id: str,
         action: str,
+        confirmed_by: Optional[str] = None,
     ) -> HandlerResult:
         """处理用户对 pending 事件的确认/取消。
 
         Args:
             event_id: 事件 UUID
             action: "confirm" 或 "cancel"
+            confirmed_by: 认证人 UUID（确认时写入 events.confirmed_by，溯源到人）
 
         Returns:
             HandlerResult: 处理结果
         """
         if action == "confirm":
-            event = self.event_service.confirm_event(event_id)
+            event = self.event_service.confirm_event(event_id, confirmed_by=confirmed_by)
             if event:
                 # 写入项目日志
                 if self._journal is not None:
