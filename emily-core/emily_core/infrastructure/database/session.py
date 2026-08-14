@@ -89,6 +89,9 @@ def _ensure_columns(engine) -> list[dict]:
             ("parent_node_id", "VARCHAR(100)", "''"),
             ("child_weight", "VARCHAR", "'1.0000'"),
         ],
+        "events": [
+            ("confirmed_by", "VARCHAR", "NULL"),
+        ],
     }
 
     from sqlalchemy import text as sa_text

@@ -117,14 +117,16 @@ class EventRepository:
             return session.query(Event).filter(Event.event_no == event_no).first()
 
     @staticmethod
-    def update_status(event_id: str, status: str) -> None:
-        """更新事件状态。"""
+    def update_status(event_id: str, status: str, confirmed_by: Optional[str] = None) -> None:
+        """更新事件状态。确认时可记录认证人（溯源到人）。"""
         with get_session() as session:
             event = session.query(Event).filter(Event.id == event_id).first()
             if event:
                 event.status = status
                 if status == "confirmed":
                     event.confirmed_at = datetime.now(timezone.utc).isoformat()
+                    if confirmed_by:
+                        event.confirmed_by = confirmed_by
                 logger.info(
                     "Event status updated: id=%s, status=%s", event_id, status,
                 )

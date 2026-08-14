@@ -70,11 +70,12 @@ class EventService:
         )
         return event
 
-    def confirm_event(self, event_id: str) -> Optional[Event]:
+    def confirm_event(self, event_id: str, confirmed_by: Optional[str] = None) -> Optional[Event]:
         """确认事件（pending → confirmed）。
 
         Args:
             event_id: 事件 UUID
+            confirmed_by: 认证人 UUID（溯源到人；谁确认的）
 
         Returns:
             Event: 更新后的事件，或 None（找不到/非 pending）
@@ -87,7 +88,7 @@ class EventService:
             logger.warning("Event not pending: id=%s, status=%s", event_id, event.status)
             return None
 
-        self.repo.update_status(event_id, "confirmed")
+        self.repo.update_status(event_id, "confirmed", confirmed_by=confirmed_by)
         logger.info("Event confirmed: id=%s", event_id)
         return self.repo.get_by_id(event_id)
 

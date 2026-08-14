@@ -235,6 +235,101 @@ class QueryService:
                 "total": 0,
             }
 
+    # ── 溯源到人 ──
+
+    def build_trace(self, query_type: str, items: list) -> list[dict]:
+        """构建查询结果的「信息溯源到人」结构化数据。
+
+        供 handle_query_data 附带在返回结果中，默认不渲染进回复文本；
+        LLM 在用户追问「谁记录的 / 谁确认的 / 谁负责的」时据此回答。
+
+        溯源字段（三层，对应人员关联纽带基础）：
+        - uploader：信息上传/记录人（谁提供的信息）
+        - confirmed_by：认证人（谁确认该信息生效）
+        - responsible：责任人（任务 owner）
+        - host：主持人（会议 host_id）
+
+        每个溯源人含 id / name / position，使「人→人关联」不仅返回姓名，
+        还附带其岗位，让查询者知道可向谁、以什么身份进一步核实。
+
+        Returns:
+            list[dict]，每条对应一个业务对象，含 no/title + 各溯源人的身份。
+            解析不到时字段值为 ""（fail-open，不阻断查询）。
+        """
+        if query_type not in ("event", "task", "meeting"):
+            return []
+
+        # 收集所有需解析的用户 id，一次性解析为身份信息（避免 N+1 逐条查询）
+        user_ids: set[str] = set()
+        for it in items or []:
+            for attr in ("user_id", "confirmed_by", "owner_id", "created_by", "host_id"):
+                uid = getattr(it, attr, None) or ""
+                if uid:
+                    user_ids.add(uid)
+
+        info_map = self._resolve_user_info(user_ids)
+
+        traces: list[dict] = []
+        for it in items or []:
+            def _p(attr):
+                uid = getattr(it, attr, None) or ""
+                info = info_map.get(uid, {})
+                return {"id": uid, "name": info.get("name", ""),
+                        "position": info.get("position", "")} if uid else \
+                       {"id": "", "name": "", "position": ""}
+
+            if query_type == "event":
+                traces.append({
+                    "no": getattr(it, "event_no", "") or "",
+                    "title": getattr(it, "title", "") or "",
+                    "uploader": _p("user_id"),
+                    "confirmed_by": _p("confirmed_by"),
+                })
+            elif query_type == "task":
+                traces.append({
+                    "no": getattr(it, "task_no", "") or "",
+                    "title": getattr(it, "title", "") or "",
+                    "uploader": _p("created_by"),
+                    "responsible": _p("owner_id"),
+                })
+            elif query_type == "meeting":
+                traces.append({
+                    "no": getattr(it, "meeting_no", "") or "",
+                    "title": getattr(it, "title", "") or "",
+                    "uploader": _p("created_by"),
+                    "host": _p("host_id"),
+                })
+        return traces
+
+    def _resolve_user_info(self, user_ids: set[str]) -> dict[str, dict]:
+        """批量解析 user_id → {name, position}。fail-open：单个失败返回空。"""
+        result: dict[str, dict] = {}
+        for uid in user_ids:
+            try:
+                u = self.user_repo.get(uid)
+                if u:
+                    result[uid] = {
+                        "name": u.username or "",
+                        "position": self._format_position(getattr(u, "position", "") or ""),
+                    }
+            except Exception as e:
+                logger.debug("resolve_user_info failed for %s: %s", uid, e)
+        return result
+
+    @staticmethod
+    def _format_position(position_raw: str) -> str:
+        """解析 users.position JSON 数组字符串，拼接为顿号分隔的岗位名。"""
+        if not position_raw or position_raw == "[]":
+            return ""
+        try:
+            import json as _json
+            positions = _json.loads(position_raw)
+            if isinstance(positions, list):
+                return "、".join(str(p) for p in positions if p)
+        except (ValueError, TypeError):
+            return ""
+        return ""
+
     # ── 业务对象查询 ──
 
     def query_events(
