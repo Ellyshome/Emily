@@ -1,0 +1,191 @@
+<mxfile host="Electron" modified="2026-08-18T00:00:00.000Z" agent="EmilyAgentEngine" version="21.0.0" type="device">
+  <diagram id="fig4-2" name="图4-2">
+    <mxGraphModel dx="1400" dy="700" grid="1" gridSize="10" guides="1" tooltips="1" connect="1" arrows="1" fold="1" page="1" pageScale="1" pageWidth="1169" pageHeight="600" math="0" shadow="0">
+      <root>
+        <mxCell id="0" />
+        <mxCell id="1" parent="0" />
+
+        <!-- 左侧：用户 + IM -->
+        <mxCell id="user" value="团队成员" style="shape=umlActor;verticalLabelPosition=bottom;verticalAlign=top;html=1;outlineConnect=0;fillColor=#f5f5f5;strokeColor=#666666;fontSize=11" vertex="1" parent="1">
+          <mxGeometry x="40" y="120" width="30" height="60" as="geometry" />
+        </mxCell>
+        <mxCell id="im" value="IM 渠道" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#f5f5f5;strokeColor=#999999;fontSize=11;align=center;verticalAlign=middle" vertex="1" parent="1">
+          <mxGeometry x="100" y="130" width="90" height="40" as="geometry" />
+        </mxCell>
+        <mxCell id="plugin" value="薄插件&#xa;去重 · 标准化" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#f5f5f5;strokeColor=#999999;fontSize=10;align=center;verticalAlign=middle" vertex="1" parent="1">
+          <mxGeometry x="210" y="125" width="110" height="50" as="geometry" />
+        </mxCell>
+
+        <!-- 箭头：用户→IM→插件 -->
+        <mxCell id="arr-u-im" value="" style="endArrow=classic;html=1;rounded=0;strokeWidth=1.5" edge="1" parent="1">
+          <mxGeometry relative="1" as="geometry">
+            <mxPoint x="70" y="150" as="sourcePoint" />
+            <mxPoint x="100" y="150" as="targetPoint" />
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="arr-im-p" value="" style="endArrow=classic;html=1;rounded=0;strokeWidth=1.5" edge="1" parent="1">
+          <mxGeometry relative="1" as="geometry">
+            <mxPoint x="190" y="150" as="sourcePoint" />
+            <mxPoint x="210" y="150" as="targetPoint" />
+          </mxGeometry>
+        </mxCell>
+
+        <!-- 会话智能体 -->
+        <mxCell id="sa" value="会话智能体 SessionAgent&#xa;【前台组织】&#xa;意图识别 · 复合请求拆解" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#dae8fc;strokeColor=#6c8ebf;fontSize=11;align=center;verticalAlign=middle" vertex="1" parent="1">
+          <mxGeometry x="350" y="115" width="200" height="70" as="geometry" />
+        </mxCell>
+        <mxCell id="arr-p-sa" value="" style="endArrow=classic;html=1;rounded=0;strokeWidth=1.5" edge="1" parent="1">
+          <mxGeometry relative="1" as="geometry">
+            <mxPoint x="320" y="150" as="sourcePoint" />
+            <mxPoint x="350" y="150" as="targetPoint" />
+          </mxGeometry>
+        </mxCell>
+
+        <!-- 快速通道判断 -->
+        <mxCell id="dec-fast" value="快速通道？&#xa;问候/致谢/告别" style="rhombus;whiteSpace=wrap;html=1;fillColor=#fff2cc;strokeColor=#d6b656;fontSize=10;align=center;verticalAlign=middle" vertex="1" parent="1">
+          <mxGeometry x="580" y="120" width="110" height="60" as="geometry" />
+        </mxCell>
+        <mxCell id="arr-sa-fast" value="" style="endArrow=classic;html=1;rounded=0;strokeWidth=1.5" edge="1" parent="1">
+          <mxGeometry relative="1" as="geometry">
+            <mxPoint x="550" y="150" as="sourcePoint" />
+            <mxPoint x="580" y="150" as="targetPoint" />
+          </mxGeometry>
+        </mxCell>
+
+        <!-- 快速通道：直接应答 -->
+        <mxCell id="fast-reply" value="直接应答&#xa;（同步返回）" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#e1d5e7;strokeColor=#9673a6;fontSize=10;align=center;verticalAlign=middle" vertex="1" parent="1">
+          <mxGeometry x="720" y="40" width="120" height="45" as="geometry" />
+        </mxCell>
+        <mxCell id="arr-fast-yes" value="是" style="endArrow=classic;html=1;rounded=0;strokeWidth=1.5;edgeStyle=orthogonalEdgeStyle" edge="1" parent="1">
+          <mxGeometry relative="1" as="geometry">
+            <mxPoint x="635" y="120" as="sourcePoint" />
+            <mxPoint x="780" y="85" as="targetPoint" />
+            <Array as="points">
+              <mxPoint x="635" y="62" />
+              <mxPoint x="720" y="62" />
+            </Array>
+          </mxGeometry>
+        </mxCell>
+
+        <!-- 复合请求判断 -->
+        <mxCell id="dec-compound" value="复合请求？" style="rhombus;whiteSpace=wrap;html=1;fillColor=#fff2cc;strokeColor=#d6b656;fontSize=10;align=center;verticalAlign=middle" vertex="1" parent="1">
+          <mxGeometry x="720" y="120" width="100" height="60" as="geometry" />
+        </mxCell>
+        <mxCell id="arr-fast-no" value="否" style="endArrow=classic;html=1;rounded=0;strokeWidth=1.5" edge="1" parent="1">
+          <mxGeometry relative="1" as="geometry">
+            <mxPoint x="690" y="150" as="sourcePoint" />
+            <mxPoint x="720" y="150" as="targetPoint" />
+          </mxGeometry>
+        </mxCell>
+
+        <!-- 是：拆解为N个WorkItem -->
+        <mxCell id="split-n" value="拆解为 N 个 WorkItem" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#d5e8d4;strokeColor=#82b366;fontSize=10;align=center;verticalAlign=middle" vertex="1" parent="1">
+          <mxGeometry x="850" y="60" width="130" height="45" as="geometry" />
+        </mxCell>
+        <mxCell id="arr-compound-yes" value="是" style="endArrow=classic;html=1;rounded=0;strokeWidth=1.5" edge="1" parent="1">
+          <mxGeometry relative="1" as="geometry">
+            <mxPoint x="770" y="120" as="sourcePoint" />
+            <mxPoint x="915" y="105" as="targetPoint" />
+          </mxGeometry>
+        </mxCell>
+
+        <!-- 否：创建1个WorkItem -->
+        <mxCell id="split-1" value="创建 1 个 WorkItem" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#d5e8d4;strokeColor=#82b366;fontSize=10;align=center;verticalAlign=middle" vertex="1" parent="1">
+          <mxGeometry x="850" y="180" width="130" height="45" as="geometry" />
+        </mxCell>
+        <mxCell id="arr-compound-no" value="否" style="endArrow=classic;html=1;rounded=0;strokeWidth=1.5" edge="1" parent="1">
+          <mxGeometry relative="1" as="geometry">
+            <mxPoint x="770" y="180" as="sourcePoint" />
+            <mxPoint x="915" y="202" as="targetPoint" />
+          </mxGeometry>
+        </mxCell>
+
+        <!-- 任务智能体 -->
+        <mxCell id="wa" value="任务智能体 WorkItemAgent&#xa;【中台执行】&#xa;结构化输出优先 · 五节点流转" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#d5e8d4;strokeColor=#82b366;fontSize=11;align=center;verticalAlign=middle" vertex="1" parent="1">
+          <mxGeometry x="350" y="260" width="220" height="65" as="geometry" />
+        </mxCell>
+        <mxCell id="arr-split-wa" value="" style="endArrow=classic;html=1;rounded=0;strokeWidth=1.5;edgeStyle=orthogonalEdgeStyle" edge="1" parent="1">
+          <mxGeometry relative="1" as="geometry">
+            <mxPoint x="915" y="225" as="sourcePoint" />
+            <mxPoint x="460" y="260" as="targetPoint" />
+            <Array as="points">
+              <mxPoint x="915" y="250" />
+              <mxPoint x="460" y="250" />
+            </Array>
+          </mxGeometry>
+        </mxCell>
+
+        <!-- 审核智能体 -->
+        <mxCell id="ga" value="审核智能体 GuardianAgent&#xa;【后台审核】&#xa;越权 · 合规 · 成果约束" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffe6cc;strokeColor=#d79b00;fontSize=11;align=center;verticalAlign=middle" vertex="1" parent="1">
+          <mxGeometry x="620" y="260" width="220" height="65" as="geometry" />
+        </mxCell>
+        <mxCell id="arr-wa-ga" value="执行产出" style="endArrow=classic;html=1;rounded=0;strokeWidth=1.5" edge="1" parent="1">
+          <mxGeometry relative="1" as="geometry">
+            <mxPoint x="570" y="292" as="sourcePoint" />
+            <mxPoint x="620" y="292" as="targetPoint" />
+          </mxGeometry>
+        </mxCell>
+
+        <!-- 审核回传 -->
+        <mxCell id="arr-ga-sa" value="审核意见回传" style="endArrow=classic;html=1;rounded=0;strokeWidth=1.5;strokeColor=#d79b00;dashed=1;dashPattern=6 3;edgeStyle=orthogonalEdgeStyle" edge="1" parent="1">
+          <mxGeometry relative="1" as="geometry">
+            <mxPoint x="730" y="260" as="sourcePoint" />
+            <mxPoint x="450" y="185" as="targetPoint" />
+            <Array as="points">
+              <mxPoint x="730" y="230" />
+              <mxPoint x="450" y="230" />
+            </Array>
+          </mxGeometry>
+        </mxCell>
+
+        <!-- 回复合成 -->
+        <mxCell id="syn" value="回复合成" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#dae8fc;strokeColor=#6c8ebf;fontSize=10;align=center;verticalAlign=middle" vertex="1" parent="1">
+          <mxGeometry x="100" y="270" width="90" height="40" as="geometry" />
+        </mxCell>
+        <mxCell id="arr-sa-syn" value="" style="endArrow=classic;html=1;rounded=0;strokeWidth=1.5;edgeStyle=orthogonalEdgeStyle" edge="1" parent="1">
+          <mxGeometry relative="1" as="geometry">
+            <mxPoint x="350" y="185" as="sourcePoint" />
+            <mxPoint x="145" y="270" as="targetPoint" />
+            <Array as="points">
+              <mxPoint x="145" y="185" />
+              <mxPoint x="145" y="270" />
+            </Array>
+          </mxGeometry>
+        </mxCell>
+
+        <!-- SSE推送 -->
+        <mxCell id="sse" value="SSE 推送" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#f5f5f5;strokeColor=#999999;fontSize=10;align=center;verticalAlign=middle" vertex="1" parent="1">
+          <mxGeometry x="100" y="330" width="90" height="35" as="geometry" />
+        </mxCell>
+        <mxCell id="arr-syn-sse" value="" style="endArrow=classic;html=1;rounded=0;strokeWidth=1.5" edge="1" parent="1">
+          <mxGeometry relative="1" as="geometry">
+            <mxPoint x="145" y="310" as="sourcePoint" />
+            <mxPoint x="145" y="330" as="targetPoint" />
+          </mxGeometry>
+        </mxCell>
+
+        <!-- 返回用户 -->
+        <mxCell id="arr-sse-u" value="回复用户" style="endArrow=classic;html=1;rounded=0;strokeWidth=1.5;edgeStyle=orthogonalEdgeStyle" edge="1" parent="1">
+          <mxGeometry relative="1" as="geometry">
+            <mxPoint x="100" y="347" as="sourcePoint" />
+            <mxPoint x="55" y="180" as="targetPoint" />
+            <Array as="points">
+              <mxPoint x="55" y="347" />
+              <mxPoint x="55" y="180" />
+            </Array>
+          </mxGeometry>
+        </mxCell>
+
+        <!-- 底部说明 -->
+        <mxCell id="note" value="三智能体形成「前台组织—中台执行—后台审核」三层分工，对应地产项目管理「条线制衡」逻辑——执行与审核分离，AI行为天然对齐组织管控要求。" style="text;html=1;strokeColor=none;fillColor=none;align=center;verticalAlign=middle;whiteSpace=wrap;rounded=0;fontSize=10;fontColor=#666666" vertex="1" parent="1">
+          <mxGeometry x="200" y="380" width="600" height="30" as="geometry" />
+        </mxCell>
+
+        <!-- 图题 -->
+        <mxCell id="caption" value="图 4-2 三智能体分工与消息处理链路图" style="text;html=1;strokeColor=none;fillColor=none;align=center;verticalAlign=middle;whiteSpace=wrap;rounded=0;fontSize=12;fontStyle=1" vertex="1" parent="1">
+          <mxGeometry x="380" y="430" width="280" height="25" as="geometry" />
+        </mxCell>
+      </root>
+    </mxGraphModel>
+  </diagram>
+</mxfile>
