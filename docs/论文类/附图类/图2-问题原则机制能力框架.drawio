@@ -1,0 +1,297 @@
+<mxfile host="app.diagrams.net" modified="2026-08-19T00:00:00.000Z" agent="5.0" etag="2" version="22.0.0" type="device">
+  <diagram id="diagram1" name="Page-1">
+    <mxGraphModel dx="1600" dy="1000" grid="1" gridSize="10" guides="1" tooltips="1" connect="1" arrows="1" fold="1" page="1" pageScale="1" pageWidth="1400" pageHeight="1100" math="0" shadow="0">
+      <root>
+        <mxCell id="0" />
+        <mxCell id="1" parent="0" />
+
+        <!-- 图标题 -->
+        <mxCell id="title" value="图2 问题—设计原则—工程机制—组织能力形成逻辑" style="text;html=1;align=center;verticalAlign=middle;fontSize=16;fontStyle=1;strokeColor=none;fillColor=none;" vertex="1" parent="1">
+          <mxGeometry x="350" y="15" width="500" height="30" as="geometry" />
+        </mxCell>
+
+        <!-- ========================= -->
+        <!-- 第一层：行业问题 -->
+        <!-- ========================= -->
+        <mxCell id="P" value="行业信息协同核心问题" style="swimlane;startSize=28;fillColor=#fde8e8;strokeColor=#c96567;fontStyle=1;fontSize=13;align=center;verticalAlign=top;rounded=1;" vertex="1" parent="1">
+          <mxGeometry x="60" y="60" width="1080" height="110" as="geometry" />
+        </mxCell>
+        <mxCell id="P1" value="AI与人的&lt;br&gt;权责边界不清" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#c96567;fontSize=11;" vertex="1" parent="P">
+          <mxGeometry x="40" y="45" width="130" height="50" as="geometry" />
+        </mxCell>
+        <mxCell id="P2" value="组织知识沉淀&lt;br&gt;与复用困难" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#c96567;fontSize=11;" vertex="1" parent="P">
+          <mxGeometry x="210" y="45" width="130" height="50" as="geometry" />
+        </mxCell>
+        <mxCell id="P3" value="过程信息采集&lt;br&gt;门槛高、易流失" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#c96567;fontSize=11;" vertex="1" parent="P">
+          <mxGeometry x="380" y="45" width="130" height="50" as="geometry" />
+        </mxCell>
+        <mxCell id="P4" value="项目场景多变&lt;br&gt;系统难以持续扩展" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#c96567;fontSize=11;" vertex="1" parent="P">
+          <mxGeometry x="550" y="45" width="130" height="50" as="geometry" />
+        </mxCell>
+
+        <!-- ========================= -->
+        <!-- 第二层：设计原则 -->
+        <!-- ========================= -->
+        <mxCell id="D" value="设计原则" style="swimlane;startSize=28;fillColor=#fff4e6;strokeColor=#d79b00;fontStyle=1;fontSize=13;align=center;verticalAlign=top;rounded=1;" vertex="1" parent="1">
+          <mxGeometry x="60" y="220" width="1080" height="110" as="geometry" />
+        </mxCell>
+        <mxCell id="D1" value="P1&lt;br&gt;工具化辅助定位" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#d79b00;fontSize=11;" vertex="1" parent="D">
+          <mxGeometry x="40" y="45" width="130" height="50" as="geometry" />
+        </mxCell>
+        <mxCell id="D2" value="P2&lt;br&gt;团队级公共智能体" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#d79b00;fontSize=11;" vertex="1" parent="D">
+          <mxGeometry x="210" y="45" width="130" height="50" as="geometry" />
+        </mxCell>
+        <mxCell id="D3" value="P3&lt;br&gt;自然语言持续嵌入" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#d79b00;fontSize=11;" vertex="1" parent="D">
+          <mxGeometry x="380" y="45" width="130" height="50" as="geometry" />
+        </mxCell>
+        <mxCell id="D4" value="P4&lt;br&gt;受控扩展与演进" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#d79b00;fontSize=11;" vertex="1" parent="D">
+          <mxGeometry x="550" y="45" width="130" height="50" as="geometry" />
+        </mxCell>
+
+        <!-- ========================= -->
+        <!-- 第三层：工程机制 -->
+        <!-- ========================= -->
+        <mxCell id="M" value="工程实现机制" style="swimlane;startSize=28;fillColor=#e8f4fd;strokeColor=#6c8ebf;fontStyle=1;fontSize=13;align=center;verticalAlign=top;rounded=1;" vertex="1" parent="1">
+          <mxGeometry x="60" y="380" width="1080" height="130" as="geometry" />
+        </mxCell>
+        <mxCell id="M1" value="三书认知基座&lt;br&gt;态势—规则—能力" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#6c8ebf;fontSize=11;" vertex="1" parent="M">
+          <mxGeometry x="30" y="50" width="140" height="60" as="geometry" />
+        </mxCell>
+        <mxCell id="M2" value="LLM增强FSM&lt;br&gt;项目态势感知" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#6c8ebf;fontSize=11;" vertex="1" parent="M">
+          <mxGeometry x="210" y="50" width="140" height="60" as="geometry" />
+        </mxCell>
+        <mxCell id="M3" value="Skill化SOP&lt;br&gt;业务流程封装" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#6c8ebf;fontSize=11;" vertex="1" parent="M">
+          <mxGeometry x="390" y="50" width="140" height="60" as="geometry" />
+        </mxCell>
+        <mxCell id="M4" value="三智能体分工&lt;br&gt;Session / WorkItem / Guardian" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#6c8ebf;fontSize=11;" vertex="1" parent="M">
+          <mxGeometry x="570" y="50" width="160" height="60" as="geometry" />
+        </mxCell>
+        <mxCell id="M5" value="权限钩子&lt;br&gt;签名认证 / 全程留痕" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#6c8ebf;fontSize=11;" vertex="1" parent="M">
+          <mxGeometry x="770" y="50" width="140" height="60" as="geometry" />
+        </mxCell>
+
+        <!-- ========================= -->
+        <!-- 第四层：能力形成 -->
+        <!-- ========================= -->
+        <mxCell id="C" value="形成的团队信息协同能力" style="swimlane;startSize=28;fillColor=#eaf5ea;strokeColor=#82b366;fontStyle=1;fontSize=13;align=center;verticalAlign=top;rounded=1;" vertex="1" parent="1">
+          <mxGeometry x="60" y="560" width="1080" height="130" as="geometry" />
+        </mxCell>
+        <mxCell id="C1" value="过程信息&lt;br&gt;持续进入" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#82b366;fontSize=11;" vertex="1" parent="C">
+          <mxGeometry x="20" y="55" width="110" height="55" as="geometry" />
+        </mxCell>
+        <mxCell id="C2" value="多源信息&lt;br&gt;关联组织" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#82b366;fontSize=11;" vertex="1" parent="C">
+          <mxGeometry x="160" y="55" width="110" height="55" as="geometry" />
+        </mxCell>
+        <mxCell id="C3" value="组织知识&lt;br&gt;持续沉淀与复用" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#82b366;fontSize=11;" vertex="1" parent="C">
+          <mxGeometry x="300" y="55" width="120" height="55" as="geometry" />
+        </mxCell>
+        <mxCell id="C4" value="面向任务的&lt;br&gt;上下文支持" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#82b366;fontSize=11;" vertex="1" parent="C">
+          <mxGeometry x="450" y="55" width="120" height="55" as="geometry" />
+        </mxCell>
+        <mxCell id="C5" value="跨部门事件链&lt;br&gt;还原与过程追溯" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#82b366;fontSize=11;" vertex="1" parent="C">
+          <mxGeometry x="600" y="55" width="130" height="55" as="geometry" />
+        </mxCell>
+        <mxCell id="C6" value="多来源对照&lt;br&gt;交叉验证" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#82b366;fontSize=11;" vertex="1" parent="C">
+          <mxGeometry x="760" y="55" width="110" height="55" as="geometry" />
+        </mxCell>
+
+        <!-- ========================= -->
+        <!-- 最终目标 -->
+        <!-- ========================= -->
+        <mxCell id="R" value="地产项目团队&lt;br&gt;信息协同能力提升" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#d5e8d4;strokeColor=#82b366;fontSize=13;fontStyle=1;" vertex="1" parent="1">
+          <mxGeometry x="420" y="740" width="240" height="60" as="geometry" />
+        </mxCell>
+
+        <!-- ========================= -->
+        <!-- 问题 → 原则 连线 -->
+        <!-- ========================= -->
+        <mxCell id="e_pd1" value="" style="endArrow=classic;html=1;rounded=0;strokeColor=#999999;" edge="1" parent="1" source="P1" target="D1">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e_pd2" value="" style="endArrow=classic;html=1;rounded=0;strokeColor=#999999;" edge="1" parent="1" source="P2" target="D2">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e_pd3" value="" style="endArrow=classic;html=1;rounded=0;strokeColor=#999999;" edge="1" parent="1" source="P3" target="D3">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e_pd4" value="" style="endArrow=classic;html=1;rounded=0;strokeColor=#999999;" edge="1" parent="1" source="P4" target="D4">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+
+        <!-- ========================= -->
+        <!-- 原则 → 机制 连线 -->
+        <!-- ========================= -->
+        <!-- D1 → M4, M5 -->
+        <mxCell id="e_dm1" value="" style="endArrow=classic;html=1;rounded=0;strokeColor=#999999;exitX=0.5;exitY=1;exitDx=0;exitDy=0;entryX=0.5;entryY=0;entryDx=0;entryDy=0;" edge="1" parent="1" source="D1" target="M4">
+          <mxGeometry relative="1" as="geometry">
+            <Array as="points">
+              <mxPoint x="105" y="330" />
+              <mxPoint x="650" y="330" />
+            </Array>
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="e_dm2" value="" style="endArrow=classic;html=1;rounded=0;strokeColor=#999999;exitX=0.5;exitY=1;exitDx=0;exitDy=0;entryX=0.5;entryY=0;entryDx=0;entryDy=0;" edge="1" parent="1" source="D1" target="M5">
+          <mxGeometry relative="1" as="geometry">
+            <Array as="points">
+              <mxPoint x="105" y="340" />
+              <mxPoint x="840" y="340" />
+            </Array>
+          </mxGeometry>
+        </mxCell>
+        <!-- D2 → M1, M2 -->
+        <mxCell id="e_dm3" value="" style="endArrow=classic;html=1;rounded=0;strokeColor=#999999;" edge="1" parent="1" source="D2" target="M1">
+          <mxGeometry relative="1" as="geometry">
+            <Array as="points">
+              <mxPoint x="275" y="330" />
+              <mxPoint x="100" y="330" />
+            </Array>
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="e_dm4" value="" style="endArrow=classic;html=1;rounded=0;strokeColor=#999999;" edge="1" parent="1" source="D2" target="M2">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <!-- D3 → M1, M4 -->
+        <mxCell id="e_dm5" value="" style="endArrow=classic;html=1;rounded=0;strokeColor=#999999;" edge="1" parent="1" source="D3" target="M1">
+          <mxGeometry relative="1" as="geometry">
+            <Array as="points">
+              <mxPoint x="445" y="330" />
+              <mxPoint x="100" y="330" />
+            </Array>
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="e_dm6" value="" style="endArrow=classic;html=1;rounded=0;strokeColor=#999999;" edge="1" parent="1" source="D3" target="M4">
+          <mxGeometry relative="1" as="geometry">
+            <Array as="points">
+              <mxPoint x="445" y="330" />
+              <mxPoint x="650" y="330" />
+            </Array>
+          </mxGeometry>
+        </mxCell>
+        <!-- D4 → M2, M3, M5 -->
+        <mxCell id="e_dm7" value="" style="endArrow=classic;html=1;rounded=0;strokeColor=#999999;" edge="1" parent="1" source="D4" target="M2">
+          <mxGeometry relative="1" as="geometry">
+            <Array as="points">
+              <mxPoint x="615" y="330" />
+              <mxPoint x="280" y="330" />
+            </Array>
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="e_dm8" value="" style="endArrow=classic;html=1;rounded=0;strokeColor=#999999;" edge="1" parent="1" source="D4" target="M3">
+          <mxGeometry relative="1" as="geometry">
+            <Array as="points">
+              <mxPoint x="615" y="330" />
+              <mxPoint x="460" y="330" />
+            </Array>
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="e_dm9" value="" style="endArrow=classic;html=1;rounded=0;strokeColor=#999999;" edge="1" parent="1" source="D4" target="M5">
+          <mxGeometry relative="1" as="geometry">
+            <Array as="points">
+              <mxPoint x="615" y="340" />
+              <mxPoint x="840" y="340" />
+            </Array>
+          </mxGeometry>
+        </mxCell>
+
+        <!-- ========================= -->
+        <!-- 机制 → 能力 连线 -->
+        <!-- ========================= -->
+        <!-- M1 → C2, C3 -->
+        <mxCell id="e_mc1" value="" style="endArrow=classic;html=1;rounded=0;strokeColor=#999999;" edge="1" parent="1" source="M1" target="C2">
+          <mxGeometry relative="1" as="geometry">
+            <Array as="points">
+              <mxPoint x="100" y="510" />
+              <mxPoint x="215" y="510" />
+            </Array>
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="e_mc2" value="" style="endArrow=classic;html=1;rounded=0;strokeColor=#999999;" edge="1" parent="1" source="M1" target="C3">
+          <mxGeometry relative="1" as="geometry">
+            <Array as="points">
+              <mxPoint x="100" y="520" />
+              <mxPoint x="360" y="520" />
+            </Array>
+          </mxGeometry>
+        </mxCell>
+        <!-- M2 → C4, C5 -->
+        <mxCell id="e_mc3" value="" style="endArrow=classic;html=1;rounded=0;strokeColor=#999999;" edge="1" parent="1" source="M2" target="C4">
+          <mxGeometry relative="1" as="geometry">
+            <Array as="points">
+              <mxPoint x="280" y="510" />
+              <mxPoint x="510" y="510" />
+            </Array>
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="e_mc4" value="" style="endArrow=classic;html=1;rounded=0;strokeColor=#999999;" edge="1" parent="1" source="M2" target="C5">
+          <mxGeometry relative="1" as="geometry">
+            <Array as="points">
+              <mxPoint x="280" y="520" />
+              <mxPoint x="665" y="520" />
+            </Array>
+          </mxGeometry>
+        </mxCell>
+        <!-- M3 → C4 -->
+        <mxCell id="e_mc5" value="" style="endArrow=classic;html=1;rounded=0;strokeColor=#999999;" edge="1" parent="1" source="M3" target="C4">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <!-- M4 → C1, C4 -->
+        <mxCell id="e_mc6" value="" style="endArrow=classic;html=1;rounded=0;strokeColor=#999999;" edge="1" parent="1" source="M4" target="C1">
+          <mxGeometry relative="1" as="geometry">
+            <Array as="points">
+              <mxPoint x="650" y="510" />
+              <mxPoint x="75" y="510" />
+            </Array>
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="e_mc7" value="" style="endArrow=classic;html=1;rounded=0;strokeColor=#999999;" edge="1" parent="1" source="M4" target="C4">
+          <mxGeometry relative="1" as="geometry">
+            <Array as="points">
+              <mxPoint x="650" y="520" />
+              <mxPoint x="510" y="520" />
+            </Array>
+          </mxGeometry>
+        </mxCell>
+        <!-- M5 → C5, C6 -->
+        <mxCell id="e_mc8" value="" style="endArrow=classic;html=1;rounded=0;strokeColor=#999999;" edge="1" parent="1" source="M5" target="C5">
+          <mxGeometry relative="1" as="geometry">
+            <Array as="points">
+              <mxPoint x="840" y="510" />
+              <mxPoint x="665" y="510" />
+            </Array>
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="e_mc9" value="" style="endArrow=classic;html=1;rounded=0;strokeColor=#999999;" edge="1" parent="1" source="M5" target="C6">
+          <mxGeometry relative="1" as="geometry">
+            <Array as="points">
+              <mxPoint x="840" y="520" />
+              <mxPoint x="815" y="520" />
+            </Array>
+          </mxGeometry>
+        </mxCell>
+
+        <!-- ========================= -->
+        <!-- 能力 → 最终目标 连线 -->
+        <!-- ========================= -->
+        <mxCell id="e_cr1" value="" style="endArrow=classic;html=1;rounded=0;strokeColor=#82b366;strokeWidth=1.5;" edge="1" parent="1" source="C1" target="R">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e_cr2" value="" style="endArrow=classic;html=1;rounded=0;strokeColor=#82b366;strokeWidth=1.5;" edge="1" parent="1" source="C2" target="R">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e_cr3" value="" style="endArrow=classic;html=1;rounded=0;strokeColor=#82b366;strokeWidth=1.5;" edge="1" parent="1" source="C3" target="R">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e_cr4" value="" style="endArrow=classic;html=1;rounded=0;strokeColor=#82b366;strokeWidth=1.5;" edge="1" parent="1" source="C4" target="R">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e_cr5" value="" style="endArrow=classic;html=1;rounded=0;strokeColor=#82b366;strokeWidth=1.5;" edge="1" parent="1" source="C5" target="R">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e_cr6" value="" style="endArrow=classic;html=1;rounded=0;strokeColor=#82b366;strokeWidth=1.5;" edge="1" parent="1" source="C6" target="R">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+
+      </root>
+    </mxGraphModel>
+  </diagram>
+</mxfile>

@@ -1,0 +1,5 @@
+{
+  "dependencies": {
+    "@mattiash/drawio-export": "^1.1.0"
+  }
+}
