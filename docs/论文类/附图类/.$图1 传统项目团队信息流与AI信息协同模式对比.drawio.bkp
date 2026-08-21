@@ -1,0 +1,172 @@
+<mxfile host="Electron" agent="EmilyAgentEngine">
+  <diagram id="fig1" name="图1 传统项目团队信息流与AI信息协同模式对比">
+    <mxGraphModel dx="1200" dy="800" grid="1" gridSize="10" guides="1" tooltips="1" connect="1" arrows="1" fold="1" page="1" pageScale="1" pageWidth="1700" pageHeight="1000" math="0" shadow="0">
+      <root>
+        <mxCell id="0" />
+        <mxCell id="1" parent="0" />
+        <mxCell id="T" parent="1" style="swimlane;html=1;startSize=30;fillColor=#f5f5f5;strokeColor=#999999;fontSize=13;fontStyle=1;rounded=1;whiteSpace=wrap;verticalAlign=top;swimlaneFillColor=#fafafa" value="传统项目团队信息协同模式" vertex="1">
+          <mxGeometry x="30" y="50" width="620" height="520" as="geometry" />
+        </mxCell>
+        <mxCell id="T1" parent="1" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#999999;fontSize=11;align=center;verticalAlign=middle" value="现场人员&#xa;一线观察 / 问题 / 经验" vertex="1">
+          <mxGeometry x="60" y="110" width="180" height="60" as="geometry" />
+        </mxCell>
+        <mxCell id="T2" parent="1" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#999999;fontSize=11;align=center;verticalAlign=middle" value="专业部门&#xa;工程 / 成本 / 设计" vertex="1">
+          <mxGeometry x="310" y="110" width="180" height="60" as="geometry" />
+        </mxCell>
+        <mxCell id="T3" parent="1" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#999999;fontSize=11;align=center;verticalAlign=middle" value="项目管理层" vertex="1">
+          <mxGeometry x="185" y="250" width="180" height="55" as="geometry" />
+        </mxCell>
+        <mxCell id="T4" parent="1" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#999999;fontSize=11;align=center;verticalAlign=middle" value="集团管理层" vertex="1">
+          <mxGeometry x="185" y="390" width="180" height="55" as="geometry" />
+        </mxCell>
+        <mxCell id="T5" parent="1" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#fafafa;strokeColor=#999999;fontSize=10;align=center;verticalAlign=middle;dashed=1;dashPattern=4 3" value="个人经验&#xa;即时通讯记录&#xa;零散文件" vertex="1">
+          <mxGeometry x="470" y="110" width="150" height="90" as="geometry" />
+        </mxCell>
+        <mxCell id="T6" parent="1" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#fafafa;strokeColor=#999999;fontSize=10;align=center;verticalAlign=middle;dashed=1;dashPattern=4 3" value="正式成果资料&#xa;汇报文件 / 管理系统" vertex="1">
+          <mxGeometry x="470" y="300" width="150" height="90" as="geometry" />
+        </mxCell>
+        <mxCell id="T7" parent="1" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffe6cc;strokeColor=#d79b00;fontSize=11;align=center;verticalAlign=middle" value="信息逐级过滤&#xa;过程信息流失&#xa;跨部门壁垒&#xa;知识随人员流动" vertex="1">
+          <mxGeometry x="60" y="650" width="560" height="110" as="geometry" />
+        </mxCell>
+        <mxCell id="A" parent="1" style="swimlane;html=1;startSize=30;fillColor=#dae8fc;strokeColor=#6c8ebf;fontSize=13;fontStyle=1;rounded=1;whiteSpace=wrap;verticalAlign=top;swimlaneFillColor=#f0f6fc" value="信息协同型AI团队模式" vertex="1">
+          <mxGeometry x="720" y="50" width="930" height="520" as="geometry" />
+        </mxCell>
+        <mxCell id="A1" parent="1" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#6c8ebf;fontSize=11;align=center;verticalAlign=middle" value="现场人员" vertex="1">
+          <mxGeometry x="750" y="110" width="170" height="50" as="geometry" />
+        </mxCell>
+        <mxCell id="A2" parent="1" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#6c8ebf;fontSize=11;align=center;verticalAlign=middle" value="工程部门" vertex="1">
+          <mxGeometry x="750" y="200" width="170" height="50" as="geometry" />
+        </mxCell>
+        <mxCell id="A3" parent="1" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#6c8ebf;fontSize=11;align=center;verticalAlign=middle" value="成本部门" vertex="1">
+          <mxGeometry x="750" y="290" width="170" height="50" as="geometry" />
+        </mxCell>
+        <mxCell id="A4" parent="1" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#6c8ebf;fontSize=11;align=center;verticalAlign=middle" value="设计部门" vertex="1">
+          <mxGeometry x="750" y="380" width="170" height="50" as="geometry" />
+        </mxCell>
+        <mxCell id="A5" parent="1" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#6c8ebf;fontSize=11;align=center;verticalAlign=middle" value="项目管理层" vertex="1">
+          <mxGeometry x="1410" y="110" width="180" height="55" as="geometry" />
+        </mxCell>
+        <mxCell id="A6" parent="1" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#6c8ebf;fontSize=11;align=center;verticalAlign=middle" value="集团管理层" vertex="1">
+          <mxGeometry x="1410" y="220" width="180" height="55" as="geometry" />
+        </mxCell>
+        <mxCell id="AI" parent="1" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#fff2cc;strokeColor=#d6b656;fontSize=12;fontStyle=1;align=center;verticalAlign=middle" value="团队公共AI信息协同中枢&#xa;Emily" vertex="1">
+          <mxGeometry x="1030" y="150" width="260" height="150" as="geometry" />
+        </mxCell>
+        <mxCell id="K" parent="1" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#e1d5e7;strokeColor=#9673a6;fontSize=11;align=center;verticalAlign=middle" value="团队公共认知环境&#xa;项目态势 + 组织规则 + 系统能力" vertex="1">
+          <mxGeometry x="1030" y="340" width="260" height="70" as="geometry" />
+        </mxCell>
+        <mxCell id="A7" parent="1" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#d5e8d4;strokeColor=#82b366;fontSize=11;align=center;verticalAlign=middle" value="持续采集&#xa;多源关联&#xa;公共认知&#xa;按权限服务&#xa;全过程可追溯" vertex="1">
+          <mxGeometry x="750" y="650" width="840" height="110" as="geometry" />
+        </mxCell>
+        <mxCell id="e-t1t2" edge="1" parent="1" style="endArrow=classic;html=1;rounded=0;strokeWidth=1.5;strokeColor=#666666" source="T1" target="T2">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e-t2t3" edge="1" parent="1" style="endArrow=classic;html=1;rounded=0;strokeWidth=1.5;strokeColor=#666666" source="T2" target="T3">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e-t3t4" edge="1" parent="1" style="endArrow=classic;html=1;rounded=0;strokeWidth=1.5;strokeColor=#666666" source="T3" target="T4">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e-t1t5" edge="1" parent="1" style="endArrow=classic;html=1;rounded=0;strokeWidth=1.2;strokeColor=#999999;dashed=1;dashPattern=4 3" source="T1" target="T5">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e-t2t5" edge="1" parent="1" style="endArrow=classic;html=1;rounded=0;strokeWidth=1.2;strokeColor=#999999;dashed=1;dashPattern=4 3" source="T2" target="T5">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e-t2t6" edge="1" parent="1" style="endArrow=classic;html=1;rounded=0;strokeWidth=1.5;strokeColor=#666666" source="T2" target="T6">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e-t3t6" edge="1" parent="1" style="endArrow=classic;html=1;rounded=0;strokeWidth=1.5;strokeColor=#666666" source="T3" target="T6">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e-a1ai" edge="1" parent="1" style="endArrow=classic;startArrow=classic;html=1;rounded=0;strokeWidth=1.5;strokeColor=#6c8ebf" source="A1" target="AI">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e-a2ai" edge="1" parent="1" style="endArrow=classic;startArrow=classic;html=1;rounded=0;strokeWidth=1.5;strokeColor=#6c8ebf" source="A2" target="AI">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e-a3ai" edge="1" parent="1" style="endArrow=classic;startArrow=classic;html=1;rounded=0;strokeWidth=1.5;strokeColor=#6c8ebf" source="A3" target="AI">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e-a4ai" edge="1" parent="1" style="endArrow=classic;startArrow=classic;html=1;rounded=0;strokeWidth=1.5;strokeColor=#6c8ebf" source="A4" target="AI">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e-a5ai" edge="1" parent="1" style="endArrow=classic;startArrow=classic;html=1;rounded=0;strokeWidth=1.5;strokeColor=#6c8ebf" source="A5" target="AI">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e-aik" edge="1" parent="1" style="endArrow=classic;startArrow=classic;html=1;rounded=0;strokeWidth=1.5;strokeColor=#666666" source="AI" target="K">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e-ai-a6" edge="1" parent="1" style="endArrow=classic;html=1;rounded=0;strokeWidth=1.5;strokeColor=#6c8ebf" source="AI" target="A6">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e-ta" edge="1" parent="1" style="endArrow=classic;html=1;rounded=0;strokeWidth=2;strokeColor=#6c8ebf;fontSize=10;fontColor=#6c8ebf" value="信息协同模式重构">
+          <mxGeometry relative="1" as="geometry">
+            <mxPoint x="650" y="310" as="sourcePoint" />
+            <mxPoint x="720" y="310" as="targetPoint" />
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="e-tt7" edge="1" parent="1" style="endArrow=classic;html=1;rounded=0;strokeWidth=1.5;strokeColor=#666666" source="T" target="T7">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e-aa7" edge="1" parent="1" style="endArrow=classic;html=1;rounded=0;strokeWidth=1.5;strokeColor=#666666" source="A" target="A7">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="l-t1t2" parent="1" style="text;html=1;strokeColor=none;fillColor=none;align=center;verticalAlign=middle;whiteSpace=wrap;rounded=0;fontSize=9;fontColor=#666666" value="信息上报" vertex="1">
+          <mxGeometry x="245" y="110" width="60" height="16" as="geometry" />
+        </mxCell>
+        <mxCell id="l-t2t3" parent="1" style="text;html=1;strokeColor=none;fillColor=none;align=center;verticalAlign=middle;whiteSpace=wrap;rounded=0;fontSize=9;fontColor=#666666" value="汇总、筛选、转述" vertex="1">
+          <mxGeometry x="310" y="175" width="100" height="16" as="geometry" />
+        </mxCell>
+        <mxCell id="l-t3t4" parent="1" style="text;html=1;strokeColor=none;fillColor=none;align=center;verticalAlign=middle;whiteSpace=wrap;rounded=0;fontSize=9;fontColor=#666666" value="进一步汇总" vertex="1">
+          <mxGeometry x="285" y="310" width="80" height="16" as="geometry" />
+        </mxCell>
+        <mxCell id="l-t2t6" parent="1" style="text;html=1;strokeColor=none;fillColor=none;align=center;verticalAlign=middle;whiteSpace=wrap;rounded=0;fontSize=9;fontColor=#666666" value="整理后沉淀" vertex="1">
+          <mxGeometry x="430" y="225" width="70" height="16" as="geometry" />
+        </mxCell>
+        <mxCell id="l-t3t6" parent="1" style="text;html=1;strokeColor=none;fillColor=none;align=center;verticalAlign=middle;whiteSpace=wrap;rounded=0;fontSize=9;fontColor=#666666" value="形成结果资料" vertex="1">
+          <mxGeometry x="370" y="300" width="80" height="16" as="geometry" />
+        </mxCell>
+        <mxCell id="l-a1in" parent="1" style="text;html=1;strokeColor=none;fillColor=none;align=center;verticalAlign=middle;whiteSpace=wrap;rounded=0;fontSize=8;fontColor=#666666" value="自然语言 / IM / 文件 / 事件" vertex="1">
+          <mxGeometry x="925" y="118" width="150" height="14" as="geometry" />
+        </mxCell>
+        <mxCell id="l-a1out" parent="1" style="text;html=1;strokeColor=none;fillColor=none;align=center;verticalAlign=middle;whiteSpace=wrap;rounded=0;fontSize=8;fontColor=#666666" value="按权限提供信息支持" vertex="1">
+          <mxGeometry x="925" y="138" width="120" height="14" as="geometry" />
+        </mxCell>
+        <mxCell id="l-a2in" parent="1" style="text;html=1;strokeColor=none;fillColor=none;align=center;verticalAlign=middle;whiteSpace=wrap;rounded=0;fontSize=8;fontColor=#666666" value="业务过程信息" vertex="1">
+          <mxGeometry x="925" y="208" width="100" height="14" as="geometry" />
+        </mxCell>
+        <mxCell id="l-a2out" parent="1" style="text;html=1;strokeColor=none;fillColor=none;align=center;verticalAlign=middle;whiteSpace=wrap;rounded=0;fontSize=8;fontColor=#666666" value="按权限提供信息支持" vertex="1">
+          <mxGeometry x="925" y="228" width="120" height="14" as="geometry" />
+        </mxCell>
+        <mxCell id="l-a3in" parent="1" style="text;html=1;strokeColor=none;fillColor=none;align=center;verticalAlign=middle;whiteSpace=wrap;rounded=0;fontSize=8;fontColor=#666666" value="业务过程信息" vertex="1">
+          <mxGeometry x="925" y="298" width="100" height="14" as="geometry" />
+        </mxCell>
+        <mxCell id="l-a3out" parent="1" style="text;html=1;strokeColor=none;fillColor=none;align=center;verticalAlign=middle;whiteSpace=wrap;rounded=0;fontSize=8;fontColor=#666666" value="按权限提供信息支持" vertex="1">
+          <mxGeometry x="925" y="318" width="120" height="14" as="geometry" />
+        </mxCell>
+        <mxCell id="l-a4in" parent="1" style="text;html=1;strokeColor=none;fillColor=none;align=center;verticalAlign=middle;whiteSpace=wrap;rounded=0;fontSize=8;fontColor=#666666" value="业务过程信息" vertex="1">
+          <mxGeometry x="925" y="388" width="100" height="14" as="geometry" />
+        </mxCell>
+        <mxCell id="l-a4out" parent="1" style="text;html=1;strokeColor=none;fillColor=none;align=center;verticalAlign=middle;whiteSpace=wrap;rounded=0;fontSize=8;fontColor=#666666" value="按权限提供信息支持" vertex="1">
+          <mxGeometry x="925" y="408" width="120" height="14" as="geometry" />
+        </mxCell>
+        <mxCell id="l-a5in" parent="1" style="text;html=1;strokeColor=none;fillColor=none;align=center;verticalAlign=middle;whiteSpace=wrap;rounded=0;fontSize=8;fontColor=#666666" value="管理信息" vertex="1">
+          <mxGeometry x="1295" y="115" width="110" height="14" as="geometry" />
+        </mxCell>
+        <mxCell id="l-a5out" parent="1" style="text;html=1;strokeColor=none;fillColor=none;align=center;verticalAlign=middle;whiteSpace=wrap;rounded=0;fontSize=8;fontColor=#666666" value="项目态势 / 综合报告" vertex="1">
+          <mxGeometry x="1295" y="145" width="110" height="14" as="geometry" />
+        </mxCell>
+        <mxCell id="l-a6out" parent="1" style="text;html=1;strokeColor=none;fillColor=none;align=center;verticalAlign=middle;whiteSpace=wrap;rounded=0;fontSize=8;fontColor=#666666" value="跨源信息 / 过程追溯" vertex="1">
+          <mxGeometry x="1295" y="225" width="120" height="14" as="geometry" />
+        </mxCell>
+        <mxCell id="l-aik" parent="1" style="text;html=1;strokeColor=none;fillColor=none;align=center;verticalAlign=middle;whiteSpace=wrap;rounded=0;fontSize=9;fontColor=#666666" value="双向认知同步" vertex="1">
+          <mxGeometry x="1290" y="305" width="100" height="16" as="geometry" />
+        </mxCell>
+        <mxCell id="caption" parent="1" style="text;html=1;strokeColor=none;fillColor=none;align=center;verticalAlign=middle;whiteSpace=wrap;rounded=0;fontSize=13;fontStyle=1" value="图1 传统项目团队信息流与AI信息协同模式对比" vertex="1">
+          <mxGeometry x="565" y="800" width="570" height="25" as="geometry" />
+        </mxCell>
+      </root>
+    </mxGraphModel>
+  </diagram>
+</mxfile>
