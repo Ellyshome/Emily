@@ -1,0 +1,117 @@
+<mxfile host="Electron" agent="5.0">
+  <diagram id="skWWuI-1qFsn7Ct0Fpi0" name="第 2 页">
+    <mxGraphModel dx="2096" dy="889" grid="1" gridSize="10" guides="1" tooltips="1" connect="1" arrows="1" fold="1" page="1" pageScale="1" pageWidth="144" pageHeight="110" background="none" math="0" shadow="0">
+      <root>
+        <mxCell id="0" />
+        <mxCell id="1" parent="0" />
+        <mxCell id="GWX0fhv3tOYoKAnoSPRP-1" parent="1" style="swimlane;startSize=43;fillColor=#f5f5f5;strokeColor=#555555;fontStyle=1;fontSize=20;align=center;verticalAlign=top;rounded=1;" value="信息协同型 AI 团队模式" vertex="1">
+          <mxGeometry height="490" width="640" x="200" y="130" as="geometry" />
+        </mxCell>
+        <mxCell id="GWX0fhv3tOYoKAnoSPRP-2" parent="GWX0fhv3tOYoKAnoSPRP-1" style="ellipse;whiteSpace=wrap;html=1;fillColor=#e0e0e0;strokeColor=#444444;strokeWidth=2;fontSize=12;fontStyle=0;" value="&lt;b style=&quot;font-size:13px;&quot;&gt;团队公共 AI 信息协同中枢&lt;/b&gt;&lt;br&gt;&lt;b style=&quot;font-size:15px;color:#000000;&quot;&gt;Emily&lt;/b&gt;&lt;br&gt;&lt;br&gt;&lt;font style=&quot;font-size:10px;&quot;&gt;三书认知基座：&lt;br&gt;• 项目态势书（全景节点/事件流）&lt;br&gt;• 组织规则书（制度/验收标准）&lt;br&gt;• 系统能力书（SOP/工具）&lt;/font&gt;" vertex="1">
+          <mxGeometry height="150" width="240" x="385" y="160" as="geometry" />
+        </mxCell>
+        <mxCell id="GWX0fhv3tOYoKAnoSPRP-3" parent="GWX0fhv3tOYoKAnoSPRP-1" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#eeeeee;strokeColor=#555555;fontSize=12;fontStyle=1;" value="建设单位（集团管理层）&lt;br&gt;&lt;font color=&quot;#000000&quot; style=&quot;font-size:10px;&quot;&gt;（按权限获取过程信息）&lt;/font&gt;" vertex="1">
+          <mxGeometry height="50" width="220" x="15" y="90" as="geometry" />
+        </mxCell>
+        <mxCell id="GWX0fhv3tOYoKAnoSPRP-4" parent="GWX0fhv3tOYoKAnoSPRP-1" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#eeeeee;strokeColor=#555555;fontSize=12;" value="项目部各业务条线&lt;br&gt;&lt;font color=&quot;#000000&quot; style=&quot;font-size:10px;&quot;&gt;（工程 / 成本 / 设计）&lt;/font&gt;" vertex="1">
+          <mxGeometry height="45" width="220" x="15" y="175" as="geometry" />
+        </mxCell>
+        <mxCell id="GWX0fhv3tOYoKAnoSPRP-5" parent="GWX0fhv3tOYoKAnoSPRP-1" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#eeeeee;strokeColor=#555555;fontSize=12;" value="承建单位&lt;br&gt;&lt;font color=&quot;#000000&quot; style=&quot;font-size:10px;&quot;&gt;（建筑 / 景观 / 精装等分包）&lt;/font&gt;" vertex="1">
+          <mxGeometry height="50" width="220" x="15" y="260" as="geometry" />
+        </mxCell>
+        <mxCell id="GWX0fhv3tOYoKAnoSPRP-6" parent="GWX0fhv3tOYoKAnoSPRP-1" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ebebeb;strokeColor=#777777;fontSize=11;dashed=1;fontStyle=1;" value="一线现场与过程信息&lt;br&gt;&lt;font color=&quot;#000000&quot; style=&quot;font-size:10px;&quot;&gt;（自然语言交互 / 过程性记录）&lt;/font&gt;" vertex="1">
+          <mxGeometry height="70" width="220" x="15" y="350" as="geometry" />
+        </mxCell>
+        <mxCell id="GWX0fhv3tOYoKAnoSPRP-7" edge="1" parent="GWX0fhv3tOYoKAnoSPRP-1" source="GWX0fhv3tOYoKAnoSPRP-2" style="endArrow=classic;startArrow=classic;html=1;strokeColor=#444444;strokeWidth=2;fontSize=10;align=center;entryX=1;entryY=0.5;entryDx=0;entryDy=0;" target="GWX0fhv3tOYoKAnoSPRP-3" value="跨层级信息追溯">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="GWX0fhv3tOYoKAnoSPRP-8" edge="1" parent="GWX0fhv3tOYoKAnoSPRP-1" source="GWX0fhv3tOYoKAnoSPRP-2" style="endArrow=classic;startArrow=classic;html=1;strokeColor=#444444;strokeWidth=2;fontSize=10;align=center;" target="GWX0fhv3tOYoKAnoSPRP-4" value="业务过程交互 / SOP 调用">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="GWX0fhv3tOYoKAnoSPRP-9" edge="1" parent="GWX0fhv3tOYoKAnoSPRP-1" source="GWX0fhv3tOYoKAnoSPRP-2" style="endArrow=classic;startArrow=classic;html=1;strokeColor=#444444;strokeWidth=2;fontSize=10;align=center;entryX=1;entryY=0.25;entryDx=0;entryDy=0;" target="GWX0fhv3tOYoKAnoSPRP-5" value="现场信息上报 / 指令直达">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="GWX0fhv3tOYoKAnoSPRP-10" edge="1" parent="GWX0fhv3tOYoKAnoSPRP-1" source="GWX0fhv3tOYoKAnoSPRP-2" style="endArrow=classic;startArrow=classic;html=1;strokeColor=#444444;strokeWidth=2;dashed=1;fontSize=10;align=center;entryX=1;entryY=0.25;entryDx=0;entryDy=0;" target="GWX0fhv3tOYoKAnoSPRP-6" value="伴随式持续采集&lt;br&gt;&lt;font style=&quot;font-size:9px;color:#000000;&quot;&gt;（过程性信息持续纳入）&lt;/font&gt;">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="vK6t9dxMD4b9NufWILPS-12" parent="1" style="swimlane;startSize=43;fillColor=#f5f5f5;strokeColor=#555555;fontStyle=1;fontSize=20;align=center;verticalAlign=top;rounded=1;fontColor=#000000;" value="传统项目团队信息协同模式" vertex="1">
+          <mxGeometry height="490" width="362" x="-410" y="130" as="geometry" />
+        </mxCell>
+        <mxCell id="vK6t9dxMD4b9NufWILPS-1" parent="vK6t9dxMD4b9NufWILPS-12" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#eeeeee;strokeColor=#555555;fontSize=12;fontStyle=1;" value="集团管理层&lt;br&gt;&lt;font color=&quot;#000000&quot; style=&quot;font-size:10px;&quot;&gt;（决策层）&lt;/font&gt;" vertex="1">
+          <mxGeometry height="45" width="180" x="151.96999999997206" y="59" as="geometry" />
+        </mxCell>
+        <object label="" id="s86q4St02DC01uFbZYe0-1">
+          <mxCell edge="1" parent="vK6t9dxMD4b9NufWILPS-12" source="vK6t9dxMD4b9NufWILPS-2" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;exitX=0;exitY=0.75;exitDx=0;exitDy=0;entryX=0;entryY=0.25;entryDx=0;entryDy=0;strokeColor=#555555;" target="vK6t9dxMD4b9NufWILPS-3">
+            <mxGeometry relative="1" as="geometry">
+              <Array as="points">
+                <mxPoint x="100" y="204.5" />
+                <mxPoint x="100" y="291.5" />
+              </Array>
+            </mxGeometry>
+          </mxCell>
+        </object>
+        <mxCell id="s86q4St02DC01uFbZYe0-2" connectable="0" parent="s86q4St02DC01uFbZYe0-1" style="edgeLabel;html=1;align=center;verticalAlign=middle;resizable=0;points=[];" value="&lt;span style=&quot;font-size: 10px;&quot;&gt;下行：决策解读与任务分解&lt;/span&gt;" vertex="1">
+          <mxGeometry relative="1" x="-0.213" as="geometry">
+            <mxPoint x="-10" y="21" as="offset" />
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="vK6t9dxMD4b9NufWILPS-2" parent="vK6t9dxMD4b9NufWILPS-12" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#eeeeee;strokeColor=#555555;fontSize=12;" value="项目部&lt;br&gt;&lt;font color=&quot;#000000&quot; style=&quot;font-size:10px;&quot;&gt;（工程 / 成本 / 设计条线）&lt;/font&gt;" vertex="1">
+          <mxGeometry height="50" width="180" x="151.96999999997206" y="167" as="geometry" />
+        </mxCell>
+        <mxCell id="vK6t9dxMD4b9NufWILPS-3" parent="vK6t9dxMD4b9NufWILPS-12" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#eeeeee;strokeColor=#555555;fontSize=12;" value="承建单位&lt;br&gt;&lt;font color=&quot;#000000&quot; style=&quot;font-size:10px;&quot;&gt;（建筑 / 景观 / 精装等分包）&lt;/font&gt;" vertex="1">
+          <mxGeometry height="50" width="180" x="151.96999999997206" y="279" as="geometry" />
+        </mxCell>
+        <mxCell id="vK6t9dxMD4b9NufWILPS-4" parent="vK6t9dxMD4b9NufWILPS-12" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ebebeb;strokeColor=#777777;fontSize=12;fontStyle=1;" value="项目现场状态与事件源" vertex="1">
+          <mxGeometry height="90" width="180" x="151.97" y="379" as="geometry" />
+        </mxCell>
+        <mxCell id="vK6t9dxMD4b9NufWILPS-5" edge="1" parent="vK6t9dxMD4b9NufWILPS-12" source="vK6t9dxMD4b9NufWILPS-4" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;html=1;endArrow=classic;endFill=1;fontSize=10;strokeColor=#333333;" target="vK6t9dxMD4b9NufWILPS-3" value="现场信息产生">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="vK6t9dxMD4b9NufWILPS-6" edge="1" parent="vK6t9dxMD4b9NufWILPS-12" source="vK6t9dxMD4b9NufWILPS-3" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;html=1;endArrow=classic;endFill=1;fontSize=10;strokeColor=#777777;align=right;" target="vK6t9dxMD4b9NufWILPS-2" value="上行：现场信息上报&lt;br&gt;&lt;font color=&quot;#000000&quot; style=&quot;font-size:9px;&quot;&gt;（信息逐层衰减）&lt;/font&gt;">
+          <mxGeometry relative="1" x="-0.1429" y="-40" as="geometry">
+            <mxPoint as="offset" />
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="vK6t9dxMD4b9NufWILPS-7" edge="1" parent="vK6t9dxMD4b9NufWILPS-12" source="vK6t9dxMD4b9NufWILPS-2" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;html=1;endArrow=classic;endFill=1;fontSize=10;fontStyle=1;strokeColor=#555555;align=right;" target="vK6t9dxMD4b9NufWILPS-1" value="上行：摘要汇总与汇报&lt;br&gt;&lt;font color=&quot;#000000&quot; style=&quot;font-size:9px;&quot;&gt;（信息选择性呈现）&lt;/font&gt;">
+          <mxGeometry relative="1" x="0.12" y="-48" as="geometry">
+            <mxPoint as="offset" />
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="vK6t9dxMD4b9NufWILPS-8" edge="1" parent="vK6t9dxMD4b9NufWILPS-12" source="vK6t9dxMD4b9NufWILPS-1" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;html=1;endArrow=classic;endFill=1;fontSize=10;strokeColor=#555555;" target="vK6t9dxMD4b9NufWILPS-2" value="下行：决策解读与任务分解">
+          <mxGeometry relative="1" x="-0.2001" y="-2" as="geometry">
+            <mxPoint as="offset" />
+            <Array as="points">
+              <mxPoint x="102" y="89" />
+              <mxPoint x="102" y="189" />
+            </Array>
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="vK6t9dxMD4b9NufWILPS-10" edge="1" parent="vK6t9dxMD4b9NufWILPS-12" source="vK6t9dxMD4b9NufWILPS-1" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;html=1;endArrow=classic;endFill=1;dashed=1;fontSize=10;strokeColor=#555555;" target="vK6t9dxMD4b9NufWILPS-4" value="抽样巡检&lt;br&gt;&lt;font color=&quot;#000000&quot; style=&quot;font-size:9px;&quot;&gt;（覆盖范围有限）&lt;/font&gt;">
+          <mxGeometry relative="1" x="0.8033" y="22" as="geometry">
+            <mxPoint as="offset" />
+            <Array as="points">
+              <mxPoint x="22" y="79" />
+              <mxPoint x="22" y="449" />
+            </Array>
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="vK6t9dxMD4b9NufWILPS-11" edge="1" parent="vK6t9dxMD4b9NufWILPS-12" source="vK6t9dxMD4b9NufWILPS-2" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;html=1;endArrow=classic;endFill=1;dashed=1;fontSize=10;strokeColor=#555555;" target="vK6t9dxMD4b9NufWILPS-4" value="定时巡视">
+          <mxGeometry relative="1" x="0.7452" y="10" as="geometry">
+            <mxPoint as="offset" />
+            <Array as="points">
+              <mxPoint x="30" y="199" />
+              <mxPoint x="30" y="397" />
+            </Array>
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="lyMsETUn1ei3yOjnIr1e-1" edge="1" parent="1" source="vK6t9dxMD4b9NufWILPS-12" style="edgeStyle=orthogonalEdgeStyle;rounded=1;orthogonalLoop=1;jettySize=auto;html=1;endArrow=block;endFill=1;strokeWidth=3;strokeColor=#333333;fontSize=11;fontStyle=1;align=center;exitX=1;exitY=0.5;exitDx=0;exitDy=0;entryX=0;entryY=0.5;entryDx=0;entryDy=0;" target="GWX0fhv3tOYoKAnoSPRP-1" value="信息协同模式重构&lt;br&gt;&lt;font color=&quot;#000000&quot; style=&quot;font-size:11px;&quot;&gt;统一中枢与多角色协同&lt;/font&gt;">
+          <mxGeometry relative="1" x="-0.0526" y="25" as="geometry">
+            <mxPoint as="offset" />
+            <mxPoint x="40" y="510" as="sourcePoint" />
+            <mxPoint x="140" y="620" as="targetPoint" />
+          </mxGeometry>
+        </mxCell>
+      </root>
+    </mxGraphModel>
+  </diagram>
+</mxfile>
