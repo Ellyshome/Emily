@@ -1,0 +1,80 @@
+<mxfile host="Electron" agent="mermaid2drawio">
+  <diagram id="figA4" name="图A4">
+    <mxGraphModel dx="798" dy="485" grid="1" gridSize="10" guides="1" tooltips="1" connect="1" arrows="1" fold="1" page="1" pageScale="1" pageWidth="560" pageHeight="410" math="0" shadow="0">
+      <root>
+        <mxCell id="0" />
+        <mxCell id="1" parent="0" />
+        <mxCell id="act" parent="1" style="rounded=1;whiteSpace=wrap;html=1;fontSize=11;fontFamily=Microsoft YaHei;fillColor=#ffffff;strokeColor=#37474f;" value="团队日常业务活动" vertex="1">
+          <mxGeometry height="26" width="130" x="60" y="50" as="geometry" />
+        </mxCell>
+        <mxCell id="src" parent="1" style="rounded=1;whiteSpace=wrap;html=1;fontSize=11;fontFamily=Microsoft YaHei;fillColor=#ffffff;strokeColor=#37474f;" value="IM · DB · 文件 · 事件记录" vertex="1">
+          <mxGeometry height="26" width="130" x="235" y="50" as="geometry" />
+        </mxCell>
+        <mxCell id="ing" parent="1" style="rounded=1;whiteSpace=wrap;html=1;fontSize=11;fontFamily=Microsoft YaHei;fillColor=#ffffff;strokeColor=#37474f;" value="项目过程信息进入系统" vertex="1">
+          <mxGeometry height="26" width="130" x="390" y="101" as="geometry" />
+        </mxCell>
+        <mxCell id="pb" parent="1" style="rounded=1;whiteSpace=wrap;html=1;fontSize=11;fontFamily=Microsoft YaHei;fillColor=#e1f5fe;strokeColor=#64b5f6;fontStyle=1;" value="项目态势书&lt;br&gt;&lt;span style=&quot;font-weight: normal;&quot;&gt;项目正在发生什么&lt;/span&gt;" vertex="1">
+          <mxGeometry height="36" width="130" x="235" y="96" as="geometry" />
+        </mxCell>
+        <mxCell id="task" parent="1" style="rounded=1;whiteSpace=wrap;html=1;fontSize=11;fontFamily=Microsoft YaHei;fillColor=#ffffff;strokeColor=#37474f;" value="Agent 业务任务&lt;br&gt;Session 拆解 → WorkItem 执行" vertex="1">
+          <mxGeometry height="46" width="130" x="235" y="152" as="geometry" />
+        </mxCell>
+        <mxCell id="rb" parent="1" style="rounded=1;whiteSpace=wrap;html=1;fontSize=11;fontFamily=Microsoft YaHei;fillColor=#fff3e0;strokeColor=#ffb74d;fontStyle=1;" value="组织规则书&lt;br&gt;&lt;span style=&quot;font-weight: normal;&quot;&gt;当前应遵循什么&lt;/span&gt;" vertex="1">
+          <mxGeometry height="36" width="125" x="75" y="157" as="geometry" />
+        </mxCell>
+        <mxCell id="cb" parent="1" style="rounded=1;whiteSpace=wrap;html=1;fontSize=11;fontFamily=Microsoft YaHei;fillColor=#e8f5e9;strokeColor=#81c784;fontStyle=1;" value="系统能力书&lt;br&gt;&lt;span style=&quot;font-weight: normal;&quot;&gt;当前可以做什么&lt;/span&gt;" vertex="1">
+          <mxGeometry height="36" width="125" x="400" y="157" as="geometry" />
+        </mxCell>
+        <mxCell id="exec" parent="1" style="rounded=1;whiteSpace=wrap;html=1;fontSize=11;fontFamily=Microsoft YaHei;fillColor=#ffffff;strokeColor=#37474f;" value="任务执行 / 信息支持" vertex="1">
+          <mxGeometry height="26" width="130" x="235" y="208" as="geometry" />
+        </mxCell>
+        <mxCell id="confirm" parent="1" style="rounded=1;whiteSpace=wrap;html=1;fontSize=11;fontFamily=Microsoft YaHei;fillColor=#ffffff;strokeColor=#37474f;" value="人工确认 / 业务结果" vertex="1">
+          <mxGeometry height="26" width="130" x="235" y="254" as="geometry" />
+        </mxCell>
+        <mxCell id="newevt" parent="1" style="rounded=1;whiteSpace=wrap;html=1;fontSize=11;fontFamily=Microsoft YaHei;fillColor=#ffffff;strokeColor=#37474f;" value="新的过程事件和业务记录" vertex="1">
+          <mxGeometry height="26" width="130" x="75" y="254" as="geometry" />
+        </mxCell>
+        <mxCell id="e1" edge="1" parent="1" source="act" style="edgeStyle=orthogonalEdgeStyle;html=1;rounded=0;strokeColor=#37474f;strokeWidth=1.5;" target="src">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e2" edge="1" parent="1" source="src" style="edgeStyle=orthogonalEdgeStyle;html=1;rounded=0;strokeColor=#37474f;strokeWidth=1.5;exitX=1;exitY=0.5;exitDx=0;exitDy=0;" target="ing">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e3" edge="1" parent="1" source="ing" style="edgeStyle=orthogonalEdgeStyle;html=1;rounded=0;strokeColor=#37474f;strokeWidth=1.5;" target="pb">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e4" edge="1" parent="1" source="pb" style="edgeStyle=orthogonalEdgeStyle;html=1;rounded=0;strokeColor=#37474f;strokeWidth=1.5;" target="task">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e5" edge="1" parent="1" source="task" style="edgeStyle=orthogonalEdgeStyle;html=1;rounded=0;strokeColor=#37474f;strokeWidth=1.5;exitX=0;exitY=0.5;entryX=1;entryY=0.5;" target="rb">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e6" edge="1" parent="1" source="task" style="edgeStyle=orthogonalEdgeStyle;html=1;rounded=0;strokeColor=#37474f;strokeWidth=1.5;exitX=1;exitY=0.5;entryX=0;entryY=0.5;" target="cb">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e7" edge="1" parent="1" source="rb" style="edgeStyle=orthogonalEdgeStyle;html=1;rounded=0;strokeColor=#37474f;strokeWidth=1.5;exitX=0.5;exitY=1;entryX=0;entryY=0.5;" target="exec">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e8" edge="1" parent="1" source="cb" style="edgeStyle=orthogonalEdgeStyle;html=1;rounded=0;strokeColor=#37474f;strokeWidth=1.5;exitX=0.5;exitY=1;entryX=1;entryY=0.5;" target="exec">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e9" edge="1" parent="1" source="exec" style="edgeStyle=orthogonalEdgeStyle;html=1;rounded=0;strokeColor=#37474f;strokeWidth=1.5;" target="confirm">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e10" edge="1" parent="1" source="confirm" style="edgeStyle=orthogonalEdgeStyle;html=1;rounded=0;strokeColor=#37474f;strokeWidth=1.5;" target="newevt">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="efb" edge="1" parent="1" source="newevt" style="edgeStyle=orthogonalEdgeStyle;html=1;rounded=0;strokeColor=#1976d2;strokeWidth=1.5;fontColor=#1976d2;fontSize=10;fontFamily=Microsoft YaHei;exitX=0;exitY=0.5;entryX=0;entryY=0.5;labelBackgroundColor=#ffffff;" target="pb" value="回写项目态势书">
+          <mxGeometry relative="1" x="0.4494" as="geometry">
+            <mxPoint as="offset" />
+            <Array as="points">
+              <mxPoint x="75.03" y="268.03" />
+              <mxPoint x="60" y="268.03" />
+              <mxPoint x="60" y="114.03" />
+            </Array>
+          </mxGeometry>
+        </mxCell>
+      </root>
+    </mxGraphModel>
+  </diagram>
+</mxfile>

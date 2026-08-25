@@ -1,0 +1,81 @@
+<mxfile host="app.diagrams.net" agent="manual" version="24.0.0" type="device">
+  <diagram id="figA1" name="图A1">
+    <mxGraphModel dx="0" dy="0" grid="1" gridSize="10" guides="1" tooltips="1" connect="1" arrows="1" fold="1" page="1" pageScale="1" pageWidth="340" pageHeight="620" math="0" shadow="0">
+      <root>
+        <mxCell id="0" />
+        <mxCell id="1" parent="0" />
+
+        <!-- ============ ① 问题识别 ============ -->
+        <mxCell id="c1" value="① 问题识别" style="rounded=1;whiteSpace=wrap;html=1;verticalAlign=top;align=left;spacingLeft=12;spacingTop=5;fontStyle=1;fontSize=12;fontFamily=Microsoft YaHei;fillColor=#f8f8f8;strokeColor=#b0bec5;" vertex="1" parent="1">
+          <mxGeometry x="20" y="10" width="300" height="164" as="geometry" />
+        </mxCell>
+        <mxCell id="p1" value="地产项目管理特征" style="rounded=1;whiteSpace=wrap;html=1;fontSize=11;fontFamily=Microsoft YaHei;fillColor=#ffffff;strokeColor=#37474f;" vertex="1" parent="c1">
+          <mxGeometry x="15" y="32" width="270" height="26" as="geometry" />
+        </mxCell>
+        <mxCell id="p2" value="状态动态 · 信息多源&lt;br&gt;流程标准化 · 权责明确" style="rounded=1;whiteSpace=wrap;html=1;fontSize=11;fontFamily=Microsoft YaHei;fillColor=#ffffff;strokeColor=#37474f;" vertex="1" parent="c1">
+          <mxGeometry x="15" y="66" width="270" height="40" as="geometry" />
+        </mxCell>
+        <mxCell id="p3" value="传统数字化与个人 AI&lt;br&gt;的协同缺口" style="rounded=1;whiteSpace=wrap;html=1;fontSize=11;fontFamily=Microsoft YaHei;fillColor=#ffffff;strokeColor=#37474f;" vertex="1" parent="c1">
+          <mxGeometry x="15" y="114" width="270" height="40" as="geometry" />
+        </mxCell>
+
+        <!-- ============ ② 管理要素抽象 ============ -->
+        <mxCell id="c2" value="② 管理要素抽象" style="rounded=1;whiteSpace=wrap;html=1;verticalAlign=top;align=left;spacingLeft=12;spacingTop=5;fontStyle=1;fontSize=12;fontFamily=Microsoft YaHei;fillColor=#f8f8f8;strokeColor=#b0bec5;" vertex="1" parent="1">
+          <mxGeometry x="20" y="198" width="300" height="82" as="geometry" />
+        </mxCell>
+        <mxCell id="e1" value="项目状态 · 过程事件 · 项目资料&lt;br&gt;组织规则 · 业务流程 · 人员关系 · 系统能力" style="rounded=1;whiteSpace=wrap;html=1;fontSize=11;fontFamily=Microsoft YaHei;fillColor=#ffffff;strokeColor=#37474f;" vertex="1" parent="c2">
+          <mxGeometry x="15" y="32" width="270" height="40" as="geometry" />
+        </mxCell>
+
+        <!-- ============ ③ Agent 技术对象映射 ============ -->
+        <mxCell id="c3" value="③ Agent 技术对象映射" style="rounded=1;whiteSpace=wrap;html=1;verticalAlign=top;align=left;spacingLeft=12;spacingTop=5;fontStyle=1;fontSize=12;fontFamily=Microsoft YaHei;fillColor=#f8f8f8;strokeColor=#b0bec5;" vertex="1" parent="1">
+          <mxGeometry x="20" y="304" width="300" height="82" as="geometry" />
+        </mxCell>
+        <mxCell id="m1" value="状态空间 · 公共认知对象&lt;br&gt;能力单元 · 工作项 · 核验任务" style="rounded=1;whiteSpace=wrap;html=1;fontSize=11;fontFamily=Microsoft YaHei;fillColor=#ffffff;strokeColor=#37474f;" vertex="1" parent="c3">
+          <mxGeometry x="15" y="32" width="270" height="40" as="geometry" />
+        </mxCell>
+
+        <!-- ============ ④ 框架设计 ============ -->
+        <mxCell id="c4" value="④ 框架设计" style="rounded=1;whiteSpace=wrap;html=1;verticalAlign=top;align=left;spacingLeft=12;spacingTop=5;fontStyle=1;fontSize=12;fontFamily=Microsoft YaHei;fillColor=#f8f8f8;strokeColor=#b0bec5;" vertex="1" parent="1">
+          <mxGeometry x="20" y="410" width="300" height="82" as="geometry" />
+        </mxCell>
+        <mxCell id="f1" value="三书认知基座 · LLM 增强 FSM · Skill 化 SOP&lt;br&gt;Session / WorkItem / Guardian 协同" style="rounded=1;whiteSpace=wrap;html=1;fontSize=11;fontFamily=Microsoft YaHei;fillColor=#ffffff;strokeColor=#37474f;" vertex="1" parent="c4">
+          <mxGeometry x="15" y="32" width="270" height="40" as="geometry" />
+        </mxCell>
+
+        <!-- ============ ⑤ 工程应用说明 ============ -->
+        <mxCell id="c5" value="⑤ 工程应用说明" style="rounded=1;whiteSpace=wrap;html=1;verticalAlign=top;align=left;spacingLeft=12;spacingTop=5;fontStyle=1;fontSize=12;fontFamily=Microsoft YaHei;fillColor=#f8f8f8;strokeColor=#b0bec5;" vertex="1" parent="1">
+          <mxGeometry x="20" y="516" width="300" height="82" as="geometry" />
+        </mxCell>
+        <mxCell id="a1" value="预设业务流程&lt;br&gt;（园路铺装验收）" style="rounded=1;whiteSpace=wrap;html=1;fontSize=11;fontFamily=Microsoft YaHei;fillColor=#ffffff;strokeColor=#37474f;" vertex="1" parent="c5">
+          <mxGeometry x="15" y="32" width="130" height="40" as="geometry" />
+        </mxCell>
+        <mxCell id="a2" value="非预设复合信息任务&lt;br&gt;（软装品质追溯）" style="rounded=1;whiteSpace=wrap;html=1;fontSize=11;fontFamily=Microsoft YaHei;fillColor=#ffffff;strokeColor=#37474f;" vertex="1" parent="c5">
+          <mxGeometry x="155" y="32" width="130" height="40" as="geometry" />
+        </mxCell>
+
+        <!-- ============ 内部箭头（① 问题识别内部） ============ -->
+        <mxCell id="ep12" style="edgeStyle=orthogonalEdgeStyle;html=1;rounded=0;strokeColor=#37474f;strokeWidth=1.5;endArrow=block;endFill=1;exitX=0.5;exitY=1;entryX=0.5;entryY=0;" edge="1" parent="1" source="p1" target="p2">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="ep23" style="edgeStyle=orthogonalEdgeStyle;html=1;rounded=0;strokeColor=#37474f;strokeWidth=1.5;endArrow=block;endFill=1;exitX=0.5;exitY=1;entryX=0.5;entryY=0;" edge="1" parent="1" source="p2" target="p3">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+
+        <!-- ============ 阶段间主流程箭头 ============ -->
+        <mxCell id="es12" style="edgeStyle=orthogonalEdgeStyle;html=1;rounded=0;strokeColor=#37474f;strokeWidth=2;endArrow=block;endFill=1;exitX=0.5;exitY=1;entryX=0.5;entryY=0;" edge="1" parent="1" source="c1" target="c2">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="es23" style="edgeStyle=orthogonalEdgeStyle;html=1;rounded=0;strokeColor=#37474f;strokeWidth=2;endArrow=block;endFill=1;exitX=0.5;exitY=1;entryX=0.5;entryY=0;" edge="1" parent="1" source="c2" target="c3">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="es34" style="edgeStyle=orthogonalEdgeStyle;html=1;rounded=0;strokeColor=#37474f;strokeWidth=2;endArrow=block;endFill=1;exitX=0.5;exitY=1;entryX=0.5;entryY=0;" edge="1" parent="1" source="c3" target="c4">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="es45" style="edgeStyle=orthogonalEdgeStyle;html=1;rounded=0;strokeColor=#37474f;strokeWidth=2;endArrow=block;endFill=1;exitX=0.5;exitY=1;entryX=0.5;entryY=0;" edge="1" parent="1" source="c4" target="c5">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+      </root>
+    </mxGraphModel>
+  </diagram>
+</mxfile>
