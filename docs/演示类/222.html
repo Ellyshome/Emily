@@ -1,0 +1,1587 @@
+<!DOCTYPE html>
+<html lang="zh-CN" class="dark">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Emily — 地产企业垂直领域AI智能体试点汇报</title>
+    <!-- Tailwind CSS -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <!-- FontAwesome Icons -->
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <!-- Google Fonts -->
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=Noto+Sans+SC:wght@300;400;500;700&display=swap" rel="stylesheet">
+    
+    <script>
+        tailwind.config = {
+            darkMode: 'class',
+            theme: {
+                extend: {
+                    fontFamily: {
+                        sans: ['Inter', 'Noto Sans SC', 'sans-serif'],
+                    },
+                    colors: {
+                        brand: {
+                            50: '#f0fdf4',
+                            100: '#dcfce7',
+                            500: '#22c55e',
+                            600: '#16a34a',
+                            700: '#15803d',
+                            accent: '#6366f1',
+                            dark: '#0b0f17'
+                        }
+                    },
+                    animation: {
+                        'pulse-slow': 'pulse 3s cubic-bezier(0.4, 0, 0.6, 1) infinite',
+                        'float': 'float 4s ease-in-out infinite',
+                    },
+                    keyframes: {
+                        float: {
+                            '0%, 100%': { transform: 'translateY(0px)' },
+                            '50%': { transform: 'translateY(-8px)' },
+                        }
+                    }
+                }
+            }
+        }
+    </script>
+    <style>
+        body {
+            font-family: 'Inter', 'Noto Sans SC', sans-serif;
+            background-color: #0b0f17;
+            color: #f3f4f6;
+            overflow: hidden;
+            user-select: none;
+        }
+
+        /* Glassmorphism utility */
+        .glass-panel {
+            background: rgba(17, 24, 39, 0.7);
+            backdrop-filter: blur(12px);
+            -webkit-backdrop-filter: blur(12px);
+            border: 1px solid rgba(255, 255, 255, 0.08);
+        }
+
+        .glass-card {
+            background: rgba(30, 41, 59, 0.6);
+            backdrop-filter: blur(8px);
+            border: 1px solid rgba(255, 255, 255, 0.05);
+        }
+
+        .glass-card:hover {
+            border-color: rgba(99, 102, 241, 0.3);
+        }
+
+        /* Smooth slide transition */
+        .slide-container {
+            position: relative;
+            width: 100%;
+            height: 100%;
+        }
+
+        .slide {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            opacity: 0;
+            visibility: hidden;
+            transform: scale(0.98) translateY(10px);
+            transition: opacity 0.4s ease, transform 0.4s ease, visibility 0.4s;
+            display: flex;
+            flex-direction: column;
+            justify-content: center;
+            align-items: center;
+            padding: 2rem 4rem;
+        }
+
+        @media (max-width: 768px) {
+            .slide {
+                padding: 1.5rem 1rem;
+            }
+        }
+
+        .slide.active {
+            opacity: 1;
+            visibility: visible;
+            transform: scale(1) translateY(0);
+            z-index: 10;
+        }
+
+        /* Custom Scrollbar */
+        ::-webkit-scrollbar {
+            width: 6px;
+            height: 6px;
+        }
+        ::-webkit-scrollbar-track {
+            background: rgba(15, 23, 42, 0.6);
+        }
+        ::-webkit-scrollbar-thumb {
+            background: rgba(99, 102, 241, 0.3);
+            border-radius: 3px;
+        }
+        ::-webkit-scrollbar-thumb:hover {
+            background: rgba(99, 102, 241, 0.6);
+        }
+
+        .glow-effect {
+            box-shadow: 0 0 35px -5px rgba(99, 102, 241, 0.25);
+        }
+
+        .glow-emerald {
+            box-shadow: 0 0 35px -5px rgba(34, 197, 94, 0.25);
+        }
+    </style>
+</head>
+<body class="h-screen w-screen flex flex-col justify-between overflow-hidden bg-[#0b0f17] text-slate-100">
+
+    <!-- Top Bar Navigation & Header -->
+    <header class="h-14 glass-panel border-b border-slate-800/80 px-6 flex items-center justify-between z-50 flex-shrink-0">
+        <div class="flex items-center gap-3">
+            <div class="w-8 h-8 rounded-lg bg-gradient-to-tr from-emerald-500 to-indigo-500 flex items-center justify-center font-bold text-white shadow-lg shadow-emerald-500/20">
+                E
+            </div>
+            <div>
+                <span class="font-bold tracking-wide text-white text-sm md:text-base">Emily</span>
+                <span class="text-xs text-slate-400 ml-2 hidden sm:inline">地产企业AI数字同事试点汇报</span>
+            </div>
+        </div>
+
+        <!-- Progress Bar Indicator -->
+        <div class="hidden md:flex items-center gap-4 flex-1 max-w-md mx-8">
+            <div class="w-full bg-slate-800 h-1.5 rounded-full overflow-hidden">
+                <div id="progress-bar" class="bg-gradient-to-r from-emerald-400 to-indigo-500 h-full w-0 transition-all duration-300"></div>
+            </div>
+            <span id="slide-count-badge" class="text-xs font-mono text-slate-400 whitespace-nowrap">01 / 22</span>
+        </div>
+
+        <!-- Header Controls -->
+        <div class="flex items-center gap-2">
+            <button id="btn-speaker-notes" onclick="toggleSpeakerNotes()" class="p-2 rounded-lg text-slate-400 hover:text-white hover:bg-slate-800/80 transition-all text-xs md:text-sm flex items-center gap-1.5" title="讲述说辞 (N)">
+                <i class="fa-solid fa-comment-dots text-indigo-400"></i>
+                <span class="hidden sm:inline">说辞</span>
+            </button>
+            <button id="btn-grid" onclick="toggleGridOverview()" class="p-2 rounded-lg text-slate-400 hover:text-white hover:bg-slate-800/80 transition-all text-xs md:text-sm flex items-center gap-1.5" title="页面总览 (G)">
+                <i class="fa-solid fa-border-all"></i>
+                <span class="hidden sm:inline">总览</span>
+            </button>
+            <button id="btn-fullscreen" onclick="toggleFullscreen()" class="p-2 rounded-lg text-slate-400 hover:text-white hover:bg-slate-800/80 transition-all text-xs md:text-sm" title="全屏 (F)">
+                <i class="fa-solid fa-expand"></i>
+            </button>
+        </div>
+    </header>
+
+    <!-- Main Presentation Workspace -->
+    <main class="flex-1 relative overflow-hidden w-full h-full flex items-center justify-center">
+        <div id="slides-wrapper" class="slide-container w-full h-full max-w-7xl mx-auto">
+
+            <!-- SLIDE 01 -->
+            <section class="slide active" data-slide="1">
+                <div class="max-w-4xl text-center space-y-6 animate-fade-in">
+                    <div class="inline-flex items-center gap-2 px-4 py-1.5 rounded-full bg-indigo-500/10 border border-indigo-500/30 text-indigo-300 text-sm font-medium mb-2">
+                        <span class="w-2 h-2 rounded-full bg-emerald-400 animate-pulse"></span>
+                        地产企业垂直领域 AI 智能体试点设想
+                    </div>
+                    <h1 class="text-4xl md:text-6xl font-extrabold tracking-tight text-transparent bg-clip-text bg-gradient-to-r from-white via-slate-100 to-indigo-200 leading-tight">
+                        “如果 AI 真的懂我们的公司，<br>会发生什么？”
+                    </h1>
+                    <p class="text-lg md:text-xl text-slate-400 max-w-2xl mx-auto font-light leading-relaxed">
+                        打造属于地产企业自己的数字同事 —— 从生活细节到项目记忆与经验沉淀
+                    </p>
+
+                    <!-- Minimal Visual Hero -->
+                    <div class="pt-8 flex justify-center">
+                        <div class="glass-panel p-6 rounded-2xl max-w-md w-full glow-effect text-left relative overflow-hidden border border-slate-700/50">
+                            <div class="absolute -right-10 -bottom-10 w-32 h-32 bg-indigo-500/10 rounded-full blur-2xl"></div>
+                            <div class="flex items-center gap-3 mb-4">
+                                <div class="w-10 h-10 rounded-full bg-emerald-500/20 text-emerald-400 flex items-center justify-center font-bold">E</div>
+                                <div>
+                                    <h4 class="font-semibold text-white text-sm">Emily 数字同事</h4>
+                                    <p class="text-xs text-slate-400">已接入项目现场与企业知识库</p>
+                                </div>
+                            </div>
+                            <div class="bg-slate-900/80 rounded-xl p-3 text-xs text-slate-300 space-y-2 border border-slate-800">
+                                <div class="text-slate-400">💬 “XX项目上个月乔木移栽验收标准是怎样的？”</div>
+                                <div class="text-emerald-300 font-medium pt-1 border-t border-slate-800 flex items-center gap-1.5">
+                                    <i class="fa-solid fa-sparkles text-xs"></i> 正在调用 《企业工程管理标准-SOP 2025版》...
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </section>
+
+            <!-- SLIDE 02 -->
+            <section class="slide" data-slide="2">
+                <div class="max-w-4xl w-full space-y-8">
+                    <div class="text-center space-y-3">
+                        <span class="text-xs font-semibold tracking-widest uppercase text-emerald-400">生活小场景</span>
+                        <h2 class="text-3xl md:text-5xl font-bold text-white">“先从一个很小的问题开始”</h2>
+                        <p class="text-slate-400">去杭州东站接人，一个每个人都可能遇到的日常小场景</p>
+                    </div>
+
+                    <div class="grid md:grid-cols-2 gap-6 items-center">
+                        <!-- Left: Station visual -->
+                        <div class="glass-card p-6 rounded-2xl border border-slate-800 space-y-4">
+                            <div class="h-48 rounded-xl bg-gradient-to-br from-slate-800 to-slate-900 border border-slate-700/50 flex flex-col items-center justify-center p-4 relative overflow-hidden">
+                                <i class="fa-solid fa-train-subway text-6xl text-indigo-400/40 mb-2"></i>
+                                <span class="text-sm font-semibold text-slate-200">杭州东站高铁接人</span>
+                                <span class="text-xs text-slate-400 mt-1">GXXXX 车次即将到达...</span>
+                                <div class="absolute bottom-3 right-3 bg-emerald-500/20 text-emerald-300 text-xs px-2.5 py-1 rounded-md border border-emerald-500/30">
+                                    现场实时调度中
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- Right: Chat Mock -->
+                        <div class="glass-panel p-5 rounded-2xl border border-slate-700/60 space-y-3">
+                            <div class="text-xs font-mono text-slate-400 pb-2 border-b border-slate-800 flex justify-between">
+                                <span>微信聊天界面</span>
+                                <span class="text-emerald-400">14:25</span>
+                            </div>
+                            <div class="space-y-3 text-xs md:text-sm">
+                                <div class="flex gap-2">
+                                    <div class="w-7 h-7 rounded-full bg-indigo-600 flex items-center justify-center text-xs font-bold">友</div>
+                                    <div class="bg-slate-800 text-slate-200 p-3 rounded-2xl rounded-tl-none max-w-[80%]">
+                                        “GXXXX到了，我该从哪个出口出来找你？”
+                                    </div>
+                                </div>
+                                <div class="flex gap-2 flex-row-reverse">
+                                    <div class="w-7 h-7 rounded-full bg-slate-700 flex items-center justify-center text-xs font-bold">我</div>
+                                    <div class="bg-indigo-600 text-white p-3 rounded-2xl rounded-tr-none max-w-[80%]">
+                                        等下，我查查通用AI助手...
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </section>
+
+            <!-- SLIDE 03 -->
+            <section class="slide" data-slide="3">
+                <div class="max-w-5xl w-full space-y-8">
+                    <div class="text-center space-y-3">
+                        <span class="text-xs font-semibold tracking-widest uppercase text-amber-400">核心思考</span>
+                        <h2 class="text-3xl md:text-5xl font-bold text-white">“它不是不聪明，而是它不在现场”</h2>
+                    </div>
+
+                    <div class="grid md:grid-cols-2 gap-6">
+                        <!-- Public Info -->
+                        <div class="glass-card p-6 rounded-2xl border border-slate-800 relative">
+                            <div class="flex items-center gap-3 mb-4">
+                                <div class="w-10 h-10 rounded-xl bg-slate-800 flex items-center justify-center text-slate-400">
+                                    <i class="fa-solid fa-globe text-lg"></i>
+                                </div>
+                                <div>
+                                    <h3 class="font-bold text-white">通用公开信息</h3>
+                                    <p class="text-xs text-slate-400">通用大模型知道的内容</p>
+                                </div>
+                            </div>
+                            <ul class="space-y-3 text-sm text-slate-300">
+                                <li class="flex items-center gap-2"><i class="fa-solid fa-check text-emerald-400"></i> 车站建筑结构设计与地图</li>
+                                <li class="flex items-center gap-2"><i class="fa-solid fa-check text-emerald-400"></i> 进站口与出站口常规定位</li>
+                                <li class="flex items-center gap-2"><i class="fa-solid fa-check text-emerald-400"></i> 静态列车时刻表与线路规划</li>
+                            </ul>
+                            <div class="mt-6 pt-4 border-t border-slate-800/80 text-xs text-slate-400 italic">
+                                只能给出标准泛化的知识
+                            </div>
+                        </div>
+
+                        <!-- Private Realtime Info -->
+                        <div class="glass-card p-6 rounded-2xl border border-indigo-500/30 bg-indigo-950/20 relative">
+                            <div class="flex items-center gap-3 mb-4">
+                                <div class="w-10 h-10 rounded-xl bg-indigo-500/20 text-indigo-400 flex items-center justify-center">
+                                    <i class="fa-solid fa-wifi text-lg"></i>
+                                </div>
+                                <div>
+                                    <h3 class="font-bold text-white">内部实时业务信息</h3>
+                                    <p class="text-xs text-indigo-300">车站专属“杭小东”知道的内容</p>
+                                </div>
+                            </div>
+                            <ul class="space-y-3 text-sm text-slate-200">
+                                <li class="flex items-center gap-2"><i class="fa-solid fa-bolt text-amber-400"></i> 某车次此时此刻实际出站口</li>
+                                <li class="flex items-center gap-2"><i class="fa-solid fa-bolt text-amber-400"></i> 当日车站调度临时调整情况</li>
+                                <li class="flex items-center gap-2"><i class="fa-solid fa-bolt text-amber-400"></i> 结合接人者所在位置生成实时电子路书</li>
+                            </ul>
+                            <div class="mt-6 pt-4 border-t border-indigo-500/20 text-xs text-emerald-400 font-medium">
+                                实时业务现场数据流接入
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="glass-panel p-4 rounded-xl border border-emerald-500/40 text-center">
+                        <span class="text-lg md:text-2xl font-bold text-transparent bg-clip-text bg-gradient-to-r from-emerald-400 to-indigo-300">
+                            通用知识 ≠ 业务现场信息
+                        </span>
+                    </div>
+                </div>
+            </section>
+
+            <!-- SLIDE 04 -->
+            <section class="slide" data-slide="4">
+                <div class="max-w-4xl w-full space-y-6">
+                    <div class="text-center space-y-2">
+                        <span class="text-xs font-semibold tracking-widest uppercase text-indigo-400">场景迁移</span>
+                        <h2 class="text-3xl md:text-5xl font-bold text-white">“换成我们公司，其实一模一样”</h2>
+                    </div>
+
+                    <div class="space-y-3">
+                        <!-- Q1 -->
+                        <div class="glass-card p-4 rounded-xl border border-slate-800 flex items-center justify-between">
+                            <div class="space-y-1">
+                                <span class="text-xs text-slate-400">问题 A (行业通用知识)</span>
+                                <h4 class="font-medium text-white">“大树移栽需要注意什么？”</h4>
+                            </div>
+                            <span class="px-3 py-1 rounded-full text-xs font-semibold bg-emerald-500/20 text-emerald-400 border border-emerald-500/30 whitespace-nowrap">
+                                通用AI 可以回答
+                            </span>
+                        </div>
+
+                        <!-- Q2 -->
+                        <div class="glass-card p-4 rounded-xl border border-slate-800 flex items-center justify-between">
+                            <div class="space-y-1">
+                                <span class="text-xs text-slate-400">问题 B (企业内部制度)</span>
+                                <h4 class="font-medium text-white">“我们公司的乔木栽植验收标准是什么？”</h4>
+                            </div>
+                            <span class="px-3 py-1 rounded-full text-xs font-semibold bg-amber-500/20 text-amber-400 border border-amber-500/30 whitespace-nowrap">
+                                通用AI 完全不知道
+                            </span>
+                        </div>
+
+                        <!-- Q3 -->
+                        <div class="glass-card p-4 rounded-xl border border-slate-800 flex items-center justify-between">
+                            <div class="space-y-1">
+                                <span class="text-xs text-slate-400">问题 C (真实项目过程历史)</span>
+                                <h4 class="font-medium text-white">“XX项目5月份那次乔木移栽问题，最后怎么处理的？”</h4>
+                            </div>
+                            <span class="px-3 py-1 rounded-full text-xs font-semibold bg-rose-500/20 text-rose-400 border border-rose-500/30 whitespace-nowrap">
+                                通用AI 更加不知道
+                            </span>
+                        </div>
+                    </div>
+
+                    <div class="p-6 rounded-2xl bg-gradient-to-r from-indigo-900/40 via-slate-900 to-emerald-900/40 border border-indigo-500/30 text-center space-y-2">
+                        <div class="text-slate-300 text-sm">核心结论</div>
+                        <div class="text-xl md:text-2xl font-bold text-white">
+                            “企业需要的，不只是‘懂行业’的AI，而是‘懂我们’的AI。”
+                        </div>
+                    </div>
+                </div>
+            </section>
+
+            <!-- SLIDE 05 -->
+            <section class="slide" data-slide="5">
+                <div class="max-w-4xl w-full space-y-8">
+                    <div class="text-center space-y-3">
+                        <span class="text-xs font-semibold tracking-widest uppercase text-emerald-400">时代趋势</span>
+                        <h2 class="text-3xl md:text-5xl font-bold text-white">“最近，大家突然开始‘养虾’了”</h2>
+                        <p class="text-slate-400">轻松理解 OpenClaw / AI Agent 智能体现象</p>
+                    </div>
+
+                    <div class="grid md:grid-cols-3 gap-6">
+                        <div class="glass-card p-6 rounded-2xl text-center space-y-3 border border-slate-800">
+                            <div class="w-12 h-12 rounded-2xl bg-indigo-500/20 text-indigo-400 flex items-center justify-center mx-auto text-xl">
+                                <i class="fa-solid fa-brain"></i>
+                            </div>
+                            <h3 class="font-bold text-white text-lg">“记东西”</h3>
+                            <p class="text-xs text-slate-400">突破单次会话限制，长久保存上下文与项目历史</p>
+                        </div>
+
+                        <div class="glass-card p-6 rounded-2xl text-center space-y-3 border border-slate-800">
+                            <div class="w-12 h-12 rounded-2xl bg-emerald-500/20 text-emerald-400 flex items-center justify-center mx-auto text-xl">
+                                <i class="fa-solid fa-screwdriver-wrench"></i>
+                            </div>
+                            <h3 class="font-bold text-white text-lg">“调工具”</h3>
+                            <p class="text-xs text-slate-400">能够自动化操作系统接口、检索文档、填表生成报告</p>
+                        </div>
+
+                        <div class="glass-card p-6 rounded-2xl text-center space-y-3 border border-slate-800">
+                            <div class="w-12 h-12 rounded-2xl bg-amber-500/20 text-amber-400 flex items-center justify-center mx-auto text-xl">
+                                <i class="fa-solid fa-user-clock"></i>
+                            </div>
+                            <h3 class="font-bold text-white text-lg">“长期工作”</h3>
+                            <p class="text-xs text-slate-400">不只是问答框，而是挂载在侧持续跟进项目动态</p>
+                        </div>
+                    </div>
+
+                    <div class="glass-panel p-5 rounded-2xl border border-indigo-500/30 text-center">
+                        <span class="text-lg md:text-xl font-bold text-indigo-200">
+                            “AI 正从‘问答工具’，加速演变成‘长期数字同事’。”
+                        </span>
+                    </div>
+                </div>
+            </section>
+
+            <!-- SLIDE 06 -->
+            <section class="slide" data-slide="6">
+                <div class="max-w-5xl w-full space-y-8">
+                    <div class="text-center space-y-3">
+                        <span class="text-xs font-semibold tracking-widest uppercase text-indigo-400">组织资产化</span>
+                        <h2 class="text-3xl md:text-5xl font-bold text-white">“蒸馏同事：经验能否留下来？”</h2>
+                        <p class="text-slate-400">如果一个优秀员工的经验与判断标准，可以被数字沉淀...</p>
+                    </div>
+
+                    <div class="grid md:grid-cols-3 gap-4 items-center">
+                        <!-- Left: Senior Employee -->
+                        <div class="glass-card p-6 rounded-2xl text-center space-y-3 border border-slate-800">
+                            <div class="w-16 h-16 rounded-full bg-slate-800 border-2 border-indigo-400 flex items-center justify-center mx-auto text-2xl text-slate-300">
+                                <i class="fa-solid fa-user-tie"></i>
+                            </div>
+                            <h3 class="font-bold text-white">资深项目专家</h3>
+                            <p class="text-xs text-slate-400">干过多个大项目，熟悉各种隐性规则与应对技巧</p>
+                        </div>
+
+                        <!-- Center: Transfer Arrow & tags -->
+                        <div class="flex flex-col items-center justify-center space-y-2 py-4">
+                            <div class="text-xs font-mono text-emerald-400 px-3 py-1 rounded-full bg-emerald-500/10 border border-emerald-500/20">
+                                蒸馏 distillation
+                            </div>
+                            <i class="fa-solid fa-arrow-right text-2xl text-indigo-400 hidden md:block animate-pulse"></i>
+                            <i class="fa-solid fa-arrow-down text-2xl text-indigo-400 md:hidden animate-pulse"></i>
+                            <div class="text-xs text-slate-400 text-center">
+                                方法 • 经验 • 标准 • 判断
+                            </div>
+                        </div>
+
+                        <!-- Right: Digital Colleague -->
+                        <div class="glass-card p-6 rounded-2xl text-center space-y-3 border border-emerald-500/30 bg-emerald-950/10 glow-emerald">
+                            <div class="w-16 h-16 rounded-full bg-emerald-500/20 border-2 border-emerald-400 flex items-center justify-center mx-auto text-2xl text-emerald-300">
+                                <i class="fa-solid fa-robot"></i>
+                            </div>
+                            <h3 class="font-bold text-white">数字同事 (Emily)</h3>
+                            <p class="text-xs text-slate-400">组织可复用能力，人员变动时经验不流失</p>
+                        </div>
+                    </div>
+
+                    <div class="text-center pt-4">
+                        <p class="text-base text-slate-300">
+                            “把个人经验，逐步沉淀成组织可以随时调用的复用能力。”
+                        </p>
+                    </div>
+                </div>
+            </section>
+
+            <!-- SLIDE 07 -->
+            <section class="slide" data-slide="7">
+                <div class="max-w-4xl w-full space-y-8 text-center">
+                    <div class="space-y-3">
+                        <span class="text-xs font-semibold tracking-widest uppercase text-emerald-400">试点提案主角</span>
+                        <h2 class="text-4xl md:text-6xl font-extrabold text-white">“所以，我做了 Emily”</h2>
+                        <p class="text-lg text-emerald-300 font-medium">面向地产企业的垂直领域 AI 智能体试点系统</p>
+                    </div>
+
+                    <!-- 3 Tags -->
+                    <div class="grid md:grid-cols-3 gap-6 pt-2">
+                        <div class="glass-card p-6 rounded-2xl border border-slate-800 hover:border-emerald-500/50 transition-all">
+                            <i class="fa-solid fa-user-astronaut text-3xl text-indigo-400 mb-3"></i>
+                            <h3 class="font-bold text-white text-lg">数字同事</h3>
+                            <p class="text-xs text-slate-400 mt-2">融入日常IM沟通与工作流</p>
+                        </div>
+                        <div class="glass-card p-6 rounded-2xl border border-slate-800 hover:border-emerald-500/50 transition-all">
+                            <i class="fa-solid fa-database text-3xl text-emerald-400 mb-3"></i>
+                            <h3 class="font-bold text-white text-lg">项目记忆中枢</h3>
+                            <p class="text-xs text-slate-400 mt-2">记录事件发展与处理链条</p>
+                        </div>
+                        <div class="glass-card p-6 rounded-2xl border border-slate-800 hover:border-emerald-500/50 transition-all">
+                            <i class="fa-solid fa-box-archive text-3xl text-amber-400 mb-3"></i>
+                            <h3 class="font-bold text-white text-lg">团队经验沉淀器</h3>
+                            <p class="text-xs text-slate-400 mt-2">将成功/失败历程转化为资产</p>
+                        </div>
+                    </div>
+
+                    <div class="glass-panel p-6 rounded-2xl border border-slate-700/80 max-w-2xl mx-auto">
+                        <p class="text-slate-200 text-sm md:text-base leading-relaxed">
+                            “不是为了替代员工，而是帮助员工做事，并把做过的事情留下来。”
+                        </p>
+                    </div>
+                </div>
+            </section>
+
+            <!-- SLIDE 08 -->
+            <section class="slide" data-slide="8">
+                <div class="max-w-4xl w-full space-y-6">
+                    <div class="text-center space-y-2">
+                        <span class="text-xs font-semibold tracking-widest uppercase text-indigo-400">现场演示 • 第一问</span>
+                        <h2 class="text-3xl md:text-5xl font-bold text-white">“先问一个谁都会回答的问题”</h2>
+                    </div>
+
+                    <div class="glass-panel p-6 rounded-2xl border border-slate-800 max-w-2xl mx-auto space-y-4">
+                        <div class="flex items-center gap-2 border-b border-slate-800 pb-3">
+                            <span class="w-3 h-3 rounded-full bg-rose-500"></span>
+                            <span class="w-3 h-3 rounded-full bg-amber-500"></span>
+                            <span class="w-3 h-3 rounded-full bg-emerald-500"></span>
+                            <span class="text-xs text-slate-500 ml-2 font-mono">Emily Demo Window</span>
+                        </div>
+
+                        <!-- Chat input mock -->
+                        <div class="bg-slate-900/90 p-4 rounded-xl border border-slate-800 flex items-center justify-between">
+                            <span class="text-slate-200 text-sm md:text-base">“乔木移栽需要注意什么？”</span>
+                            <i class="fa-solid fa-paper-plane text-indigo-400"></i>
+                        </div>
+
+                        <div class="bg-slate-800/60 p-4 rounded-xl text-xs md:text-sm text-slate-300 space-y-2 border border-slate-700/50">
+                            <div class="text-emerald-400 font-semibold mb-1">Emily 回答：</div>
+                            <p>1. 移植季节选择：宜在土球休眠期（早春或深秋）进行。</p>
+                            <p>2. 土球挖掘：土球直径通常为胸径的8-10倍...</p>
+                            <p>3. 修剪与保湿：适当截干并喷洒蒸腾抑制剂...</p>
+                        </div>
+                    </div>
+
+                    <div class="text-center text-xs text-slate-400">
+                        💡 这一步，Emily 和普通通用 AI 没有本质区别，接下来我们看差异。
+                    </div>
+                </div>
+            </section>
+
+            <!-- SLIDE 09 -->
+            <section class="slide" data-slide="9">
+                <div class="max-w-4xl w-full space-y-6">
+                    <div class="text-center space-y-2">
+                        <span class="text-xs font-semibold tracking-widest uppercase text-emerald-400">现场演示 • 第二问</span>
+                        <h2 class="text-3xl md:text-5xl font-bold text-white">“那如果问：我们公司怎么要求？”</h2>
+                    </div>
+
+                    <div class="glass-panel p-6 rounded-2xl border border-emerald-500/30 max-w-2xl mx-auto space-y-4">
+                        <div class="bg-slate-900 p-4 rounded-xl border border-indigo-500/30 flex items-center justify-between">
+                            <span class="text-white text-sm md:text-base font-medium">“我们公司的乔木栽植验收标准是什么？”</span>
+                            <span class="text-xs bg-indigo-500/20 text-indigo-300 px-2 py-1 rounded">企业标准检索</span>
+                        </div>
+
+                        <div class="bg-slate-900/90 p-4 rounded-xl text-xs md:text-sm space-y-3 border border-slate-800">
+                            <div class="flex items-center justify-between text-xs text-slate-400 border-b border-slate-800 pb-2">
+                                <span>📄 来源: 《企业景观工程验收标准手册 2024版》第4.2章</span>
+                                <span class="text-emerald-400">版本 v2.1 (生效中)</span>
+                            </div>
+                            <div class="space-y-1 text-slate-200">
+                                <p class="font-semibold text-emerald-300">明确要求摘要：</p>
+                                <p>• 苗木胸径偏差不得超过 ±0.5cm，树冠丰满度需达80%以上。</p>
+                                <p>• 支撑架必须统一使用固定式隐形钢丝绳或无伤木支架。</p>
+                                <p>• 进场必须提供检疫证明与苗圃出场合格证。</p>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="text-center text-sm font-semibold text-emerald-400">
+                        “从‘网上公共知识’进入‘企业专属知识’。”
+                    </div>
+                </div>
+            </section>
+
+            <!-- SLIDE 10 -->
+            <section class="slide" data-slide="10">
+                <div class="max-w-4xl w-full space-y-6">
+                    <div class="text-center space-y-2">
+                        <span class="text-xs font-semibold tracking-widest uppercase text-amber-400">现场演示 • 第三问</span>
+                        <h2 class="text-3xl md:text-5xl font-bold text-white">“再往前一步：它知道项目发生过什么吗？”</h2>
+                    </div>
+
+                    <div class="glass-panel p-6 rounded-2xl border border-amber-500/30 max-w-2xl mx-auto space-y-4">
+                        <div class="bg-slate-900 p-4 rounded-xl border border-amber-500/30">
+                            <span class="text-white text-sm md:text-base font-medium">“XX项目最近有没有发生乔木移栽相关问题？”</span>
+                        </div>
+
+                        <!-- Project Memory Card -->
+                        <div class="glass-card p-4 rounded-xl border border-slate-700/60 space-y-3">
+                            <div class="flex justify-between items-center text-xs">
+                                <span class="bg-amber-500/20 text-amber-300 px-2.5 py-1 rounded-md font-medium">📍 XX项目 B标段</span>
+                                <span class="text-slate-400">记录时间：2026年5月12日</span>
+                            </div>
+                            <div class="text-sm text-slate-200">
+                                发现 3 株主景罗汉松移栽后出现叶片黄化及倾斜偏倚风险，已被工程部列为二类整改项。
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="text-center text-sm font-semibold text-amber-300">
+                        “从‘企业静态知识’进入‘动态项目记忆’。”
+                    </div>
+                </div>
+            </section>
+
+            <!-- SLIDE 11 -->
+            <section class="slide" data-slide="11">
+                <div class="max-w-5xl w-full space-y-6">
+                    <div class="text-center space-y-2">
+                        <span class="text-xs font-semibold tracking-widest uppercase text-indigo-400">现场演示 • 事件链追问</span>
+                        <h2 class="text-3xl md:text-5xl font-bold text-white">“真正有意思的是：可以继续追问”</h2>
+                    </div>
+
+                    <!-- 4 Timeline Event Nodes -->
+                    <div class="grid sm:grid-cols-2 lg:grid-cols-4 gap-4 pt-2">
+                        <div class="glass-card p-4 rounded-xl border border-slate-800 space-y-2">
+                            <div class="text-xs text-indigo-400 font-mono">追问 1</div>
+                            <h4 class="font-bold text-white text-sm">“谁发现的？”</h4>
+                            <p class="text-xs text-slate-300">景观工程师 张工 在日常巡检中提出。</p>
+                        </div>
+                        <div class="glass-card p-4 rounded-xl border border-slate-800 space-y-2">
+                            <div class="text-xs text-indigo-400 font-mono">追问 2</div>
+                            <h4 class="font-bold text-white text-sm">“什么时候发生的？”</h4>
+                            <p class="text-xs text-slate-300">5月12日现场巡检并录入过程日志。</p>
+                        </div>
+                        <div class="glass-card p-4 rounded-xl border border-slate-800 space-y-2">
+                            <div class="text-xs text-indigo-400 font-mono">追问 3</div>
+                            <h4 class="font-bold text-white text-sm">“当时怎么处理的？”</h4>
+                            <p class="text-xs text-slate-300">要求施工方补充生根剂并重做隐形固定架。</p>
+                        </div>
+                        <div class="glass-card p-4 rounded-xl border border-slate-800 space-y-2 border-emerald-500/40 bg-emerald-950/10">
+                            <div class="text-xs text-emerald-400 font-mono">追问 4</div>
+                            <h4 class="font-bold text-emerald-300 font-mono">“最后解决了吗？”</h4>
+                            <p class="text-xs text-emerald-300">5月20日复验通过，苗木恢复生长。</p>
+                        </div>
+                    </div>
+
+                    <div class="glass-panel p-4 rounded-xl text-center border border-indigo-500/30">
+                        <p class="text-slate-200 text-sm md:text-base">
+                            “这不是找到一份静态文件，而是还原了一次真实发生过的完整事件。”
+                        </p>
+                    </div>
+                </div>
+            </section>
+
+            <!-- SLIDE 12: 集团管理层视角 -->
+            <section class="slide" data-slide="12">
+                <div class="max-w-5xl w-full space-y-6">
+                    <div class="text-center space-y-2">
+                        <span class="text-xs font-semibold tracking-widest uppercase text-indigo-400">应用视角 01</span>
+                        <h2 class="text-3xl md:text-5xl font-bold text-white">“集团管理层视角：全局穿透与风险预警”</h2>
+                        <p class="text-slate-400 text-xs md:text-sm">从繁杂汇报中解脱，实现跨项目透明管理与资产大盘监控</p>
+                    </div>
+
+                    <div class="grid md:grid-cols-2 gap-6 items-stretch">
+                        <div class="glass-card p-6 rounded-2xl border border-indigo-500/30 bg-indigo-950/20 space-y-4 flex flex-col justify-between">
+                            <div>
+                                <div class="flex items-center gap-3 mb-3">
+                                    <div class="w-10 h-10 rounded-xl bg-indigo-500/20 text-indigo-400 flex items-center justify-center font-bold text-lg">
+                                        <i class="fa-solid fa-chart-line"></i>
+                                    </div>
+                                    <div>
+                                        <h3 class="font-bold text-white text-base">集团高管 / 区域负责人</h3>
+                                        <p class="text-xs text-indigo-300">关注：跨项目对比、隐患分布、履约合规</p>
+                                    </div>
+                                </div>
+                                <div class="space-y-3 text-xs md:text-sm pt-2">
+                                    <div class="bg-slate-900/90 p-3.5 rounded-xl border border-slate-800">
+                                        💬 <span class="text-indigo-200 font-medium">“集团所有在建项目中，目前哪些标段存在超期及二类以上质量隐患？”</span>
+                                    </div>
+                                    <div class="bg-slate-900/90 p-3.5 rounded-xl border border-slate-800">
+                                        💬 <span class="text-indigo-200 font-medium">“自动汇总近3个月景观与工程巡检的重复性痛点问题。”</span>
+                                    </div>
+                                </div>
+                            </div>
+                            <div class="p-3 bg-indigo-500/10 rounded-xl border border-indigo-500/20 text-xs text-indigo-300">
+                                <i class="fa-solid fa-lightbulb text-amber-400 mr-1.5"></i>
+                                价值：随时穿透业务现场，无需等待层层呈报与数据沉淀。
+                            </div>
+                        </div>
+
+                        <div class="glass-panel p-6 rounded-2xl border border-slate-800 space-y-3 text-xs">
+                            <h4 class="font-bold text-white text-sm border-b border-slate-800 pb-2">Emily 为管理层提供的核心功能：</h4>
+                            <ul class="space-y-3 text-slate-300">
+                                <li class="flex items-start gap-2.5">
+                                    <i class="fa-solid fa-shield-halved text-indigo-400 mt-0.5"></i>
+                                    <span><b>跨项目风险穿透：</b> 自动提取所有项目的过程日志，实时识别质量防线漏洞与进度偏差。</span>
+                                </li>
+                                <li class="flex items-start gap-2.5">
+                                    <i class="fa-solid fa-file-invoice-dollar text-indigo-400 mt-0.5"></i>
+                                    <span><b>制度合规审计：</b> 对比实际施工审批流与集团 SOP，第一时间提示未批先干或超规操作。</span>
+                                </li>
+                                <li class="flex items-start gap-2.5">
+                                    <i class="fa-solid fa-bolt text-indigo-400 mt-0.5"></i>
+                                    <span><b>智能看板一键生成：</b> 自然语言指令即可按区域、业务线调出对比分析摘要。</span>
+                                </li>
+                            </ul>
+                        </div>
+                    </div>
+                </div>
+            </section>
+
+            <!-- SLIDE 13: 项目管理层视角 -->
+            <section class="slide" data-slide="13">
+                <div class="max-w-5xl w-full space-y-6">
+                    <div class="text-center space-y-2">
+                        <span class="text-xs font-semibold tracking-widest uppercase text-emerald-400">应用视角 02</span>
+                        <h2 class="text-3xl md:text-5xl font-bold text-white">“项目管理层视角：工序闭环与高效协同”</h2>
+                        <p class="text-slate-400 text-xs md:text-sm">掌控项目全流程节点，确保质量标准到位与问题高效闭环</p>
+                    </div>
+
+                    <div class="grid md:grid-cols-2 gap-6 items-stretch">
+                        <div class="glass-card p-6 rounded-2xl border border-emerald-500/30 bg-emerald-950/20 space-y-4 flex flex-col justify-between">
+                            <div>
+                                <div class="flex items-center gap-3 mb-3">
+                                    <div class="w-10 h-10 rounded-xl bg-emerald-500/20 text-emerald-400 flex items-center justify-center font-bold text-lg">
+                                        <i class="fa-solid fa-list-check"></i>
+                                    </div>
+                                    <div>
+                                        <h3 class="font-bold text-white text-base">项目经理 / 现场工程负责人</h3>
+                                        <p class="text-xs text-emerald-300">关注：工序交接、问题整改率、验收节点</p>
+                                    </div>
+                                </div>
+                                <div class="space-y-3 text-xs md:text-sm pt-2">
+                                    <div class="bg-slate-900/90 p-3.5 rounded-xl border border-slate-800">
+                                        💬 <span class="text-emerald-200 font-medium">“B标段上次提出的乔木倾斜整改，施工方今天完成复验了吗？”</span>
+                                    </div>
+                                    <div class="bg-slate-900/90 p-3.5 rounded-xl border border-slate-800">
+                                        💬 <span class="text-emerald-200 font-medium">“本周末软景验收前，项目部必须准备好哪些交底与检测文件？”</span>
+                                    </div>
+                                </div>
+                            </div>
+                            <div class="p-3 bg-emerald-500/10 rounded-xl border border-emerald-500/20 text-xs text-emerald-300">
+                                <i class="fa-solid fa-lightbulb text-emerald-400 mr-1.5"></i>
+                                价值：告别微信群推诿，让每一次巡检与整改都有痕可循、闭环追溯。
+                            </div>
+                        </div>
+
+                        <div class="glass-panel p-6 rounded-2xl border border-slate-800 space-y-3 text-xs">
+                            <h4 class="font-bold text-white text-sm border-b border-slate-800 pb-2">Emily 为项目管理层提供的核心功能：</h4>
+                            <ul class="space-y-3 text-slate-300">
+                                <li class="flex items-start gap-2.5">
+                                    <i class="fa-solid fa-clock-rotate-left text-emerald-400 mt-0.5"></i>
+                                    <span><b>事件跟踪与闭环提醒：</b> 自动跟踪整改通知书的发起、责任人、时限与现场复验结论。</span>
+                                </li>
+                                <li class="flex items-start gap-2.5">
+                                    <i class="fa-solid fa-book-open text-emerald-400 mt-0.5"></i>
+                                    <span><b>标准 SOP 精准调取：</b> 根据当前工序节点，自动提示验收必备的表单与防错条款。</span>
+                                </li>
+                                <li class="flex items-start gap-2.5">
+                                    <i class="fa-solid fa-users-gear text-emerald-400 mt-0.5"></i>
+                                    <span><b>多方协同导引：</b> 协调设计、监理、施工方在统一信息基准下高效对接。</span>
+                                </li>
+                            </ul>
+                        </div>
+                    </div>
+                </div>
+            </section>
+
+            <!-- SLIDE 14: 承建单位一线员工视角 -->
+            <section class="slide" data-slide="14">
+                <div class="max-w-5xl w-full space-y-6">
+                    <div class="text-center space-y-2">
+                        <span class="text-xs font-semibold tracking-widest uppercase text-amber-400">应用视角 03</span>
+                        <h2 class="text-3xl md:text-5xl font-bold text-white">“承建单位一线员工视角：现场防错与标准速查”</h2>
+                        <p class="text-slate-400 text-xs md:text-sm">随身口袋助手，口袋里的技术专家，降低返工与违规风险</p>
+                    </div>
+
+                    <div class="grid md:grid-cols-2 gap-6 items-stretch">
+                        <div class="glass-card p-6 rounded-2xl border border-amber-500/30 bg-amber-950/20 space-y-4 flex flex-col justify-between">
+                            <div>
+                                <div class="flex items-center gap-3 mb-3">
+                                    <div class="w-10 h-10 rounded-xl bg-amber-500/20 text-amber-400 flex items-center justify-center font-bold text-lg">
+                                        <i class="fa-solid fa-hard-hat"></i>
+                                    </div>
+                                    <div>
+                                        <h3 class="font-bold text-white text-base">施工员 / 现场技术人员 / 监理</h3>
+                                        <p class="text-xs text-amber-300">关注：施工参数、材料入场标准、拍照留痕规范</p>
+                                    </div>
+                                </div>
+                                <div class="space-y-3 text-xs md:text-sm pt-2">
+                                    <div class="bg-slate-900/90 p-3.5 rounded-xl border border-slate-800">
+                                        💬 <span class="text-amber-200 font-medium">“今天软景水景底座浇筑，混凝土养护时间和隐蔽工程拍照要求是怎样的？”</span>
+                                    </div>
+                                    <div class="bg-slate-900/90 p-3.5 rounded-xl border border-slate-800">
+                                        💬 <span class="text-amber-200 font-medium">“进场苗木胸径偏差了 0.4cm，符合甲方许容偏差范围吗？需要走什么程序？”</span>
+                                    </div>
+                                </div>
+                            </div>
+                            <div class="p-3 bg-amber-500/10 rounded-xl border border-amber-500/20 text-xs text-amber-300">
+                                <i class="fa-solid fa-lightbulb text-amber-400 mr-1.5"></i>
+                                价值：随时随地问规范，现场少走弯路，大幅减少因理解偏差造成的返工损失。
+                            </div>
+                        </div>
+
+                        <div class="glass-panel p-6 rounded-2xl border border-slate-800 space-y-3 text-xs">
+                            <h4 class="font-bold text-white text-sm border-b border-slate-800 pb-2">Emily 为一线人员提供的核心功能：</h4>
+                            <ul class="space-y-3 text-slate-300">
+                                <li class="flex items-start gap-2.5">
+                                    <i class="fa-solid fa-magnifying-glass text-amber-400 mt-0.5"></i>
+                                    <span><b>规范参数秒查：</b> 手机微信端直接输入口语化问题，毫秒级定位具体标准图集与指标。</span>
+                                </li>
+                                <li class="flex items-start gap-2.5">
+                                    <i class="fa-solid fa-triangle-exclamation text-amber-400 mt-0.5"></i>
+                                    <span><b>异常预警与快速上报：</b> 遇到现场不符项，引导一线人员格式化录入，快速发起偏差特批。</span>
+                                </li>
+                                <li class="flex items-start gap-2.5">
+                                    <i class="fa-solid fa-camera text-amber-400 mt-0.5"></i>
+                                    <span><b>隐蔽工程留痕导引：</b> 提示现场拍照的关键角度与必填属性，确保一次性通过验收。</span>
+                                </li>
+                            </ul>
+                        </div>
+                    </div>
+                </div>
+            </section>
+
+            <!-- SLIDE 15: 项目合作资方视角 -->
+            <section class="slide" data-slide="15">
+                <div class="max-w-5xl w-full space-y-6">
+                    <div class="text-center space-y-2">
+                        <span class="text-xs font-semibold tracking-widest uppercase text-cyan-400">应用视角 04</span>
+                        <h2 class="text-3xl md:text-5xl font-bold text-white">“项目合作资方视角：投后穿透与节点验资”</h2>
+                        <p class="text-slate-400 text-xs md:text-sm">资金监管透明化，工程实况可凭据，保障投资安全与履约合规</p>
+                    </div>
+
+                    <div class="grid md:grid-cols-2 gap-6 items-stretch">
+                        <div class="glass-card p-6 rounded-2xl border border-cyan-500/30 bg-cyan-950/20 space-y-4 flex flex-col justify-between">
+                            <div>
+                                <div class="flex items-center gap-3 mb-3">
+                                    <div class="w-10 h-10 rounded-xl bg-cyan-500/20 text-cyan-400 flex items-center justify-center font-bold text-lg">
+                                        <i class="fa-solid fa-sack-dollar"></i>
+                                    </div>
+                                    <div>
+                                        <h3 class="font-bold text-white text-base">合作资方 / 基金风控 / 财务监事</h3>
+                                        <p class="text-xs text-cyan-300">关注：资金拨付条件、工程进度真实度、重大风险合规</p>
+                                    </div>
+                                </div>
+                                <div class="space-y-3 text-xs md:text-sm pt-2">
+                                    <div class="bg-slate-900/90 p-3.5 rounded-xl border border-slate-800">
+                                        💬 <span class="text-cyan-200 font-medium">“本次申请拨付第3期节点款，对应标段的实际物理工程进度与验收记录是否匹配？”</span>
+                                    </div>
+                                    <div class="bg-slate-900/90 p-3.5 rounded-xl border border-slate-800">
+                                        💬 <span class="text-cyan-200 font-medium">“调取该项目合作约定的核心监管节点执行情况，是否存在超预算隐患？”</span>
+                                    </div>
+                                </div>
+                            </div>
+                            <div class="p-3 bg-cyan-500/10 rounded-xl border border-cyan-500/20 text-xs text-cyan-300">
+                                <i class="fa-solid fa-lightbulb text-cyan-400 mr-1.5"></i>
+                                价值：打破信息黑盒，用真实的动态项目记忆支撑投后风控与资金安全。
+                            </div>
+                        </div>
+
+                        <div class="glass-panel p-6 rounded-2xl border border-slate-800 space-y-3 text-xs">
+                            <h4 class="font-bold text-white text-sm border-b border-slate-800 pb-2">Emily 为合作资方提供的核心功能：</h4>
+                            <ul class="space-y-3 text-slate-300">
+                                <li class="flex items-start gap-2.5">
+                                    <i class="fa-solid fa-key text-cyan-400 mt-0.5"></i>
+                                    <span><b>节点真实性对账：</b> 将提款申请与现场日志、监理签字记录交叉比对，防止虚报进度。</span>
+                                </li>
+                                <li class="flex items-start gap-2.5">
+                                    <i class="fa-solid fa-eye text-cyan-400 mt-0.5"></i>
+                                    <span><b>阳光透明穿透：</b> 在授权范围内受控调阅工程履约记忆链，降低风控核查成本。</span>
+                                </li>
+                                <li class="flex items-start gap-2.5">
+                                    <i class="fa-solid fa-file-contract text-cyan-400 mt-0.5"></i>
+                                    <span><b>履约风险预警：</b> 识别延期风险、合同变更及未决纠纷，前置提示资方风险。</span>
+                                </li>
+                            </ul>
+                        </div>
+                    </div>
+                </div>
+            </section>
+
+            <!-- SLIDE 16 -->
+            <section class="slide" data-slide="16">
+                <div class="max-w-5xl w-full space-y-8">
+                    <div class="text-center space-y-3">
+                        <span class="text-xs font-semibold tracking-widest uppercase text-indigo-400">定位升级</span>
+                        <h2 class="text-3xl md:text-5xl font-bold text-white">“Emily 真正想记住的，不是‘文件在哪’”</h2>
+                    </div>
+
+                    <!-- Central Core Diagram -->
+                    <div class="relative py-6">
+                        <div class="w-44 h-44 rounded-full bg-gradient-to-br from-indigo-600 to-emerald-600 mx-auto flex flex-col items-center justify-center text-center p-4 shadow-2xl glow-effect z-10 relative">
+                            <span class="text-xs uppercase tracking-widest text-slate-200">核心聚焦</span>
+                            <span class="text-2xl font-black text-white mt-1">发生过什么？</span>
+                        </div>
+
+                        <!-- 5 Surround Badges -->
+                        <div class="grid grid-cols-2 md:grid-cols-5 gap-3 mt-8">
+                            <div class="glass-card p-3 rounded-xl text-center border border-slate-800">
+                                <span class="text-xs text-slate-400 block">维度 1</span>
+                                <span class="font-bold text-white text-sm">为什么发生</span>
+                            </div>
+                            <div class="glass-card p-3 rounded-xl text-center border border-slate-800">
+                                <span class="text-xs text-slate-400 block">维度 2</span>
+                                <span class="font-bold text-white text-sm">谁处理</span>
+                            </div>
+                            <div class="glass-card p-3 rounded-xl text-center border border-slate-800">
+                                <span class="text-xs text-slate-400 block">维度 3</span>
+                                <span class="font-bold text-white text-sm">怎么处理</span>
+                            </div>
+                            <div class="glass-card p-3 rounded-xl text-center border border-slate-800">
+                                <span class="text-xs text-slate-400 block">维度 4</span>
+                                <span class="font-bold text-white text-sm">结果如何</span>
+                            </div>
+                            <div class="glass-card p-3 rounded-xl text-center border border-slate-800 col-span-2 md:col-span-1">
+                                <span class="text-xs text-slate-400 block">维度 5</span>
+                                <span class="font-bold text-white text-sm">以后怎么办</span>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="text-center font-bold text-xl text-emerald-400">
+                        “项目交付结束，团队记忆不结束。”
+                    </div>
+                </div>
+            </section>
+
+            <!-- SLIDE 17 -->
+            <section class="slide" data-slide="17">
+                <div class="max-w-5xl w-full space-y-6">
+                    <div class="text-center space-y-2">
+                        <span class="text-xs font-semibold tracking-widest uppercase text-amber-400">高频落地场景</span>
+                        <h2 class="text-3xl md:text-5xl font-bold text-white">“新人融入：从‘翻文件’到‘直接问公司’”</h2>
+                    </div>
+
+                    <div class="grid md:grid-cols-2 gap-6">
+                        <!-- Traditional Onboarding -->
+                        <div class="glass-card p-6 rounded-2xl border border-rose-500/30 space-y-3">
+                            <h3 class="font-bold text-rose-300 flex items-center gap-2">
+                                <i class="fa-solid fa-circle-xmark"></i> 传统入职模式
+                            </h3>
+                            <div class="text-xs text-slate-300 space-y-2">
+                                <p>• 培训发盘 → 翻阅海量历史文件库</p>
+                                <p>• 不知道文件是否最新，靠到处问老同事</p>
+                                <p>• 不清楚项目历史背景，容易重蹈覆辙</p>
+                                <p class="text-rose-400 font-semibold pt-2">耗费大量培训与沟通成本</p>
+                            </div>
+                        </div>
+
+                        <!-- Emily Co-pilot -->
+                        <div class="glass-card p-6 rounded-2xl border border-emerald-500/40 bg-emerald-950/10 space-y-3">
+                            <h3 class="font-bold text-emerald-300 flex items-center gap-2">
+                                <i class="fa-solid fa-circle-check"></i> Emily 陪练模式
+                            </h3>
+                            <div class="text-xs text-slate-200 space-y-2">
+                                <p>• 💬 “我这个岗位最需要关注哪些关键制度？”</p>
+                                <p>• 💬 “我刚接手的项目，之前有哪些历史遗留问题？”</p>
+                                <p>• 💬 “这个节点按照公司SOP下一步该做啥？”</p>
+                                <p class="text-emerald-400 font-semibold pt-2">随时随地问，快速进入真实业务场景</p>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="glass-panel p-4 rounded-xl text-center border border-slate-700">
+                        <p class="text-xs md:text-sm text-slate-300">
+                            “把新人熟悉公司、熟悉项目的沟通试错成本，转化为持续可用的数字化辅助能力。”
+                        </p>
+                    </div>
+                </div>
+            </section>
+
+            <!-- SLIDE 18 -->
+            <section class="slide" data-slide="18">
+                <div class="max-w-5xl w-full space-y-8">
+                    <div class="text-center space-y-3">
+                        <span class="text-xs font-semibold tracking-widest uppercase text-indigo-400">能力递进</span>
+                        <h2 class="text-3xl md:text-5xl font-bold text-white">“一名员工的经验，怎么变成公司的能力？”</h2>
+                    </div>
+
+                    <!-- Horizontal Chain -->
+                    <div class="grid grid-cols-2 md:grid-cols-4 gap-4 relative">
+                        <div class="glass-card p-5 rounded-2xl text-center space-y-2 border border-slate-800">
+                            <div class="w-10 h-10 rounded-full bg-slate-800 text-slate-300 mx-auto flex items-center justify-center font-bold">1</div>
+                            <h4 class="font-bold text-white text-sm">个人经验</h4>
+                            <p class="text-xs text-slate-400">单打独斗的项目直觉</p>
+                        </div>
+                        <div class="glass-card p-5 rounded-2xl text-center space-y-2 border border-slate-800">
+                            <div class="w-10 h-10 rounded-full bg-indigo-500/20 text-indigo-400 mx-auto flex items-center justify-center font-bold">2</div>
+                            <h4 class="font-bold text-white text-sm">项目经验</h4>
+                            <p class="text-xs text-slate-400">具体项目现场事件沉淀</p>
+                        </div>
+                        <div class="glass-card p-5 rounded-2xl text-center space-y-2 border border-slate-800">
+                            <div class="w-10 h-10 rounded-full bg-amber-500/20 text-amber-400 mx-auto flex items-center justify-center font-bold">3</div>
+                            <h4 class="font-bold text-white text-sm">团队记忆</h4>
+                            <p class="text-xs text-slate-400">跨岗位共同可调用的知识</p>
+                        </div>
+                        <div class="glass-card p-5 rounded-2xl text-center space-y-2 border border-emerald-500/40 bg-emerald-950/20">
+                            <div class="w-10 h-10 rounded-full bg-emerald-500/20 text-emerald-400 mx-auto flex items-center justify-center font-bold">4</div>
+                            <h4 class="font-bold text-white text-sm">企业能力</h4>
+                            <p class="text-xs text-emerald-300">标准化规则与数字同事</p>
+                        </div>
+                    </div>
+
+                    <div class="text-center">
+                        <span class="text-sm font-mono text-slate-400">这就是“蒸馏同事”真正有价值的核心逻辑。</span>
+                    </div>
+                </div>
+            </section>
+
+            <!-- SLIDE 19 -->
+            <section class="slide" data-slide="19">
+                <div class="max-w-5xl w-full space-y-8">
+                    <div class="text-center space-y-3">
+                        <span class="text-xs font-semibold tracking-widest uppercase text-emerald-400">持续迭代</span>
+                        <h2 class="text-3xl md:text-5xl font-bold text-white">“越用越强的‘团队养虾’”</h2>
+                        <p class="text-slate-400">为什么它会随着业务进行而越来越懂公司？</p>
+                    </div>
+
+                    <!-- Flywheel Diagram -->
+                    <div class="glass-panel p-6 rounded-2xl border border-indigo-500/30 max-w-3xl mx-auto space-y-4">
+                        <div class="grid grid-cols-2 md:grid-cols-3 gap-3 text-xs">
+                            <div class="bg-slate-900 p-3 rounded-xl border border-slate-800 text-center">1. 使用 Emily 交互</div>
+                            <div class="bg-slate-900 p-3 rounded-xl border border-slate-800 text-center">2. 产生真实项目数据</div>
+                            <div class="bg-slate-900 p-3 rounded-xl border border-slate-800 text-center">3. 沉淀业务经验</div>
+                            <div class="bg-slate-900 p-3 rounded-xl border border-slate-800 text-center">4. 更新知识与SOP</div>
+                            <div class="bg-slate-900 p-3 rounded-xl border border-slate-800 text-center">5. 扩展 Skill 插件</div>
+                            <div class="bg-emerald-950/60 p-3 rounded-xl border border-emerald-500/40 text-emerald-300 font-bold text-center">6. Emily 更懂业务</div>
+                        </div>
+
+                        <div class="p-3 bg-slate-900/80 rounded-xl text-xs text-slate-300 border border-slate-800 text-center space-y-1">
+                            <p class="text-amber-400 font-semibold">⚠️ 澄清说明：不是 AI 自己偷偷胡乱训练自己</p>
+                            <p class="text-slate-400">而是“企业持续沉淀过程经验 + 人工可控的能力升级与迭代”</p>
+                        </div>
+                    </div>
+                </div>
+            </section>
+
+            <!-- SLIDE 20 -->
+            <section class="slide" data-slide="20">
+                <div class="max-w-5xl w-full space-y-6">
+                    <div class="text-center space-y-2">
+                        <span class="text-xs font-semibold tracking-widest uppercase text-indigo-400">极简原理</span>
+                        <h2 class="text-3xl md:text-5xl font-bold text-white">“Emily 凭什么知道这些？”</h2>
+                        <p class="text-slate-400 text-xs md:text-sm">让通用大模型变成公司 AI 的三层核心支撑</p>
+                    </div>
+
+                    <div class="space-y-4">
+                        <!-- Layer 1 -->
+                        <div class="glass-card p-4 rounded-2xl border border-slate-800 flex flex-col md:flex-row items-start md:items-center justify-between gap-4">
+                            <div class="flex items-center gap-3">
+                                <span class="w-8 h-8 rounded-lg bg-indigo-500/20 text-indigo-400 font-bold flex items-center justify-center text-sm">①</span>
+                                <div>
+                                    <h4 class="font-bold text-white">项目全景节点</h4>
+                                    <p class="text-xs text-slate-400">知道“现在发生了什么”</p>
+                                </div>
+                            </div>
+                            <div class="text-xs text-slate-300 bg-slate-900/80 px-4 py-2 rounded-xl border border-slate-800">
+                                项目 / 标段 / 节点 / 事件 / 人员 / 时间 / 实时状态
+                            </div>
+                        </div>
+
+                        <!-- Layer 2 -->
+                        <div class="glass-card p-4 rounded-2xl border border-slate-800 flex flex-col md:flex-row items-start md:items-center justify-between gap-4">
+                            <div class="flex items-center gap-3">
+                                <span class="w-8 h-8 rounded-lg bg-emerald-500/20 text-emerald-400 font-bold flex items-center justify-center text-sm">②</span>
+                                <div>
+                                    <h4 class="font-bold text-white">企业规则与 SOP</h4>
+                                    <p class="text-xs text-slate-400">知道“应该怎么做”</p>
+                                </div>
+                            </div>
+                            <div class="text-xs text-slate-300 bg-slate-900/80 px-4 py-2 rounded-xl border border-slate-800">
+                                管理制度 / 验收标准 / 合同规则 / 业务流程规范
+                            </div>
+                        </div>
+
+                        <!-- Layer 3 -->
+                        <div class="glass-card p-4 rounded-2xl border border-slate-800 flex flex-col md:flex-row items-start md:items-center justify-between gap-4">
+                            <div class="flex items-center gap-3">
+                                <span class="w-8 h-8 rounded-lg bg-amber-500/20 text-amber-400 font-bold flex items-center justify-center text-sm">③</span>
+                                <div>
+                                    <h4 class="font-bold text-white">工具与 Skill 插件</h4>
+                                    <p class="text-xs text-slate-400">知道“能帮你做什么”</p>
+                                </div>
+                            </div>
+                            <div class="text-xs text-slate-300 bg-slate-900/80 px-4 py-2 rounded-xl border border-slate-800">
+                                数据库查询 / 文档检索 / 填表生成报告 / 系统 API 调用
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="p-4 rounded-xl bg-gradient-to-r from-indigo-900/30 to-emerald-900/30 border border-indigo-500/30 text-center text-xs md:text-sm font-medium text-slate-200">
+                        “真正让通用大模型变成公司 AI 的，是公司的数据、规则和业务能力。”
+                    </div>
+                </div>
+            </section>
+
+            <!-- SLIDE 21 -->
+            <section class="slide" data-slide="21">
+                <div class="max-w-5xl w-full space-y-6">
+                    <div class="text-center space-y-2">
+                        <span class="text-xs font-semibold tracking-widest uppercase text-emerald-400">价值愿景</span>
+                        <h2 class="text-3xl md:text-5xl font-bold text-white">“一年以后，公司可能多了什么？”</h2>
+                    </div>
+
+                    <!-- 4 Quadrants -->
+                    <div class="grid grid-cols-2 gap-4">
+                        <div class="glass-card p-4 rounded-xl border border-slate-800">
+                            <span class="text-xs font-mono text-indigo-400">对外</span>
+                            <h4 class="font-bold text-white text-sm mt-1">新的服务入口</h4>
+                            <p class="text-xs text-slate-400 mt-1">客户/合作方自然语言便捷交互</p>
+                        </div>
+                        <div class="glass-card p-4 rounded-xl border border-slate-800">
+                            <span class="text-xs font-mono text-emerald-400">对内</span>
+                            <h4 class="font-bold text-white text-sm mt-1">新的知识入口</h4>
+                            <p class="text-xs text-slate-400 mt-1">从“找文件”直接变成“问公司”</p>
+                        </div>
+                        <div class="glass-card p-4 rounded-xl border border-slate-800">
+                            <span class="text-xs font-mono text-amber-400">管理</span>
+                            <h4 class="font-bold text-white text-sm mt-1">新的穿透入口</h4>
+                            <p class="text-xs text-slate-400 mt-1">集团穿透掌控真实过程与隐患</p>
+                        </div>
+                        <div class="glass-card p-4 rounded-xl border border-slate-800">
+                            <span class="text-xs font-mono text-rose-400">组织</span>
+                            <h4 class="font-bold text-white text-sm mt-1">持续积累的企业记忆</h4>
+                            <p class="text-xs text-slate-400 mt-1">经验带不走，新人上手快</p>
+                        </div>
+                    </div>
+
+                    <div class="glass-panel p-4 rounded-xl border border-emerald-500/30 flex flex-wrap justify-around text-xs md:text-sm font-bold text-emerald-300 gap-2 text-center">
+                        <span>• 信息不丢失</span>
+                        <span>• 知识找得到</span>
+                        <span>• 管理看得见</span>
+                        <span>• 新人上手快</span>
+                        <span>• 经验留得住</span>
+                    </div>
+                </div>
+            </section>
+
+            <!-- SLIDE 22 -->
+            <section class="slide" data-slide="22">
+                <div class="max-w-5xl w-full space-y-6">
+                    <div class="text-center space-y-2">
+                        <span class="text-xs font-semibold tracking-widest uppercase text-indigo-400">研发现状</span>
+                        <h2 class="text-3xl md:text-5xl font-bold text-white">“现在的 Emily，已经走到哪一步？”</h2>
+                    </div>
+
+                    <div class="grid md:grid-cols-3 gap-4">
+                        <!-- Ready -->
+                        <div class="glass-card p-5 rounded-2xl border border-emerald-500/30 bg-emerald-950/10 space-y-3">
+                            <div class="flex items-center gap-2 text-emerald-400 font-bold text-sm">
+                                <i class="fa-solid fa-circle-check"></i> 已经具备
+                            </div>
+                            <ul class="text-xs text-slate-300 space-y-2">
+                                <li>• AI 对话主交互入口</li>
+                                <li>• 向量知识检索 (RAG)</li>
+                                <li>• 项目结构化数据组织</li>
+                                <li>• 基础权限控制体系</li>
+                                <li>• 插件 (Skill) 扩展机制</li>
+                            </ul>
+                        </div>
+
+                        <!-- Improving -->
+                        <div class="glass-card p-5 rounded-2xl border border-indigo-500/30 space-y-3">
+                            <div class="flex items-center gap-2 text-indigo-400 font-bold text-sm">
+                                <i class="fa-solid fa-spinner animate-spin"></i> 正在完善
+                            </div>
+                            <ul class="text-xs text-slate-300 space-y-2">
+                                <li>• 项目全景状态节点</li>
+                                <li>• 企业复杂规则库精细化</li>
+                                <li>• SOP 执行链条绑定</li>
+                                <li>• 数据清洗治理工具</li>
+                            </ul>
+                        </div>
+
+                        <!-- Needs Company -->
+                        <div class="glass-card p-5 rounded-2xl border border-amber-500/30 bg-amber-950/10 space-y-3">
+                            <div class="flex items-center gap-2 text-amber-400 font-bold text-sm">
+                                <i class="fa-solid fa-hand-holding-hand"></i> 需要公司参与
+                            </div>
+                            <ul class="text-xs text-slate-300 space-y-2">
+                                <li>• 真实业务场景与数据接入</li>
+                                <li>• 历史项目文档及过程记录</li>
+                                <li>• 各专业最新验收标准与规则</li>
+                                <li>• 真实试点项目验证</li>
+                            </ul>
+                        </div>
+                    </div>
+
+                    <div class="p-4 rounded-xl bg-slate-900 border border-slate-800 text-center font-bold text-white text-base">
+                        “现在最大的瓶颈，不是代码，而是让 Emily 真正认识公司。”
+                    </div>
+                </div>
+            </section>
+
+            <!-- SLIDE 23 -->
+            <section class="slide" data-slide="23">
+                <div class="max-w-4xl w-full space-y-8">
+                    <div class="text-center space-y-3">
+                        <span class="text-xs font-semibold tracking-widest uppercase text-amber-400">核心诉求</span>
+                        <h2 class="text-3xl md:text-5xl font-bold text-white">“它现在缺的，不是更多代码”</h2>
+                    </div>
+
+                    <div class="grid md:grid-cols-3 gap-6">
+                        <div class="glass-card p-6 rounded-2xl border border-slate-800 text-center space-y-3">
+                            <i class="fa-solid fa-book text-3xl text-indigo-400"></i>
+                            <h3 class="font-bold text-white text-base">公司怎么做</h3>
+                            <p class="text-xs text-slate-400">制度 / 标准 / SOP / 验收规则</p>
+                        </div>
+
+                        <div class="glass-card p-6 rounded-2xl border border-slate-800 text-center space-y-3">
+                            <i class="fa-solid fa-clock-rotate-left text-3xl text-emerald-400"></i>
+                            <h3 class="font-bold text-white text-base">过去发生过什么</h3>
+                            <p class="text-xs text-slate-400">历史项目记录 / 过程与经验</p>
+                        </div>
+
+                        <div class="glass-card p-6 rounded-2xl border border-slate-800 text-center space-y-3">
+                            <i class="fa-solid fa-vial text-3xl text-amber-400"></i>
+                            <h3 class="font-bold text-white text-base">真实业务验证</h3>
+                            <p class="text-xs text-slate-400">试点项目 / 业务人员试用反馈</p>
+                        </div>
+                    </div>
+
+                    <div class="text-center text-slate-300 text-sm">
+                        “把公司已经拥有、但分散在不同地方的知识和经验重新组织起来。”
+                    </div>
+                </div>
+            </section>
+
+            <!-- SLIDE 24 -->
+            <section class="slide" data-slide="24">
+                <div class="max-w-5xl w-full space-y-6">
+                    <div class="text-center space-y-2">
+                        <span class="text-xs font-semibold tracking-widest uppercase text-emerald-400">试点提案</span>
+                        <h2 class="text-3xl md:text-5xl font-bold text-white">“不做大项目，先做一个真实试点”</h2>
+                        <p class="text-slate-400">先别做大，先让它在一个具体项目里跑起来</p>
+                    </div>
+
+                    <div class="grid md:grid-cols-2 gap-6 items-center">
+                        <!-- Funnel -->
+                        <div class="glass-card p-5 rounded-2xl border border-slate-800 space-y-2 text-xs">
+                            <div class="bg-indigo-950/60 p-2.5 rounded-lg border border-indigo-500/30 text-center text-indigo-200">1个 试点项目</div>
+                            <div class="text-center text-slate-500">↓</div>
+                            <div class="bg-indigo-950/60 p-2.5 rounded-lg border border-indigo-500/30 text-center text-indigo-200">1套 专注业务条线 (如景观/工程)</div>
+                            <div class="text-center text-slate-500">↓</div>
+                            <div class="bg-indigo-950/60 p-2.5 rounded-lg border border-indigo-500/30 text-center text-indigo-200">1批 真实历史与标准资料</div>
+                            <div class="text-center text-slate-500">↓</div>
+                            <div class="bg-emerald-950/80 p-2.5 rounded-lg border border-emerald-500/50 text-center text-emerald-300 font-bold">1个 可运行的 Emily 实例</div>
+                        </div>
+
+                        <!-- 3 Verification Questions -->
+                        <div class="glass-card p-5 rounded-2xl border border-slate-800 space-y-4">
+                            <h4 class="font-bold text-white text-sm">试点验证的三个核心问题：</h4>
+                            <div class="space-y-2 text-xs">
+                                <div class="p-3 bg-slate-900 rounded-xl border border-slate-800 flex items-center gap-2">
+                                    <i class="fa-solid fa-square-check text-emerald-400"></i>
+                                    <span>1. 能不能减少日常信息查找与沟通成本？</span>
+                                </div>
+                                <div class="p-3 bg-slate-900 rounded-xl border border-slate-800 flex items-center gap-2">
+                                    <i class="fa-solid fa-square-check text-emerald-400"></i>
+                                    <span>2. 能不能让项目过程管理更加透明穿透？</span>
+                                </div>
+                                <div class="p-3 bg-slate-900 rounded-xl border border-slate-800 flex items-center gap-2">
+                                    <i class="fa-solid fa-square-check text-emerald-400"></i>
+                                    <span>3. 能不能把项目经验真正沉淀留存下来？</span>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </section>
+
+            <!-- SLIDE 25: 实用化落地成本与授权 -->
+            <section class="slide" data-slide="25">
+                <div class="max-w-5xl w-full space-y-6">
+                    <div class="text-center space-y-2">
+                        <span class="text-xs font-semibold tracking-widest uppercase text-emerald-400">落地条件</span>
+                        <h2 class="text-3xl md:text-5xl font-bold text-white">“部署 Emily 进入实用状态的成本与授权”</h2>
+                        <p class="text-slate-400 text-xs md:text-sm">清晰透明的软硬件基础投入与合规准备</p>
+                    </div>
+
+                    <div class="grid md:grid-cols-2 gap-6">
+                        <!-- Cost Part -->
+                        <div class="glass-card p-6 rounded-2xl border border-indigo-500/30 space-y-4">
+                            <div class="flex items-center gap-2.5 text-indigo-400 font-bold text-base border-b border-slate-800 pb-3">
+                                <i class="fa-solid fa-calculator text-lg"></i>
+                                <h3>基础硬件与运行服务成本</h3>
+                            </div>
+                            <div class="space-y-3 text-xs">
+                                <div class="p-3 rounded-xl bg-slate-900/80 border border-slate-800 space-y-1">
+                                    <div class="flex justify-between font-semibold text-white">
+                                        <span>🖥️ 1. 租用服务器 (Cloud Hosting)</span>
+                                        <span class="text-emerald-400">基础设施</span>
+                                    </div>
+                                    <p class="text-slate-400">用于部署 Emily Agent 逻辑引擎、向量数据库 (RAG) 及后台 API 网关（推荐 4核16G ECS）。</p>
+                                </div>
+
+                                <div class="p-3 rounded-xl bg-slate-900/80 border border-slate-800 space-y-1">
+                                    <div class="flex justify-between font-semibold text-white">
+                                        <span>🌐 2. 注册与绑定企业域名</span>
+                                        <span class="text-emerald-400">网络通信</span>
+                                    </div>
+                                    <p class="text-slate-400">配置专用二级域名并部署 SSL 安全证书，保障内部数据传输链路合规与加密。</p>
+                                </div>
+
+                                <div class="p-3 rounded-xl bg-slate-900/80 border border-slate-800 space-y-1">
+                                    <div class="flex justify-between font-semibold text-white">
+                                        <span>⚡ 3. Token API 流量购买</span>
+                                        <span class="text-amber-400">按需付费</span>
+                                    </div>
+                                    <p class="text-slate-400">接入优质大模型（如 Qwen/DeepSeek 等），按实际调用量与并发 Token 结算，初期测试费用极低。</p>
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- Authorization Part -->
+                        <div class="glass-card p-6 rounded-2xl border border-emerald-500/30 bg-emerald-950/10 space-y-4">
+                            <div class="flex items-center gap-2.5 text-emerald-400 font-bold text-base border-b border-slate-800 pb-3">
+                                <i class="fa-solid fa-key text-lg"></i>
+                                <h3>企业渠道与主体授权</h3>
+                            </div>
+                            <div class="space-y-3 text-xs">
+                                <div class="p-3 rounded-xl bg-slate-900/80 border border-slate-800 space-y-1">
+                                    <div class="flex justify-between font-semibold text-white">
+                                        <span>📱 1. 微信小程序 / 企业微信授权</span>
+                                        <span class="text-emerald-400">交互入口</span>
+                                    </div>
+                                    <p class="text-slate-400">获取企业官方主体授权，注册并配置小程序开放平台接口，作为员工便携交互终端。</p>
+                                </div>
+
+                                <div class="p-3 rounded-xl bg-slate-900/80 border border-slate-800 space-y-1">
+                                    <div class="flex justify-between font-semibold text-white">
+                                        <span>🔒 2. 企业数据与系统 API 授权</span>
+                                        <span class="text-indigo-400">数据安全</span>
+                                    </div>
+                                    <p class="text-slate-400">明确脱敏数据接入范围与内部权限映射，确保不同岗位的调阅边界清晰受控。</p>
+                                </div>
+
+                                <div class="p-3 rounded-xl bg-slate-900/80 border border-slate-800 space-y-1">
+                                    <div class="flex justify-between font-semibold text-white">
+                                        <span>🛠️ 3. 运维与持续开发升级</span>
+                                        <span class="text-indigo-400">敏捷迭代</span>
+                                    </div>
+                                    <p class="text-slate-400">开发人员持续负责 Skill 插件扩充、模型微调与业务提示词优化。</p>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="glass-panel p-4 rounded-xl border border-emerald-500/40 text-center text-xs md:text-sm text-emerald-300 font-medium">
+                        “低成本轻量化启动：厘清基础设施与授权即可快速落地试点，以极低门槛开创企业 AI 数字同事新阶段。”
+                    </div>
+                </div>
+            </section>
+
+        </div>
+    </main>
+
+    <!-- Presentation Bottom Control Bar -->
+    <footer class="h-16 glass-panel border-t border-slate-800/80 px-6 flex items-center justify-between z-50 flex-shrink-0">
+        <div class="flex items-center gap-2">
+            <button onclick="prevSlide()" class="px-4 py-2 rounded-xl bg-slate-800/80 hover:bg-slate-700 text-white text-xs md:text-sm font-medium transition-all flex items-center gap-2 border border-slate-700">
+                <i class="fa-solid fa-arrow-left"></i> 上一页
+            </button>
+            <button onclick="nextSlide()" class="px-4 py-2 rounded-xl bg-gradient-to-r from-emerald-600 to-indigo-600 hover:from-emerald-500 hover:to-indigo-500 text-white text-xs md:text-sm font-medium transition-all flex items-center gap-2 shadow-lg shadow-emerald-600/20">
+                下一页 <i class="fa-solid fa-arrow-right"></i>
+            </button>
+        </div>
+
+        <!-- Slide Title Display -->
+        <div id="slide-title-display" class="hidden md:block text-xs font-medium text-slate-400 truncate max-w-md">
+            01. “如果AI真的懂我们的公司，会发生什么？”
+        </div>
+
+        <div class="flex items-center gap-3 text-xs text-slate-500">
+            <span class="hidden sm:inline"><kbd class="px-1.5 py-0.5 rounded bg-slate-800 border border-slate-700 text-slate-400">←</kbd> <kbd class="px-1.5 py-0.5 rounded bg-slate-800 border border-slate-700 text-slate-400">→</kbd> 翻页</span>
+        </div>
+    </footer>
+
+    <!-- Speaker Notes Modal / Drawer -->
+    <div id="speaker-notes-drawer" class="fixed inset-y-0 right-0 w-full max-w-md glass-panel border-l border-slate-800 shadow-2xl z-50 transform translate-x-full transition-transform duration-300 flex flex-col">
+        <div class="p-4 border-b border-slate-800 flex justify-between items-center bg-slate-900/80">
+            <div class="flex items-center gap-2">
+                <i class="fa-solid fa-comment-dots text-indigo-400"></i>
+                <h3 class="font-bold text-white text-sm">讲述说辞与演示指导</h3>
+            </div>
+            <button onclick="toggleSpeakerNotes()" class="text-slate-400 hover:text-white p-1">
+                <i class="fa-solid fa-xmark"></i>
+            </button>
+        </div>
+        <div id="speaker-notes-content" class="p-6 overflow-y-auto flex-1 space-y-4 text-xs md:text-sm text-slate-300 leading-relaxed font-sans">
+            <!-- Content will be injected dynamically by JavaScript -->
+        </div>
+    </div>
+
+    <!-- Grid Overview Modal -->
+    <div id="grid-overview-modal" class="fixed inset-0 bg-slate-950/90 backdrop-blur-md z-50 hidden opacity-0 transition-opacity duration-300 flex flex-col p-6">
+        <div class="flex justify-between items-center mb-6">
+            <h3 class="text-lg font-bold text-white">页面总览 Navigation Grid</h3>
+            <button onclick="toggleGridOverview()" class="text-slate-400 hover:text-white text-xl">
+                <i class="fa-solid fa-xmark"></i>
+            </button>
+        </div>
+        <div id="grid-thumbnails" class="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-6 gap-4 overflow-y-auto flex-1 p-2">
+            <!-- Thumbnails injected dynamically -->
+        </div>
+    </div>
+
+    <script>
+        // Presentation State
+        let currentSlide = 1;
+        const totalSlides = 25;
+
+        // Slide Titles array for Header Display
+        const slideTitles = [
+            "“如果AI真的懂我们的公司，会发生什么？”",
+            "“先从一个很小的问题开始” — 杭州东站接人",
+            "“它不是不聪明，而是它不在现场”",
+            "“换成我们公司，其实一模一样”",
+            "“最近，大家突然开始‘养虾’了”",
+            "“蒸馏同事：优秀员工经验能否留下来？”",
+            "“所以，我做了 Emily”",
+            "演示开始：先问一个普通问题",
+            "第二问：我们公司的标准是什么？",
+            "第三问：它知道项目发生过什么吗？",
+            "连续追问：形成项目事件链",
+            "【视角一】集团管理层：跨项目穿透与风险预警",
+            "【视角二】项目管理层：现场闭环与工序协同",
+            "【视角三】承建单位一线：施工防错与标准速查",
+            "【视角四】项目合作资方：投后监管与节点验资",
+            "Emily 真正想记住的，不是‘文件在哪’",
+            "新人融入：从‘翻文件’到‘直接问公司’",
+            "一名员工的经验，怎么变成公司的能力？",
+            "越用越强的‘团队养虾’",
+            "Emily 凭什么知道这些？（极简架构）",
+            "一年以后，公司可能多了什么？",
+            "现在的 Emily，已经走到哪一步？",
+            "它现在缺的，不是更多代码",
+            "不做大项目，先做一个真实试点",
+            "实用化落地成本与授权：服务器、域名、Token及小程序授权"
+        ];
+
+        // Speaker Scripts mapping for 25 slides
+        const speakerScripts = {
+            1: `<b>【标题页说辞】</b><br><br>“今天不准备按照传统方式给大家汇报一个大AI项目。<br>我想先从一个特别小的事情讲起，而且这个事情可能大家都遇到过。”`,
+            2: `<b>【生活场景说辞】</b><br><br>“假设我们去杭州东站接一个朋友。朋友坐高铁过来，快到了，发消息说：‘我到了，从哪个出口出来找你？’<br>第一反应问通用AI：‘GXXXX车次从哪个出口出来？’<br>然后你会发现一个很有意思的事情——通用AI未必能准确告诉你。”`,
+            3: `<b>【为什么AI不知道】</b><br><br>“这不是它聪明不聪明的问题。<br>车站结构是公开信息，但某一个具体车次今天到底从哪个出站口出来，是车站内部根据当天实际调度决定的。<br><b>通用知识 ≠ 业务现场实时信息。</b>”`,
+            4: `<b>【切到地产公司】</b><br><br>“把这个场景换成地产公司，完全一样。<br>问通用AI‘大树移栽注意什么’它能回答；问‘我们公司乔木验收标准’它不知道；问‘XX项目5月份移栽问题怎么处理的’它更不知道。<br><b>企业需要的，不只是‘懂行业’的AI，而是‘懂我们’的AI。</b>”`,
+            5: `<b>【全民养虾】</b><br><br>“这两年AI有个变化，大家开始‘养虾’（OpenClaw/Agent）。它不像一次性搜索框，而是能在身边长期记东西、调工具、跟进任务。<br>AI正在从‘问答工具’变成‘长期数字同事’。”`,
+            6: `<b>【蒸馏同事】</b><br><br>“一个项目经理干了五年，离职后经验很难留下来。<br>现在我们能否把优秀员工的方法、经验、判断标准，逐步沉淀成一个数字同事？这就是‘蒸馏同事’。”`,
+            7: `<b>【Emily 正式出现】</b><br><br>“Emily 就是沿着这个方向做的一个尝试：面向地产企业的垂直领域AI智能体。<br>它是数字同事、项目记忆中枢、团队经验沉淀器。不是为了替代员工，而是帮助员工做事，并把做过的事情留下来。”`,
+            8: `<b>【现场演示·第一问】</b><br><br>“我们直接问几个问题。<br>先问：‘乔木移栽需要注意什么？’<br>这个问题普通AI也能回答，所以如果Emily只做到这里，没有特殊之处。接下来看下一问。”`,
+            9: `<b>【现场演示·第二问】</b><br><br>“再问：‘我们公司的乔木栽植验收标准是什么？’<br>这时候回答的已经是我们企业自己的标准，并能给出条文来源。<br><b>从‘网上知识’进入‘企业知识’。</b>”`,
+            10: `<b>【现场演示·第三问】</b><br><br>“再往前一步：‘XX项目最近有没有发生乔木移栽相关问题？’<br>它开始从‘企业知识’进入‘项目记忆’，记住具体什么时候发生了什么。”`,
+            11: `<b>【连续追问·事件链】</b><br><br>“继续追问：‘谁发现的？’‘什么时候？’‘怎么处理的？’‘解决了吗？’<br>它不是找文件，而是把项目过程还原为一条可以追溯复用的事件链。”`,
+            12: `<b>【视角一：集团管理层】</b><br><br>“集团高管关心的是跨项目对比、隐患分布与履约合规。<br>管理层可以直接问：‘所有在建项目中哪些标段存在二类以上质量隐患？’，无需等待多层呈报，随时穿透业务现场。”`,
+            13: `<b>【视角二：项目管理层】</b><br><br>“项目经理与工程负责人关心现场整改与工序节点。<br>例如问：‘B标段上次乔木整改复验合格了吗？’或者‘本周末验收前必须准备哪些交底文件？’，让每一项工作有痕可循、闭环追溯。”`,
+            14: `<b>【视角三：承建单位一线员工】</b><br><br>“施工员、监理与技术人员把它当作口袋里的技术专家。<br>遇到现场材料偏差（如胸径偏差）或养护参数模糊时，随手在微信端快速查规范，大幅减少盲目施工造成的返工。”`,
+            15: `<b>【视角四：项目合作资方】</b><br><br>“合作资方与风控人员关心投后监管与资金安全。<br>资方可以对比拨款申请与现场实际记录，核对工程节点真实度，打破信息黑盒，保障投资安全。”`,
+            16: `<b>【团队记忆中枢】</b><br><br>“Emily 真正想记住的不是‘文件在哪里’，而是发生过什么、为什么发生、怎么处理、结果如何。项目结束，记忆不结束。”`,
+            17: `<b>【新人融入场景】</b><br><br>“新人入职最难的是不知道公司制度与项目历史。传统方式是翻海量文件库或频繁问同事。<br>Emily 相当于‘入职陪练’，新人可以直接问‘我这个岗位关注什么制度’‘参与的项目以前发生过什么’，快速融入工作。”`,
+            18: `<b>【从个人经验到企业能力】</b><br><br>“个人经验 → 项目经验 → 团队记忆 → 企业能力。<br>Emily 要做的，本质上就是帮助这个沉淀过程持续发生。”`,
+            19: `<b>【越用越强的团队养虾】</b><br><br>“为什么说越用越强？每做一次项目多留下数据，整理成 SOP 和插件，下一次 Emily 就更懂业务。<br>特别说明：这不是 AI 自己偷偷训练自己，而是企业持续沉淀 + 能力持续迭代。”`,
+            20: `<b>【极简架构】</b><br><br>“它凭什么知道？三层支撑：<br>1. 全景节点（知道发生了什么）<br>2. 企业规则/SOP（知道应该怎么做）<br>3. 工具插件（知道能帮你做啥）”`,
+            21: `<b>【运行一年的价值】</b><br><br>“运行一年后：对外有新服务入口，对内有新知识入口，管理有新穿透入口，组织有持续积累的企业记忆。<br><b>信息不丢失，知识找得到，管理看得见，新人上手快，经验留得住。</b>”`,
+            22: `<b>【研发进展】</b><br><br>“ Emily 主体框架与基础能力（对话、检索、权限、插件）已基本完成。<br><b>现在最大的瓶颈不是代码，而是让 Emily 真正认识公司。</b>”`,
+            23: `<b>【核心缺口】</b><br><br>“它缺的是：公司怎么做（制度SOP）、公司过去发生过什么（历史项目记录）、真实业务试点项目。”`,
+            24: `<b>【试点建议】</b><br><br>“建议先别做大：选1个试点项目 + 1套业务领域 + 1批真实资料，让 Emily 跑起来。<br>验证能否减少查找成本、能否透明管理、能否留住经验。”`,
+            25: `<b>【实用化落地成本与授权】</b><br><br>“最后梳理落地进入实用状态的具体成本与授权：<br>1. <b>硬件/基础设施成本：</b>租用服务器（如 4核16G ECS 部署逻辑引擎与向量库）。<br>2. <b>网络通信成本：</b>注册企业域名并绑定 SSL 加密证书。<br>3. <b>大模型算力消耗：</b>按实际并发与对话 Token 量弹性购买结算。<br>4. <b>系统授权：</b>获得企业微信/微信小程序官方授权及内部数据 API 权限边界设定。<br>厘清这几项基础条件，即可轻量启动试点。”`
+        };
+
+        // Initialize UI
+        window.addEventListener('DOMContentLoaded', () => {
+            updateSlideView();
+            buildGridThumbnails();
+
+            // Keyboard navigation
+            document.addEventListener('keydown', (e) => {
+                if (e.key === 'ArrowRight' || e.key === 'Space') {
+                    nextSlide();
+                } else if (e.key === 'ArrowLeft') {
+                    prevSlide();
+                } else if (e.key.toLowerCase() === 'n') {
+                    toggleSpeakerNotes();
+                } else if (e.key.toLowerCase() === 'g') {
+                    toggleGridOverview();
+                } else if (e.key.toLowerCase() === 'f') {
+                    toggleFullscreen();
+                }
+            });
+
+            // Touch swipe support
+            let touchStartX = 0;
+            let touchEndX = 0;
+            document.addEventListener('touchstart', e => {
+                touchStartX = e.changedTouches[0].screenX;
+            }, false);
+            document.addEventListener('touchend', e => {
+                touchEndX = e.changedTouches[0].screenX;
+                handleSwipe();
+            }, false);
+
+            function handleSwipe() {
+                if (touchEndX < touchStartX - 50) nextSlide();
+                if (touchEndX > touchStartX + 50) prevSlide();
+            }
+        });
+
+        function updateSlideView() {
+            // Update active slide class
+            document.querySelectorAll('.slide').forEach((slide, index) => {
+                if (index + 1 === currentSlide) {
+                    slide.classList.add('active');
+                } else {
+                    slide.classList.remove('active');
+                }
+            });
+
+            // Update Progress bar & text
+            const progressPercent = (currentSlide / totalSlides) * 100;
+            document.getElementById('progress-bar').style.width = `${progressPercent}%`;
+            document.getElementById('slide-count-badge').innerText = `${String(currentSlide).padStart(2, '0')} / ${totalSlides}`;
+            
+            // Update Slide Title Display
+            document.getElementById('slide-title-display').innerText = `${String(currentSlide).padStart(2, '0')}. ${slideTitles[currentSlide - 1]}`;
+
+            // Update Speaker Notes
+            document.getElementById('speaker-notes-content').innerHTML = speakerScripts[currentSlide] || "暂无详细说辞。";
+        }
+
+        function nextSlide() {
+            if (currentSlide < totalSlides) {
+                currentSlide++;
+                updateSlideView();
+            }
+        }
+
+        function prevSlide() {
+            if (currentSlide > 1) {
+                currentSlide--;
+                updateSlideView();
+            }
+        }
+
+        function goToSlide(slideNum) {
+            currentSlide = slideNum;
+            updateSlideView();
+            const gridModal = document.getElementById('grid-overview-modal');
+            if (!gridModal.classList.contains('hidden')) {
+                toggleGridOverview();
+            }
+        }
+
+        function toggleSpeakerNotes() {
+            const drawer = document.getElementById('speaker-notes-drawer');
+            drawer.classList.toggle('translate-x-full');
+        }
+
+        function toggleGridOverview() {
+            const modal = document.getElementById('grid-overview-modal');
+            if (modal.classList.contains('hidden')) {
+                modal.classList.remove('hidden');
+                setTimeout(() => modal.classList.remove('opacity-0'), 10);
+            } else {
+                modal.classList.add('opacity-0');
+                setTimeout(() => modal.classList.add('hidden'), 300);
+            }
+        }
+
+        function buildGridThumbnails() {
+            const container = document.getElementById('grid-thumbnails');
+            container.innerHTML = '';
+            for (let i = 1; i <= totalSlides; i++) {
+                const thumb = document.createElement('div');
+                thumb.className = `glass-card p-3 rounded-xl border text-left cursor-pointer hover:border-emerald-400 transition-all ${i === currentSlide ? 'border-emerald-400 bg-emerald-950/20' : 'border-slate-800'}`;
+                thumb.onclick = () => goToSlide(i);
+                thumb.innerHTML = `
+                    <div class="text-xs font-mono text-emerald-400 mb-1">PAGE ${String(i).padStart(2, '0')}</div>
+                    <div class="text-xs font-semibold text-slate-200 line-clamp-2">${slideTitles[i - 1]}</div>
+                `;
+                container.appendChild(thumb);
+            }
+        }
+
+        function toggleFullscreen() {
+            if (!document.fullscreenElement) {
+                document.documentElement.requestFullscreen().catch(err => {
+                    console.log(`Error attempting to enable fullscreen: ${err.message}`);
+                });
+            } else {
+                if (document.exitFullscreen) {
+                    document.exitFullscreen();
+                }
+            }
+        }
+    </script>
+</body>
+</html>
