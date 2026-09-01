@@ -1,5 +1,6 @@
 FROM pandoc/latex:latest
-
+# 这个文件是用于构建一个 带中文（CJK）支持的 Pandoc 文档转换容器镜像 的 Dockerfile，
+# 这个镜像把「Pandoc 转 LaTeX/PDF」和「中文字体 + 中文排版（xecjk/ctex）」以及「Mermaid 图渲染」三个能力打包装进一个容器，用途是把含 Mermaid 流程图的 Markdown 文档转成中文 PDF。
 # Install CJK font for XeLaTeX + Node.js + Chromium (for mermaid-cli)
 RUN apk add --no-cache font-noto-cjk nodejs npm chromium python3
 
