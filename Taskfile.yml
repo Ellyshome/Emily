@@ -127,7 +127,8 @@ tasks:
       PROFILE: '{{.PROFILE | default "minimal"}}'
       SERVICE: '{{.SERVICE | default ""}}'
     preconditions:
-      - sh: "docker ps --format '{{"{{"}}.Names{{"}}"}}' | grep -q emily-core"
+      - sh: |
+          docker ps --format '{{"{{"}}.Names{{"}}"}}' | grep -q emily-core
         msg: "⚠️  未检测到运行中的 Emily 容器，请先执行 task deploy:minimal 或 task deploy:napcat"
     cmds:
       - |
@@ -258,7 +259,7 @@ tasks:
       - "df -h ./emily-data 2>/dev/null || true"
       - echo ""
       - echo "▸ 最近 5 条错误日志："
-      - "docker logs emily-core 2>&1 | grep -i 'error\|exception\|traceback' | tail -5 || echo '  (无)'"
+      - "docker logs emily-core 2>&1 | grep -i 'error\\|exception\\|traceback' | tail -5 || echo '  (无)'"
 
 # ───────────────────── 运维 ─────────────────────
 
@@ -276,7 +277,8 @@ tasks:
   prune:
     desc: 清理未使用的 Docker 资源（镜像、容器、网络、构建缓存）
     preconditions:
-      - sh: "docker ps --format '{{"{{"}}.Names{{"}}"}}' | grep -q emily-core && echo '⚠️  emily-core 正在运行，请先停止' && exit 1 || true"
+      - sh: |
+          docker ps --format '{{"{{"}}.Names{{"}}"}}' | grep -q emily-core && echo '⚠️  emily-core 正在运行，请先停止' && exit 1 || true
         msg: ""
     cmds:
       - docker system prune -af --volumes
