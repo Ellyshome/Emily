@@ -259,7 +259,8 @@ tasks:
       - "df -h ./emily-data 2>/dev/null || true"
       - echo ""
       - echo "▸ 最近 5 条错误日志："
-      - "docker logs emily-core 2>&1 | grep -i 'error\\|exception\\|traceback' | tail -5 || echo '  (无)'"
+      - |
+        docker logs emily-core 2>&1 | grep -i 'error\|exception\|traceback' | tail -5 || echo '  (无)'
 
 # ───────────────────── 运维 ─────────────────────
 
