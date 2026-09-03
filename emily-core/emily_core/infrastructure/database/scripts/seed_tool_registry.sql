@@ -40,6 +40,5 @@ INSERT INTO tool_registry (id, signature, display_name, category, permission_fla
 ('send_email',          '{}', '发送邮件',         'base', 'all',   'meta', '', true, '2026-07-24T00:00:00', '2026-07-24T00:00:00'),
 ('fetch_inbox',         '{}', '获取收件箱',       'base', 'all',   'meta', '', true, '2026-07-24T00:00:00', '2026-07-24T00:00:00'),
 ('chat_archive',        '{}', '会话归档',         'base', 'all',   'meta', '', true, '2026-07-24T00:00:00', '2026-07-24T00:00:00'),
-('manage_pending_issues','{}','管理待办议题',     'base', 'all',   'meta', '', true, '2026-07-24T00:00:00', '2026-07-24T00:00:00'),
-('voice_entry',         '{}', '语音录入',         'base', 'all',   'meta', '', true, '2026-07-24T00:00:00', '2026-07-24T00:00:00')
+('manage_pending_issues','{}','管理待办议题',     'base', 'all',   'meta', '', true, '2026-07-24T00:00:00', '2026-07-24T00:00:00')
 ON CONFLICT (id) DO NOTHING;

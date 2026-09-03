@@ -7,8 +7,8 @@ Hook 通过本对象读取：user_id / is_admin / message / intent / verified_re
 agent_reply / baggage / current_stage / pipeline_run_id，以及 get()/set()/add_warning()。
 
 **权限架构 v1.2 调整**：
-  - WorkItemAgent 通过本对象以只读方式访问 SessionContext 中的权限信息
-  - 不直接将权限信息注入到 WorkItemAgent 内部，避免上下文污染
+  - LangGraph 引擎节点通过本对象以只读方式访问 SessionContext 中的权限信息
+  - 不直接将权限信息注入到节点内部，避免上下文污染
   - 通过 session_context 属性访问，仅允许读取，不允许修改
 
 每个 WorkItem 在 BUS 上执行时创建一个 BusContext，绑定该 WorkItem。
@@ -37,7 +37,7 @@ class BusContext:
 
     权限架构 v1.2：
     - _session_context 是私有字段，仅在初始化时设置
-    - WorkItemAgent 通过只读方法获取权限信息，无法修改
+    - LangGraph 引擎节点通过只读方法获取权限信息，无法修改
     - 确保权限数据的安全性和不可变性
     """
 
@@ -93,7 +93,7 @@ class BusContext:
     def get_session_context(self) -> Optional["SessionContext"]:
         """获取 SessionContext（只读）。
 
-        WorkItemAgent / AuthHook 通过此方法获取会话状态信息与权限列表。
+        LangGraph 引擎节点 / AuthHook 通过此方法获取会话状态信息与权限列表。
         """
         return self._session_context
 

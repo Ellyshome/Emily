@@ -15,7 +15,7 @@ REGISTERED_TOOLS = {
     "return_node_deliverable", "query_my_nodes",
     "create_node", "query_node", "update_node_progress", "add_node_dependency",
     "mount_child_node", "update_nodes", "activate_nodes", "discard_nodes",
-    "send_email", "fetch_inbox", "chat_archive", "manage_pending_issues", "voice_entry",
+    "send_email", "fetch_inbox", "chat_archive", "manage_pending_issues",
 }
 
 # 工具 schema 加载（包括 data 嵌套展开）
@@ -39,7 +39,6 @@ TOOL_SCHEMA_MAP = {
     "send_email": ("emily_core.tools.project", "_SEND_EMAIL_SCHEMA"),
     "fetch_inbox": ("emily_core.tools.project", "_FETCH_INBOX_SCHEMA"),
     "chat_archive": ("emily_core.tools.project", "_CHAT_ARCHIVE_SCHEMA"),
-    "voice_entry": ("emily_core.tools.project", "_VOICE_ENTRY_SCHEMA"),
 }
 
 # manage_pending_issues: 使用 pending_issue_tool.py handler 的真实 schema

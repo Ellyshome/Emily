@@ -518,6 +518,118 @@ scripts:
     timeout_seconds: 120
     scheduling_note: "一次性"
 
+  run_daily_file_parse:
+    description: "run_daily_file_parse.py — 每日文件解析盘点手动触发脚本。"
+    category: system_maintenance
+    source_path: scripts/run_daily_file_parse.py
+    invocation: uv run python scripts/run_daily_file_parse.py {args}
+    check_arg: --dry-run
+    run_args: []
+    auto_run: null
+    auto_run_args: []
+    writes_db: true
+    aggregation_parent: null
+    status: active
+    entrypoint: null
+    timeout_seconds: 300
+    scheduling_note: "纯手动（对应调度任务 DailyFileParseHandler 的 CLI 版）"
+
+  ingest_knowledge:
+    description: "ingest_knowledge.py — 知识库文档向量化入库脚本。"
+    category: system_maintenance
+    source_path: scripts/ingest_knowledge.py
+    invocation: uv run python scripts/ingest_knowledge.py {args}
+    check_arg: null
+    run_args: []
+    auto_run: null
+    auto_run_args: []
+    writes_db: true
+    aggregation_parent: null
+    status: active
+    entrypoint: null
+    timeout_seconds: 600
+    scheduling_note: "纯手动"
+
+  snapshot:
+    description: "snapshot.py — 进化快照采集工具（从项目根目录运行的便捷入口）。"
+    category: data_collection
+    source_path: scripts/snapshot.py
+    invocation: uv run python scripts/snapshot.py {args}
+    check_arg: --json
+    run_args: []
+    auto_run: null
+    auto_run_args: []
+    writes_db: false
+    aggregation_parent: null
+    status: active
+    entrypoint: null
+    timeout_seconds: 60
+    scheduling_note: "纯手动"
+
+  verify_langgraph_engine:
+    description: "verify_langgraph_engine.py — LangGraph 执行引擎验证脚本（含 error_analysis 纠错路径）。"
+    category: system_maintenance
+    source_path: scripts/verify_langgraph_engine.py
+    invocation: uv run python scripts/verify_langgraph_engine.py {args}
+    check_arg: --dry-run
+    run_args: []
+    auto_run: null
+    auto_run_args: []
+    writes_db: false
+    aggregation_parent: null
+    status: active
+    entrypoint: null
+    timeout_seconds: 60
+    scheduling_note: "纯手动"
+
+  rag_batch_test:
+    description: "rag_batch_test.py — RAG 批量入库 + 回归查询测试脚本。"
+    category: system_maintenance
+    source_path: scripts/rag_batch_test.py
+    invocation: uv run python scripts/rag_batch_test.py {args}
+    check_arg: --probe
+    run_args: []
+    auto_run: null
+    auto_run_args: []
+    writes_db: true
+    aggregation_parent: null
+    status: active
+    entrypoint: null
+    timeout_seconds: 600
+    scheduling_note: "纯手动"
+
+  pdfread:
+    description: "pdfread.py — AI 友好的 PDF 文本提取 CLI。"
+    category: system_maintenance
+    source_path: scripts/pdfread.py
+    invocation: uv run python scripts/pdfread.py {args}
+    check_arg: null
+    run_args: []
+    auto_run: null
+    auto_run_args: []
+    writes_db: false
+    aggregation_parent: null
+    status: active
+    entrypoint: null
+    timeout_seconds: 60
+    scheduling_note: "纯手动"
+
+  migrate_file_purpose:
+    description: "migrate_file_purpose.py — 一次性迁移：按 file_category 推断 purpose。"
+    category: one_shot
+    source_path: scripts/migrate_file_purpose.py
+    invocation: uv run python scripts/migrate_file_purpose.py {args}
+    check_arg: --dry-run
+    run_args: []
+    auto_run: null
+    auto_run_args: []
+    writes_db: true
+    aggregation_parent: null
+    status: one_shot
+    entrypoint: null
+    timeout_seconds: 60
+    scheduling_note: "一次性"
+
 aggregations:
   evolution.py:
     description: 进化闭环薄聚合壳（daily / weekly / morning / validate / full）

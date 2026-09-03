@@ -10,7 +10,7 @@ from .scheduler import SessionScheduler
 from .pipeline.context import BusContext
 
 # M8 清理：WorkItemAgent / KnowledgeInjector / PipelineBUS / PipelineNode 已删除
-# _workitem_agent 和 injector 移至 langgraph_engine
+# 执行引擎已迁移至 langgraph_engine
 
 __all__ = [
     "WorkItem",

@@ -54,7 +54,6 @@ class EmilyCore:
         self._email_service = None
 
         # WorkItem 执行引擎（LangGraph StateGraph，统一生命周期图 + L3 agent loop）
-        self._workitem_agent = None
         self._workitem_graph = None
         self._hook_adapter = None
         self._resolvers = None

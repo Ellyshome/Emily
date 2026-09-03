@@ -69,10 +69,6 @@ manage_pending_issues:
   params:
     action: "list"
 
-voice_entry:
-  params:
-    text: "smoke test voice entry"
-
 # ── RAG 原子工具层 ──
 chunk_text:
   params:

@@ -113,7 +113,6 @@ _TOOL_SCRIPTS = [
     # project — 其他
     ("chat_archive", "emily_core.tools.project", "_CHAT_ARCHIVE_SCHEMA", "聊天归档查询", "base", "all"),
     ("manage_pending_issues", "emily_core.tools.project", "_PENDING_ISSUE_SCHEMA", "管理待解决问题", "base", "all"),
-    ("voice_entry", "emily_core.tools.project", "_VOICE_ENTRY_SCHEMA", "语音入口", "base", "all"),
     # emily_core/scripts 下的工具
     ("search_files", "emily_core.scripts.search_files", "SEARCH_FILES_SCHEMA", "搜索可见文件", "base", "all"),
 ]

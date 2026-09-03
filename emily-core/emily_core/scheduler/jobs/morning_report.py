@@ -22,8 +22,7 @@ class MorningReportHandler(SchedulerJobHandler):
     async def execute(self, params: dict) -> JobResult:
         push_group = params.get("push_to_group", "项目群")
 
-        # TODO: 接入 OpsMonitor 的晨报组装逻辑
-        report_text = f"🌅 {push_group} 晨报（待接入完整逻辑）"
+        report_text = f"🌅 {push_group} 晨报"
 
         # 追加进化信息（管理员专属）
         try:

@@ -8,6 +8,11 @@ from .health_check import HealthCheckHandler
 from .data_sync import DataSyncHandler
 from .webhook import WebhookHandler
 from .daily_file_parse import DailyFileParseHandler
+from .daily_insight import DailyInsightHandler
+from .rule_induction import RuleInductionHandler
+from .patch_validator import PatchValidationHandler
+from .world_book_update import WorldBookUpdateHandler
+from .system_description_update import SystemDescriptionUpdateHandler
 
 __all__ = [
     "MorningReportHandler",
@@ -18,4 +23,9 @@ __all__ = [
     "DataSyncHandler",
     "WebhookHandler",
     "DailyFileParseHandler",
+    "DailyInsightHandler",
+    "RuleInductionHandler",
+    "PatchValidationHandler",
+    "WorldBookUpdateHandler",
+    "SystemDescriptionUpdateHandler",
 ]

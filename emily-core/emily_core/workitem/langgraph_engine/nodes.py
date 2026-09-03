@@ -58,9 +58,9 @@ def _load_sop_text(sop_id: str) -> str:
 
 
 def _extract_structured_result(wi, ctx) -> "StructuredResult":
-    """从 step_results 提取 StructuredResult（从 workitem_agent.py:730 迁移，零改动）。
+    """从 step_results 提取 StructuredResult（从旧 WorkItemAgent 迁移，零改动）。
 
-    M8 会从 WorkItemAgent 删除本方法，此处为唯一存留副本。
+    此处为唯一存留副本。
     """
     from ..pipeline.interfaces.execution import StructuredResult
     spec = getattr(wi, "output_spec", {}) or {}

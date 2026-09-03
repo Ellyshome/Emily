@@ -22,7 +22,8 @@ class DataSyncHandler(SchedulerJobHandler):
     async def execute(self, params: dict) -> JobResult:
         sync_type = params.get("sync_type", "files")
 
-        # TODO: 接入具体同步逻辑
+        # TODO: 接入具体同步逻辑（file_service / rag_provider 注入可用）
+        # 未实现前返回失败而非假成功；接入前不得在 scheduler_config.json 注册为 enabled。
         logger.info("Data sync triggered: type=%s", sync_type)
 
-        return JobResult(success=True, summary=f"数据同步完成（类型：{sync_type}）")
+        return JobResult(success=False, summary=f"数据同步未实现（类型：{sync_type}）")

@@ -40,10 +40,6 @@ async def handle_manage_pending_issues(params: dict, pending_issues_service=None
     return await create_pending_issue_tool(pending_issues_service, is_admin=is_admin).execute(params)
 
 
-async def handle_voice_entry(params: dict, **kw) -> dict:
-    return {"success": False, "message": "voice_entry 工具待接入 VoiceEntryState 管理"}
-
-
 _SEND_EMAIL_SCHEMA = {
     "type": "object",
     "properties": {
@@ -85,22 +81,12 @@ _PENDING_ISSUE_SCHEMA = {
 }
 _PENDING_ISSUE_DESCRIPTION = "管理待解决问题清单。查看/处理待解决问题，需要管理员权限。"
 
-_VOICE_ENTRY_SCHEMA = {
-    "type": "object",
-    "properties": {
-        "text": {"type": "string", "description": "用户口述的自然语言文本"},
-        "project_id": {"type": "string", "description": "目标项目 ID"},
-    },
-    "required": ["text"],
-}
-_VOICE_ENTRY_DESCRIPTION = "通过自然语言口述录入全景节点信息（交互式引导）。"
-
 
 __all__ = [
     "handle_create_node", "handle_query_node", "handle_update_node_progress",
     "handle_add_node_dependency", "handle_mount_child_node",
     "handle_send_email", "handle_fetch_inbox", "handle_chat_archive",
-    "handle_manage_pending_issues", "handle_voice_entry",
+    "handle_manage_pending_issues",
     "_CREATE_NODE_SCHEMA", "_CREATE_NODE_DESCRIPTION",
     "_QUERY_NODE_SCHEMA", "_QUERY_NODE_DESCRIPTION",
     "_UPDATE_PROGRESS_SCHEMA", "_UPDATE_PROGRESS_DESCRIPTION",
@@ -110,5 +96,4 @@ __all__ = [
     "_FETCH_INBOX_SCHEMA", "_FETCH_INBOX_DESCRIPTION",
     "_CHAT_ARCHIVE_SCHEMA", "_CHAT_ARCHIVE_DESCRIPTION",
     "_PENDING_ISSUE_SCHEMA", "_PENDING_ISSUE_DESCRIPTION",
-    "_VOICE_ENTRY_SCHEMA", "_VOICE_ENTRY_DESCRIPTION",
 ]

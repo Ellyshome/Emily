@@ -29,7 +29,7 @@ _cache: dict[str, str] = {}
 # ══════════════════════════════════════════════════════════════════════════════
 
 _DEFAULTS: dict[str, str] = {
-    # ── WorkItemAgent: 节点级执行 + 回复合成（含 node2 planner + node4 summary）──
+    # ── 执行引擎: 节点级执行 + 回复合成（含 node2 planner + node4 summary）──
     "workitem": """你是 Emily 的执行 Agent，负责按业务流程执行任务，并将执行结果合成为自然语言回复。
 
 ## 当前上下文
@@ -89,7 +89,7 @@ _DEFAULTS: dict[str, str] = {
 {warnings}
 """,
 
-    # ── WorkItemAgent node2: 规划专用 prompt（与 workitem 共享执行规则，分离 JSON 输出约束）──
+    # ── 执行引擎 node2: 规划专用 prompt（与 workitem 共享执行规则，分离 JSON 输出约束）──
     "planner": """你是 Emily 的执行规划器。根据业务流程（SOP）和用户输入，制定逐步的执行计划。
 
 ## SOP 参考

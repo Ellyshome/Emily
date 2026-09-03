@@ -28,7 +28,7 @@ def _get_ctx():
 
 
 def _inject_runtime_params(tool_params: dict, ctx) -> dict:
-    """注入运行时上下文到 tool_params。参照 workitem_agent.py:567。"""
+    """注入运行时上下文到 tool_params。参照原 WorkItemAgent 运行时参数注入。"""
     p = dict(tool_params or {})
     p["_user_id"] = ctx.user_id or ""
     p["_message_id"] = ctx.db_message_id or ""
@@ -293,7 +293,7 @@ async def tool_node(state: dict, *, llm_client, business_tools, resolvers) -> di
                             t_start, success=False)
         return {"messages": messages, "wi_state": "executing", "_pending_tool_call": None}
 
-    # 权限检查（fail-closed，参照 workitem_agent.py:590）
+    # 权限检查（fail-closed，参照原 WorkItemAgent 权限过滤）
     session_api_ids = _session_api_ids(ctx)
     if not session_api_ids or tool_name not in session_api_ids:
         err_msg = "该操作无法执行，您可能没有相应权限。"
@@ -333,7 +333,7 @@ async def tool_node(state: dict, *, llm_client, business_tools, resolvers) -> di
 
 
 def _append_step_result(wi, tool_name, tool_params, handler_dict, t_start, success=True):
-    """构建 StepResult 追加到 wi.step_results。参照 workitem_agent.py:629。
+    """构建 StepResult 追加到 wi.step_results。参照原 WorkItemAgent 实现。
 
     保留 step_results 供 summarizing 节点提取 StructuredResult + ArchiveHook 归档兼容。
     """

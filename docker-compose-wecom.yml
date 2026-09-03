@@ -50,7 +50,6 @@ services:
       - ./emily-data/config:/app/config:ro
       - ./emily-data/baseknowledge:/app/baseknowledge:ro
       - ./emily-data/tools:/app/tools:ro
-      - ./emily-data/db_seeds:/app/db_seeds:ro
       - ./emily-data/rules:/app/rules:ro
       # Core 写入
       - ./emily-data/notebooks:/app/notebooks
@@ -79,7 +78,7 @@ services:
       - POSTGRES_PASSWORD=emily_secret_2026
       - POSTGRES_DB=emily
     volumes:
-      - ./pgdata:/var/lib/postgresql/data
+      - ./emily-data/postgres_data:/var/lib/postgresql/data
     networks:
       - emily_network
     restart: always

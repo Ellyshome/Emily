@@ -23,6 +23,7 @@ class WebhookHandler(SchedulerJobHandler):
             return JobResult(success=False, summary="未配置 webhook URL")
 
         # TODO: 接入 httpx 异步请求
+        # 未实现前返回失败而非假成功；接入前不得在 scheduler_config.json 注册为 enabled。
         logger.info("Webhook call: %s %s", method, url)
 
-        return JobResult(success=True, summary=f"Webhook 已调用: {method} {url}")
+        return JobResult(success=False, summary=f"Webhook 未实现（未发请求）: {method} {url}")
