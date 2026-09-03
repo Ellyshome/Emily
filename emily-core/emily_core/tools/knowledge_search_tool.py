@@ -108,6 +108,22 @@ async def handle_knowledge_search(
             for r in response.results
         ]
 
+        # RAG 检索日志（供 evolution 的 rag_retrieval_logs 统计消费，写入失败不影响主流程）
+        try:
+            from emily_core.infrastructure.logging.rag_logger import RAGRetrievalLogger
+            scores = [r.score for r in response.results]
+            await RAGRetrievalLogger.log(
+                query_text=response.query or query,
+                provider=response.provider_name,
+                hit_count=response.total,
+                top_score=max(scores) if scores else 0.0,
+                avg_score=(sum(scores) / len(scores)) if scores else 0.0,
+                latency_ms=elapsed_ms,
+                was_used_by_llm=True,
+            )
+        except Exception as log_err:
+            logger.warning("RAG retrieval log write failed: %s", log_err)
+
         reply = response.context_text or "未找到相关知识"
 
         return {
@@ -125,4 +141,16 @@ async def handle_knowledge_search(
         }
     except Exception as e:
         logger.error("knowledge_search handler failed: %s", e, exc_info=True)
+        # 失败检索也记日志（error_summary），供 evolution 统计零命中/异常
+        try:
+            from emily_core.infrastructure.logging.rag_logger import RAGRetrievalLogger
+            await RAGRetrievalLogger.log(
+                query_text=query,
+                provider=getattr(rag_provider, "provider_name", "unknown"),
+                hit_count=0,
+                error_summary=str(e)[:500],
+                was_used_by_llm=True,
+            )
+        except Exception as log_err:
+            logger.warning("RAG retrieval error log write failed: %s", log_err)
         return {"success": False, "reply": f"知识库检索失败: {e}"}

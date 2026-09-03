@@ -52,7 +52,7 @@ REGISTERED_TOOLS: set[str] = {
     # project
     "create_node", "query_node", "update_node_progress", "add_node_dependency",
     "mount_child_node", "update_nodes", "activate_nodes", "discard_nodes",
-    "send_email", "fetch_inbox", "chat_archive", "manage_pending_issues", "voice_entry",
+    "send_email", "fetch_inbox", "chat_archive", "manage_pending_issues",
     # expert_agent
     "create_expert", "approve_expert", "toggle_expert", "query_experts",
 }
@@ -69,7 +69,6 @@ TOOL_META_MAP: dict[str, tuple[str, str, str, str]] = {
     "fetch_inbox":        ("获取收件箱",            "base",     "all",   "meta"),
     "chat_archive":       ("聊天归档查询",          "base",     "all",   "meta"),
     "manage_pending_issues": ("管理待解决问题",     "base",     "all",   "meta"),
-    "voice_entry":        ("语音入口",              "base",     "all",   "meta"),
     # expert_agent
     "create_expert":     ("新建专家",              "business", "write", "sop_only"),
     "approve_expert":    ("审批专家",              "project",  "admin", "sop_only"),
@@ -147,11 +146,18 @@ TOOL_SCHEMA_MAP: dict[str, tuple[str, str]] = {
     "fetch_inbox": ("emily_core.tools.project", "_FETCH_INBOX_SCHEMA"),
     "chat_archive": ("emily_core.tools.project", "_CHAT_ARCHIVE_SCHEMA"),
     "manage_pending_issues": ("emily_core.tools.project", "_PENDING_ISSUE_SCHEMA"),
-    "voice_entry": ("emily_core.tools.project", "_VOICE_ENTRY_SCHEMA"),
     "create_expert": ("emily_core.tools.expert_manage_tool", "_EXPERT_CREATE_SCHEMA"),
     "approve_expert": ("emily_core.tools.expert_manage_tool", "_EXPERT_APPROVE_SCHEMA"),
     "toggle_expert": ("emily_core.tools.expert_manage_tool", "_EXPERT_TOGGLE_SCHEMA"),
     "query_experts": ("emily_core.tools.expert_manage_tool", "_EXPERT_QUERY_SCHEMA"),
+}
+
+
+# ── 已移除工具（历史注册过，现已从 REGISTERED_TOOLS/TOOL_META_MAP 摘除）──
+# _ensure_tool_registry_seed() 会自动停用 DB 中残留的活跃行，避免 LLM 仍看到已删除工具。
+# 新增移除工具时：① 从 REGISTERED_TOOLS/TOOL_META_MAP/TOOL_SCHEMA_MAP 摘除 ② 加到此集合。
+REMOVED_TOOLS: set[str] = {
+    "voice_entry",  # 2026-09 摘除：实现文件孤儿且坏导入（audit 报告 §3.1），stub 已删
 }
 
 
@@ -344,7 +350,24 @@ def _ensure_tool_registry_seed() -> dict:
                 "_ensure_tool_registry_seed: synced %d tools (%d updated, %d inserted)",
                 synced, updated, inserted,
             )
-        return {"synced": synced, "updated": updated, "inserted": inserted, "total": len(TOOL_META_MAP)}
+
+        # 停用已移除工具（REMOVED_TOOLS），避免 DB 残留行继续暴露给 LLM
+        deactivated = 0
+        for tool_name in REMOVED_TOOLS:
+            if tool_name in existing_ids:
+                try:
+                    ToolRegistryRepo.deactivate(tool_name)
+                    deactivated += 1
+                except Exception as e:
+                    logger.warning("_ensure_tool_registry_seed: deactivate %s failed: %s",
+                                   tool_name, e)
+        if deactivated:
+            logger.info("_ensure_tool_registry_seed: deactivated %d removed tools", deactivated)
+
+        return {
+            "synced": synced, "updated": updated, "inserted": inserted,
+            "total": len(TOOL_META_MAP), "deactivated": deactivated,
+        }
     except Exception as e:
         logger.warning("_ensure_tool_registry_seed failed: %s", e)
         return {"synced": 0, "error": str(e)}

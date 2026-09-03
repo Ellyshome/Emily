@@ -2,7 +2,7 @@
 """Function-calling 工具适配 —— BusinessFlowTool + Resolver → OpenAI tool spec。
 
 按 session_api_ids 过滤（fail-closed：用户无权限的工具不暴露）。
-参照 registry.py:116 的 _tool() 桥接模式 + workitem_agent.py:547 的权限过滤。
+参照 registry.py:116 的 _tool() 桥接模式 + 原 WorkItemAgent 的权限过滤。
 """
 from __future__ import annotations
 
@@ -34,7 +34,7 @@ FALLBACK_SAFE_TOOLS: set[str] = {
 
 
 def _session_api_ids(ctx) -> set[str]:
-    """从 SessionContext.available_tools 提取 api_id 集合。参照 workitem_agent.py:547。"""
+    """从 SessionContext.available_tools 提取 api_id 集合。参照原 WorkItemAgent 实现。"""
     session_ctx = ctx.get_session_context() if ctx else None
     ids: set[str] = set()
     if session_ctx:

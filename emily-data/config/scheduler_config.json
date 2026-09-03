@@ -26,7 +26,8 @@
       "job_type": "INTERVAL",
       "interval_seconds": 600,
       "params": {"timeout_minutes": 30},
-      "enabled": true
+      "enabled": false,
+      "note": "Session TTL 清理由 SessionPoolManager 内部 sweeper（sweep_expired）自动执行，调度任务冗余，已禁用"
     },
     {
       "name": "系统健康检查",

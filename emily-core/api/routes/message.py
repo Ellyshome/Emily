@@ -55,6 +55,7 @@ class MessageIn(BaseModel):
             reply_to_message_id=self.reply_to_message_id,
             msg_type=self.msg_type,
             attachments=self.attachments,
+            event_id=self.event_id,
         )
 
 

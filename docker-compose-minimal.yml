@@ -39,7 +39,6 @@ services:
       - ./emily-data/config:/app/config:ro
       - ./emily-data/baseknowledge:/app/baseknowledge:ro
       - ./emily-data/tools:/app/tools:ro
-      - ./emily-data/db_seeds:/app/db_seeds:ro
       - ./emily-data/rules:/app/rules:ro
       # ── Core 写入，人类查阅 ──
       - ./emily-data/notebooks:/app/notebooks

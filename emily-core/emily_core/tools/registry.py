@@ -510,11 +510,6 @@ def _register_project(core, reg):
     if pi is not None:
         _pjc += _reg_pending(reg, pi)
 
-    # voice_entry (总是注册，stub 返回提示)
-    from .project import _VOICE_ENTRY_SCHEMA, _VOICE_ENTRY_DESCRIPTION, handle_voice_entry
-    reg.register(_tool("voice_entry", _VOICE_ENTRY_DESCRIPTION, _VOICE_ENTRY_SCHEMA, handle_voice_entry))
-    _pjc += 1
-
 
 def _reg_email(reg, es, config):
     """注册邮箱工具（send_email、fetch_inbox）。

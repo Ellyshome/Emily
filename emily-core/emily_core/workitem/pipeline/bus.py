@@ -9,7 +9,7 @@
 deny always wins（任一 before hook BLOCK → 立即终止），before hook 异常视为 BLOCK。
 
 Hook 系统完整复用迁移过来的 hook.py / hook_registry.py（M15 实现，逻辑不改）。
-RealGuardian 在 LLM 可用时自动启用输出审核（见 workitem_agent.py）。LLM 不可用时
+RealGuardian 在 LLM 可用时自动启用输出审核（已由 LangGraph quality_gate 节点替代）。LLM 不可用时
 各节点自然降级（规划→fallback steps，执行→空结果，Guardian→跳过）。
 """
 
