@@ -138,7 +138,7 @@ class EventApplication:
                     target_id=event.id,
                     target_no=getattr(event, "event_no", "") or "",
                     summary=f"确认事件：{event.title[:100]}",
-                    user_id=event.user_id or "",
+                    user_id=confirmed_by or event.user_id or "",  # BUG 修复：认证操作人优先，而非录入人
                     project_id=getattr(event, "project_id", "") or "",
                 )
                 return HandlerResult(

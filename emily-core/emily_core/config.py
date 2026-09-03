@@ -70,16 +70,6 @@ class Config:
     /app/prompts → emily-data/prompts）。目录下按名称存放 .md 文件：
     routing.md / planner.md / guardian_step.md / guardian_reply.md"""
 
-    # ---- Agent 配置 ----
-    agent_max_iterations: int = 10
-    """MasterAgent ReAct 循环最大迭代次数。"""
-
-    agent_context_max_turns: int = 10
-    """MasterAgent 对话上下文保留的最大轮数。"""
-
-    agent_context_ttl_seconds: int = 600
-    """对话上下文过期时间（秒），默认 10 分钟。"""
-
     # ---- Mermaid 决策树 ----
     pending_issues_enabled: bool = True
     """待解决问题清单开关"""
