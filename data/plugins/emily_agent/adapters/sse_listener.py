@@ -61,8 +61,14 @@ class SSEListener:
         self._running = False
 
     async def _listen_once(self, sse_url: str) -> None:
-        """单次 SSE 连接，逐帧解析。"""
-        async with aiohttp.ClientSession() as session:
+        """单次 SSE 连接，逐帧解析。
+
+        注意：SSE 是长连接，不能沿用 aiohttp 默认的 total 超时（300s 会掐断流，
+        导致重连空窗内的回复事件丢失）。这里 total=None（不设总超时），仅用
+        sock_read 兜底检测对端静默断开（core 每 15s 有心跳，120s 足够保守）。
+        """
+        timeout = aiohttp.ClientTimeout(total=None, sock_read=120.0)
+        async with aiohttp.ClientSession(timeout=timeout) as session:
             async with session.get(sse_url) as resp:
                 logger.info("SSE connected: %s (status=%d)", sse_url, resp.status)
                 event_type = "message"

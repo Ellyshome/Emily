@@ -8,6 +8,8 @@ M13: 支持 send_files() 主动发送文件 + send() 携带附件回复。
 
 import asyncio
 import logging
+import time
+from collections import deque
 from typing import TYPE_CHECKING
 
 from ..standard.reply import ReplyMessage
@@ -16,6 +18,11 @@ if TYPE_CHECKING:
     from astrbot.core.platform.astr_message_event import AstrMessageEvent
 
 logger = logging.getLogger("emily.adapter.outbound")
+
+# 出站最终回复短时去重：core 的同步 HTTP 返回与 SSE 推送可能携带同一回复，
+# 避免同一 (会话, 内容) 在短时间内被重复发送到 IM。
+OUTBOUND_DEDUP_SECONDS = 60.0
+_recent_sent: deque = deque(maxlen=256)
 
 
 class AstrBotOutboundSender:
@@ -48,6 +55,20 @@ class AstrBotOutboundSender:
             event: 原始 AstrBot 消息事件（QQ 路径必需，企微路径可选）。
         """
         file_paths = getattr(reply, "file_paths", None) or []
+
+        # 短时去重：HTTP 同步回复与 SSE 推送可能先后到达同一回复，跳过重复。
+        now = time.monotonic()
+        while _recent_sent and now - _recent_sent[0][1] > OUTBOUND_DEDUP_SECONDS:
+            _recent_sent.popleft()
+        key = (reply.conversation_id, reply.content)
+        for k, ts in _recent_sent:
+            if k == key and now - ts < OUTBOUND_DEDUP_SECONDS:
+                logger.info(
+                    "outbound dedupe: skip conv=%s content=%.40s",
+                    reply.conversation_id, reply.content,
+                )
+                return
+        _recent_sent.append((key, now))
 
         if event is not None:
             # QQ / 传统路径：通过 event set_result

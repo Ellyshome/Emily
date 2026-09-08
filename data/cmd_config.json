@@ -241,6 +241,14 @@
       "webhook_uuid": "c416608290f44816",
       "callback_server_host": "0.0.0.0",
       "port": 6195
+    },
+    {
+      "id": "QQ",
+      "type": "aiocqhttp",
+      "enable": true,
+      "ws_reverse_host": "0.0.0.0",
+      "ws_reverse_port": 6199,
+      "ws_reverse_token": ""
     }
   ],
   "platform_specific": {

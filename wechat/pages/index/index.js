@@ -50,6 +50,13 @@ Page({
     this._startY = 0
     this._startPct = DEFAULT_UPPER
     this._moved = false
+    // 本地假身份：生成一次并持久化，作为对话用户标识（正式 code2session 属后续阶段）
+    let devId = wx.getStorageSync('dev_openid')
+    if (!devId) {
+      devId = 'dev_' + Date.now().toString(36) + Math.random().toString(36).slice(2, 8)
+      wx.setStorageSync('dev_openid', devId)
+    }
+    this._devId = devId
   },
 
   onDividerStart(e) {
@@ -167,8 +174,8 @@ Page({
     wx.request({
       url: API_BASE + CHAT_PATH,
       method: 'POST',
-      timeout: 20000,
-      header: { 'content-type': 'application/json' },
+      timeout: 60000,
+      header: { 'content-type': 'application/json', 'X-Dev-User': this._devId || 'dev-user' },
       data: { message: text, history },
       success: res => {
         const reply = pickReply(res.data)
@@ -179,7 +186,7 @@ Page({
         }
       },
       fail: () => {
-        this.pushMessage({ role: 'ai', text: '连接后端失败：请确认 127.0.0.1:18080 已启动，且开发者工具已勾选“不校验合法域名”' })
+        this.pushMessage({ role: 'ai', text: '连接网关失败：请确认 127.0.0.1:18090 已启动，且开发者工具已勾选“不校验合法域名”' })
       },
     })
   },

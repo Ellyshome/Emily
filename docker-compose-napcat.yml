@@ -5,6 +5,9 @@ services:
     ports:
       - "6098:6098"
       - "6099:6099"
+    volumes:
+      - ./emily-data/napcat_config:/app/napcat/config   # OneBot11/账号配置（可持久化）
+      - ./emily-data/napcat_qq:/app/.config/QQ          # QQ 登录态与数据（重建容器不丢登录）
     networks:
       - emily_network
     restart: always
