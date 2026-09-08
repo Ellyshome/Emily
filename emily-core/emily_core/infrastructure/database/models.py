@@ -1491,11 +1491,15 @@ class KnowledgeChunk(Base):
         comment="BGE-m3 密集向量（1024 维）",
     )
     metadata_ = Column("metadata", Text, default="{}", comment="JSON: {stage, role, doc_type, ...}")
+    content_hash = Column(String(64), default="", comment="content sha256（M5 去重）")
+    ingest_status = Column(String(20), default="pending", comment="pending/parsing/embedding/indexed/failed（M7）")
     created_at = Column(String, default=_utc_now)
 
     __table_args__ = (
         Index("idx_kc_doc_id", "doc_id"),
         Index("idx_kc_created", "created_at"),
+        Index("idx_kc_content_hash", "content_hash"),
+        Index("idx_kc_ingest_status", "ingest_status"),
     )
 
 

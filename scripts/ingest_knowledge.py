@@ -31,7 +31,6 @@ import json
 import logging
 import os
 import sys
-import uuid
 from pathlib import Path
 
 _HERE = Path(__file__).resolve().parent
@@ -67,29 +66,34 @@ def _load_env(env_path: Path | None = None) -> None:
 
 
 # ══════════════════════════════════════════════════════════════════════════════
-# 分块（复用 local_fallback 的标题分块）
+# 解析 + 分块（M5: DocumentParser + StructuralChunker + DedupChecker）
 # ══════════════════════════════════════════════════════════════════════════════
 
-def chunk_file(file_path: Path, max_chars: int = 800) -> list[str]:
-    """读取 .md/.txt 文件，按标题分块后，再对超长块做硬切分。"""
-    content = file_path.read_text(encoding="utf-8")
-    from emily_core.providers.rag.local_fallback import _split_by_headings
-    sections = _split_by_headings(content)
+_SUPPORTED_EXTS = (".md", ".txt", ".markdown", ".text", ".pdf", ".docx", ".doc")
 
-    chunks: list[str] = []
-    for title, body in sections:
-        text = f"{title}\n{body}".strip() if title else body.strip()
-        if not text:
-            continue
-        # 超长块硬切分（按 max_chars，尽量在句末断）
-        while len(text) > max_chars:
-            cut = text.rfind("\n", 0, max_chars)
-            if cut < max_chars // 2:
-                cut = max_chars
-            chunks.append(text[:cut].strip())
-            text = text[cut:].strip()
-        if text:
-            chunks.append(text)
+
+def parse_and_chunk(file_path: Path) -> list[dict]:
+    """解析文件并结构分块，填充 content_hash。
+
+    Returns:
+        [{text, index, heading, content_hash}]
+    """
+    from emily_core.services.document_parser import DocumentParser
+    from emily_core.services.structural_chunker import StructuralChunker
+    from emily_core.services.dedup_checker import DedupChecker
+
+    text = DocumentParser().parse(file_path)
+    if not text or not text.strip():
+        return []
+
+    chunks: list[dict] = []
+    for c in StructuralChunker().chunk(text):
+        chunks.append({
+            "text": c["text"],
+            "index": c["index"],
+            "heading": c.get("heading", ""),
+            "content_hash": DedupChecker.content_hash(c["text"]),
+        })
     return chunks
 
 
@@ -107,9 +111,13 @@ async def ingest(
     model: str,
     dry_run: bool,
     backend: str = "remote",
+    uploaded_by: str | None = None,
+    confidentiality: int = 1,
 ) -> dict:
     from emily_core.infrastructure.database.session import init_db
     from emily_core.repositories.knowledge_chunk_repo import KnowledgeChunkRepo
+    from emily_core.repositories.file_repo import FileRepository
+    from emily_core.services.dedup_checker import DedupChecker
 
     if backend == "tei":
         from emily_core.infrastructure.embedding.tei_client import TeiClient
@@ -121,31 +129,60 @@ async def ingest(
     if not scan_dir.exists():
         return {"error": f"目录不存在: {scan_dir}"}
 
-    # 收集 .md/.txt 文件（pdf/docx 需解析，本地摄取暂不支持，跳过并提示）
+    # 收集支持格式文件（M5 扩展 pdf/docx/doc）
     files = [
         p for p in sorted(scan_dir.rglob("*"))
-        if p.suffix.lower() in (".md", ".txt", ".markdown")
+        if p.suffix.lower() in _SUPPORTED_EXTS
     ]
 
     if not files:
-        return {"error": f"{scan_dir} 下无 .md/.txt 文件（pdf/docx 需先转换）"}
+        return {"error": f"{scan_dir} 下无支持的文档文件（md/txt/pdf/docx/doc）"}
 
-    # 分块
-    all_chunks: list[dict] = []  # {text, source, title}
+    # M5: 解析 + 结构分块 + 批内 content_hash 去重
+    dedup = DedupChecker()
+    seen_hashes: set[str] = set()
+    all_chunks: list[dict] = []  # {text, source, index, heading, content_hash}
+    file_reports: list[dict] = []
+    intra_dup = 0
     for fp in files:
         rel = f"{collection}/{fp.relative_to(scan_dir)}"
-        for i, chunk in enumerate(chunk_file(fp)):
-            all_chunks.append({"text": chunk, "source": rel, "index": i})
+        parsed = parse_and_chunk(fp)
+        file_chunks: list[dict] = []
+        for c in parsed:
+            h = c["content_hash"]
+            if h in seen_hashes:
+                intra_dup += 1
+                continue
+            seen_hashes.add(h)
+            file_chunks.append({
+                "text": c["text"],
+                "source": rel,
+                "index": c["index"],
+                "heading": c.get("heading", ""),
+                "content_hash": h,
+            })
+        all_chunks.extend(file_chunks)
+        file_reports.append({
+            "file": str(fp),
+            "chunks": len(file_chunks),
+            "skipped_duplicate": len(parsed) - len(file_chunks),
+        })
 
-    logger.info("分块完成: %d 文件 → %d chunks (backend=%s)", len(files), len(all_chunks), backend)
+    logger.info("分块完成: %d 文件 → %d chunks (批内去重 %d, backend=%s)",
+                len(files), len(all_chunks), intra_dup, backend)
 
     if dry_run:
         report = {
             "scan_dir": str(scan_dir),
             "collection": collection,
             "backend": backend,
+            "uploaded_by": uploaded_by,
+            "confidentiality": confidentiality,
             "files": [str(p) for p in files],
+            "doc_id_anchor": "files.id (via ensure_file_record)",
             "chunk_count": len(all_chunks),
+            "duplicate_chunks_skipped": intra_dup,
+            "file_reports": file_reports,
             "preview": [c["text"][:80] for c in all_chunks[:5]],
         }
         print(json.dumps(report, ensure_ascii=False, indent=2))
@@ -159,15 +196,37 @@ async def ingest(
 
     repo = KnowledgeChunkRepo()
 
-    # 逐文件入库（每个文件一个 doc_id）。embed 分小批（避免单次请求过大/超时）
+    # 跨批次去重：跳过 DB 中已存在的相同 content_hash（M5）
+    new_chunks: list[dict] = []
+    db_dup = 0
+    for c in all_chunks:
+        if dedup.is_duplicate(c["content_hash"]):
+            db_dup += 1
+            continue
+        new_chunks.append(c)
+    logger.info("DB 去重: 跳过 %d 个已存在 chunk", db_dup)
+
+    # 逐文件入库（每个文件一个 files.id 作为 doc_id）。embed 分小批（避免单次请求过大/超时）
+    from collections import defaultdict
+    by_source: dict[str, list[dict]] = defaultdict(list)
+    for c in new_chunks:
+        by_source[c["source"]].append(c)
+
     total = 0
     BATCH = 16
     for fp in files:
         rel = f"{collection}/{fp.relative_to(scan_dir)}"
-        chunks = [c for c in all_chunks if c["source"] == rel]
+        chunks = by_source.get(rel, [])
         texts = [c["text"] for c in chunks]
         if not texts:
             continue
+
+        # M1: 目录扫描入库前建/查 files 记录，用 files.id 作 doc_id 锚点
+        file_record = FileRepository.ensure_file_record(
+            fp.name,
+            uploaded_by=uploaded_by,
+            confidentiality=confidentiality,
+        )
 
         # 分小批 embed，合并向量
         embeddings: list[list[float]] = []
@@ -182,15 +241,22 @@ async def ingest(
             continue
 
         doc_meta = {
-            "doc_id": str(uuid.uuid4()),
+            "doc_id": file_record.id,
             "doc_name": fp.name,
+            "file_no": file_record.file_no,
             "collection": collection,
         }
         ids = repo.batch_insert(chunks, embeddings, doc_meta)
         total += len(ids)
-        logger.info("入库 %s: %d chunks", fp.name, len(ids))
+        logger.info("入库 %s: %d chunks (doc_id=%s)", fp.name, len(ids), file_record.id)
 
-    return {"ok": True, "collection": collection, "chunks_indexed": total, "files": len(files)}
+    return {
+        "ok": True,
+        "collection": collection,
+        "chunks_indexed": total,
+        "files": len(files),
+        "duplicate_chunks_skipped": intra_dup + db_dup,
+    }
 
 
 def main():
@@ -210,6 +276,9 @@ def main():
         "EMILY_EMBEDDING_API_URL", "https://api.siliconflow.cn/v1/embeddings"))
     parser.add_argument("--api-key", default=os.environ.get("SILICONFLOW_API_KEY", ""))
     parser.add_argument("--model", default=os.environ.get("EMILY_EMBEDDING_MODEL", "BAAI/bge-m3"))
+    parser.add_argument("--uploaded-by", default="", help="上传者 user_id（files.uploaded_by，M1 doc_id 锚定）")
+    parser.add_argument("--confidentiality", type=int, default=1,
+                        help="密级 0=公开 1=内部 2=机密 3=绝密（默认 1）")
     parser.add_argument("--dry-run", action="store_true", help="预览分块，不写库")
     args = parser.parse_args()
 
@@ -226,6 +295,8 @@ def main():
         model=args.model,
         dry_run=args.dry_run,
         backend=args.backend,
+        uploaded_by=args.uploaded_by or None,
+        confidentiality=args.confidentiality,
     ))
     print(json.dumps(result, ensure_ascii=False, indent=2))
 

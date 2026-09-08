@@ -60,6 +60,8 @@ _KNOWLEDGE_SEARCH_DESCRIPTION = (
 async def handle_knowledge_search(
     params: dict,
     rag_provider: RagProvider,
+    user_id: str | None = None,
+    resolver=None,
 ) -> dict:
     """处理知识库检索（M14 业务流工具 handler）。
 
@@ -69,11 +71,13 @@ async def handle_knowledge_search(
     Args:
         params: LLM 提取的结构化参数 {query, top_k?, stage?, role?}
         rag_provider: RAG 检索提供者（PgVectorRagProvider 或 LocalFileRagProvider）
+        user_id: 可选当前用户 id（M4，由框架签名注入）
+        resolver: 可选 VisibleFileSetResolver（M4，由 registry._rag 注入）
 
     Returns:
         dict: {
             success, reply,
-            rag_results_data: {query, provider, chunks[{content, score, doc_name}], hit_count, elapsed_ms}
+            rag_results_data: {query, provider, chunks[{content, score, doc_name, cite_id, title}], hit_count, elapsed_ms}
         }
     """
     query = params.get("query", "").strip()
@@ -91,11 +95,17 @@ async def handle_knowledge_search(
             "reply": "知识库暂不可用，请稍后重试",
         }
 
+    # M4: 解析当前用户可见文件集（可见性唯一权威来源），宁少答不泄露
+    scoped_doc_ids = None
+    if user_id and resolver is not None:
+        scoped_doc_ids = await _resolve_scoped_doc_ids(user_id, resolver)
+
     t_start = _time.monotonic()
     try:
         response = await rag_provider.search(
             query, top_k=top_k,
             stage=stage, role=role,
+            scoped_doc_ids=scoped_doc_ids,
         )
         elapsed_ms = int((_time.monotonic() - t_start) * 1000)
 
@@ -104,6 +114,8 @@ async def handle_knowledge_search(
                 "content": r.content,
                 "score": r.score,
                 "doc_name": r.source_document,
+                "cite_id": getattr(r, "source_file_id", "") or "",
+                "title": getattr(r, "source_title", "") or r.source_document,
             }
             for r in response.results
         ]
@@ -125,6 +137,16 @@ async def handle_knowledge_search(
             logger.warning("RAG retrieval log write failed: %s", log_err)
 
         reply = response.context_text or "未找到相关知识"
+
+        # M8: 引用溯源 —— 在回复尾部附 [cite:doc_id] 标记
+        citations = []
+        for r in response.results:
+            cite_id = getattr(r, "source_file_id", "")
+            if cite_id:
+                title = getattr(r, "source_title", "") or r.source_document
+                citations.append(f"[cite:{cite_id}] {title}")
+        if citations:
+            reply = reply + "\n\n引用来源：\n" + "\n".join(citations)
 
         return {
             "success": True,
@@ -154,3 +176,23 @@ async def handle_knowledge_search(
         except Exception as log_err:
             logger.warning("RAG retrieval error log write failed: %s", log_err)
         return {"success": False, "reply": f"知识库检索失败: {e}"}
+
+
+async def _resolve_scoped_doc_ids(user_id: str, resolver) -> "object":
+    """解析当前用户可见文件 id 集合（返回 SQLAlchemy Select，惰性）。
+
+    通过 PermissionService.build_permission_dict 取 company_id / info_level，
+    再交给 VisibleFileSetResolver 实时计算 ①∪②∪③∪④。
+    """
+    import asyncio
+    from ..services.permission_service import PermissionService
+
+    def _build_perm() -> dict:
+        return PermissionService().build_permission_dict(user_id)
+
+    perm = await asyncio.to_thread(_build_perm)
+    company_id = perm.get("company_id", "")
+    info_level = perm.get("info_level", "public")
+    return resolver.resolve_visible_file_ids(
+        user_id, company_id=company_id, info_level=info_level,
+    )

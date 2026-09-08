@@ -167,8 +167,14 @@ def _register_base(core, reg):
     )
     if rp is not None:
         from .knowledge_search_tool import handle_knowledge_search
-        async def _rag(params, **kw):
-            return await handle_knowledge_search(params, rag_provider=rp)
+        async def _rag(params, user_id=None, **kw):
+            # M4: 框架按签名注入 user_id，此处解析可见集并下传（宁少答不泄露）
+            resolver = None
+            if user_id:
+                from ..services.visible_file_set_resolver import VisibleFileSetResolver
+                resolver = VisibleFileSetResolver()
+            return await handle_knowledge_search(
+                params, rag_provider=rp, user_id=user_id, resolver=resolver)
         reg.register(_tool("knowledge_search", _KNOWLEDGE_SEARCH_DESCRIPTION,
                            _KNOWLEDGE_SEARCH_SCHEMA, _rag))
     else:

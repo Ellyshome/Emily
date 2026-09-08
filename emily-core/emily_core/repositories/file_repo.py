@@ -75,6 +75,43 @@ class FileRepository:
             return f
 
     @staticmethod
+    def ensure_file_record(
+        filename: str,
+        *,
+        uploaded_by: Optional[str] = None,
+        confidentiality: int = 0,
+        project_id: Optional[str] = None,
+        storage_path: Optional[str] = None,
+    ) -> File:
+        """按 (filename, uploaded_by) 建/查 files 记录，返回已存在或新建的 File。
+
+        目录扫描入库前调用，使 knowledge_chunks.doc_id 锚定 files.id，
+        消除 uuid4 断链（M1 doc_id 归一）。
+        """
+        with get_session() as session:
+            existing = session.query(File).filter(
+                File.filename == filename,
+                File.uploaded_by == uploaded_by,
+                File.is_deleted == False,
+            ).first()
+            if existing is not None:
+                return existing
+
+            file_no = FileRepository.generate_file_no()
+            f = File(
+                file_no=file_no,
+                filename=filename,
+                uploaded_by=uploaded_by,
+                confidentiality=confidentiality,
+                project_id=project_id,
+                storage_path=storage_path,
+            )
+            session.add(f)
+            session.flush()
+            logger.info("ensure_file_record created: no=%s, filename=%s", file_no, filename)
+            return f
+
+    @staticmethod
     def get_by_id(file_id: str) -> Optional[File]:
         with get_session() as session:
             return session.query(File).filter(File.id == file_id).first()
