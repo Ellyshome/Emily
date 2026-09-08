@@ -8,6 +8,7 @@ from .health_check import HealthCheckHandler
 from .data_sync import DataSyncHandler
 from .webhook import WebhookHandler
 from .daily_file_parse import DailyFileParseHandler
+from .ingest import IngestJobHandler
 from .daily_insight import DailyInsightHandler
 from .rule_induction import RuleInductionHandler
 from .patch_validator import PatchValidationHandler
@@ -23,6 +24,7 @@ __all__ = [
     "DataSyncHandler",
     "WebhookHandler",
     "DailyFileParseHandler",
+    "IngestJobHandler",
     "DailyInsightHandler",
     "RuleInductionHandler",
     "PatchValidationHandler",

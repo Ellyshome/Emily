@@ -12,6 +12,8 @@ class SearchResult:
     source_document: str = ""
     source_kb: str = ""
     metadata: dict = field(default_factory=dict)
+    source_file_id: str = ""   # M8: 来源文件 id（files.id）
+    source_title: str = ""     # M8: 来源标题（doc_name）
 
 
 @dataclass
@@ -35,6 +37,8 @@ class RagProvider(ABC):
         self, query: str, top_k: int = 5,
         stage: str | None = None,
         role: str | None = None,
+        scoped_doc_ids=None,      # M3: 可见集（Select | list[str] | None），排序前过滤
+        rerank: bool = False,     # M6: 可选重排（失败降级）
     ) -> RagSearchResponse:
         """检索知识库。
 
@@ -43,6 +47,8 @@ class RagProvider(ABC):
             top_k: 最大返回结果数
             stage: 可选，按项目阶段过滤（如'投资决策'、'施工建设'等）
             role: 可选，按岗位过滤（如'工程部经理'、'设计部经理'等）
+            scoped_doc_ids: 可选，可见文件 id 集合（Select 或 list），用于排序前范围过滤
+            rerank: 可选，触发重排（不可用时降级，不阻断）
 
         Returns:
             RagSearchResponse 包含检索结果和 LLM 可用的格式化文本

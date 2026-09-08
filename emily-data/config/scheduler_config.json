@@ -37,6 +37,15 @@
       "interval_seconds": 3600,
       "params": {},
       "enabled": true
+    },
+    {
+      "name": "RAG 入库状态机",
+      "action_type": "rag_ingest",
+      "handler_module": "scheduler.jobs.ingest",
+      "job_type": "ONCE",
+      "params": {"retry_failed": true, "limit": 100},
+      "enabled": false,
+      "note": "处理 knowledge_chunks.ingest_status 的 pending/failed 记录，崩溃恢复可手动重跑"
     }
   ]
 }

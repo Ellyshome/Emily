@@ -57,6 +57,10 @@ async def handle_embed_and_index(
     if not chunks:
         return {"success": False, "error": "chunks is empty"}
 
+    # M1: doc_id 必填校验（锚定 files.id，禁止回退 uuid4）
+    if not doc_meta.get("doc_id"):
+        return {"success": False, "error": "doc_metadata.doc_id is required (files.id)"}
+
     # 1. 提取文本
     texts = [c.get("text", "") for c in chunks]
     if not any(texts):

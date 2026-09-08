@@ -46,6 +46,8 @@ class PgVectorRagProvider(RagProvider):
         top_k: int = 5,
         stage: str | None = None,
         role: str | None = None,
+        scoped_doc_ids=None,
+        rerank: bool = False,
     ) -> RagSearchResponse:
         """query → TEI embedding → pgvector 相似度查询 → top_k chunks。
 
@@ -54,6 +56,8 @@ class PgVectorRagProvider(RagProvider):
             top_k: 最大返回结果数。
             stage: 可选，按项目阶段过滤。
             role: 可选，按岗位过滤。
+            scoped_doc_ids: 可选可见文件 id 集合（M3 范围过滤，排序前）。
+            rerank: 可选重排（M6，不可用/失败时降级到向量分数）。
 
         Returns:
             RagSearchResponse，包含检索结果和格式化上下文文本。
@@ -69,7 +73,10 @@ class PgVectorRagProvider(RagProvider):
                 provider_name="pgvector",
             )
 
-        res = await self._search_impl(query, top_k or self._top_k, stage, role)
+        res = await self._search_impl(
+            query, top_k or self._top_k, stage, role,
+            scoped_doc_ids, rerank,
+        )
         elapsed_ms = int((time.monotonic() - started) * 1000)
         logger.info(
             "pgvector search: '%s' → %d results (%dms)",
@@ -80,6 +87,7 @@ class PgVectorRagProvider(RagProvider):
     async def _search_impl(
         self, query: str, top_k: int,
         stage: str | None, role: str | None,
+        scoped_doc_ids=None, rerank: bool = False,
     ) -> RagSearchResponse:
         """内部实现：embedding → pgvector 检索 → 构建响应。"""
         try:
@@ -103,19 +111,31 @@ class PgVectorRagProvider(RagProvider):
         query_vec = embeddings[0]
 
         try:
-            rows = self._repo.search_dense(
-                query_vec, top_k=top_k, threshold=self._similarity,
+            # M6: 混合检索（向量 + pg_trgm 关键词 RRF 融合），复用 M3 allowlist
+            rows = self._repo.search_hybrid(
+                query, query_vec, top_k=top_k, doc_ids=scoped_doc_ids,
             )
         except Exception:
-            logger.exception("pgvector search: DB query failed")
-            return RagSearchResponse(
-                query=query, results=[], context_text="",
-                total=0, provider_name="pgvector",
-            )
+            logger.exception("pgvector search: hybrid query failed, fallback to dense-only")
+            try:
+                rows = self._repo.search_dense(
+                    query_vec, top_k=top_k, threshold=self._similarity,
+                    doc_ids=scoped_doc_ids,
+                )
+            except Exception:
+                logger.exception("pgvector search: DB query failed")
+                return RagSearchResponse(
+                    query=query, results=[], context_text="",
+                    total=0, provider_name="pgvector",
+                )
 
         # 阶段/岗位过滤（metadata JSON）
         if stage or role:
             rows = self._filter_by_metadata(rows, stage, role)
+
+        # M6: 可选重排（失败降级到向量分数，不阻断）
+        if rerank and rows:
+            rows = self._rerank(query, rows)
 
         # 截断到 top_k 再构建
         rows = rows[:top_k]
@@ -129,6 +149,8 @@ class PgVectorRagProvider(RagProvider):
                 source_document=row.get("doc_name", ""),
                 source_kb="pgvector",
                 metadata=row.get("metadata", {}),
+                source_file_id=row.get("doc_id", ""),
+                source_title=row.get("doc_name", ""),
             ))
             context_parts.append(f"[{row.get('doc_name', '')}]\n{row['chunk_text']}")
 
@@ -141,6 +163,17 @@ class PgVectorRagProvider(RagProvider):
             total=len(results),
             provider_name="pgvector",
         )
+
+    @staticmethod
+    def _rerank(query: str, rows: list[dict]) -> list[dict]:
+        """可选重排：无独立 rerank 服务时降级为向量分数排序（不阻断）。"""
+        try:
+            # 重排服务未接入时保持原顺序；后续可在此接入 cross-encoder/bge-reranker。
+            logger.debug("rerank: no reranker configured, keep vector ranking (%d rows)", len(rows))
+            return rows
+        except Exception:
+            logger.warning("rerank failed, fallback to vector ranking")
+            return rows
 
     @staticmethod
     def _filter_by_metadata(rows: list[dict], stage: str | None, role: str | None) -> list[dict]:

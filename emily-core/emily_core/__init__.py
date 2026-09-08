@@ -569,6 +569,15 @@ class EmilyCore:
                 )
             )
 
+            # RAG 入库状态机 Handler（M7）
+            from .scheduler.jobs.ingest import IngestJobHandler
+            self._scheduler_handler_registry.register(
+                IngestJobHandler(
+                    repo=getattr(self, "_knowledge_chunk_repo", None),
+                    embedding_client=getattr(self, "_tei_client", None),
+                )
+            )
+
             # 元认知 Handler
             from .scheduler.jobs.world_book_update import WorldBookUpdateHandler
             self._scheduler_handler_registry.register(

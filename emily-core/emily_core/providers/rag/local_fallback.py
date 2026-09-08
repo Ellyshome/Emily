@@ -98,6 +98,8 @@ class LocalFileRagProvider(RagProvider):
         self, query: str, top_k: int = 5,
         stage: str | None = None,
         role: str | None = None,
+        scoped_doc_ids=None,
+        rerank: bool = False,
     ) -> RagSearchResponse:
         """TF 词频检索（M10: 支持 stage/role metadata 过滤）。
 
@@ -106,6 +108,8 @@ class LocalFileRagProvider(RagProvider):
             top_k: 最大返回结果数
             stage: 可选，按项目阶段过滤（如'投资决策'、'施工建设'等）
             role: 可选，按岗位过滤（如'工程部经理'、'设计部经理'等）
+            scoped_doc_ids: 本地回退无 doc_id 语义，保留签名兼容（忽略）
+            rerank: 本地回退无重排，保留签名兼容（忽略）
         """
         self._load()
 

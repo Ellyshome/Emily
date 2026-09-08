@@ -92,6 +92,10 @@ def _ensure_columns(engine) -> list[dict]:
         "events": [
             ("confirmed_by", "VARCHAR", "NULL"),
         ],
+        "knowledge_chunks": [
+            ("content_hash", "VARCHAR(64)", "''"),
+            ("ingest_status", "VARCHAR(20)", "'pending'"),
+        ],
     }
 
     from sqlalchemy import text as sa_text

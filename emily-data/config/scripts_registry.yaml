@@ -550,6 +550,54 @@ scripts:
     timeout_seconds: 600
     scheduling_note: "纯手动"
 
+  backfill_doc_id:
+    description: "backfill_doc_id.py — 识别历史断链 chunk（doc_id 无对应 files 记录）。"
+    category: system_maintenance
+    source_path: scripts/backfill_doc_id.py
+    invocation: uv run python scripts/backfill_doc_id.py {args}
+    check_arg: --dry-run
+    run_args: []
+    auto_run: null
+    auto_run_args: []
+    writes_db: false
+    aggregation_parent: null
+    status: active
+    entrypoint: null
+    timeout_seconds: 60
+    scheduling_note: "纯手动"
+
+  rag_visible_check:
+    description: "rag_visible_check.py — 手动校验某用户可见文件集与检索结果。"
+    category: system_maintenance
+    source_path: scripts/rag_visible_check.py
+    invocation: uv run python scripts/rag_visible_check.py {args}
+    check_arg: --user-id __placeholder__
+    run_args: []
+    auto_run: null
+    auto_run_args: []
+    writes_db: false
+    aggregation_parent: null
+    status: active
+    entrypoint: null
+    timeout_seconds: 60
+    scheduling_note: "纯手动"
+
+  rag_governance:
+    description: "rag_governance.py — 零可见治理：识别无任何可见来源的文件。"
+    category: system_maintenance
+    source_path: scripts/rag_governance.py
+    invocation: uv run python scripts/rag_governance.py {args}
+    check_arg: --dry-run
+    run_args: []
+    auto_run: null
+    auto_run_args: []
+    writes_db: false
+    aggregation_parent: null
+    status: active
+    entrypoint: null
+    timeout_seconds: 60
+    scheduling_note: "纯手动"
+
   snapshot:
     description: "snapshot.py — 进化快照采集工具（从项目根目录运行的便捷入口）。"
     category: data_collection
