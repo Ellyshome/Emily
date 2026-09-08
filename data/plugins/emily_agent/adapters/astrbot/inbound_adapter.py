@@ -37,7 +37,7 @@ class AstrBotInboundAdapter:
         msg_type = event.get_message_type()
         if msg_type == MessageType.GROUP_MESSAGE:
             conversation_type = "group"
-        elif msg_type == MessageType.PRIVATE_MESSAGE:
+        elif msg_type == MessageType.FRIEND_MESSAGE:
             conversation_type = "private"
         else:
             conversation_type = "unknown"
@@ -81,6 +81,8 @@ class AstrBotInboundAdapter:
             receiver_id = self_id or ""
 
         messages = event.get_messages()
+        mentioned_ids: list[str] = []
+        is_at_bot = False
         for comp in messages:
             # At 组件
             if hasattr(comp, "qq"):

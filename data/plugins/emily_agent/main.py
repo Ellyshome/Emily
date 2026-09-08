@@ -47,7 +47,11 @@ class Main(star.Star):
         self.outbound = AstrBotOutboundSender()
         self.outbound.context = context  # 注入 context 供企微路径回退使用
         AstrBotOutboundSender._context = context  # 静态方法回退路径
-        self.api = EmilyApiClient(base_url=base_url, api_token=api_token)
+        self.api = EmilyApiClient(
+            base_url=base_url,
+            api_token=api_token,
+            timeout=float(cfg.get("emily_api_timeout", 300)),
+        )
         # conversation_id → 最近 event，供异步 SSE 出站回复定位
         self._event_registry: dict = {}
         self.sse = SSEListener(self.outbound, event_registry=self._event_registry)
