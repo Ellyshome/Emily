@@ -2,8 +2,8 @@
 # 008_seed_emerald_nodes.yaml —— 全景节点树定义（EMERALD-01 翡翠湾项目）
 #
 # 用法：
-#   uv run python scripts/manage_nodes.py create --file 需求/环境布置/scripts/008_seed_emerald_nodes.yaml --dry-run
-#   uv run python scripts/manage_nodes.py create --file 需求/环境布置/scripts/008_seed_emerald_nodes.yaml
+#   uv run python scripts/manage_nodes.py create --file .claude/tool/env-test/008_seed_emerald_nodes.yaml --dry-run
+#   uv run python scripts/manage_nodes.py create --file .claude/tool/env-test/008_seed_emerald_nodes.yaml
 #
 # 说明：
 #   - node_id 为业务编号，统一前缀 EMR（EMERALD 缩写）
