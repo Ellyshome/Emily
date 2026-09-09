@@ -1,15 +1,32 @@
-"""rag_test_harness.py — RAG 系统化改造验收测试执行器（一次性测试工具）。
+"""rag_test_harness.py — RAG 系统化改造验收测试执行器。
 
-按《RAG系统化改造_测试计划_V1.md》执行 TC-01~TC-17：
-  1. 生成 18 个测试文件（md/txt/pdf/docx）
-  2. 写入种子数据（2 企业 / 3 用户 / 2 项目 / 3 节点 / 关系表）
-  3. 解析 + 结构分块 + 去重 + TEI 向量化入库（doc_id=files.id）
-  4. 执行 TC-01~TC-17 并输出结构化结果
-  5. 清理本次测试写入的记录（不污染生产数据）
+支持两种模式：
+
+1) 独立模式（默认 / --standalone）
+   按《RAG系统化改造_测试计划_V1.md》在自建隔离数据上执行 TC-01~TC-17：
+     1. 生成 18 个测试文件（md/txt/pdf/docx）
+     2. 写入种子数据（2 企业 / 3 用户 / 2 项目 / 3 节点 / 关系表）
+     3. 解析 + 结构分块 + 去重 + TEI 向量化入库（doc_id=files.id）
+     4. 执行 TC-01~TC-17 并输出结构化结果
+     5. 清理本次测试写入的记录（不污染数据）
+
+2) env 模式（--env）
+   复用 env-test 搭建的 EMERALD-01 模拟环境（真实用户/公司/项目），把
+   RAG 验收的 18 个测试文件作为当前模拟项目的一部分建库并保留：
+     - 主项目 EMERALD-01（公司A=翠湖地产/建设单位 视角）：大部分文件 + N1(specific) + N2(all_project_files)
+     - 供应商隔离项目（公司B=鑫达建材供应商 视角）：N3(specific) + #11/#12
+     - 角色映射：U1=罗永强(L5 机密)、U2=周文斌(L1 供应商 公开)、U3=周访客(无公司 L1 访客)
+     - 默认保留数据（重建由 env-test setup_test_env.ps1 触发）
+   子开关：
+     --setup    仅建库（无 TC），供 env-test 阶段调用
+     --rebuild  强制删除既有 RAG 库后重建（默认幂等：已存在则跳过建库）
 
 用法：
-    uv run python scripts/rag_test_harness.py            # 执行并清理
-    uv run python scripts/rag_test_harness.py --keep      # 执行后保留测试数据
+    uv run python scripts/rag_test_harness.py                       # 独立模式：执行并清理
+    uv run python scripts/rag_test_harness.py --keep                # 独立模式：执行后保留
+    uv run python scripts/rag_test_harness.py --env                 # env 模式：库缺失则建，跑 TC，保留
+    uv run python scripts/rag_test_harness.py --env --setup         # env 模式：仅建库（供 setup_test_env.ps1）
+    uv run python scripts/rag_test_harness.py --env --rebuild       # env 模式：强制重建库并跑 TC
 """
 
 from __future__ import annotations
@@ -36,6 +53,15 @@ TEI_URL = os.environ.get("EMILY_TEI_URL", "http://localhost:8082")
 
 # 测试数据唯一标记（用于清理与识别）
 MARK = "RAGTEST"
+
+# ── env 模式（复用 env-test 模拟环境）──
+ENV_MARK = "RAGENV"                    # env 库文件 file_no 前缀，如 RAGENV-F01
+ENV_PROJECT_MAIN = "EMERALD-01"        # 主项目（公司A/翠湖地产 视角）
+ENV_PROJECT_ISO = "EMERALD-RAG-B"      # 供应商隔离容器项目（公司B/鑫达 视角）
+ENV_NODES = {"N1": "EMR-RAG-N1", "N2": "EMR-RAG-N2", "N3": "EMR-RAG-N3"}
+ENV_ROLE_U1 = "罗永强"                  # 机密级（公司A / 建设单位 L5）
+ENV_ROLE_U2 = "周文斌"                  # 公开级（公司B / 供应商 L1）
+ENV_ROLE_U3 = "周访客"                  # 无公司 L1 访客（env-test 人员池新增）
 
 
 def _load_env() -> None:
@@ -119,8 +145,12 @@ def _make_docx(path: Path, text: str) -> None:
 # ══════════════════════════════════════════════════════════════════════════
 
 class Harness:
-    def __init__(self, keep: bool = False):
-        self.keep = keep
+    def __init__(self, keep: bool = False, env_mode: bool = False,
+                 setup_only: bool = False, rebuild: bool = False):
+        self.keep = keep or env_mode       # env 模式默认保留数据
+        self.env_mode = env_mode
+        self.setup_only = setup_only        # 仅建库，不跑 TC
+        self.rebuild = rebuild              # 强制清库重建
         self.created = {
             "companies": [], "users": [], "projects": [], "nodes": [],
             "files": [], "chunk_ids": [],
@@ -129,6 +159,7 @@ class Harness:
         self.tmp_dir = _HERE / "_ragtest_tmp"
         self.results: dict = {}
         self.logs: list[str] = []
+        self.ingest_meta: dict = {}
 
     def log(self, msg: str):
         self.logs.append(msg)
@@ -343,6 +374,342 @@ class Harness:
             self.log(f"入库 #{idx} {fname}: {len(ids)} chunks (conf={conf}, doc_id={self.file_ids[idx][:8]}…)")
 
         self.ingest_meta = {"dup_skipped": dup_skipped, "per_file_chunks": per_file_chunks}
+
+    # ═══════════════════════════════════════════════════════════════════════
+    # env 模式：复用 env-test 模拟环境（EMERALD-01），库保留
+    # ═══════════════════════════════════════════════════════════════════════
+
+    def run_env(self) -> dict:
+        """env 模式主流程：复用真实用户/项目，18 文件作为模拟项目一部分建库并保留。"""
+        _load_env()
+        from emily_core.infrastructure.database.session import init_db
+        init_db(DB_URL)
+
+        try:
+            if self.rebuild:
+                self._env_teardown()
+            self._env_prepare()
+
+            if self._env_library_exists() and not self.rebuild:
+                self.log(f"[env] RAG 库已存在（{ENV_MARK}-F*），跳过建库")
+                self._env_load_file_ids()
+                self._env_load_ingest_meta()
+            else:
+                self._env_generate_files()
+                self._env_ingest()
+                self.log(f"[env] RAG 库构建完成（18 个文件已入库并保留）")
+
+            if not self.setup_only:
+                self.results["tc"] = self._run_tcs()
+                self.results["summary"] = self._summarize(self.results["tc"])
+                self._env_purge_tc16_probe()
+        finally:
+            # env 模式默认保留数据（重建由 setup_test_env.ps1 或 --rebuild 触发）
+            pass
+
+        return self.results
+
+    # ── 清理 TC-16 注入的状态机探针 chunk（避免污染保留的知识库）──
+    def _env_purge_tc16_probe(self):
+        from emily_core.infrastructure.database.models import KnowledgeChunk
+        with self._session() as s:
+            s.query(KnowledgeChunk).filter(
+                KnowledgeChunk.doc_id == self.file_ids.get(1, ""),
+                KnowledgeChunk.doc_name == "状态机测试",
+            ).delete(synchronize_session=False)
+
+    # ── 角色/项目/节点 解析与兜底创建（幂等）──
+    def _env_prepare(self):
+        from emily_core.infrastructure.database.models import (
+            User, Project, ProjectNode, NodeParticipantCompany,
+        )
+        with self._session() as s:
+            def _user(username: str) -> User:
+                u = s.query(User).filter(
+                    User.username == username, User.is_deleted == False,
+                ).first()
+                if u is None:
+                    raise RuntimeError(
+                        f"[env] 用户不存在: {username}（请先运行 env-test 种子）"
+                    )
+                return u
+
+            u1 = _user(ENV_ROLE_U1)
+            u2 = _user(ENV_ROLE_U2)
+
+            # U3 访客：env-test 人员池应已提供（014_seed_rag_visitor.sql），缺失则兜底创建
+            u3 = s.query(User).filter(
+                User.username == ENV_ROLE_U3, User.is_deleted == False,
+            ).first()
+            if u3 is None:
+                self.log(f"[env] 访客用户 {ENV_ROLE_U3} 不存在，兜底创建（无公司 L1）")
+                u3 = User(
+                    username=ENV_ROLE_U3, creator_id=u1.id,
+                    level=1, company=None, project_id=None, status="active",
+                    is_deleted=False,
+                )
+                s.add(u3)
+                s.flush()
+
+            self.uid = {"U1": u1.id, "U2": u2.id, "U3": u3.id}
+            # 公司A/B = 真实角色所在公司
+            self.cid = {"A": u1.company or "", "B": u2.company or ""}
+
+            # 主项目（必须已存在：EMERALD-01）
+            main = s.query(Project).filter(
+                Project.code == ENV_PROJECT_MAIN, Project.is_deleted == False,
+            ).first()
+            if main is None:
+                raise RuntimeError(
+                    f"[env] 主项目不存在: {ENV_PROJECT_MAIN}（请先运行 env-test 007 种子）"
+                )
+            # 供应商隔离项目（不存在则创建）
+            iso = s.query(Project).filter(
+                Project.code == ENV_PROJECT_ISO, Project.is_deleted == False,
+            ).first()
+            if iso is None:
+                iso = Project(
+                    code=ENV_PROJECT_ISO,
+                    name="翠湖庭院—供应商侧知识隔离（RAG 验收）",
+                    description="RAG 验收用 B 侧隔离容器，承载 N3 及其机密文件，避免被主项目 all_project_files 覆盖。",
+                    status="active", creator_id=u1.id, is_deleted=False,
+                )
+                s.add(iso)
+                s.flush()
+            self.pid = {"PA": main.id, "PB": iso.id}
+
+            # 节点创建（幂等）
+            node_ids = {
+                "N1": ENV_NODES["N1"],
+                "N2": ENV_NODES["N2"],
+                "N3": ENV_NODES["N3"],
+            }
+            specs = [
+                # (键, 项目键, 名称, 可见模式)
+                ("N1", "PA", "节点A（specific，参与公司A）", "specific"),
+                ("N2", "PA", "节点全项目（all_project_files，参与公司A）", "all_project_files"),
+                ("N3", "PB", "节点B（specific，参与公司B）", "specific"),
+            ]
+            for key, proj_key, name, mode in specs:
+                nid = node_ids[key]
+                node = s.query(ProjectNode).filter(ProjectNode.node_id == nid).first()
+                if node is None:
+                    node = ProjectNode(
+                        project_id=self.pid[proj_key], node_id=nid, node_name=name,
+                        owner_dept_id="工程部", related_company_id="建设单位",
+                        deadline="2026-12-31T00:00:00", creator_id=u1.id,
+                        visibility_mode=mode, status="IN_PROGRESS",
+                        node_type="WORK_PACKAGE", responsible_user_id=u1.id,
+                    )
+                    s.add(node)
+                    s.flush()
+            self.nid = node_ids
+
+            # 节点参与企业（幂等）：N1/N2→公司A，N3→公司B
+            binds = [
+                ("N1", "A"), ("N2", "A"), ("N3", "B"),
+            ]
+            for nk, ck in binds:
+                exists = s.query(NodeParticipantCompany).filter(
+                    NodeParticipantCompany.node_id == node_ids[nk],
+                    NodeParticipantCompany.company_id == self.cid[ck],
+                ).first()
+                if exists is None:
+                    s.add(NodeParticipantCompany(
+                        node_id=node_ids[nk], company_id=self.cid[ck],
+                        added_by=u1.id,
+                    ))
+            s.flush()
+
+    # ── 判定库是否已建 ──
+    def _env_library_exists(self) -> bool:
+        from emily_core.infrastructure.database.models import File
+        with self._session() as s:
+            row = s.query(File.id).filter(
+                File.file_no.like(f"{ENV_MARK}-F%"),
+            ).first()
+        return row is not None
+
+    # ── 删除旧库（仅限本库自建记录，不碰真实业务数据）──
+    def _env_teardown(self):
+        from emily_core.infrastructure.database.models import (
+            File, KnowledgeChunk, NodeAccessibleFile, SessionAccessibleFile,
+            NodeParticipantCompany, ProjectNode,
+        )
+        with self._session() as s:
+            frows = s.query(File).filter(File.file_no.like(f"{ENV_MARK}-F%")).all()
+            fids = [f.id for f in frows]
+            node_ids = list(ENV_NODES.values())
+            if fids:
+                s.query(KnowledgeChunk).filter(
+                    KnowledgeChunk.doc_id.in_(fids),
+                ).delete(synchronize_session=False)
+                s.query(NodeAccessibleFile).filter(
+                    NodeAccessibleFile.file_id.in_(fids),
+                ).delete(synchronize_session=False)
+                s.query(SessionAccessibleFile).filter(
+                    SessionAccessibleFile.file_id.in_(fids),
+                ).delete(synchronize_session=False)
+                s.query(File).filter(File.id.in_(fids)).delete(
+                    synchronize_session=False,
+                )
+            s.query(NodeAccessibleFile).filter(
+                NodeAccessibleFile.node_id.in_(node_ids),
+            ).delete(synchronize_session=False)
+            s.query(NodeParticipantCompany).filter(
+                NodeParticipantCompany.node_id.in_(node_ids),
+            ).delete(synchronize_session=False)
+            s.query(ProjectNode).filter(
+                ProjectNode.node_id.in_(node_ids),
+            ).delete(synchronize_session=False)
+        # 清理物理内容文件
+        if self.tmp_dir.exists():
+            import shutil
+            shutil.rmtree(self.tmp_dir, ignore_errors=True)
+        self.log(f"[env] 旧 RAG 库已删除（{ENV_MARK}-F* 文件/chunk/节点）")
+
+    # ── 生成内容文件到 emily-data/attachments/mock/<项目>/ragtest/ ──
+    def _env_attach_root(self) -> Path:
+        return _HERE.parent / "emily-data" / "attachments"
+
+    def _env_proj_code(self, p: str) -> str:
+        # _FILE_SPECS 第7字段：PA→主项目，PB→供应商隔离项目
+        return ENV_PROJECT_MAIN if p == "PA" else ENV_PROJECT_ISO
+
+    def _env_storage_rel(self, p: str, fname: str) -> str:
+        return f"mock/{self._env_proj_code(p)}/ragtest/{fname}"
+
+    def _env_abs_path(self, rel: str) -> Path:
+        return self._env_attach_root() / rel
+
+    def _env_generate_files(self):
+        import shutil
+        # 清理两个项目的旧 ragtest 目录
+        for proj in (ENV_PROJECT_MAIN, ENV_PROJECT_ISO):
+            d = self._env_attach_root() / "mock" / proj / "ragtest"
+            if d.exists():
+                shutil.rmtree(d, ignore_errors=True)
+        for _idx, (fname, fmt, _conf, _u, _n, _e, p, content) in enumerate(_FILE_SPECS, start=1):
+            path = self._env_abs_path(self._env_storage_rel(p, fname))
+            path.parent.mkdir(parents=True, exist_ok=True)
+            if fmt in ("md", "txt"):
+                path.write_text(content, encoding="utf-8")
+            elif fmt == "pdf":
+                _make_pdf(path, content)
+            elif fmt == "docx":
+                _make_docx(path, content)
+        self.tmp_dir = self._env_attach_root() / "mock" / ENV_PROJECT_MAIN / "ragtest"
+        self.log(f"[env] 生成 {len(_FILE_SPECS)} 个知识文件（PA→{ENV_PROJECT_MAIN}/ragtest, PB→{ENV_PROJECT_ISO}/ragtest）")
+
+    # ── 建 files 记录 + 节点绑定 + 显式授权 + 解析/分块/去重/向量化入库 ──
+    def _env_ingest(self):
+        from emily_core.infrastructure.database.models import (
+            File, NodeAccessibleFile, SessionAccessibleFile, _utc_now,
+        )
+        from emily_core.repositories.knowledge_chunk_repo import KnowledgeChunkRepo
+        from emily_core.services.document_parser import DocumentParser
+        from emily_core.services.structural_chunker import StructuralChunker
+        from emily_core.services.dedup_checker import DedupChecker
+        from emily_core.infrastructure.embedding.tei_client import TeiClient
+
+        parser = DocumentParser()
+        chunker = StructuralChunker()
+        repo = KnowledgeChunkRepo()
+        tei = TeiClient(TEI_URL)
+
+        # 1) files 记录（doc_id 锚点）
+        #    storage_path 用容器相对路径（emily-data/attachments 为根），与 env-test mock 约定一致
+        with self._session() as s:
+            for idx, (fname, fmt, conf, u, _n, _e, p, _content) in enumerate(_FILE_SPECS, start=1):
+                f = File(
+                    file_no=f"{ENV_MARK}-F{idx:02d}",
+                    filename=fname,
+                    uploaded_by=self.uid[u],
+                    confidentiality=conf,
+                    project_id=self.pid[p],
+                    storage_path=self._env_storage_rel(p, fname),
+                    file_ext=Path(fname).suffix,
+                    rag_indexed=True,
+                )
+                s.add(f)
+                s.flush()
+                self.file_ids[idx] = f.id
+
+        # 2) 节点可见绑定（N1→#5-8，N3→#11-12）
+        with self._session() as s:
+            for idx in (5, 6, 7, 8):
+                s.add(NodeAccessibleFile(node_id=self.nid["N1"], file_id=self.file_ids[idx],
+                                         added_by=self.uid["U1"]))
+            for idx in (11, 12):
+                s.add(NodeAccessibleFile(node_id=self.nid["N3"], file_id=self.file_ids[idx],
+                                         added_by=self.uid["U2"]))
+
+        # 3) 显式授权 U2 → #13
+        with self._session() as s:
+            s.add(SessionAccessibleFile(
+                user_id=self.uid["U2"], file_id=self.file_ids[13],
+                access_type="explicit", granted_by=self.uid["U1"], granted_at=_utc_now(),
+            ))
+
+        # 4) 解析 + 分块 + 去重 + 向量化
+        seen_hashes: set[str] = set()
+        dup_skipped = 0
+        per_file_chunks: dict[int, int] = {}
+
+        for idx, (fname, _fmt, conf, _u, _n, _e, p, _content) in enumerate(_FILE_SPECS, start=1):
+            path = self._env_abs_path(self._env_storage_rel(p, fname))
+            text = parser.parse(path)
+            chunks = []
+            for c in chunker.chunk(text):
+                h = DedupChecker.content_hash(c["text"])
+                if h in seen_hashes:
+                    dup_skipped += 1
+                    continue
+                seen_hashes.add(h)
+                chunks.append({"text": c["text"], "index": c["index"], "content_hash": h})
+            per_file_chunks[idx] = len(chunks)
+
+            if not chunks:
+                self.log(f"入库 #{idx} {fname}: 0 chunks (全部重复跳过)")
+                continue
+
+            embeddings = asyncio.run(tei.embed([c["text"] for c in chunks]))
+            doc_meta = {
+                "doc_id": self.file_ids[idx],
+                "doc_name": fname,
+                "file_no": f"{ENV_MARK}-F{idx:02d}",
+                "collection": f"project_{ENV_PROJECT_MAIN}",
+            }
+            ids = repo.batch_insert(chunks, embeddings, doc_meta)
+            self.log(f"入库 #{idx} {fname}: {len(ids)} chunks (conf={conf}, doc_id={self.file_ids[idx][:8]}…)")
+
+        self.ingest_meta = {"dup_skipped": dup_skipped, "per_file_chunks": per_file_chunks}
+
+    # ── 库已存在时：回填内存 id/元数据映射 ──
+    def _env_load_file_ids(self):
+        from emily_core.infrastructure.database.models import File
+        with self._session() as s:
+            rows = s.query(File).filter(
+                File.file_no.like(f"{ENV_MARK}-F%"),
+            ).all()
+        self.file_ids = {}
+        for f in rows:
+            seq = int(f.file_no.rsplit("-F", 1)[1])
+            self.file_ids[seq] = f.id
+        if len(self.file_ids) != len(_FILE_SPECS):
+            raise RuntimeError(
+                f"[env] RAG 库文件数不完整（期望 {len(_FILE_SPECS)}，实际 {len(self.file_ids)}），请 --rebuild"
+            )
+
+    def _env_load_ingest_meta(self):
+        from emily_core.infrastructure.database.models import KnowledgeChunk
+        per = {}
+        with self._session() as s:
+            for idx, fid in self.file_ids.items():
+                per[idx] = s.query(KnowledgeChunk).filter(
+                    KnowledgeChunk.doc_id == fid,
+                ).count()
+        self.ingest_meta = {"dup_skipped": 0, "per_file_chunks": per}
 
     # ── 权限/可见集 ──
     def _perm(self, user_id):
@@ -636,11 +1003,18 @@ def main():
     sys.stdout.reconfigure(encoding="utf-8", errors="replace")
     sys.stderr.reconfigure(encoding="utf-8", errors="replace")
     ap = argparse.ArgumentParser(description="RAG 验收测试执行器")
-    ap.add_argument("--keep", action="store_true", help="执行后保留测试数据")
+    ap.add_argument("--keep", action="store_true", help="执行后保留测试数据（独立模式）")
+    ap.add_argument("--env", action="store_true", help="env 模式：复用 env-test 模拟环境建库/测试")
+    ap.add_argument("--setup", action="store_true", help="仅建库，不跑 TC（供 env-test setup_test_env.ps1）")
+    ap.add_argument("--rebuild", action="store_true", help="强制删除既有 RAG 库后重建")
     args = ap.parse_args()
 
-    h = Harness(keep=args.keep)
-    result = h.run()
+    h = Harness(keep=args.keep, env_mode=args.env,
+                setup_only=args.setup, rebuild=args.rebuild)
+    if args.env:
+        result = h.run_env()
+    else:
+        result = h.run()
     print("\n===== RESULT =====\n" + json.dumps(result, ensure_ascii=False, indent=2))
     return 0
 

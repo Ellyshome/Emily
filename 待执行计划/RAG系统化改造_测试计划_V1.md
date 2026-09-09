@@ -7,6 +7,43 @@
 
 ---
 
+## 〇、env 模式适配说明（V1.1）
+
+> 本计划已并入 env-test 模拟环境（EMERALD-01）作为「当前模拟项目的一部分」，用于环境重建后重复执行。
+> 相关改造：RAG 知识库阶段内置于 [setup_test_env.ps1](../.claude/tool/env-test/setup_test_env.ps1)（`-SkipRAG` 可跳过）；执行器为 [rag_test_harness.py](../scripts/rag_test_harness.py) 的 **env 模式**（`--env`）。
+
+### 执行方式
+
+```powershell
+# 1) env-test 重建测试环境（含 RAG 库阶段：18 个内容文件 → EMERALD-01 + 供应商隔离项目）
+powershell -File .claude\tool\env-test\setup_test_env.ps1
+
+# 2) 执行 RAG 验收（env 模式：库已存在则只跑 TC，用 --rebuild 强制重建）
+uv run python scripts/rag_test_harness.py --env
+
+# 3) 仅建库（供 setup_test_env.ps1 内部调用 / 手动重建）
+uv run python scripts/rag_test_harness.py --env --setup --rebuild
+```
+
+### 人员角色映射（env-test 真实用户）
+
+| RAG 角色 | 映射用户 | 公司（真实记录） | 依据 |
+|---------|---------|----------------|------|
+| U1（机密级，公司A视角） | 罗永强 | 建设单位（翠湖地产） | env 已有 L5 用户，`_derive_info_level` → confidential |
+| U2（公开级，公司B视角） | 周文斌 | 供应商（鑫达建材） | env 已有 L1 用户，→ public |
+| U3（访客，无公司） | 周访客 | company=NULL | 由 [014_seed_rag_visitor.sql](../.claude/tool/env-test/014_seed_rag_visitor.sql) 落入人员池（L1、无公司） |
+
+### 测试数据落位（并入 EMERALD-01）
+
+```
+EMERALD-01（主项目，公司A视角）—— 大部分文件 + N1(specific,参与建设单位) + N2(all_project_files,参与建设单位)
+EMERALD-RAG-B（供应商隔离项目，仅 B 侧锚点）—— N3(specific,参与鑫达供应商) + #11/#12
+```
+
+> 隔离语义按「项目-节点锚定」：U1 不参与 N3 所在供应商项目/节点 → 不见 #12（机密）；U2 非 #7 锚点项目节点参与方 → 不见 #7。实现已按 [V1 测试报告](./RAG系统化改造_测试报告_V1.md) 修正 TC-05/TC-06/TC-17 表述。
+
+---
+
 ## 一、测试目标与范围
 
 | 验证维度 | 对应模块 | 硬验收（失败即停止） |

@@ -2,16 +2,17 @@
 # setup_test_env.ps1 — Emily 测试环境一键工具
 #
 # 用法（在项目根目录 d:\app\Emily 下执行）:
-#   powershell -File .claude\tool\env-test\setup_test_env.ps1                  完整重置+种子+文件+权限
+#   powershell -File .claude\tool\env-test\setup_test_env.ps1                  完整重置+种子+文件+权限+RAG库
 #   powershell -File .claude\tool\env-test\setup_test_env.ps1 -ResetOnly       仅空库重置
 #   powershell -File .claude\tool\env-test\setup_test_env.ps1 -SeedOnly        仅种子（库已空）
 #   powershell -File .claude\tool\env-test\setup_test_env.ps1 -SkipAdvanced    跳过010高级数据
 #   powershell -File .claude\tool\env-test\setup_test_env.ps1 -SkipMockFiles   跳过磁盘空文件
 #   powershell -File .claude\tool\env-test\setup_test_env.ps1 -SkipFileMgmtTests  跳过文件管理测试数据
+#   powershell -File .claude\tool\env-test\setup_test_env.ps1 -SkipRAG         跳过 RAG 知识库阶段
 #
 # 依赖:
-#   - Docker Desktop 运行中（emily-postgres + emily-core 容器）
-#   - uv（Python 环境管理，用于 manage_nodes.py）
+#   - Docker Desktop 运行中（emily-postgres + emily-core + emily-embed 容器）
+#   - uv（Python 环境管理，用于 manage_nodes.py / rag_test_harness.py）
 #   - PowerShell 5.1+
 # ============================================================
 param(
@@ -20,6 +21,7 @@ param(
     [switch]$SkipAdvanced,
     [switch]$SkipMockFiles,
     [switch]$SkipFileMgmtTests,
+    [switch]$SkipRAG,
     [string]$Project = "EMERALD-01"
 )
 
@@ -33,7 +35,6 @@ $env:LESSCHARSET = "utf-8"
 
 # ── 路径常量（相对于项目根目录 d:\app\Emily）──
 $BASE = "emily-core/emily_core/infrastructure/database/scripts"
-$SEED_PATCH = "需求/环境布置/scripts"
 $COMPOSE_FILE = "docker-compose-napcat.yml"
 $ATTACHMENTS_ROOT = "emily-data/attachments"
 $ENV_TOOL = ".claude/tool/env-test"
@@ -118,7 +119,7 @@ function Invoke-SeedData {
     Write-Host "    [OK] 5家公司 + 7名用户" -ForegroundColor Green
 
     # [2] 补用户 (002_patch)
-    $patchPath = "$SEED_PATCH/002_seed_test_data_patch.sql"
+    $patchPath = "$ENV_TOOL/002_seed_test_data_patch.sql"
     if (Test-Path $patchPath) {
         Write-Host "  [2/9] 补充用户 (patch)..." -ForegroundColor DarkGray
         ExecSql $patchPath
@@ -138,7 +139,7 @@ function Invoke-SeedData {
     }
 
     # [4] 项目 + 文件元数据 (007)
-    $projPath = "$SEED_PATCH/007_seed_emerald_project.sql"
+    $projPath = "$ENV_TOOL/007_seed_emerald_project.sql"
     if (Test-Path $projPath) {
         Write-Host "  [4/9] 项目 + 文件元数据 (007)..." -ForegroundColor DarkGray
         ExecSql $projPath
@@ -149,7 +150,7 @@ function Invoke-SeedData {
     }
 
     # [5] 节点树 (008 YAML -> manage_nodes.py)
-    $nodesYaml = "$SEED_PATCH/008_seed_emerald_nodes.yaml"
+    $nodesYaml = "$ENV_TOOL/008_seed_emerald_nodes.yaml"
     if (Test-Path $nodesYaml) {
         Write-Host "  [5/9] 全景节点树 (008 YAML)..." -ForegroundColor DarkGray
         $env:PYTHONPATH = "emily-core"
@@ -186,7 +187,7 @@ function Invoke-SeedData {
     }
 
     # [8] 业务数据 (009)
-    $bizPath = "$SEED_PATCH/009_seed_emerald_business.sql"
+    $bizPath = "$ENV_TOOL/009_seed_emerald_business.sql"
     if (Test-Path $bizPath) {
         Write-Host "  [8/9] 业务数据 (009)..." -ForegroundColor DarkGray
         ExecSql $bizPath
@@ -429,6 +430,37 @@ function Invoke-Verify {
 }
 
 # ============================================================
+# 功能五：RAG 知识库阶段（env 模式）
+#   通过 scripts/rag_test_harness.py --env --setup 把 18 个真实内容
+#   测试文件作为 EMERALD-01 模拟项目的一部分建库并保留（含 TEI 向量化）。
+#   前置：emily-embed 容器运行（TEI 127.0.0.1:8082）、用户种子已入。
+# ============================================================
+function Invoke-SeedRAGEnv {
+    Write-Host "[RAG库] 搭建 RAG 知识库（18 内容文件 → EMERALD-01 + 供应商隔离项目）..." -ForegroundColor Yellow
+
+    # 1) 访客用户（RAG TC-03/TC-10 需要无公司 L1 用户）
+    $visitorPath = "$ENV_TOOL/014_seed_rag_visitor.sql"
+    if (Test-Path $visitorPath) {
+        ExecSql $visitorPath
+        Write-Host "  [OK] 访客用户 周访客 (company=NULL, L1)" -ForegroundColor Green
+    } else {
+        Write-Host "  [WARN] 找不到 014_seed_rag_visitor.sql，访客用户缺失" -ForegroundColor Yellow
+    }
+
+    # 2) env 模式建库（幂等重建：清理旧 RAG 库后重建，18 文件 → EMERALD-01 + 供应商隔离项目）
+    $env:PYTHONPATH = "emily-core"
+    $ragResult = uv run python scripts/rag_test_harness.py --env --setup --rebuild 2>&1
+    if ($LASTEXITCODE -ne 0) {
+        Write-Host "  [WARN] RAG 库搭建可能失败，请检查输出:" -ForegroundColor Yellow
+        Write-Host $ragResult -ForegroundColor Yellow
+    } else {
+        Write-Host "  [OK] RAG 知识库已就绪（18 文件入库 + 关系 + chunk）" -ForegroundColor Green
+        Write-Host "       运行验收: uv run python scripts/rag_test_harness.py --env" -ForegroundColor DarkGray
+    }
+    Write-Host ""
+}
+
+# ============================================================
 # 主流程入口
 # ============================================================
 # 验证项目根目录
@@ -473,17 +505,16 @@ if (-not $ResetOnly) {
     Write-Host ""
 
     # ── 世界书重建（reset 后 project_id 已变，旧世界书失效，必须重跑）──
+    #     build_world_book.py 位于仓库根 scripts/（非 emily-core 内），须在根目录执行
     Write-Host "[世界书] 重建项目世界书..." -ForegroundColor Yellow
-    Push-Location "emily-core"
     $env:PYTHONPATH = "emily-core"
-    $wbResult = uv run python scripts/build_world_book.py 2>&1
+    $wbResult = uv run python scripts/build_world_book.py --all 2>&1
     if ($LASTEXITCODE -ne 0) {
         Write-Host "  [WARN] 世界书构建可能失败，请手动检查:" -ForegroundColor Yellow
         Write-Host $wbResult -ForegroundColor Yellow
     } else {
         Write-Host "  [OK] 世界书已重建" -ForegroundColor Green
     }
-    Pop-Location
     Write-Host ""
 
     # ── 世界书验证 ──
@@ -516,6 +547,11 @@ if (-not $ResetOnly) {
         Write-Host "  [跳过] emily-core 未运行" -ForegroundColor DarkGray
     }
     Write-Host ""
+
+    # ── RAG 知识库阶段（默认开，-SkipRAG 跳过）──
+    if (-not $SkipRAG) {
+        Invoke-SeedRAGEnv
+    }
 
     Invoke-Verify
 }

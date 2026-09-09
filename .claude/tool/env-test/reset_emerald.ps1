@@ -1,8 +1,9 @@
 ﻿# ============================================================
 # reset_emerald.ps1 —— 一键重置翠湖庭院测试环境
+#   ⚠️ 已被 setup_test_env.ps1 取代，保留作历史参考（见 需求/已完成需求文件/测试修bug-完成/0721测试环境搭建-计划.md）
 #
 # 用法（在项目根目录 d:\app\Emily 下执行）:
-#   pwsh -File 需求\环境布置\scripts\reset_emerald.ps1
+#   pwsh -File .claude\tool\env-test\reset_emerald.ps1
 #
 # 说明:
 #   1. 停服并清除 PostgreSQL 数据卷
@@ -22,7 +23,7 @@ param(
 
 $ErrorActionPreference = "Stop"
 $BASE = "emily-core/emily_core/infrastructure/database/scripts"
-$SEED = "需求/环境布置/scripts"
+$SEED = ".claude/tool/env-test"
 
 Write-Host "========================================" -ForegroundColor Cyan
 Write-Host "  翠湖庭院 EMERALD-01 环境重置" -ForegroundColor Cyan
