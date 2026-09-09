@@ -554,6 +554,10 @@ class SessionAgent:
         # 当前操作者 user_id（群聊多用户权限越界修复）
         actor_uid = getattr(self, "_current_actor", {}).get("user_id") or self.context.user_id
 
+        # M3: 分级兜底档位（仅 fallback WI 有意义；sop WI 不被读）
+        from ..workitem.langgraph_engine.agent.fallback_policy import FallbackPolicy
+        fallback_tier = FallbackPolicy.gate(getattr(self, "_current_actor", None)).value
+
         sop_id = intent.get("sop_id")
         is_compound = intent.get("is_compound", False)
         sub_tasks = intent.get("sub_tasks") or []
@@ -588,6 +592,7 @@ class SessionAgent:
                     user_id=actor_uid,
                     sop_id=None,
                     intent_type="fallback",
+                    fallback_tier=fallback_tier,
                     priority=1,
                 )]
 
@@ -598,6 +603,7 @@ class SessionAgent:
                 user_id=actor_uid,
                 sop_id=None,
                 intent_type="fallback",
+                fallback_tier=fallback_tier,
                 priority=1,
             )
             wi.output_spec = self._derive_output_spec(intent, None)  # M1

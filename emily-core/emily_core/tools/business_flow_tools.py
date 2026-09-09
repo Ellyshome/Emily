@@ -14,6 +14,8 @@ import logging
 from dataclasses import dataclass, field
 from typing import Callable, Any
 
+from .definitions import WriteMode
+
 logger = logging.getLogger("emily.tools.business_flow")
 
 
@@ -31,6 +33,7 @@ class BusinessFlowTool:
     handler: Callable                   # async fn(params: dict) -> dict
     category: str = "base"              # base / business / project
     permission_flag: str = "all"        # all / admin / write
+    write_mode: str = WriteMode.READ.value  # 写语义类别（M2）：read/append/transition/overwrite/delete
 
 
 class BusinessFlowToolRegistry:

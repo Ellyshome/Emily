@@ -17,6 +17,7 @@ from typing import Any
 from ....infrastructure.logging.llm_logger import LLMInteractionLogger
 from ...pipeline.interfaces.execution import StepResult, ToolCallRecord, DbResult
 from .tool_adapter import _session_api_ids
+from .fallback_policy import FallbackPolicy
 from .prompt_builder import build_system_prompt
 
 logger = logging.getLogger("emily.langgraph.loop")
@@ -301,6 +302,25 @@ async def tool_node(state: dict, *, llm_client, business_tools, resolvers) -> di
         _append_step_result(wi, tool_name, arguments, {"success": False, "reply": err_msg},
                             t_start, success=False)
         return {"messages": messages, "wi_state": "executing", "_pending_tool_call": None}
+
+    # M4: 分级兜底门禁（fail-closed）—— 意图识别失败时，写工具仅高级档追加/迁移放行，
+    # 覆盖/删除类一律拒绝；读工具仍受档位白名单裁剪。
+    if getattr(wi, "intent_type", "") == "fallback":
+        tier = getattr(wi, "fallback_tier", "basic") or "basic"
+        allowed_tools = FallbackPolicy.resolve(tier, with_write=True)
+        if tool_name not in allowed_tools:
+            err_msg = "该操作在当前兜底档位不可用，请走对应标准流程或联系管理员。"
+            messages.append({"role": "tool", "tool_call_id": tool_call_id, "content": err_msg})
+            _append_step_result(wi, tool_name, arguments, {"success": False, "reply": err_msg},
+                                t_start, success=False)
+            return {"messages": messages, "wi_state": "executing", "_pending_tool_call": None}
+        ok, gate_err = FallbackPolicy.assert_write_allowed(
+            tool_name, tier, getattr(tool, "write_mode", "read"))
+        if not ok:
+            messages.append({"role": "tool", "tool_call_id": tool_call_id, "content": gate_err})
+            _append_step_result(wi, tool_name, arguments, {"success": False, "reply": gate_err},
+                                t_start, success=False)
+            return {"messages": messages, "wi_state": "executing", "_pending_tool_call": None}
 
     # 注入运行时上下文
     tool_params = _inject_runtime_params(arguments, ctx)

@@ -149,6 +149,16 @@ class Config:
     chat_archive_include_progress: bool = False
     """前导消息是否纳入对话历史查询（默认否）"""
 
+    # ── 分级兜底（Fallback Tiering）──
+    fallback_basic_tools: str = "knowledge_search,chat_archive"
+    """基础兜底工具白名单（逗号分隔），普通用户可见的最小只读集。"""
+
+    fallback_advanced_write_tools: str = "record_event,record_task,record_meeting,record_file"
+    """高级兜底追加写白名单（逗号分隔），仅 L4+ 或管理单位可用的追加型工具。"""
+
+    fallback_admin_min_level: int = 4
+    """高级兜底所需的最低权限等级（>= 此值或 is_management_unit 视为高级档）。"""
+
     # ── Agent 追踪 ──
     agent_trace_enabled: bool = True
     """Agent 推理过程记录总开关"""
