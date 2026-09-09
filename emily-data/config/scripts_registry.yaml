@@ -150,11 +150,11 @@ scripts:
     timeout_seconds: 60
     scheduling_note: "纯手动"
 
-  dump_session_prompt:
-    description: "导出 Session Prompt 完整内容（含记忆/SOP/系统描述）"
+  dump_session_prompt_live:
+    description: "真实 core 渲染 Session prompt —— 容器内 bootstrap.init 走生产路径，落盘 md+manifest"
     category: system_maintenance
-    source_path: scripts/dump_session_prompt.py
-    invocation: uv run python scripts/dump_session_prompt.py {args}
+    source_path: scripts/dump_session_prompt_live.py
+    invocation: docker exec -w /app emily-core python /tmp/dump_session_prompt_live.py {args}
     check_arg: null
     run_args: []
     auto_run: null
@@ -163,7 +163,23 @@ scripts:
     aggregation_parent: null
     status: active
     entrypoint: null
-    timeout_seconds: 60
+    timeout_seconds: 120
+    scheduling_note: "纯手动"
+
+  three_books_dump:
+    description: "三书产出观察工具 —— 导出世界书/规则书/认知书内容与 manifest（--rebuild 重建并落 DB）"
+    category: system_maintenance
+    source_path: scripts/three_books_dump.py
+    invocation: uv run python scripts/three_books_dump.py {args}
+    check_arg: null
+    run_args: []
+    auto_run: null
+    auto_run_args: []
+    writes_db: false
+    aggregation_parent: null
+    status: active
+    entrypoint: null
+    timeout_seconds: 600
     scheduling_note: "纯手动"
 
   evolution:
@@ -449,22 +465,6 @@ scripts:
     auto_run_args: []
     writes_db: false
     aggregation_parent: cold_start.py
-    status: active
-    entrypoint: null
-    timeout_seconds: 60
-    scheduling_note: "纯手动"
-
-  sop_to_skill:
-    description: "SOP-to-Skill 转换器 —— 用 LLM 将 SOP .md 转换为 Skill YAML。"
-    category: file_api_manage
-    source_path: scripts/sop_to_skill.py
-    invocation: uv run python scripts/sop_to_skill.py {args}
-    check_arg: --dry-run
-    run_args: []
-    auto_run: null
-    auto_run_args: []
-    writes_db: true
-    aggregation_parent: null
     status: active
     entrypoint: null
     timeout_seconds: 60
