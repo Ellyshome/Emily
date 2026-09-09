@@ -304,8 +304,8 @@ class EmilyCore:
     def reload_skills(self) -> dict:
         """热重载 Skill 注册表（无需重启容器）。
 
-        适用场景：sop_to_skill.py 转换新 Skill 后，调用此方法使运行中的
-        EmilyCore 感知新的 .skill.yaml 文件。也可通过 API 触发：
+        适用场景：SOP/Skill 目录内容更新后，调用此方法使运行中的
+        EmilyCore 感知新变更。也可通过 API 触发：
           POST /api/v1/skills/reload
 
         Returns:

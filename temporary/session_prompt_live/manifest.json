@@ -1,0 +1,30 @@
+{
+  "user_id": "83620be0-b5a8-4a5e-ba29-6b196f2f1d65",
+  "user_name": "周访客",
+  "user_position": "访客",
+  "level_label": "访客(L1)",
+  "is_management_unit": false,
+  "project_name": "",
+  "rag": {
+    "available": true,
+    "collections": [],
+    "provider": "PgVectorRagProvider"
+  },
+  "available_skills": [
+    "SOP-000-SYS-standard",
+    "SOP-001-REC-meeting_summary",
+    "SOP-002-REC-event_record",
+    "SOP-003-REC-task_manage",
+    "SOP-004-FILE-file_archive",
+    "SOP-005-QRY-data_query",
+    "SOP-007-REC-user_memory",
+    "SOP-008-SYS-pending_issue",
+    "SOP-011-SYS-node_manage",
+    "SOP-012-SYS-expert_review",
+    "SOP-999-SYS-fallback"
+  ],
+  "template_chars": 4235,
+  "rendered_chars": 5484,
+  "estimated_tokens": 3656,
+  "variables_count": 16
+}

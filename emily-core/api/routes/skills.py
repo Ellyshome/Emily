@@ -13,8 +13,8 @@ router = APIRouter(tags=["skills"])
 async def reload_skills():
     """热重载 Skill 注册表（无需重启容器）。
 
-    适用场景：sop_to_skill.py 转换新 Skill 后，调用此端点
-    使运行中的 EmilyCore 感知新的 .skill.yaml 文件。
+    适用场景：SOP/Skill 目录内容更新后，调用此端点
+    使运行中的 EmilyCore 感知新变更。
     """
     core = get_core()
     return core.reload_skills()
