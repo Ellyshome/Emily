@@ -17,6 +17,7 @@ class CreateNodeCommand:
     node_id: str
     node_name: str
     owner_dept_id: str = "项目总"
+    related_company_id: str = ""           # 关联单位中文名/ID（兼容批量种子；为空时从 participant_company_ids 推导）
     deadline: str = ""
     creator_id: str = ""
     remark: str = ""

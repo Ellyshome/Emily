@@ -199,9 +199,9 @@ class NodeService:
         # 管理员直接以 CONDITIONS_NOT_MET 创建，普通用户以 NOT_ACTIVATED 创建
         initial_status = CONDITIONS_NOT_MET if is_admin else NOT_ACTIVATED
 
-        # ── 关联单位从参与单位中推导：优先取管理单位，否则取首项，兜底"建设单位" ──
+        # ── 关联单位：显式 related_company_id 优先（兼容批量种子中文单位名）；否则从参与单位推导 ──
         participant_company_ids = getattr(cmd, 'participant_company_ids', None) or []
-        related_company_id = _derive_related_company_from_participants(
+        related_company_id = getattr(cmd, 'related_company_id', '') or _derive_related_company_from_participants(
             participant_company_ids, default="建设单位"
         )
 
