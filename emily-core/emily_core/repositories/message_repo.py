@@ -535,6 +535,41 @@ class MessageRepository:
                 })
             return turns
 
+    @staticmethod
+    def resolve_allowed_conversations(actor_user_id: str) -> dict[str, str | None]:
+        """解析 actor 可见会话及其群聊入群时间（分级兜底 M0 作用域）。
+
+        规则（R3/R8）：
+          - 私聊：actor 有消息参与（sender_user_id == actor）即视为本人会话，
+            visible_from = None（可见全部）。
+          - 群聊：actor 有消息参与即视为"已加入"，visible_from = actor 在该群
+            最早消息时间（仅可见入群之后的记录）。
+
+        Returns:
+            {conversations.id (UUID): visible_from (ISO str | None)}
+            其中 None 表示无时间下界（私聊）；群聊为 actor 首条消息时间。
+        """
+        if not actor_user_id:
+            return {}
+        from sqlalchemy import func
+
+        with get_session() as session:
+            rows = (
+                session.query(
+                    Message.conversation_id,
+                    Conversation.conversation_type,
+                    func.min(Message.created_at).label("first_at"),
+                )
+                .join(Conversation, Message.conversation_id == Conversation.id)
+                .filter(Message.sender_user_id == actor_user_id)
+                .group_by(Message.conversation_id, Conversation.conversation_type)
+                .all()
+            )
+            result: dict[str, str | None] = {}
+            for conv_id, conv_type, first_at in rows:
+                result[conv_id] = first_at if conv_type == "group" else None
+            return result
+
 
 def _new_uuid_short() -> str:
     import uuid

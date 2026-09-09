@@ -113,7 +113,8 @@ def _audit_capabilities(reg, core) -> None:
                        ", ".join(skill_orphans))
 
 
-def _tool(name: str, desc: str, params: dict, handler, category: str = "base", permission_flag: str = "all"):
+def _tool(name: str, desc: str, params: dict, handler, category: str = "base", permission_flag: str = "all",
+          write_mode: str = "read"):
     """快捷构造 BusinessFlowTool 实例。
 
     Args:
@@ -123,13 +124,15 @@ def _tool(name: str, desc: str, params: dict, handler, category: str = "base", p
         handler: 异步处理函数，签名为 async fn(params: dict) -> dict。
         category: 工具分类，base/business/project。
         permission_flag: 权限标识，all/admin/write。
+        write_mode: 写语义类别（M2），read/append/transition/overwrite/delete。
 
     Returns:
         BusinessFlowTool 实例，可直接注册到 BusinessFlowToolRegistry。
     """
     from .business_flow_tools import BusinessFlowTool
     return BusinessFlowTool(name=name, description=desc, parameters=params, handler=handler,
-                            category=category, permission_flag=permission_flag)
+                            category=category, permission_flag=permission_flag,
+                            write_mode=write_mode)
 
 
 # ══════════════════════════════════════════════════════════════════════════════
@@ -233,22 +236,26 @@ def _register_business(core, reg):
     _buc += _reg_biz(reg, "record_event", "记录项目事件",
                      partial(_h("event_tool", "handle_record_event"),
                              event_app=core._event_app),
-                     params=_EVENT_TOOL_SCHEMA, category="business", permission_flag="write")
+                     params=_EVENT_TOOL_SCHEMA, category="business", permission_flag="write",
+                     write_mode="append")
     _buc += _reg_biz(reg, "record_task", "创建任务",
                      partial(_h("task_tool", "handle_record_task"),
                              task_app=core._task_app),
-                     params=_TASK_TOOL_SCHEMA, category="business", permission_flag="write")
+                     params=_TASK_TOOL_SCHEMA, category="business", permission_flag="write",
+                     write_mode="append")
     _buc += _reg_biz(reg, "record_meeting", "归档会议纪要",
                      partial(_h("meeting_tool", "handle_record_meeting"),
                              meeting_app=core._meeting_app),
-                     params=_MEETING_TOOL_SCHEMA, category="business", permission_flag="write")
+                     params=_MEETING_TOOL_SCHEMA, category="business", permission_flag="write",
+                     write_mode="append")
     _buc += _reg_biz(reg, "record_file", "记录文件元数据",
                      partial(_h("file_tool", "handle_record_file"),
                              file_app=core._file_app,
                              file_manager=core._file_manager,
                              tei_client=core._tei_client,
                              kc_repo=core._knowledge_chunk_repo),
-                     params=_FILE_TOOL_SCHEMA, category="business", permission_flag="write")
+                     params=_FILE_TOOL_SCHEMA, category="business", permission_flag="write",
+                     write_mode="append")
 
     # 文件查询 + 分类修改 (2 tools)
     _buc += _reg_biz(reg, "query_files", "按分类或关键词查询项目文件",
@@ -368,7 +375,7 @@ def _register_business(core, reg):
 
 
 def _reg_biz(reg, name, desc, handler, params=None,
-             category="business", permission_flag="write"):
+             category="business", permission_flag="write", write_mode="read"):
     """注册一个业务工具（fail-safe），异常时仅打日志不抛错。
 
     Args:
@@ -379,6 +386,7 @@ def _reg_biz(reg, name, desc, handler, params=None,
         params: 工具参数 JSON Schema（dict），可选。传入 None 时使用空 schema（向后兼容）。
         category: 工具分类，默认 business。
         permission_flag: 权限标识，默认 write。
+        write_mode: 写语义类别（M2），默认 read。
 
     Returns:
         int — 成功返回 1，失败返回 0，方便累加计数。
@@ -396,7 +404,8 @@ def _reg_biz(reg, name, desc, handler, params=None,
                 "LLM 规划时将看不到该工具的参数约束。请在该工具的源文件中定义 schema 常量，"
                 "并在 _reg_biz() 调用处通过 params= 参数传入。", name)
         reg.register(_tool(name, desc, schema, handler,
-                          category=category, permission_flag=permission_flag))
+                          category=category, permission_flag=permission_flag,
+                          write_mode=write_mode))
         return 1
     except Exception as e:
         logger.warning("tool '%s' registration failed: %s", name, e)
