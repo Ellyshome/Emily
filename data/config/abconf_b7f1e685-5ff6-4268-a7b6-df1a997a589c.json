@@ -48,6 +48,7 @@
     "enable": false,
     "default_provider_id": "",
     "fallback_chat_models": [],
+    "request_max_retries": 5,
     "default_image_caption_provider_id": "",
     "image_caption_prompt": "Please describe the image using Chinese.",
     "provider_pool": [
@@ -61,6 +62,7 @@
     "websearch_brave_key": [],
     "websearch_baidu_app_builder_key": "",
     "websearch_firecrawl_key": [],
+    "websearch_exa_key": [],
     "web_search_link": false,
     "display_reasoning_text": false,
     "identifier": false,
@@ -156,6 +158,8 @@
     "group_message_max_cnt": 300,
     "image_caption": false,
     "image_caption_provider_id": "",
+    "group_message_history_enable": false,
+    "group_message_history_max_cnt": 700,
     "active_reply": {
       "enable": false,
       "method": "possibility_reply",
