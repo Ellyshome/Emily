@@ -108,6 +108,16 @@ TOOL_META_MAP: dict[str, tuple[str, str, str, str]] = {
     "discard_nodes":         ("批量废弃节点",   "project", "admin", "sop_only"),
 }
 
+# ── 工具名 → write_mode（M2 静态参考，供 scripts/check_fallback_tools.py 交叉校验）──
+# 未在此列出的工具默认视为 "read"（查询/检索/列举）。
+# 与 tools/registry.py 注册处 write_mode 保持一致；仅登记非只读工具即可。
+TOOL_WRITE_MODE_MAP: dict[str, str] = {
+    "record_event": "append",
+    "record_task": "append",
+    "record_meeting": "append",
+    "record_file": "append",
+}
+
 # ── 工具名 → (模块路径, schema 变量名) ─────────────────────────────
 # 所有需要 LLM 填参的工具必须在此映射中有条目。V14 会检测缺失。
 # write_user_memory 的 schema 由 create_memory_tool() 动态生成，不在此静态映射。

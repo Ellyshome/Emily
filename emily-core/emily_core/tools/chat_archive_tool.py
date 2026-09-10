@@ -25,6 +25,8 @@ def create_chat_archive_tool(chat_archive_service) -> ToolDefinition:
 
     async def execute(args: dict) -> dict:
         action = args.get("action", "search").strip()
+        # M0: 操作者 user_id（由框架 _inject_runtime_params 注入 _user_id）
+        actor_user_id = (args.get("_user_id") or "").strip()
 
         if action == "search":
             keyword = args.get("keyword", "").strip()
@@ -36,6 +38,7 @@ def create_chat_archive_tool(chat_archive_service) -> ToolDefinition:
             conversation_id = args.get("conversation_id")
 
             messages = chat_archive_service.search_messages(
+                actor_user_id=actor_user_id,
                 keyword=keyword,
                 conversation_id=conversation_id or None,
                 time_range=time_range,
@@ -94,6 +97,7 @@ def create_chat_archive_tool(chat_archive_service) -> ToolDefinition:
 
             # 如果没有 user_id，尝试通过名称在 messages 中搜索
             messages = chat_archive_service.search_messages(
+                actor_user_id=actor_user_id,
                 keyword=user_name if user_name else "",
                 user_id=user_id if user_id else None,
                 limit=limit,

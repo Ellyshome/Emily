@@ -31,6 +31,7 @@ class WorkItem:
     user_input: str = ""                 # 任务对应的用户输入片段
     sop_id: str = ""                     # 匹配到的 SOP（如 SOP-002-REC）
     intent_type: str = ""                # Phase B: "sop"|"compound"|"fallback"|"fast_reply"
+    fallback_tier: str = "basic"         # 分级兜底档位（仅 fallback 有意义）：basic|advanced
     user_id: str = ""
     is_admin: bool = False
     priority: int = 1                    # 1=普通 0=最高
