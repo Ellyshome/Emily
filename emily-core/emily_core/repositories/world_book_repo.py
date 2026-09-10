@@ -59,6 +59,19 @@ class ProjectWorldBookRepo:
             )
 
     @staticmethod
+    def get_by_projects(project_ids: list[str]) -> list[ProjectWorldBook]:
+        """批量查询多个项目的世界书（用于按用户参与项目合并载入）。"""
+        pids = [p for p in (project_ids or []) if p]
+        if not pids:
+            return []
+        with get_session() as session:
+            return (
+                session.query(ProjectWorldBook)
+                .filter(ProjectWorldBook.project_id.in_(pids))
+                .all()
+            )
+
+    @staticmethod
     def get_by_id(wb_id: str) -> Optional[ProjectWorldBook]:
         """按主键查询。"""
         with get_session() as session:

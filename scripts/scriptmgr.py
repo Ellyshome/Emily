@@ -324,10 +324,17 @@ def main():
         parser.print_help()
         sys.exit(0)
 
-    print("Initializing EmilyCore...", file=sys.stderr)
-    core = _init_core()
-    sm = _get_sm(core)
-    print("Ready.", file=sys.stderr)
+    # export/describe/list 只读注册表，无需 boot 整个 EmilyCore
+    # （宿主机常缺 langgraph 等容器内依赖，boot 会直接失败）
+    if args.command in ("export", "list", "describe"):
+        from emily_core.scripts.registry import load_registry
+        from emily_core.scripts.manager import ScriptManager
+        sm = ScriptManager(load_registry())
+    else:
+        print("Initializing EmilyCore...", file=sys.stderr)
+        core = _init_core()
+        sm = _get_sm(core)
+        print("Ready.", file=sys.stderr)
 
     handlers = {
         "list": cmd_list,

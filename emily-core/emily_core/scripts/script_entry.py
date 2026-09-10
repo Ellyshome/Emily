@@ -30,8 +30,44 @@ class ScriptEntry:
     timeout_seconds: int = 60
     flow_note: str | None = None        # 每日流程说明（供 doc 生成）
     scheduling_note: str | None = None  # 调度归属注（供 doc 生成）
+    params: list = field(default_factory=list)  # 参数 schema（见 ScriptParam），空=仅裸 args
 
     @property
     def has_check(self) -> bool:
         """是否有自检能力。"""
         return self.check_arg is not None
+
+    @property
+    def has_params(self) -> bool:
+        """是否声明了参数 schema（决定 Web 端能否渲染表单）。"""
+        return bool(self.params)
+
+
+@dataclass
+class ScriptParam:
+    """单个脚本参数的 schema —— 供 Web 表单渲染 + CLI 参数拼装。
+
+    对应 CLAUDE.md §6 约束 11（工具必须带参数 schema）在脚本侧的等价物：
+    没有 schema，调用方（Web 表单 / LLM）就不知道参数类型与取值约束。
+
+    type 与前端控件的映射：
+      str    → 文本框            flag → 复选框
+      int    → 数字框            enum → 单选下拉（choices）
+      multi  → 多选框组（choices，重复传参或逗号拼接）
+    """
+    name: str                           # 参数名，如 "top-k"（不含 --）
+    type: str = "str"                   # str / int / flag / enum / multi
+    label: str = ""                     # 表单显示名，空则回退 name
+    help: str = ""                      # 表单提示文案
+    required: bool = False
+    default: object = None
+    choices: list = field(default_factory=list)   # enum / multi 的候选值
+    positional: bool = False            # True=位置参数（不带 --）
+    group: str | None = None            # 互斥组名：同组内只能选一个
+    min: int | None = None              # int 下界
+    max: int | None = None              # int 上界
+
+    @property
+    def flag(self) -> str:
+        """CLI 长选项形式。"""
+        return f"--{self.name}"

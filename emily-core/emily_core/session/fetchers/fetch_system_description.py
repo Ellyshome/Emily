@@ -36,26 +36,85 @@ _TABLE_DISPLAY_NAMES = {
 def fetch(perms: dict) -> str:
     """获取认知书纯文本摘要（按用户权限裁剪）。
 
-    Args:
-        perms: 权限字典，含 db_perms 等
-
-    Returns:
-        裁剪后的系统描述文本
+    行为不变：读 DB 最新记录 → 按 db_perms 裁剪 → 返回文本。
+    实现改为委托 render_full（单一实现源）。
     """
     try:
         from ...repositories.system_description_repo import SystemDescriptionRepo
         desc = SystemDescriptionRepo.get_latest()
         if desc is None:
             return ""
-
         if not desc.content_json:
             return desc.content_text or ""
-
-        content = json.loads(desc.content_json)
-        return _format_filtered_text(content, perms)
+        return render_full(desc.content_json, perms)
     except Exception as e:
         logger.error("fetch_system_description failed: %s", e)
         return ""
+
+
+def _truncate(text: str, max_chars: int) -> str:
+    if len(text) <= max_chars:
+        return text
+    cut = text[:max_chars]
+    nl = cut.rfind("\n")
+    return cut[:nl] if nl > 0 else cut
+
+
+def render_full(content_json: str, perms: dict) -> str:
+    """按 db_perms 裁剪生成认知书全文（等价于改造前的 fetch 输出）。
+
+    无 IO：content_json 由调用方提供（Session 缓存 / tool 层读取）。
+    """
+    try:
+        content = json.loads(content_json or "{}")
+    except (json.JSONDecodeError, TypeError, ValueError) as e:
+        logger.warning("system description content_json parse failed: %s", e)
+        return ""
+    if not isinstance(content, dict) or not content:
+        return ""
+    return _format_filtered_text(content, perms)
+
+
+def render_brief(content_json: str, perms: dict, max_chars: int = 200) -> str:
+    """生成常驻摘要（≤max_chars）。
+
+    只含"公共知识"部分：
+      - D3 权限分级体系（参建线 / 建设线 / 你的位置与继承链）
+      - D2 文件分类体系（分类名列表）
+    不含 D1 数据表清单（属执行层资源，按 PRD §3.2 移出路由 prompt）。
+    """
+    try:
+        content = json.loads(content_json or "{}")
+    except (json.JSONDecodeError, TypeError, ValueError):
+        return ""
+    if not isinstance(content, dict) or not content:
+        return ""
+    lines: list[str] = []
+
+    perm = content.get("permission") or {}
+    levels = perm.get("levels") or []
+    if levels:
+        for line_name in ("参建线", "建设线"):
+            ls = [l for l in levels if l.get("line") == line_name]
+            if not ls:
+                continue
+            chain = " → ".join(f"L{l.get('level')} {l.get('name', '')}" for l in ls)
+            lines.append(f"🔐 {line_name}: L1 访客 → {chain}")
+        try:
+            user_level = int(perms.get("level", 1) or 1)
+            from ...permission.level import LEVEL_NAME, effective_levels
+            level_name = LEVEL_NAME.get(user_level, "未知")
+            eff = effective_levels(user_level)
+            chain_str = "→".join(f"L{x}" for x in sorted(eff, reverse=True))
+            lines.append(f"你的位置：{level_name}(L{user_level})，继承链 {chain_str}")
+        except Exception as e:
+            logger.debug("render_brief: user position skipped: %s", e)
+
+    cats = (content.get("file") or {}).get("categories") or []
+    if cats:
+        lines.append("📁 文件分类：" + " / ".join(str(c.get("name", "")) for c in cats))
+
+    return _truncate("\n".join(lines), max_chars)
 
 
 def _format_filtered_text(content: dict, perms: dict) -> str:

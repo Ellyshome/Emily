@@ -77,6 +77,16 @@ class WorkItem:
     additional_input: str = ""
     """续接时用户补充的消息内容（SessionAgent 注入，node2 消费）"""
 
+    # ── 编排（M7/M8）──
+    depends_on: list[str] = field(default_factory=list)
+    """依赖的前置 WI id 列表（由 SessionOrchestrator 规划写入）"""
+
+    depth: int = 0
+    """在 WI DAG 中的深度（0=初始层；动态追加 WI 递增）"""
+
+    dynamic: bool = False
+    """是否为编排器动态追加的 WI（dynamic=True 不再触发递归追加）"""
+
     # ── Node 2（计划+标准）产出 ──
     execution_plan: Any = None           # ExecutionPlan | None
     risk_level: str = ""

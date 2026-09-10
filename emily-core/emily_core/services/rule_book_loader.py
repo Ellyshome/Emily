@@ -15,6 +15,109 @@ from typing import Optional
 
 logger = logging.getLogger("emily.rule_book_loader")
 
+import re
+
+# 章节未标注 applicable_levels 时的默认可见级别（fail-open：避免改版后静默失效）
+_SECTION_DEFAULT_LEVELS: list[int] = [1, 2, 3, 4, 5, 6]
+
+_RE_SECTION = re.compile(r"^##\s+(.+?)\s*$", re.MULTILINE)
+_RE_FRONTMATTER = re.compile(r"^---\s*\n(.*?)\n---\s*\n", re.DOTALL)
+
+
+def _safe_yaml(text: str) -> dict:
+    """解析章节 frontmatter；失败返回空 dict（fail-open）。"""
+    try:
+        import yaml
+        data = yaml.safe_load(text) or {}
+        return data if isinstance(data, dict) else {}
+    except Exception as e:
+        logger.warning("rule book frontmatter parse failed: %s", e)
+        return {}
+
+
+def parse_sections(raw: str) -> list[dict]:
+    """按 '## 章节' 切分规则书并解析章节级 frontmatter。
+
+    Returns:
+        [{title: str, levels: list[int], section_type: str,
+          llm_inject: bool, body: str}]
+    """
+    if not raw:
+        return []
+    matches = list(_RE_SECTION.finditer(raw))
+    sections: list[dict] = []
+    for idx, m in enumerate(matches):
+        start = m.end()
+        end = matches[idx + 1].start() if idx + 1 < len(matches) else len(raw)
+        chunk = raw[start:end]
+        stripped = chunk.lstrip("\n")
+        fm = _RE_FRONTMATTER.match(stripped)
+        if fm:
+            meta = _safe_yaml(fm.group(1))
+            body = stripped[fm.end():].strip()
+        else:
+            meta = {}
+            body = chunk.strip()
+        levels = meta.get("applicable_levels")
+        if isinstance(levels, list) and levels:
+            parsed: list[int] = []
+            for x in levels:
+                try:
+                    parsed.append(int(x))
+                except (TypeError, ValueError):
+                    continue
+            levels = parsed or list(_SECTION_DEFAULT_LEVELS)
+        else:
+            levels = list(_SECTION_DEFAULT_LEVELS)
+        sections.append({
+            "title": m.group(1).strip(),
+            "levels": levels,
+            "section_type": str(meta.get("section_type", "") or ""),
+            "llm_inject": bool(meta.get("llm_inject", True)),
+            "body": body,
+        })
+    return sections
+
+
+def _truncate(text: str, max_chars: int) -> str:
+    if len(text) <= max_chars:
+        return text
+    cut = text[:max_chars]
+    nl = cut.rfind("\n")
+    return cut[:nl] if nl > 0 else cut
+
+
+def render_full(sections: list[dict], level: int) -> str:
+    """按 level 过滤后输出规则全文（供 meta_cognition_read）。"""
+    parts: list[str] = []
+    for s in sections:
+        if not s.get("llm_inject", True):
+            continue
+        if level not in (s.get("levels") or []):
+            continue
+        parts.append(f"## {s['title']}\n{s.get('body', '')}")
+    return "\n\n".join(parts)
+
+
+def render_brief(sections: list[dict], level: int, max_chars: int = 200) -> str:
+    """按 level 过滤后生成常驻摘要（≤max_chars）。"""
+    picked = [
+        s for s in sections
+        if s.get("llm_inject", True) and level in (s.get("levels") or [])
+    ]
+    if not picked:
+        return ""
+    text = "适用规则（{}）：{}".format(len(picked), " / ".join(s["title"] for s in picked))
+    bullets: list[str] = []
+    for s in picked[:4]:
+        body_lines = (s.get("body") or "").splitlines()
+        first = body_lines[0].strip() if body_lines else ""
+        if first:
+            bullets.append(f"{s['title']}：{first[:40]}")
+    if bullets:
+        text += "\n" + "；".join(bullets)
+    return _truncate(text, max_chars)
+
 
 class RuleBookLoader:
     """规则书加载器。"""
@@ -71,6 +174,14 @@ class RuleBookLoader:
             "content_length": new_len,
             "changed": changed,
         }
+
+    def trim_for_level(self, level: int, max_chars: int = 200) -> str:
+        """按权限等级裁剪生成摘要（便捷入口）。"""
+        return render_brief(parse_sections(self.content), level, max_chars)
+
+    def render_for_level(self, level: int) -> str:
+        """按权限等级裁剪生成全文。"""
+        return render_full(parse_sections(self.content), level)
 
     @property
     def content(self) -> str:

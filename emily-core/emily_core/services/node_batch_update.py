@@ -41,16 +41,27 @@ async def _resolve_deliverable_id(node_id: str, deliverable_name: str) -> str | 
 
 
 async def _resolve_node_id_by_name(project_id: str, node_name: str) -> str | None:
-    """根据 project_id + node_name 模糊查找节点编号。"""
+    """根据 project_id + node_name 查找节点编号。
+
+    口径（见 docs/Spec/项目归属与可见范围_Spec.md）：名称只用于**入口侧**定位，
+    唯一命中才返回；多候选一律返回 None，避免静默取第一个写错节点。
+    """
     from ..repositories.node_repo import ProjectNodeRepo
 
     nodes = await asyncio.to_thread(ProjectNodeRepo.find_by_project, project_id)
-    for n in nodes:
-        if n.node_name == node_name:
-            return n.node_id
-    for n in nodes:
-        if node_name in n.node_name or n.node_name in node_name:
-            return n.node_id
+    exact = [n for n in nodes if n.node_name == node_name]
+    if len(exact) == 1:
+        return exact[0].node_id
+    if len(exact) > 1:
+        logger.warning("节点名「%s」在项目 %s 命中 %d 个同名节点，拒绝猜测",
+                       node_name, project_id, len(exact))
+        return None
+    fuzzy = [n for n in nodes if node_name in n.node_name or n.node_name in node_name]
+    if len(fuzzy) == 1:
+        return fuzzy[0].node_id
+    if len(fuzzy) > 1:
+        logger.warning("节点名「%s」在项目 %s 模糊命中 %d 个节点，拒绝猜测",
+                       node_name, project_id, len(fuzzy))
     return None
 
 

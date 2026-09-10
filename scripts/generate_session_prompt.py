@@ -58,16 +58,17 @@ def generate_session_prompt(user_id: str, *, db_url: str = "", dry_run: bool = F
     if user is None:
         return {"error": "用户不存在", "user_id": user_id}
 
-    project_id = getattr(user, "project_id", None)
+    # 参与项目 = 所属企业参与节点所归属的项目（唯一口径见 ParticipationRepo）
+    from emily_core.repositories.participation_repo import ParticipationRepo
+    project_ids = ParticipationRepo.project_ids_of_company(getattr(user, "company", None))
 
-    # 世界书
+    # 世界书（多项目合并；无参与项目则为空）
     world_book_text = ""
     world_book_tokens = 0
-    if project_id:
-        wb = ProjectWorldBookRepo.get_by_project(project_id)
-        if wb:
-            world_book_text = wb.content_text or ""
-            world_book_tokens = wb.token_count or 0
+    if project_ids:
+        books = ProjectWorldBookRepo.get_by_projects(project_ids)
+        world_book_text = "\n\n".join(wb.content_text for wb in books if wb.content_text)
+        world_book_tokens = sum(wb.token_count or 0 for wb in books)
 
     # 规则书
     rule_book_text = ""

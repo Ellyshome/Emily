@@ -14,6 +14,7 @@
 from __future__ import annotations
 
 import asyncio
+import json
 import logging
 from dataclasses import dataclass, field
 from datetime import datetime, timezone, timedelta
@@ -94,6 +95,11 @@ class SessionContext:
     project_world_book: str = ""        # 项目世界书纯文本摘要（注入 prompt）
     rule_book: str = ""                 # 规则书全文（注入 prompt）
     system_description: str = ""        # 认知书文本（注入 prompt）
+
+    # ── 三书裁剪源数据（M1：供按操作者权限实时裁剪，避免每条消息 IO）──
+    world_books_json: str = ""             # 世界书 content_json 原文（JSON 数组，多项目合并）
+    system_description_json: str = ""      # 认知书 content_json 原文
+    rule_book_sections: list[dict] = field(default_factory=list)   # 规则书解析后章节
 
     # ══════════════════════════════════════════════════════════════════════════
     #  计算属性
@@ -201,6 +207,11 @@ class SessionContext:
         ctx.project_world_book = snapshot.get("project_world_book", "")
         ctx.rule_book = snapshot.get("rule_book", "")
         ctx.system_description = snapshot.get("system_description", "")
+
+        # 三书裁剪源数据（M1）
+        ctx.world_books_json = snapshot.get("world_books_json", "")
+        ctx.system_description_json = snapshot.get("system_description_json", "")
+        ctx.rule_book_sections = list(snapshot.get("rule_book_sections", []))
 
         # （已关闭）最近对话不再在 Session 拉起时注入 message_history
         # message_history 仅在本 Session 生命周期内累积（record_turn），
@@ -368,6 +379,10 @@ class SessionContext:
           project_world_book/rule_book/system_description）。
         三书字段保留在 dataclass（PermissionSnapshot 加载不变），仅清理 prompt 变量映射。
 
+        M1: 新增 3 个三书摘要映射（project_brief/rule_brief/system_brief）。
+        摘要是权限相关变量（节点/等级/表权限），故走阶段2渲染路径：
+        SessionAgent._PERM_PROMPT_KEYS 收录这 3 键，base 中保留占位符不替换。
+
         群聊多用户权限修复（BUG #3）：权限字段优先取 actor_snapshot（当前操作者），
         回退 self（Session 创建者，私聊场景 actor=None）。使 LLM 看到的权限与
         AuthHook 鉴权用的权限一致。身份/项目/记忆字段仍用 self（actor_snapshot
@@ -392,6 +407,12 @@ class SessionContext:
         authorized_node_ids = a.get("authorized_node_ids")
         if authorized_node_ids is None:
             authorized_node_ids = self.authorized_node_ids
+        db_perms = a.get("db_perms")
+        if db_perms is None:
+            db_perms = self.db_perms
+        is_mgmt = a.get("is_management_unit")
+        if is_mgmt is None:
+            is_mgmt = self.is_management_unit
         sop_allow = a.get("sop_allow")
         if sop_allow is not None:
             available_skills = list(sop_allow)
@@ -415,6 +436,12 @@ class SessionContext:
             "{available_skills}": ", ".join(available_skills) or "（无）",
             "{recent_turns}": "",
             "{rag_info}": self._format_rag_summary(),
+            # M1: 三书常驻摘要（按当前操作者权限实时裁剪，阶段2渲染）
+            "{project_brief}": _brief_world(self.world_books_json, authorized_node_ids,
+                                            include_events=bool(is_mgmt)),
+            "{rule_brief}": _brief_rule(self.rule_book_sections, level),
+            "{system_brief}": _brief_system(self.system_description_json,
+                                            {"level": level, "db_perms": db_perms}),
         }
 
     async def persist_and_consolidate(self, llm_client=None, md_file_path: str = "", archive_writer=None) -> None:
@@ -608,6 +635,9 @@ class SessionContext:
             "project_world_book": snapshot.get("project_world_book"),
             "rule_book": snapshot.get("rule_book"),
             "system_description": snapshot.get("system_description"),
+            "world_books_json": snapshot.get("world_books_json"),
+            "system_description_json": snapshot.get("system_description_json"),
+            "rule_book_sections": snapshot.get("rule_book_sections"),
         }
 
         for field, new_val in _hot_fields.items():
@@ -698,6 +728,61 @@ def _build_compress_messages(history: list[dict], existing_summary: str) -> list
             f"请输出合并后的完整摘要（不超过 300 字）："
         )},
     ]
+
+
+# ══════════════════════════════════════════════════════════════════════════════
+# M1: 三书摘要裁剪辅助（fail-open：异常返回空串，不阻断 prompt 装配）
+# ══════════════════════════════════════════════════════════════════════════════
+
+def _brief_world(books_json: str, authorized_node_ids: list[str],
+                 include_events: bool = False) -> str:
+    """多项目合并摘要：逐本裁剪渲染后合并。
+
+    无参与项目（空串）→ 返回空串，即不产出任何项目态势内容。
+    include_events=True（管理单位）时才输出事件段。
+    """
+    if not books_json:
+        return ""
+    try:
+        from .fetchers.fetch_world_book import render_brief
+        books = json.loads(books_json)
+        if not isinstance(books, list):
+            books = [{"content_json": books_json}]
+        briefs: list[str] = []
+        auth = list(authorized_node_ids or [])
+        for b in books:
+            cj = b.get("content_json") if isinstance(b, dict) else None
+            if not cj:
+                continue
+            text = render_brief(cj, auth, include_events=include_events)
+            if text:
+                briefs.append(text)
+        return "\n\n".join(briefs)
+    except Exception as e:
+        logger.warning("project_brief render failed: %s", e)
+        return ""
+
+
+def _brief_rule(sections: list[dict], level: int) -> str:
+    if not sections:
+        return ""
+    try:
+        from ..services.rule_book_loader import render_brief
+        return render_brief(sections, int(level or 1))
+    except Exception as e:
+        logger.warning("rule_brief render failed: %s", e)
+        return ""
+
+
+def _brief_system(content_json: str, perms: dict) -> str:
+    if not content_json:
+        return ""
+    try:
+        from .fetchers.fetch_system_description import render_brief
+        return render_brief(content_json, perms)
+    except Exception as e:
+        logger.warning("system_brief render failed: %s", e)
+        return ""
 
 
 # 模块级兼容别名

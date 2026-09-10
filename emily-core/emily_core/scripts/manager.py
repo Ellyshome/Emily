@@ -11,16 +11,31 @@ ScriptManager 管开发者/维护脚本（scripts/*.py，subprocess CLI）。
 from __future__ import annotations
 
 import logging
+import os
 import subprocess
 import sys
 from pathlib import Path
 
 from .script_entry import ScriptEntry
+from .params import build_cli_args, param_to_dict, ParamError
 from .registry import ScriptRegistry
 
 logger = logging.getLogger("emily.scripts.manager")
 
-_PROJECT_ROOT = Path(__file__).resolve().parents[3]  # manager.py → scripts/ → emily_core/ → emily-core/ → Emily/
+
+def _resolve_project_root() -> Path:
+    """定位 scripts/ 的父目录。
+
+    容器内代码挂在 /app/emily_core（非仓库树），parents[3] 会算成 '/'，
+    导致 run() 永远找不到脚本文件。故优先探测容器挂载点 /app/scripts。
+    """
+    if Path("/app/scripts").is_dir():
+        return Path("/app")
+    # 开发环境：manager.py → scripts/ → emily_core/ → emily-core/ → Emily/
+    return Path(__file__).resolve().parents[3]
+
+
+_PROJECT_ROOT = _resolve_project_root()
 
 
 class ScriptManager:
@@ -44,6 +59,7 @@ class ScriptManager:
                 "writes_db": e.writes_db,
                 "auto_run": e.auto_run,
                 "has_check": e.has_check,
+                "has_params": e.has_params,
                 "description": e.description,
             }
             for e in self._registry.entries
@@ -141,9 +157,14 @@ class ScriptManager:
                     "script": name, "returncode": -1, "code": 1}
 
         try:
+            # encoding/errors 必须显式指定：text=True 默认用 locale 编码，
+            # Windows 上是 GBK，脚本一输出中文就 UnicodeDecodeError 打挂读取线程。
+            # PYTHONIOENCODING 同步传给子进程，避免子进程侧再按 GBK 编码输出。
+            env = {**os.environ, "PYTHONIOENCODING": "utf-8"}
             proc = subprocess.run(
                 [sys.executable, str(script_path), *args],
                 capture_output=True, text=True, timeout=timeout,
+                encoding="utf-8", errors="replace", env=env,
             )
             return {
                 "success": proc.returncode == 0,
@@ -161,8 +182,65 @@ class ScriptManager:
             return {"success": False, "error": str(ex),
                     "script": name, "returncode": -1, "code": 1}
 
+    def run_with_params(self, name: str, values: dict | None = None,
+                        confirm_write: bool = False) -> dict:
+        """按 params schema 执行脚本（Web 表单通道）。
+
+        与 run() 的区别：run() 直传 argv（信任调用方）；本方法只接受 schema 中
+        声明过的参数，其余一律拒绝，并对写库脚本强制两段式确认。
+
+        Args:
+            name: 脚本名。
+            values: {参数名: 值}，来自表单。
+            confirm_write: writes_db 脚本的二次确认。False 时强制改跑 check_arg 预览。
+
+        Returns:
+            run() 的返回结构，另加 "cli_args"（实际执行的 argv，供前端回显）
+            和 "forced_preview"（是否因未确认而降级为预览）。
+        """
+        e = self._registry.get(name)
+        if not e:
+            return {"success": False, "error": f"script '{name}' not found",
+                    "script": name, "code": 2}
+
+        try:
+            args = build_cli_args(e, values or {})
+        except ParamError as ex:
+            return {"success": False, "error": str(ex), "script": name,
+                    "returncode": -1, "code": 1}
+
+        # 写库脚本未确认 → 降级为 check_arg 预览，绝不真跑
+        forced_preview = False
+        if e.writes_db and not confirm_write:
+            if not e.check_arg:
+                return {"success": False, "script": name, "code": 1, "returncode": -1,
+                        "error": f"脚本 '{name}' 会写数据库且未定义 check_arg 预览参数，"
+                                 f"拒绝在未确认的情况下执行"}
+            args = [e.check_arg]
+            forced_preview = True
+
+        result = self.run(name, args=args, timeout=e.timeout_seconds)
+        result["cli_args"] = args
+        result["forced_preview"] = forced_preview
+        return result
+
+    def form_schema(self, name: str) -> dict:
+        """返回单个脚本的表单渲染 schema。"""
+        e = self._registry.get(name)
+        if not e:
+            return {"error": f"script '{name}' not found", "code": 2}
+        return {
+            "name": e.name,
+            "description": e.description,
+            "category": e.category,
+            "writes_db": e.writes_db,
+            "check_arg": e.check_arg,
+            "timeout_seconds": e.timeout_seconds,
+            "invocation": e.invocation,
+            "params": [param_to_dict(p) for p in e.params],
+        }
+
     def _run_inprocess(self, entry: ScriptEntry, args: list[str], timeout: int) -> dict:
-        """In-process 执行（entrypoint）"""
         try:
             mod_name, func_name = entry.entrypoint.split(":")
             import importlib
@@ -269,4 +347,6 @@ class ScriptManager:
             "entrypoint": e.entrypoint,
             "timeout_seconds": e.timeout_seconds,
             "has_check": e.has_check,
+            "has_params": e.has_params,
+            "params": [param_to_dict(p) for p in e.params],
         }

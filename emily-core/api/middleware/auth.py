@@ -24,13 +24,21 @@ class AuthMiddleware(BaseHTTPMiddleware):
     """
 
     # 始终放行的路径前缀
-    _PUBLIC_PREFIXES = ("/health", "/api/v1/monitor/", "/assets/", "/")
+    #
+    # 注意：不要把 "/" 放进来。startswith("/") 对任何路径都为真，会让整个 Token
+    # 校验静默失效（历史 bug）。根路径如需放行，用下方 _PUBLIC_EXACT 精确匹配。
+    _PUBLIC_PREFIXES = ("/health", "/api/v1/monitor/", "/assets/", "/console")
+
+    # 精确匹配放行（不做前缀展开）
+    _PUBLIC_EXACT = ("/", "/docs", "/openapi.json")
 
     async def dispatch(self, request: Request, call_next):
         expected = os.environ.get("EMILY_API_TOKEN", "")
 
         # 始终放行的路由
         path = request.url.path
+        if path in self._PUBLIC_EXACT:
+            return await call_next(request)
         for prefix in self._PUBLIC_PREFIXES:
             if path == prefix or path.startswith(prefix):
                 return await call_next(request)

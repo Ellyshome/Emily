@@ -90,7 +90,6 @@ class User(Base):
     level = Column(Integer, default=1)                       # 权限层级（6级树形）：1=访客 2=参建执行 3=参建管理 4=建设主管 5=管理员 6=系统管理员
     supervisor_id = Column(String, nullable=True)            # 直接上级 ID（执行人升级/异常复核）
     company = Column(String, ForeignKey("company_info.id"), nullable=True)  # 隶属公司 FK→company_info.id（v2.0 改单 FK）
-    project_id = Column(String, ForeignKey("projects.id"), nullable=True)  # 所属项目 FK→projects.id
     position = Column(String, default="[]")                  # 本项目中负责岗位角色（JSON数组）
     long_term_memory = Column(String, default="")            # 用户长期记忆（Agent 自动维护的 Markdown 文本）
     conversation_summary = Column(String, default="")        # 历史对话摘要（LLM 压缩的对话要点）
@@ -1069,7 +1068,7 @@ class ProjectNode(Base):
     node_id = Column(String(100), nullable=False, comment="节点编号（业务主键），例：SG-JG-01-2026")
     node_name = Column(String(500), nullable=False, comment="节点名称")
     owner_dept_id = Column(String(100), nullable=False, default="项目总", comment="主责条线（FK→company_info.id）")
-    related_company_id = Column(String(100), nullable=False, default="建设单位", comment="关联单位（FK→company_info.id）")
+    related_company_id = Column(String(100), nullable=False, default="", comment="关联单位 company_info.id（禁止存中文标签；输入侧中文由 CompanyResolver 解析）")
     deadline = Column(String(50), nullable=False, comment="截止时间（ISO8601）")
 
     # ── 选填业务字段（1个）──

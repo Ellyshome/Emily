@@ -1,0 +1,87 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Emily 脚本控制台</title>
+    <link rel="stylesheet" href="/console/console.css">
+</head>
+<body>
+<div class="layout">
+    <!-- 左侧：脚本菜单 -->
+    <aside class="sidebar">
+        <div class="sidebar-head">
+            <h1>脚本控制台</h1>
+            <input type="search" id="filter" placeholder="筛选脚本…" autocomplete="off">
+        </div>
+        <div id="script-list" class="script-list">
+            <div class="hint">加载中…</div>
+        </div>
+        <div class="sidebar-foot">
+            <span id="script-count"></span>
+        </div>
+    </aside>
+
+    <!-- 右侧：参数表单 + 结果 -->
+    <main class="main">
+        <div id="empty-state" class="empty-state">
+            <p>从左侧选择一个脚本</p>
+            <p class="sub">带 <span class="badge badge-form">表单</span> 标记的脚本支持参数化调用</p>
+        </div>
+
+        <section id="runner" class="runner" hidden>
+            <header class="runner-head">
+                <div>
+                    <h2 id="script-name"></h2>
+                    <p id="script-desc" class="desc"></p>
+                </div>
+                <div id="script-badges" class="badges"></div>
+            </header>
+
+            <form id="param-form" class="param-form"></form>
+
+            <div class="cli-preview">
+                <label>等效命令</label>
+                <code id="cli-preview">—</code>
+            </div>
+
+            <div class="actions">
+                <button type="button" id="btn-run" class="btn-primary">执行</button>
+                <button type="button" id="btn-reset" class="btn-ghost">重置</button>
+                <span id="run-status" class="run-status"></span>
+            </div>
+
+            <section class="result-panel">
+                <div class="result-head">
+                    <h3>执行结果</h3>
+                    <div class="result-meta" id="result-meta"></div>
+                </div>
+                <pre id="result-body" class="result-body">尚未执行。</pre>
+            </section>
+        </section>
+    </main>
+</div>
+
+<!-- 写库二次确认对话框 -->
+<div class="modal-overlay" id="confirm-overlay">
+    <div class="modal">
+        <div class="modal-header">
+            <h3>⚠ 该脚本会写入数据库</h3>
+        </div>
+        <div class="modal-body">
+            <p>脚本 <strong id="confirm-name"></strong> 声明了 <code>writes_db: true</code>，
+               将对生产数据库产生实际写入。</p>
+            <p>即将执行：</p>
+            <code class="confirm-cmd" id="confirm-cmd"></code>
+            <p class="warn">请先确认上方预览结果符合预期，再继续。</p>
+        </div>
+        <div class="modal-actions">
+            <button type="button" id="confirm-cancel" class="btn-ghost">取消</button>
+            <button type="button" id="confirm-ok" class="btn-danger">确认执行写入</button>
+        </div>
+    </div>
+</div>
+
+<script src="/console/console.js"></script>
+</body>
+</html>

@@ -94,6 +94,140 @@ class SessionScheduler:
             results.append(await self._run_one(wi, message=message, db_message_id=db_message_id))
         return results
 
+    async def run_dag(
+        self,
+        plans: list,
+        message=None,
+        db_message_id: str = "",
+        actor_snapshot=None,
+        *,
+        max_depth: int = 3,
+        on_wi_done=None,
+    ) -> list[WorkItem]:
+        """按依赖拓扑序执行 WI 计划（层内并行，层间顺序）。
+
+        Args:
+            plans: list[WorkItemPlan]（含 wi / depends_on / dynamic / depth）
+            message: 原始入站消息（透传给每个 WI 的 BusContext）
+            db_message_id: 入站消息持久化 ID
+            actor_snapshot: 当前操作者权限快照
+            max_depth: DAG 最大深度（超出则丢弃追加计划）
+            on_wi_done: 动态追加回调 async (wi, done, *, depth) -> list[WorkItemPlan]
+
+        Returns:
+            list[WorkItem]：全部 WI（含 DONE / FAILED / SKIPPED），按完成顺序
+        """
+        import asyncio as _asyncio
+
+        self._current_actor = actor_snapshot
+        results: list[WorkItem] = []
+        done_ids: set[str] = set()
+        failed_ids: set[str] = set()
+        pending: list = list(plans)
+        halted = False
+
+        while pending and not halted:
+            # 1) 当前可执行层（所有前置已完成）
+            layer_idx = [
+                i for i, p in enumerate(pending)
+                if all(d in done_ids for d in (p.depends_on or []))
+            ]
+            if not layer_idx:
+                # 依赖环 / 依赖永不满足 → 剩余全部 SKIPPED（防死循环）
+                logger.warning("Scheduler[%s] run_dag: unresolvable deps, skip %d WI",
+                               self.session_id, len(pending))
+                for p in pending:
+                    self._mark_skipped(p.wi)
+                    results.append(p.wi)
+                break
+
+            layer = [pending[i] for i in layer_idx]
+            keep_idx = set(layer_idx)
+            pending = [p for i, p in enumerate(pending) if i not in keep_idx]
+
+            # 2) 层内并行（create_task 拷贝上下文，隔离 set_bus_context / 日志 ContextVar）
+            tasks = [
+                _asyncio.create_task(
+                    self._run_one(p.wi, message=message, db_message_id=db_message_id)
+                )
+                for p in layer
+            ]
+            layer_outcome = await _asyncio.gather(*tasks, return_exceptions=True)
+
+            # 3) 汇总本层结果
+            layer_wis: list[WorkItem] = []
+            for p, outcome in zip(layer, layer_outcome):
+                if isinstance(outcome, BaseException):
+                    logger.error("Scheduler[%s] run_dag WI %s raised: %s",
+                                 self.session_id, p.wi.id, outcome)
+                    self._mark_failed(p.wi, str(outcome))
+                    wi = p.wi
+                else:
+                    wi = outcome
+                results.append(wi)
+                layer_wis.append(wi)
+                if wi.state == WorkItemState.DONE:
+                    done_ids.add(wi.id)
+                else:
+                    failed_ids.add(wi.id)
+
+            # 4) 后继依赖失败 → SKIPPED（不执行，不抛异常）
+            remaining: list = []
+            for p in pending:
+                if any(d in failed_ids for d in (p.depends_on or [])):
+                    self._mark_skipped(p.wi)
+                    results.append(p.wi)
+                    failed_ids.add(p.wi.id)
+                else:
+                    remaining.append(p)
+            pending = remaining
+
+            # 5) 多轮续接挂起 → 立即停止后续层（由 SessionAgent 处理续接）
+            if any(w.state == WorkItemState.WAITING_FOR_INPUT for w in layer_wis):
+                logger.info("Scheduler[%s] run_dag halted: WI waiting for input", self.session_id)
+                halted = True
+                break
+
+            # 6) 动态追加（跨域检索编排）
+            if on_wi_done is None:
+                continue
+            for wi in layer_wis:
+                if wi.state != WorkItemState.DONE:
+                    continue
+                try:
+                    added = await on_wi_done(wi, results, depth=getattr(wi, "depth", 0))
+                except Exception as e:
+                    logger.warning("Scheduler[%s] on_wi_done failed for %s: %s",
+                                   self.session_id, wi.id, e)
+                    continue
+                for plan in (added or []):
+                    if getattr(plan, "depth", 0) > max_depth:
+                        logger.info("Scheduler[%s] drop dynamic plan depth=%d > max=%d",
+                                    self.session_id, plan.depth, max_depth)
+                        continue
+                    pending.append(plan)
+
+        return results
+
+    @staticmethod
+    def _mark_skipped(wi: WorkItem) -> None:
+        """标记 WI 为 SKIPPED（终态）。"""
+        try:
+            wi.transition_to(WorkItemState.SKIPPED)
+        except ValueError:
+            wi.state = WorkItemState.SKIPPED
+        wi.error_message = wi.error_message or "前置 WI 未成功，已跳过"
+
+    @staticmethod
+    def _mark_failed(wi: WorkItem, reason: str) -> None:
+        """标记 WI 为 FAILED（终态）。"""
+        if not wi.is_terminal:
+            try:
+                wi.transition_to(WorkItemState.FAILED)
+            except ValueError:
+                wi.state = WorkItemState.FAILED
+        wi.error_message = wi.error_message or reason
+
     async def _run_one(self, wi: WorkItem, message=None, db_message_id: str = "") -> WorkItem:
         """在统一生命周期图上执行单个 WorkItem。
 

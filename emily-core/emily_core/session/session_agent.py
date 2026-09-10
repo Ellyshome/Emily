@@ -93,6 +93,17 @@ class SessionAgent:
         from ..workitem import SessionScheduler
         self.scheduler = SessionScheduler(conversation_id, session_context=context, core=None)
 
+        # M7: 编排策略组件（与 FocusLock / ConfirmQueue 同级；config 由 SessionFactory 注入）
+        from .orchestrator import SessionOrchestrator
+        self.orchestrator = SessionOrchestrator(
+            llm_client=llm_client,
+            skill_registry=skill_registry,
+            config=None,
+            wi_factory=self._build_workitem,
+        )
+        # 本轮编排计划（由 _split_into_workitems 写入，_handle_impl 消费）
+        self._pending_plans: list | None = None
+
         self._llm = llm_client
         self._skill_registry = skill_registry
         self._journal = journal
@@ -175,10 +186,12 @@ class SessionAgent:
                      self.conversation_id, len(self._session_prompt_base))
 
     # 权限变量集合：随当前操作者变化，不进 base 缓存，由 _build_rendered_system_prompt 每条消息渲染
+    # M1: 追加 3 个三书摘要键（摘要按 actor 权限裁剪，属权限相关变量）
     _PERM_PROMPT_KEYS = frozenset({
         "{user_company}", "{user_company_type}", "{user_department}",
         "{user_level}", "{user_permission_level}", "{current_node_ids}",
         "{available_skills}",
+        "{project_brief}", "{rule_brief}", "{system_brief}",
     })
 
     def _build_session_prompt_base(self) -> str:
@@ -334,6 +347,7 @@ class SessionAgent:
 
         # ② LLM 意图识别 + WorkItem 拆分（续接模式跳过）
         if continue_wi:
+            self._pending_plans = None  # 续接不走编排，清空上一轮残留计划
             work_items = [continue_wi]
         else:
             work_items = await self._split_into_workitems(message)
@@ -357,10 +371,25 @@ class SessionAgent:
                 self._last_turn_workitems = [wi]
                 return self._reply(message, "确认处理完成。")
 
-        # ③ 经 Pipeline BUS 执行
-        for wi in work_items:
-            self.scheduler.enqueue(wi)
-        done = await self.scheduler.run_all_with_message(message, db_message_id=db_message_id, actor_snapshot=getattr(self, "_current_actor", None))
+        # ③ 经 Pipeline BUS 执行（M7：编排开启时走 run_dag；否则保持原顺序执行）
+        plans = getattr(self, "_pending_plans", None)
+        if plans:
+            self._pending_plans = None
+            done = await self.scheduler.run_dag(
+                plans,
+                message,
+                db_message_id=db_message_id,
+                actor_snapshot=getattr(self, "_current_actor", None),
+                max_depth=self.orchestrator.max_depth,
+                on_wi_done=self.orchestrator.on_wi_done,
+            )
+        else:
+            for wi in work_items:
+                self.scheduler.enqueue(wi)
+            done = await self.scheduler.run_all_with_message(
+                message, db_message_id=db_message_id,
+                actor_snapshot=getattr(self, "_current_actor", None),
+            )
         self._last_turn_workitems = done
 
         # ★ 多轮续接：检查是否有 WI 进入 WAITING_FOR_INPUT
@@ -544,118 +573,139 @@ class SessionAgent:
                          label, model)
         return data
 
-    async def _split_into_workitems(self, message: "StandardMessage") -> list[WorkItem]:
-        """Phase B: 基于 LLM 意图识别的 WorkItem 拆分。"""
-        content = message.content or ""
-        intent = await self._recognize_intent(message)
-        # ── 归档：意图识别段（BUS 之前，含 Prompt 注入信息）──
-        await self._append_archive_intent(intent)
+    def _build_workitem(self, intent: dict, subtask: dict | None = None) -> WorkItem:
+        """WI 物化工厂（供 SessionOrchestrator 回调用）。
 
-        # 当前操作者 user_id（群聊多用户权限越界修复）
-        actor_uid = getattr(self, "_current_actor", {}).get("user_id") or self.context.user_id
-
-        # M3: 分级兜底档位（仅 fallback WI 有意义；sop WI 不被读）
+        保留原有 output_spec / result_constraints / work_spec / 专家匹配 /
+        SOP-005 query_type 预填 逻辑，确保编排路径与 legacy 路径产出等价 WI。
+        """
         from ..workitem.langgraph_engine.agent.fallback_policy import FallbackPolicy
-        fallback_tier = FallbackPolicy.gate(getattr(self, "_current_actor", None)).value
 
-        sop_id = intent.get("sop_id")
-        is_compound = intent.get("is_compound", False)
-        sub_tasks = intent.get("sub_tasks") or []
-        fallback = intent.get("fallback", False)
-        confidence = intent.get("confidence", "none")
+        actor = getattr(self, "_current_actor", None)
+        actor_uid = (actor or {}).get("user_id") or self.context.user_id
+        content = str(intent.get("user_input") or "")
+        sub = subtask if isinstance(subtask, dict) else None
 
-        logger.info(
-            "Session[%s] intent: sop=%s conf=%s compound=%s fallback=%s sub_tasks=%d",
-            self.conversation_id, sop_id, confidence, is_compound, fallback, len(sub_tasks),
-        )
+        sop_id = (sub.get("sop_id", intent.get("sop_id")) if sub else intent.get("sop_id"))
+        is_fallback = bool(intent.get("fallback")) or not sop_id
 
-        # SYS-confirm
-        if sop_id == "SYS-confirm":
-            action = (intent.get("data") or {}).get("action", "confirm")
-            pending_event = self._get_pending_event()
-            if pending_event:
-                wi = WorkItem(
-                    session_id=self.conversation_id,
-                    user_input=content,
-                    user_id=actor_uid,
-                    sop_id="SYS-confirm",
-                    intent_type="sop",
-                    priority=0,
-                )
-                setattr(wi, "_confirm_action", action)
-                setattr(wi, "_confirm_event_id", pending_event.id)
-                return [wi]
-            else:
-                return [WorkItem(
-                    session_id=self.conversation_id,
-                    user_input=content,
-                    user_id=actor_uid,
-                    sop_id=None,
-                    intent_type="fallback",
-                    fallback_tier=fallback_tier,
-                    priority=1,
-                )]
-
-        if fallback or not sop_id:
+        if is_fallback:
             wi = WorkItem(
                 session_id=self.conversation_id,
                 user_input=content,
                 user_id=actor_uid,
                 sop_id=None,
                 intent_type="fallback",
-                fallback_tier=fallback_tier,
+                fallback_tier=FallbackPolicy.gate(actor).value,
                 priority=1,
             )
-            wi.output_spec = self._derive_output_spec(intent, None)  # M1
-            wi.result_constraints = self._derive_constraints(intent)
-            wi.work_spec = self._build_work_spec(
-                intent, wi.sop_id, content, wi.output_spec, wi.result_constraints,
-                getattr(wi, "required_tools", set()))
-            return [wi]
+        else:
+            wi = WorkItem(
+                session_id=self.conversation_id,
+                user_input=(sub.get("user_input", content) if sub else content),
+                user_id=actor_uid,
+                sop_id=sop_id,
+                intent_type="sop",
+                priority=(sub.get("priority", 1) if sub else 1),
+            )
 
-        if is_compound and sub_tasks:
-            items = []
-            for i, st in enumerate(sub_tasks[:5]):
-                wi = WorkItem(
-                    session_id=self.conversation_id,
-                    user_input=st.get("user_input", content) if isinstance(st, dict) else content,
-                    user_id=actor_uid,
-                    sop_id=st.get("sop_id", sop_id) if isinstance(st, dict) else sop_id,
-                    intent_type="sop",
-                    priority=st.get("priority", 1) if isinstance(st, dict) else 1,
-                )
-                wi.output_spec = self._derive_output_spec(st if isinstance(st, dict) else intent,
-                                                          wi.sop_id)  # M1
-                wi.result_constraints = self._derive_constraints(intent)
-                wi.work_spec = self._build_work_spec(
-                    intent, wi.sop_id, st.get("user_input", content) if isinstance(st, dict) else content,
-                    wi.output_spec, wi.result_constraints,
-                    getattr(wi, "required_tools", set()))
-                items.append(wi)
-            return items
-
-        wi = WorkItem(
-            session_id=self.conversation_id,
-            user_input=content,
-            user_id=actor_uid,
-            sop_id=sop_id,
-            intent_type="sop",
-            priority=1,
-        )
-        wi.output_spec = self._derive_output_spec(intent, sop_id)  # M1
+        spec_source = sub or intent
+        wi.output_spec = self._derive_output_spec(spec_source, wi.sop_id)
         wi.result_constraints = self._derive_constraints(intent)
         wi.work_spec = self._build_work_spec(
-            intent, wi.sop_id, content, wi.output_spec, wi.result_constraints,
-            getattr(wi, "required_tools", set()))
-        # 专家Agent: SOP 绑定专家 → 设置 expert_id + expert_required
-        self._match_expert(wi, sop_id)
-        # M2: 路由派生的 query_type 预填给 SkillExecutor，省掉 step-01 的 LLM 参数提取
-        query_type = intent.get("query_type")
-        if sop_id == "SOP-005-QRY" and query_type:
-            setattr(wi, "_prefilled_params", {"query_type": query_type})
-            logger.debug("Session[%s] prefilled query_type=%s for SOP-005-QRY",
-                         self.conversation_id, query_type)
-        return [wi]
+            intent, wi.sop_id or "", wi.user_input,
+            wi.output_spec, wi.result_constraints,
+            getattr(wi, "required_tools", set()),
+        )
+
+        if not is_fallback:
+            self._match_expert(wi, sop_id)
+            query_type = intent.get("query_type")
+            if sop_id == "SOP-005-QRY" and query_type:
+                setattr(wi, "_prefilled_params", {"query_type": query_type})
+                logger.debug("Session[%s] prefilled query_type=%s for SOP-005-QRY",
+                             self.conversation_id, query_type)
+        return wi
+
+    async def _split_into_workitems(self, message: "StandardMessage") -> list[WorkItem]:
+        """Phase B: 基于 LLM 意图识别的 WorkItem 拆分（M7：经编排器规划）。"""
+        content = message.content or ""
+        intent = await self._recognize_intent(message)
+        # ── 归档：意图识别段（BUS 之前，含 Prompt 注入信息）──
+        await self._append_archive_intent(intent)
+        # 供编排器做顺序语义判定（orchestrator 不持有原始消息）
+        intent.setdefault("user_input", content)
+
+        actor = getattr(self, "_current_actor", None)
+        actor_uid = (actor or {}).get("user_id") or self.context.user_id
+
+        # SYS-confirm 不走编排（需保留 _confirm_action / _confirm_event_id）
+        if intent.get("sop_id") == "SYS-confirm":
+            self._pending_plans = None
+            return self._split_sys_confirm(intent, content, actor_uid)
+
+        # 编排关闭 → 保持原路径（回退开关）
+        if not self.orchestrator.enabled:
+            self._pending_plans = None
+            return self._split_flat(intent, content, actor_uid)
+
+        logger.info(
+            "Session[%s] intent: sop=%s conf=%s compound=%s fallback=%s sub_tasks=%d",
+            self.conversation_id, intent.get("sop_id"), intent.get("confidence"),
+            intent.get("is_compound"), intent.get("fallback"), len(intent.get("sub_tasks") or []),
+        )
+
+        from ..workitem.langgraph_engine.agent.fallback_policy import FallbackPolicy
+        fallback_tier = FallbackPolicy.gate(actor).value
+        try:
+            plans = await self.orchestrator.plan(
+                intent, self.context, actor, fallback_tier=fallback_tier,
+            )
+        except Exception as e:
+            logger.warning("Session[%s] orchestrator.plan failed, fallback to flat: %s",
+                           self.conversation_id, e, exc_info=True)
+            self._pending_plans = None
+            return self._split_flat(intent, content, actor_uid)
+
+        work_items = [p.wi for p in plans]
+        if not work_items:
+            self._pending_plans = None
+            return []
+        self._pending_plans = plans
+        return work_items
+
+    def _split_sys_confirm(self, intent: dict, content: str, actor_uid: str) -> list[WorkItem]:
+        """SYS-confirm 分支（保持原行为，不走编排器）。"""
+        action = (intent.get("data") or {}).get("action", "confirm")
+        pending_event = self._get_pending_event()
+        if pending_event:
+            wi = WorkItem(
+                session_id=self.conversation_id, user_input=content, user_id=actor_uid,
+                sop_id="SYS-confirm", intent_type="sop", priority=0,
+            )
+            setattr(wi, "_confirm_action", action)
+            setattr(wi, "_confirm_event_id", pending_event.id)
+            return [wi]
+        from ..workitem.langgraph_engine.agent.fallback_policy import FallbackPolicy
+        return [WorkItem(
+            session_id=self.conversation_id, user_input=content, user_id=actor_uid,
+            sop_id=None, intent_type="fallback",
+            fallback_tier=FallbackPolicy.gate(getattr(self, "_current_actor", None)).value,
+            priority=1,
+        )]
+
+    def _split_flat(self, intent: dict, content: str, actor_uid: str) -> list[WorkItem]:
+        """Legacy flat 拆分（保留作为编排关闭 / 编排失败的回退路径）。"""
+        if intent.get("fallback") or not intent.get("sop_id"):
+            return [self._build_workitem(intent, None)]
+        if intent.get("is_compound") and intent.get("sub_tasks"):
+            items = [
+                self._build_workitem(intent, st)
+                for st in (intent.get("sub_tasks") or [])[:5]
+                if isinstance(st, dict)
+            ]
+            return [wi for wi in items if wi is not None]
+        return [self._build_workitem(intent, None)]
 
     @staticmethod
     def _match_expert(wi: "WorkItem", sop_id: str) -> None:

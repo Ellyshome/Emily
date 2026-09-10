@@ -32,7 +32,10 @@ class FallbackPolicy:
     """
 
     # 基础兜底工具集（R3/R6）：普惠只读，零写。
-    _BASIC_TOOLS: frozenset[str] = frozenset({"knowledge_search", "chat_archive"})
+    # M2: meta_cognition_read 为只读检索（三书全文），归入普惠只读集。
+    _BASIC_TOOLS: frozenset[str] = frozenset({
+        "knowledge_search", "chat_archive", "meta_cognition_read",
+    })
 
     # 高级兜底只读集：现 tool_adapter.FALLBACK_SAFE_TOOLS 迁移至此（单一事实源）。
     _ADVANCED_READ_TOOLS: frozenset[str] = frozenset({
