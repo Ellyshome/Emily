@@ -14,7 +14,7 @@ CREATE TABLE IF NOT EXISTS project_nodes (
     node_id         VARCHAR(100) NOT NULL,
     node_name       VARCHAR(500) NOT NULL,
     owner_dept_id   VARCHAR(100) NOT NULL DEFAULT '项目总',
-    related_company_id VARCHAR(100) NOT NULL DEFAULT '建设单位',
+    related_company_id VARCHAR(100) NOT NULL DEFAULT '',
     deadline        VARCHAR(50) NOT NULL,
     remark          TEXT DEFAULT '',
     creator_id      VARCHAR(100) NOT NULL,

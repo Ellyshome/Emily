@@ -123,6 +123,41 @@ def init(config_data: dict | None = None, rag_provider=None) -> "EmilyCore":
         except Exception as e:
             _logger.warning("tool_registry auto-seed failed: %s", e)
 
+    # 启动自检：存在"未登记参与单位"的节点 → 告警
+    # 归属口径（docs/Spec/项目归属与可见范围_Spec.md）：可见范围由「企业参与节点」推导，
+    # 未登记 ⇒ 该节点对非管理单位用户不可见；整项目未登记 ⇒ 所有人都看不到态势，且不报错。
+    if db_ready:
+        try:
+            from .repositories.participation_repo import ParticipationRepo
+            _gaps = ParticipationRepo.projects_with_unregistered_nodes()
+            if _gaps:
+                _logger.warning(
+                    "参与单位登记不全：%d 个项目存在未登记参与单位的节点，"
+                    "这些节点对非管理单位用户不可见 → %s",
+                    len(_gaps),
+                    "; ".join(
+                        f"{m['project_name'] or m['project_id']}({m['unregistered_nodes']}节点未登记)"
+                        for m in _gaps[:5]
+                    ),
+                )
+        except Exception as e:
+            _logger.debug("participation self-check skipped: %s", e)
+
+    # 启动自检：related_company_id 必须是 company_info.id（禁止中文标签/名称）
+    if db_ready:
+        try:
+            from .services.company_resolver import CompanyResolver
+            _bad_refs = CompanyResolver.find_invalid_node_company_refs()
+            if _bad_refs:
+                _logger.warning(
+                    "单位标识不规范：%d 个节点的 related_company_id 不是合法单位 ID"
+                    "（应为 company_info.id）→ 示例：%s",
+                    len(_bad_refs),
+                    "; ".join(f"{b['node_id']}={b['related_company_id']}" for b in _bad_refs[:5]),
+                )
+        except Exception as e:
+            _logger.debug("company-ref self-check skipped: %s", e)
+
     # 自动运行清单中 auto_run: bootstrap 的脚本（fail-open，启动时自检）
     try:
         from .scripts.registry import load_registry

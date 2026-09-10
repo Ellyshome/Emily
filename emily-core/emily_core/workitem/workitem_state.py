@@ -3,9 +3,10 @@
 WorkItem 是最小任务执行单元。状态机定义了合法转换；调度器在岔路口决策。
 
     CREATED → PLANNING → EXECUTING → DONE
-                            │
-                            ├── WAITING_CONFIRM → EXECUTING（用户回复后恢复）
-                            └── FAILED（不可恢复错误，终态）
+                  │           │
+                  │           ├── WAITING_FOR_INPUT → EXECUTING（用户回复后恢复）
+                  │           └── FAILED（不可恢复错误，终态）
+                  └── SKIPPED（编排中前置未成功，终态）
 
 注：状态机细节按蓝图说明"待后续根据使用需求逐步完善"，此处为基础骨架。
 """
@@ -24,13 +25,15 @@ class WorkItemState(Enum):
     WAITING_CONFIRM = "WAITING_CONFIRM"  # 挂起，等 Session-Agent 代理交互
     WAITING_FOR_INPUT = "WAITING_FOR_INPUT"  # 挂起等待用户补充信息（非终态）
     ABANDONED = "ABANDONED"                # 用户切换话题后放弃（终态）
+    SKIPPED = "SKIPPED"                    # 编排中前置 WI 未成功，后继跳过（终态）
     DONE = "DONE"                        # Node 4：成果总结完成（终态）
     FAILED = "FAILED"                    # 不可恢复错误（终态）
 
 
 # 合法状态转换表
 TRANSITIONS: dict[WorkItemState, list[WorkItemState]] = {
-    WorkItemState.CREATED:         [WorkItemState.PLANNING, WorkItemState.FAILED],
+    WorkItemState.CREATED:         [WorkItemState.PLANNING, WorkItemState.FAILED,
+                                    WorkItemState.SKIPPED],
     WorkItemState.PLANNING:        [WorkItemState.EXECUTING, WorkItemState.FAILED],
     WorkItemState.EXECUTING:       [
         WorkItemState.DONE,
@@ -43,7 +46,11 @@ TRANSITIONS: dict[WorkItemState, list[WorkItemState]] = {
     WorkItemState.DONE:            [],   # 终态
     WorkItemState.FAILED:          [],   # 终态
     WorkItemState.ABANDONED:       [],   # 终态
+    WorkItemState.SKIPPED:         [],   # 终态
 }
 
 # 终态集合
-TERMINAL_STATES = frozenset({WorkItemState.DONE, WorkItemState.FAILED, WorkItemState.ABANDONED})
+TERMINAL_STATES = frozenset({
+    WorkItemState.DONE, WorkItemState.FAILED,
+    WorkItemState.ABANDONED, WorkItemState.SKIPPED,
+})

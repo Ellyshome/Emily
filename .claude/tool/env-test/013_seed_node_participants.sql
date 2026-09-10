@@ -104,6 +104,25 @@ JOIN users u ON u.username = m.username AND u.is_deleted = false
 WHERE pn.project_id = (SELECT id FROM projects WHERE code = 'EMERALD-01' AND is_deleted = false LIMIT 1);
 
 -- ============================================================
+-- 3b. 同步写入「企业参与节点」(node_participant_companies)
+--     权威口径：人员的项目参与由「其所属企业参与节点」推导，
+--     故测试环境必须落这张表，否则用户将没有参与项目/可见节点。
+-- ============================================================
+DELETE FROM node_participant_companies;
+
+INSERT INTO node_participant_companies (id, node_id, company_id, added_by, added_at)
+SELECT uuid_generate_v4()::text, sub.node_id, sub.company_id, 'system_seed', NOW()::text
+FROM (
+    SELECT DISTINCT pn.node_id, u.company AS company_id
+    FROM _np_mapping m
+    JOIN project_nodes pn ON pn.node_id LIKE m.node_pattern
+    JOIN users u ON u.username = m.username AND u.is_deleted = false
+    WHERE u.company IS NOT NULL
+      AND u.company <> ''
+      AND pn.project_id = (SELECT id FROM projects WHERE code = 'EMERALD-01' AND is_deleted = false LIMIT 1)
+) sub;
+
+-- ============================================================
 -- 4. 验证
 -- ============================================================
 SELECT '--- 节点参与人分配概览 ---' AS section;

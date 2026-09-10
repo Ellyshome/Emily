@@ -198,6 +198,22 @@ scripts:
     timeout_seconds: 120
     scheduling_note: "纯手动"
 
+  dump_meta_cognition:
+    description: "dump_meta_cognition.py — 按 book(+query) 打印三书裁剪后全文（校验 meta_cognition_read 的裁剪口径与输出规模）。"
+    category: system_maintenance
+    source_path: scripts/dump_meta_cognition.py
+    invocation: uv run python scripts/dump_meta_cognition.py {args}
+    check_arg: null
+    run_args: []
+    auto_run: null
+    auto_run_args: []
+    writes_db: false
+    aggregation_parent: null
+    status: active
+    entrypoint: null
+    timeout_seconds: 120
+    scheduling_note: "纯手动"
+
   three_books_dump:
     description: "三书产出观察工具 —— 导出世界书/规则书/认知书内容与 manifest（--rebuild 重建并落 DB）"
     category: system_maintenance
@@ -453,6 +469,42 @@ scripts:
     entrypoint: null
     timeout_seconds: 60
     scheduling_note: "纯手动"
+    params:
+      - name: query
+        type: str
+        positional: true
+        label: 查询语句
+        help: 自然语言查询；勾选「仅探测」时可留空
+      - name: top-k
+        type: int
+        label: 返回条数
+        help: 默认取 config.kb_top_k（5），handler 内限上限 10
+        min: 1
+        max: 10
+      - name: stage
+        type: enum
+        label: 项目阶段
+        help: 按阶段过滤检索范围
+        choices: ["投资决策", "专项审查", "规划报建", "招标采购", "施工建设", "竣工验收", "交付售后"]
+      - name: role
+        type: enum
+        label: 岗位
+        help: 按岗位过滤检索范围
+        choices: ["项目总经理", "设计部经理", "开发部经理", "工程部经理", "成本部经理",
+                  "营销部经理", "财务经理", "客服部经理", "行政人事经理",
+                  "投资拓展主管", "法务主管", "审计主管",
+                  "建筑设计主管", "精装设计主管", "景观设计主管", "给排水设计主管",
+                  "强弱电设计主管", "暖通设计主管",
+                  "规划报建专员", "工程报建专员", "配套报建专员",
+                  "土建工程主管", "精装工程主管", "景观工程主管", "水电工程主管",
+                  "安全总监", "资料员",
+                  "土建造价主管", "安装造价主管", "招标采购专员", "合同管理员",
+                  "策划师", "销售主管", "置业顾问", "渠道专员",
+                  "会计", "出纳", "维保主管", "产证专员", "行政专员", "人事专员"]
+      - name: probe
+        type: flag
+        label: 仅探测连通性
+        help: 只检查配置 + TEI 可达性，不发检索请求
 
   register_api:
     description: "register_api.py — API 注册器。"
@@ -501,6 +553,19 @@ scripts:
     entrypoint: null
     timeout_seconds: 60
     scheduling_note: "纯手动"
+    params:
+      - name: dry-run
+        type: flag
+        label: 预览模式
+        help: 只做只读检查，不触碰实际连接
+      - name: json
+        type: flag
+        label: JSON 输出
+        help: 以 JSON 结构输出结果，便于机器解析
+      - name: db-url
+        type: str
+        label: 数据库 URL
+        help: 留空则用 EMILY_DATABASE_URL 环境变量
 
   toolmgr:
     description: "ToolManager CLI — 业务工具 smoke 测试与调试"
@@ -598,6 +663,22 @@ scripts:
     timeout_seconds: 60
     scheduling_note: "纯手动"
 
+  backfill_node_company_and_participants:
+    description: "backfill_node_company_and_participants.py — 节点单位标识归一（中文→company_info.id）+ 未登记节点补参与单位（幂等）。"
+    category: system_maintenance
+    source_path: scripts/backfill_node_company_and_participants.py
+    invocation: uv run python scripts/backfill_node_company_and_participants.py {args}
+    check_arg: --dry-run
+    run_args: []
+    auto_run: null
+    auto_run_args: []
+    writes_db: true
+    aggregation_parent: null
+    status: active
+    entrypoint: null
+    timeout_seconds: 60
+    scheduling_note: "纯手动"
+
   rag_visible_check:
     description: "rag_visible_check.py — 手动校验某用户可见文件集与检索结果。"
     category: system_maintenance
@@ -661,6 +742,37 @@ scripts:
     entrypoint: null
     timeout_seconds: 60
     scheduling_note: "纯手动"
+    params:
+      - name: dry-run
+        type: flag
+        label: 打印 graph 结构
+        help: 输出 5 节点 StateGraph 拓扑，不执行
+        group: mode
+        required: true
+      - name: mock
+        type: flag
+        label: 正常路径 mock
+        help: 走一遍成功路径
+        group: mode
+        required: true
+      - name: mock-failure
+        type: flag
+        label: 失败纠错路径 mock
+        help: 触发 error_analysis 纠错闭环
+        group: mode
+        required: true
+      - name: mock-permission
+        type: flag
+        label: 权限失败 abort 路径
+        help: 验证权限拒绝时的中止行为
+        group: mode
+        required: true
+      - name: status
+        type: flag
+        label: 查看引擎配置
+        help: 打印 workitem_engine / langgraph_max_replan
+        group: mode
+        required: true
 
   rag_batch_test:
     description: "rag_batch_test.py — RAG 批量入库 + 回归查询测试脚本。"
@@ -677,6 +789,25 @@ scripts:
     entrypoint: null
     timeout_seconds: 600
     scheduling_note: "纯手动"
+    params:
+      - name: top-k
+        type: int
+        label: 检索返回条数
+        help: 默认 5 条
+        min: 1
+        max: 10
+      - name: probe
+        type: flag
+        label: 仅检查连通性
+        help: 不进行入库和查询，只确认 RAG 基座是否可达
+      - name: query-only
+        type: flag
+        label: 仅查询测试
+        help: 跳过入库环节，只跑回归查询
+      - name: clean
+        type: flag
+        label: 入库前清理旧数据
+        help: 先删除已有关键词对应的知识块，再重新入库（⚠ 写库操作需二次确认）
 
   pdfread:
     description: "pdfread.py — AI 友好的 PDF 文本提取 CLI。"
@@ -709,6 +840,22 @@ scripts:
     entrypoint: null
     timeout_seconds: 60
     scheduling_note: "一次性"
+
+  migrate_world_book_segments:
+    description: "migrate_world_book_segments.py — 为存量世界书补 structure.node_segments（重跑 Builder，幂等：version +1）。"
+    category: system_maintenance
+    source_path: scripts/migrate_world_book_segments.py
+    invocation: uv run python scripts/migrate_world_book_segments.py {args}
+    check_arg: --dry-run
+    run_args: []
+    auto_run: null
+    auto_run_args: []
+    writes_db: true
+    aggregation_parent: null
+    status: active
+    entrypoint: null
+    timeout_seconds: 60
+    scheduling_note: "纯手动（幂等，可重复执行）"
 
 aggregations:
   evolution.py:

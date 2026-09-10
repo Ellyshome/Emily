@@ -1,0 +1,871 @@
+---
+name: req-verify
+description: >
+---
+
+# Emily 模块验证测试（req-verify）
+
+> **最高约束**：本 skill 的产出必须符合 [项目宪法](../_shared/constitution.md)。尤其 §1.3（追溯闭合）、§2（架构铁律 C0~C11）、§3（质量红线 Q1~Q5）。测试报告须含"宪法合规"判定。
+
+> **你的角色**：
+>
+> | 角色 | 固定/自适应 | 说明 |
+> |------|------------|------|
+> | **作为Emily开发者资深架构师** | 🔒 固定 | 深刻理解Emily项目架构（双容器+Session主线+LangGraph 5节点执行引擎）、53表数据模型、分层约束。测试时以Emily真实架构为参照，能识别"表面上通过但架构上不合规"的问题 |
+> | **{AI根据需求自行判断}** | 🔄 自适应 | 根据测试对象的领域和特征，自行判断需要叠加哪些专业视角（如资深测试工程师、系统集成专家、安全审计员等），在测试报告开头声明 |
+>
+> **"作为Emily开发者资深架构师"是不可跳过的根基角色**。在此基础上，根据测试对象自行判断并声明额外角色。架构师视角确保你不只测"功能对不对"，还测"架构上合不合规"。
+
+根据测试对象的特征，你可以额外切换以下视角进行补充测试：
+
+| 视角 | 何时启用 | 关注重点 |
+|------|---------|---------|
+| **系统集成测试** | 模块涉及多子系统交互 | 接口契约、事件总线、数据流完整性 |
+| **安全与权限** | 模块涉及鉴权/授权/审计 | 权限边界、越权尝试、审计日志 |
+| **性能与稳定性** | 模块涉及后台调度/高并发 | 资源泄漏、超时处理、重启恢复 |
+| **用户体验** | 模块涉及 IM 对话交互 | 回复清晰度、多轮引导、错误提示可理解性 |
+
+---
+
+## 1. 核心原则
+
+| # | 原则 | 说明 |
+|---|------|------|
+| 1 | **实战优先** | 测试必须在真实 Docker 环境中执行。不依赖 mock 假设，不凭空判断"应该能通过" |
+| 2 | **证据驱动** | 每个测试结论必须有具体的回复文本、API 响应体、数据库记录、或日志行作为支撑 |
+| 3 | **完整覆盖** | 覆盖正常路径、边界条件、异常场景、权限边界、状态机非法流转。不留盲区 |
+| 4 | **可复现** | 测试报告包含完整的环境信息、操作步骤、验证命令。其他人拿到报告可以复现 |
+| 5 | **无残留** | 测试完成后清理所有临时脚本、测试数据桩、文件系统预设。不给生产环境留垃圾 |
+| 6 | **实事求是** | 不美化结果。失败就是失败，跳过就是跳过（注明原因）。不编造"PASS" |
+| 7 | **规格回验** | 不止判"功能对不对"，更判"**规格是否被满足**"。逐条 `US-xx` 输出规格符合度，不满足即不合格——这是 SDD Verify 阶段的核心 |
+| 8 | **追溯闭合** | 每条 TC 回指它验证的 `US-xx`；每个 US 至少被一条 TC 覆盖；产出"未覆盖规格"清单（宪法 §1.3） |
+| 9 | **宪法合规** | 测试中同步核对宪法 §2 铁律（C0~C11）与 §3 红线（Q1~Q5）是否被违反，在报告中单列"宪法合规"判定 |
+
+---
+
+## 2. 触发条件
+
+### 使用此 skill 的场景
+
+- 用户提供了模块目录（通常位于 `需求/{模块名}/`），需要对其进行验证测试
+- 用户说"帮我测试一下 XX 模块"、"验证一下 XX 功能"、"这个模块开发完了，测一下"
+- 用户使用 `/req-verify` 或 `/验证测试` 命令
+- 用户指定了 PRD（规格）+ 实施计划 + 实施记录（部分或全部），期望验收
+
+### 不使用此 skill 的场景
+
+- 只是审核需求文档本身 —— 用 `req-review`
+- 制定实施计划 —— 用 `req-plan`
+- 审查代码 diff / PR —— 用 `code-review`
+- 单独发送一条测试消息看回复 —— 直接用 emy-test CLI（`uv run python .claude/skills/emy-test/cli.py --message "..."`）
+- 离线烟雾测试（无 Docker）—— 直接运行 `uv run python scripts/smoke_test.py`
+
+---
+
+## 3. 统一命名与追溯约定
+
+本项目需求流水线（需求→规格→计划→测试报告）使用统一文件命名规则，便于各阶段文档定位：
+
+**命名格式**：`{模块标识}_{阶段}_V{版本号}.md`
+
+| 阶段标记 | 含义 | 产出方 |
+|---------|------|--------|
+| `需求` | 原始需求文档 | 人工编写 |
+| `PRD` | **规格（Spec）**——含 `US-xx` / `AC-xx` | req-review |
+| `计划` | 概要设计计划（SD）——含 `Mx` 与 US 映射 | req-plan |
+| `测试报告` | 验证结果 + 规格符合度 | req-verify（本技能） |
+
+**版本号规则**：每份文档独立版本，从 V1 起始。同一模块同阶段产出新版时自动递增（V1→V2→V3...）。
+
+**模块标识提取**：
+1. 若输入文档遵循命名约定（如 `全景节点图V2_需求_V1.md`），提取 `_需求_` 之前的部分作为模块标识
+2. 若为旧格式文件名，以文档所在目录名作为模块标识
+3. 模块标识在整个流水线中保持稳定
+
+**追溯约定（本技能的责任）**：测试报告必须闭合 `US-xx → Mx → TCxx` 链条：
+
+| 追溯项 | 本技能须产出 | 校验规则（宪法 §1.3） |
+|--------|-------------|---------------------|
+| TC → US | 每条测试用例声明它回验的 `US-xx` | 每个 US 至少被一条 TC 覆盖 |
+| US → 结论 | 逐条 US 输出规格符合度（满足/部分/不满足） | 未满足项须有证据与复现 |
+| 未覆盖清单 | "未被任何 TC 覆盖的 US"清单 | 有遗漏必须显式列出，不得沉默 |
+
+**文件版本声明**：报告头部必须声明 `基于 PRD：{文件名}` 与 `基于计划：{文件名}`，否则视为失效。
+
+**流水线示例**：
+```
+全景节点图V2_需求_V1.md       ← 人工编写
+全景节点图V2_PRD_V1.md        ← req-review 产出（US/AC）
+全景节点图V2_计划_V1.md       ← req-plan 产出（Mx ↔ US）
+全景节点图V2_测试报告_V1.md   ← req-verify 产出（TC ↔ US/M + 规格符合度）
+```
+
+---
+
+## 4. 测试流程
+
+### Step 1：定位并读取输入文档
+
+1. 根据用户提供的路径确定模块目录。如果用户只给模块名，用 Glob 在 `需求/` 下搜索：
+   ```
+   Glob: 需求/{模块名}/**/*.md
+   ```
+2. 在该目录中按统一命名约定定位以下文档（按优先级）：
+   - `*_PRD_V*.md` → **规格（PRD）**（**必读**，优先取最新版本）——追溯基准，从中提取 `US-xx` / `AC-xx` 全清单
+   - `*_计划_V*.md` 或 `*实施计划*.md` → **实施计划**（必读，如有）——从中提取 `Mx ↔ US` 映射与模块验收检测命令
+   - `*_需求_V*.md` 或 `*需求*.md` → **原始需求**（参考）
+   - `*实施记录*.md` 或 `*记录*.md` → **实施记录**（如有则读）
+   - `*_测试报告_V*.md` 或 `*测试报告*.md` → 已有测试报告（避免重复测试）
+3. 用 Read 工具**完整阅读**所有找到的文档。不要跳跃、不要只读摘要。
+4. 从文档中提取以下关键信息：
+   - **规格基准**：PRD 的完整 `US-xx` 清单 + 每条 US 的验收标准（AC）——这是"规格符合度"判定的对象
+   - **约束基准**：PRD §4.4 的**约束型技术决策**（必须/不得类）与 §4.1 触碰的铁律——这是"约束合规"的核对对象
+   - **实现映射**：计划中各 `Mx` 实现哪些 `US-xx`（用于定位测试靶点）、计划的"PRD 约束落实"表、各模块的验收检测命令
+   - 模块的核心功能边界（做什么、不做什么）
+   - 涉及的数据表/API 端点/配置项
+   - 状态机定义（如有）——合法流转、终态、非法流转
+   - 权限模型（如有）——不同角色的访问边界
+   - 已知限制或待修复项
+5. **若找不到 PRD**：向用户报告搜索路径与结果。可退而用原始需求文档，但必须在报告中标注"**无规格基准，无法产出规格符合度**"，此报告的追溯链不完整
+
+> **如果找不到任何文档**：向用户报告具体搜索路径和结果，询问正确的文档位置。不凭猜测测试。
+
+### Step 2：检查 Docker 环境
+
+在开始测试前，必须确认 Docker 环境健康。按顺序执行以下检查：
+
+```bash
+# 1. 容器状态
+docker compose -f docker-compose-napcat.yml ps
+# → 预期：emily-core、emily-postgres、napcat、astrbot、maxkb 均为 Up
+
+# 2. Core 健康检查
+curl -s http://localhost:18080/api/v1/health
+# → 预期：{"status":"healthy","version":"..."}
+
+# 3. 数据库连通性
+docker exec emily-postgres pg_isready -U emily
+# → 预期：/var/run/postgresql:5432 - accepting connections
+
+# 4. LLM 配置状态（如需要 LLM 参与的测试）
+uv run python -c "from config_loader import get_llm_config; c = get_llm_config(); print('OK' if c.get('api_key') else 'MISSING')"
+# 从 .claude/skills/emy-test/ 目录执行
+```
+
+**环境异常处理**：
+
+| 异常 | 处理方式 |
+|------|---------|
+| 容器未运行 | **停止**。告知用户启动命令：`docker compose -f docker-compose-napcat.yml up -d`，不继续测试 |
+| Core 不健康 | 等待 10 秒后重试一次。仍不健康则查 `docker logs --tail 50 emily-core`，将错误报告用户，**停止** |
+| DB 不可达 | **停止**。报告 `pg_isready` 输出，建议检查容器网络 |
+| LLM 未配置 | **警告但继续**。记录在测试报告中。仅执行不依赖 LLM 的测试（直接 API 调用、DB 验证、日志检查）。依赖 LLM 对话的 emy-test 测试标记为 SKIP |
+| 部分容器缺失 | 仅需要 emily-core + emily-postgres。napcat/astrbot/maxkb 缺失不影响测试 |
+
+---
+
+### ⚠️ Step 2.5：强制检查 — 必须使用真实用户测试！
+
+**【踩坑固化】绝对不能随便造一个 `--sender-id` 就开始测试！** Session 构建时会查询 `users` 表加载权限数据，假用户会导致：
+1. PermissionSnapshot 全为空 → 权限校验永远走 fallback
+2. 降级到访客级别 → 测试的是"未登录用户"路径，与真实生产场景完全不符
+3. 依赖公司/部门/节点范围的业务逻辑全部无法触发
+
+**本步骤强制执行，不完成不得进入 Step 3！**
+
+```bash
+# 1. 从 users 表查询已有的活跃用户（选 permission_level 覆盖 1-5）
+docker exec emily-postgres psql -U emily -d emily -c "
+SELECT id, name, permission_level, company_id, department
+FROM users WHERE status = 'active' ORDER BY permission_level LIMIT 10;
+"
+
+# 2. 记录至少 3 类测试用户，后续所有 emy-test 必须使用这些 ID：
+#    - 访客级（level 1）：测试边界和拒绝逻辑
+#    - 执行级（level 2-3）：测试正常业务流程
+#    - 管理级（level 5）：测试管理员权限功能
+
+# 3. 如确无合适用户，才创建测试用户（必须补全 company_id/department 等关键字段）
+docker exec emily-postgres psql -U emily -d emily -c "
+INSERT INTO users (id, name, permission_level, status, company_id, department)
+SELECT 'test_verify_level3', '验证测试执行员', 3, 'active', 'company_001', '工程部'
+WHERE NOT EXISTS (SELECT 1 FROM users WHERE id = 'test_verify_level3');
+"
+```
+
+**测试约定**：后续所有 emy-test 命令中的 `--sender-id` 和 `--sender` 必须使用上述查询到的真实值，禁止使用 `test_xxx`、`user_123` 等不存在于 DB 的 ID。
+
+---
+
+### Step 3：分析测试范围，设计测试用例
+
+基于 Step 1 读取的文档，设计覆盖以下维度的测试用例：
+
+| 维度 | 覆盖内容 | 验证方式 |
+|------|---------|---------|
+| **规格符合度** | **逐条 `US-xx` 核对：PRD 的每条验收标准是否被满足**（SDD Verify 的核心维度） | 对照 PRD 的 US/AC 逐条判定 + 证据 |
+| **约束合规** | **逐条核对 PRD §4.4 的约束型技术决策是否被遵守**（"不得引入新依赖"→ 比对依赖清单；"必须复用 X"→ 检索是否确用了 X） | 依赖清单比对 / 代码检索 / 配置核对 |
+| **正常路径** | 核心业务流程从头到尾走通 | emy-test 对话 / 直接 API |
+| **边界条件** | 空输入、超长输入、特殊字符、极限值 | emy-test 对话 / 直接 API |
+| **异常场景** | 无效参数、权限不足、资源不存在、并发冲突 | emy-test 对话 + DB 验证 |
+| **状态机** | 所有合法流转路径验证、非法流转拒绝、终态不可变 | DB 直接查询 + API 响应 |
+| **数据持久化** | DB 写入字段完整性、审计日志、关联数据一致性 | DB 查询验证 |
+| **API 契约** | 状态码、响应格式、错误信息结构 | curl 直接调用 |
+| **权限控制** | 不同 permission_level 用户的访问边界；真实用户 vs 假用户的行为差异 | 切换不同 sender-id 的 emy-test 对话；至少覆盖 3 个权限级别（level 1 访客 / level 3 执行 / level 5 管理员）+ 假用户对照 |
+| **LLM 调用链与 prompt** | LLM 调用次数/顺序、model 分层、prompt 渲染正确性、token 消耗、cache 命中率、回复格式合法 | llm_trace.jsonl 分析（5f）+ Session 归档（5g）+ emy-test 回复 |
+| **Docker 运行时** | 日志无 ERROR、容器不重启、内存稳定 | docker logs 检查 |
+| **与已有系统协同** | 不破坏现有功能、事件兼容 | emy-test 回归消息 |
+
+**测试用例设计规范**——每条用例包含以下字段（**前两项为追溯字段，必填**）：
+
+```
+编号：TC{N} — {简短名称}
+回验的规格：US-{xx}（对应 AC-US-xx.y）      ← 追溯字段：此用例验证哪条需求
+靶向模块：M{N}                              ← 追溯字段：此用例打向哪个实现模块
+分类：{规格符合度 / 正常路径 / 边界条件 / 异常场景 / 权限控制 / 状态机 / API契约 / 数据持久化 / 运行时}
+前置条件：{执行此用例前需要满足的状态}
+输入/操作：{具体的消息文本、API 请求体、或 SQL 语句}
+预期行为：{系统应该产生什么响应/状态变化}
+验证方式：{emy-test / curl / psql / docker logs} + 具体命令/检查点
+通过标准：{怎样判断此用例通过——明确的、可判定的条件}
+```
+
+**设计后必做追溯自检**（宪法 §1.3）：
+1. 建立 `US → TC` 映射，确认**每个 US 至少被一条 TC 覆盖**
+2. 产出"未覆盖 US 清单"（无遗漏则写"无"）——此清单将原样进入报告
+3. 反向检查：有无 TC 不属于任何 US（越界用例）——有则删除或回退补规格
+4. 为 PRD §4.4 的每条约束型技术决策指定核对方式（依赖清单比对 / 代码检索 / 配置核对）；无约束则写"无"
+
+> **设计原则**：覆盖度优先于数量。10 条精准覆盖关键路径的用例好于 30 条浮于表面的用例。但必须覆盖所有上述维度，且**规格符合度维度不可省**。
+
+### Step 4：准备测试环境
+
+在正式执行测试前，进行环境准备和数据预埋。
+
+**4a. 环境快照**——记录测试前状态，供事后对比：
+
+```bash
+# 记录关键表行数
+docker exec emily-postgres psql -U emily -d emily -c "
+SELECT 'messages' as tbl, count(*) FROM messages
+UNION ALL SELECT 'events', count(*) FROM events
+UNION ALL SELECT 'tasks', count(*) FROM tasks
+UNION ALL SELECT 'plan_task_instances', count(*) FROM plan_task_instances
+UNION ALL SELECT 'plan_task_logs', count(*) FROM plan_task_logs;
+"
+
+# 记录 Docker 日志当前时间戳
+docker logs --tail 1 emily-core 2>&1
+```
+
+**4b. 数据库预埋**——如果测试需要特定的数据状态：
+
+- 利用已有种子脚本：`uv run python scripts/generate_test_data.py`
+- 或执行自定义 SQL：
+  ```bash
+  docker exec emily-postgres psql -U emily -d emily -c "INSERT INTO ... VALUES (...);"
+  ```
+- **记录所有预埋操作**，以便事后清理。格式：`{SQL语句} → {影响行数}`
+
+**4c. 文件系统预设**——如果测试需要触发文件相关逻辑：
+
+- 在 `emily-data/attachments/` 或指定位置放置测试文件
+- **记录文件路径和内容描述**，以便事后清理
+
+**4d. 确认测试用户存在**——emy-test 对话需要真实用户：
+
+```bash
+docker exec emily-postgres psql -U emily -d emily -c "SELECT id, name, permission_level FROM users LIMIT 10;"
+```
+
+如果测试需要特定权限级别的用户但不存在，先用 SQL INSERT 创建或通过种子脚本生成。
+
+### Step 5：执行测试
+
+按顺序执行 Step 3 设计的每条测试用例。**每条用例独立执行，记录实际结果后再进入下一条**。
+
+#### 5a. emy-test 对话测试
+
+用于验证 IM 消息交互流程。使用 emy-test CLI：
+
+```bash
+# 单轮测试
+uv run python .claude/skills/emy-test/cli.py --managed --llm --message "{消息内容}" --sender "{发送者名}" --sender-id "{发送者ID}"
+
+# 多轮测试（关键：同一 sender-id 保持会话上下文）
+# 第1轮
+uv run python .claude/skills/emy-test/cli.py --managed --llm --message "{第1轮消息}" --sender "{发送者名}" --sender-id "{同一ID}"
+# 第2轮
+uv run python .claude/skills/emy-test/cli.py --managed --llm --message "{第2轮消息}" --sender "{发送者名}" --sender-id "{同一ID}"
+
+# 群聊模拟（多人在同一群中交互）
+uv run python .claude/skills/emy-test/cli.py --managed --llm --message "{消息}" --sender "{发送者}" --sender-id "{ID}" --cid "{会话ID}"
+```
+
+**记录内容**：发送的消息文本 + 返回的回复文本（完整，不截断）。
+
+**超时处理**：emy-test 默认 120s 超时。如果超时，检查：
+1. `docker logs --tail 30 emily-core 2>&1 | grep -i error`
+2. 消息是否可能被 Core 忽略（群聊未 @bot、未被接管）
+3. 记录为 TIMEOUT，注明原因
+
+#### 5b. 直接 API 调用
+
+用于验证 REST API 端点（如全景节点 V2 API、健康检查等）：
+
+```bash
+curl -s -X GET "http://localhost:18080/api/v1/{endpoint}" -H "Content-Type: application/json"
+curl -s -X POST "http://localhost:18080/api/v1/{endpoint}" -H "Content-Type: application/json" -d '{...}'
+```
+
+**记录内容**：HTTP 状态码 + 响应体（完整 JSON）。
+
+#### 5c. 数据库验证
+
+用于确认数据持久化正确性：
+
+```bash
+docker exec emily-postgres psql -U emily -d emily -c "{SELECT/INSERT/UPDATE 语句}"
+```
+
+**记录内容**：查询返回的行/值。
+
+#### 5d. Docker 日志检查
+
+用于捕获运行时错误和异常：
+
+```bash
+# 查看最近 N 行日志
+docker logs --tail 100 emily-core 2>&1
+
+# 搜索特定关键词
+docker logs --tail 200 emily-core 2>&1 | grep -i "error\|exception\|traceback\|fail"
+```
+
+**记录内容**：出现的 ERROR/WARNING 行，或确认"无异常日志"。
+
+#### 5e. 权限测试
+
+切换不同用户身份发送相同消息，验证权限边界：
+
+```bash
+# 高权限用户
+uv run python .claude/skills/emy-test/cli.py --managed --llm --message "{操作}" --sender "{管理员}" --sender-id "admin_test"
+# 低权限用户
+uv run python .claude/skills/emy-test/cli.py --managed --llm --message "{相同操作}" --sender "{访客}" --sender-id "guest_test"
+```
+
+#### 5f. LLM 流量抓包分析
+
+用于验证 LLM 调用链、prompt 渲染内容、token 消耗、模型选择、cache 命中等。Emily 通过 mitmproxy 拦截 emily-core ↔ DeepSeek 通讯，落盘到 `emily-data/logs/`。**这是验证 LLM 相关需求（如 prompt 优化、模型分层、cache 命中）的核心证据来源。**
+
+**两种读取方式**：
+
+| 文件 | 用途 | 读取方式 |
+|------|------|---------|
+| `emily-data/logs/llm_trace.jsonl` | 机器读，逐行一条 LLM 调用 JSON | `docker exec mitmproxy tail -N /app/logs/llm_trace.jsonl`；或宿主 `Get-Content -Tail N` |
+| `emily-data/logs/llm_trace.md` | 人读全量，含完整 system prompt + 思维链 | Read 工具直接读（文件可能很大，建议先 tail 看规模） |
+
+**应用日志文件**：`emily-data/logs/emily_{YYYYMMDD}.log`——emily-core 应用日志（含 Session 生命周期、WorkItem 执行、Hook 触发等），补充 `docker logs` 看不到的文件级日志。
+
+**每条 jsonl 记录的关键字段及验证用途**：
+
+| 字段 | 验证用途 |
+|------|---------|
+| `messages[0].content` | system prompt 渲染后全文——验证占位符替换、前缀稳定性、prompt 重排效果 |
+| `messages[-1].content` | 当前用户消息——验证消息拼装（如时间戳注入位置） |
+| `model` | 调用的模型——验证 router_model/guardian_model 是否生效 |
+| `usage.prompt_tokens` / `completion_tokens` / `total_tokens` | token 消耗——验证降本效果 |
+| `usage.prompt_cache_hit_tokens` / `prompt_cache_miss_tokens` | DeepSeek cache 命中——验证前缀稳定性（需 trace 字段补全后） |
+| `finish_reason` | 结束原因——`stop` 正常 / `length` 截断 / `content_filter` 过滤 |
+| `reasoning_content` | reasoner 模型思维链——排查异常输出（如把答案吞进思维链导致 content 空） |
+| `response` / `content` | LLM 完整回复——验证输出格式（JSON 是否合法、路由结果是否正确） |
+
+**典型验证场景**：
+
+```powershell
+# 场景 1：查看最近 N 条 LLM 调用（验证调用链顺序：intent → planner → auditor → composer → auditor）
+docker exec mitmproxy tail -10 /app/logs/llm_trace.jsonl
+# → 预期：记录数和顺序符合业务流程（纯知识问答应只有 intent + reply，不应走完整 5 步 BUS）
+
+# 场景 2：验证 system prompt 在多轮调用间字节级稳定（cache 命中前提）
+# 用 Read 工具读 jsonl，对比同一 Session 两次 intent 调用的 messages[0].content
+# → 预期：完全相同（含长度、内容）
+
+# 场景 3：验证 router_model 生效（intent 用 flash，composer 用 pro）
+docker exec mitmproxy grep -o '"model":"[^"]*"' /app/logs/llm_trace.jsonl | sort | uniq -c
+# → 预期：model 分布符合预期设计
+
+# 场景 4：验证 cache 命中率（trace 字段补全后）
+docker exec mitmproxy tail -10 /app/logs/llm_trace.jsonl
+# → 逐行查 usage.prompt_cache_hit_tokens / prompt_tokens 比值，同 Session 第 2 条起应 >50%
+
+# 场景 5：排查 intent 返回空白（flash 把输出吞进 reasoning_content）
+# 读 jsonl 查 finish_reason + content 长度 + reasoning_content 长度
+# → 若 content 空但 reasoning 长，说明模型把答案吞进思维链，需触发 fallback
+
+# 场景 6：应用日志排查（Session 生命周期 / WorkItem 执行 / Hook 触发）
+Get-Content "emily-data\logs\emily_$(Get-Date -Format yyyyMMdd).log" -Tail 50
+# 或 docker logs --tail 50 emily-core 2>&1
+```
+
+**记录内容**：LLM 调用次数、各调用 model/tokens/耗时、cache 命中率、异常 finish_reason、system prompt 关键片段（用于证明前缀稳定或问题）。
+
+#### 5g. Session 归档分析
+
+用于验证 Session 上下文构建、权限加载、意图识别、多轮交互、WorkItem 执行的完整轨迹。每个会话归档为独立 md 文件。**这是验证"权限是否降级""路由是否正确""调用链是否合理"的直接证据——比 docker logs 更结构化、更完整。**
+
+**文件位置与命名**：`emily-data/session_archives/{YYYY-MM-DD}_{用户名}_{会话ID}.md`
+
+```powershell
+# 定位最近的归档文件
+Get-ChildItem "emily-data\session_archives" -Filter "*.md" | Sort-Object LastWriteTime -Descending | Select-Object -First 3
+# → 取最近 3 个归档，用 Read 工具完整阅读
+```
+
+**归档结构与验证用途**：
+
+| 章节 | 内容 | 验证用途 |
+|------|------|---------|
+| 头部元信息 | 会话ID、时间、人员、Session Prompt 模板名 + 字数 | 确认会话身份与模板加载 |
+| 会话快照 | 身份与组织（user_id/职位/企业/权限 level）、可见范围（授权节点/scopes/sop_allow/permission_version）、项目、能力（技能数/工具数/三书摘要字数） | **验证权限加载是否降级**——sop_allow 非空、level 匹配预期、授权节点非空。这是判断"假 sender-id 降级"的直接证据 |
+| 第 N 轮 · 时间 | 用户消息 → 🔍 意图识别（sop_id/confidence/Prompt 渲染信息）→ LLM 调用链（每次调用的 model/耗时/tokens/摘要/思维链）→ 回复 | 验证路由准确性、调用链合理性、回复质量、多轮上下文保持 |
+
+**典型验证场景**：
+
+| 场景 | 在归档中查找 | 预期 |
+|------|------------|------|
+| 权限未降级 | 会话快照段 | `sop_allow` 列表含多个 SOP-XXX；`权限: level N` 与预期一致（非 level 1 访客）；`授权节点` `scopes` 非空 |
+| 意图识别路由正确 | 🔍 意图识别段 | `sop=XXX` 与预期匹配；置信度 high/medium（非全 none） |
+| LLM 调用链合理 | LLM 调用 (N) 段 | 调用次数符合业务（纯问答 2 次，录入类 3-5 次）；各调用 model 符合分层设计 |
+| Prompt 渲染正确 | Prompt 行 | 渲染后字数合理；关键变量（sop_catalog/user_name/project_name）非"（无）" |
+| 回复质量 | 回复段 | 回复内容与业务一致；无幻觉；格式符合 IM 规范（无 Markdown） |
+| 多轮上下文保持 | 多轮段 | 后续轮次能引用前轮信息（如"刚才那个事件"） |
+
+**记录内容**：归档文件路径、会话快照关键字段（证明权限未降级）、意图识别结果、LLM 调用次数与链路、回复内容摘要。
+
+> **5f + 5g 与 5a-5e 的关系**：5a-5e 是"主动测试"（发消息/调 API/查 DB），5f-5g 是"被动观测"（看测试产生的 trace 和归档）。两者配合——5a 触发行为，5f/5g 提供证据。**任何 LLM 相关结论必须有 5f 或 5g 的证据支撑，不能只凭 emy-test 回复文本下判断。**
+
+### Step 6：生成测试报告
+
+测试全部执行完毕后，生成结构化 MD 测试报告。
+
+**文件命名规则**——遵循统一命名约定（见第 3 节）：
+1. **提取模块标识**：从 PRD/计划文件名中提取；旧格式用文档所在目录名
+2. **确定版本号**：Glob 搜索 `{模块标识}_测试报告_V*.md`，取最大版本号 +1；无已有文件则用 V1
+3. **最终文件名**：`{模块标识}_测试报告_V{版本号}.md`
+
+**保存位置**：模块目录（与 PRD/实施计划同目录）或 `测试文件/` 子目录（如已存在该子目录）。
+
+例如：测试 `全景节点图V2` 模块 → 输出 `全景节点图V2_测试报告_V1.md`
+
+**报告模板**——必须包含以下 10 个章节（见下方第 5 节；在原有 8 章基础上**新增"规格符合度"与"约束与合规"两章**）。
+
+### Step 7：清理测试产物
+
+**必须清理的内容**：
+
+| 类别 | 清理操作 |
+|------|---------|
+| Step 4 中预埋的 DB 测试数据 | 执行 DELETE/TRUNCATE 清理 SQL |
+| Step 4 中放置的文件系统桩 | 删除文件 |
+| 测试过程中创建的临时脚本 | 删除文件 |
+| 测试过程中修改的配置项 | 恢复原值 |
+
+**清理前需确认**：如果测试在**生产数据库**中执行，清理 SQL 需在报告中提供，由用户确认后执行。测试数据如不影响生产业务且用户明确表示保留，可跳过清理。
+
+**清理验证**：
+```bash
+# 验证清理后的行数是否回到测试前快照水平
+docker exec emily-postgres psql -U emily -d emily -c "SELECT count(*) FROM {受影响表};"
+```
+
+---
+
+## 5. 测试报告模板
+
+```markdown
+# {模块名} — 验证测试报告
+
+> **测试日期**：{YYYY-MM-DD}
+> **测试工程师**：AI 资深测试工程师（req-verify）
+> **基于 PRD（规格）**：[{模块名}_PRD_V{n}.md]({相对路径})　← 规格符合度的判定基准
+> **基于计划**：[{模块名}_计划_V{n}.md]({相对路径})
+> **参考**：[{实施记录}]({相对路径})（如有）
+> **宪法版本**：v1.0
+> **测试环境**：Docker Compose（emily-core + emily-postgres） | LLM: {model_name} | Core 版本: {version}
+> **测试结论**：{✅ 通过 / ⚠️ 有条件通过 / ❌ 未通过}
+
+---
+
+## 一、测试环境
+
+| 项目 | 说明 |
+|------|------|
+| Docker Compose | `docker-compose-napcat.yml` |
+| emily-core | FastAPI :18080，{healthy/unhealthy} |
+| emily-postgres | PostgreSQL，数据库 `emily` |
+| LLM | {deepseek-chat / 无LLM-Mock模式} |
+| Python | 3.12（uv） |
+| 预设数据 | {描述预埋的测试数据，如无则写"无"} |
+
+### 1.1 环境前置检查
+
+| 检查项 | 状态 | 详情 |
+|--------|------|------|
+| Docker 容器运行 | ✅/❌ | {容器列表和状态} |
+| Core 健康检查 | ✅/❌ | `curl /api/v1/health` 响应 |
+| LLM 可用性 | ✅/❌/⚠️ | API Key 配置状态 |
+| 数据库连通 | ✅/❌ | `pg_isready` 输出 |
+
+### 1.2 数据库基线快照
+
+| 表名 | 测试前行数 |
+|------|-----------|
+| messages | {N} |
+| events | {N} |
+| ... | ... |
+
+---
+
+## 二、测试计划
+
+### 2.1 测试目标与范围
+
+{2-3 句话：测试什么、覆盖范围、不覆盖范围及原因}
+
+### 2.2 测试用例设计
+
+| 编号 | 回验的规格 | 靶向模块 | 分类 | 测试用例 | 前置条件 | 输入/操作 | 预期行为 | 验证方式 |
+|------|-----------|---------|------|---------|---------|-----------|---------|---------|
+| TC01 | US-01 | M1 | 正常路径 | {描述} | {前置} | {输入} | {预期} | emy-test/API/DB/日志 |
+| TC02 | US-01 | M2 | 边界条件 | ... | ... | ... | ... | ... |
+
+### 2.3 测试覆盖矩阵
+
+| 覆盖维度 | 覆盖情况 | 对应用例 |
+|----------|---------|---------|
+| **规格符合度（逐条 US）** | ✅/⚠️/❌ | TC01-TC02 |
+| **约束合规（PRD §4.4）** | ✅/⚠️/❌ | TC03 |
+| 正常功能路径 | ✅/⚠️/❌ | TC03-TC05 |
+| 边界条件 | ✅/⚠️/❌ | TC06-TC07 |
+| 异常/错误处理 | ✅/⚠️/❌ | TC08-TC10 |
+| 权限控制 | ✅/⚠️/❌ | TC11-TC12 |
+| 状态机完整性 | ✅/⚠️/❌ | ... |
+| API 契约 | ✅/⚠️/❌ | ... |
+| 数据持久化 | ✅/⚠️/❌ | ... |
+| Docker 运行时 | ✅/⚠️/❌ | ... |
+
+### 2.4 追溯矩阵（US → 模块 → 用例）
+
+> 基准：PRD `{模块名}_PRD_V{n}.md` 的 US 清单。三向必须闭合（宪法 §1.3）。
+
+| US-ID | 需求一句话 | 实现模块 | 回验用例 | 覆盖状态 |
+|-------|-----------|---------|---------|---------|
+| US-01 | {…} | M1, M3 | TC01, TC02 | ✅ |
+| US-02 | {…} | — | — | ❌ 未覆盖：{原因} |
+
+**未覆盖规格清单**：{无 / 列出未被任何 TC 覆盖的 US 及原因}
+
+---
+
+## 三、规格符合度（Spec Compliance）
+
+> **SDD Verify 的核心产出**：不以"功能跑通了"为结论，而以"PRD 的每条 US/AC 是否被满足"为结论。
+
+### 3.1 逐条需求判定
+
+| US-ID | 验收标准 | 判定 | 证据 | 关联用例 |
+|-------|---------|------|------|---------|
+| US-01 | {AC-US-01.1 简述} | ✅ 满足 / 🟡 部分满足 / ❌ 不满足 | {回复文本/API响应/DB记录/日志行} | TC01 |
+
+### 3.2 未覆盖规格清单
+
+| US-ID | 为何未覆盖 | 影响 | 建议 |
+|-------|-----------|------|------|
+| {US-xx 或无} | {环境限制/未实现/超范围} | {…} | {…} |
+
+**规格符合度总评**：{N}/{M} 条 US 满足（满足率 {N/M*100}%）
+
+---
+
+## 四、测试结果
+
+### 4.1 结果汇总
+
+| 指标 | 数值 |
+|------|------|
+| 总测试用例数 | {N} |
+| 通过 | {P} |
+| 失败 | {F} |
+| 跳过（注明原因） | {S} |
+| 通过率 | {P/N * 100}% |
+
+### 4.2 逐项测试结果
+
+#### TC01：{用例名称}
+
+| 项目 | 内容 |
+|------|------|
+| **回验的规格** | US-{xx}（AC-US-xx.y） |
+| **靶向模块** | M{N} |
+| **分类** | {规格符合度/正常路径/边界/异常/权限/...} |
+| **输入** | {具体输入内容} |
+| **预期行为** | {预期描述} |
+| **实际行为** | {实际观察到的行为，含具体回复文本/API响应/DB数据} |
+| **验证方式** | {emy-test / curl / psql / docker logs} |
+| **验证命令** | `{实际执行的命令}` |
+| **结果** | ✅ PASS / ❌ FAIL / ⚠️ PASS_WITH_NOTES / ⏭️ SKIP |
+| **备注** | {如有特殊情况、偏差、或为什么 SKIP} |
+
+...（重复此结构，每条用例一个表格）
+
+---
+
+## 五、发现的 Bug 与问题
+
+| # | 严重程度 | 问题描述 | 复现步骤 | 影响范围 | 建议修复 |
+|---|---------|---------|---------|---------|---------|
+| B1 | 🔴高 / 🟡中 / 🟢低 | {描述} | {步骤} | {影响} | {建议} |
+
+> 如无 Bug，写：**"本次测试未发现新 Bug。"**
+
+---
+
+## 六、数据库状态验证
+
+### 6.1 关键表行数变化
+
+| 表名 | 测试前 | 测试后 | 变化 | 是否符合预期 |
+|------|--------|--------|------|-------------|
+| {表名} | {N} | {M} | +{D} | ✅/❌ |
+
+### 6.2 数据完整性抽查
+
+| 检查项 | SQL/方法 | 结果 | 说明 |
+|--------|---------|------|------|
+| {检查项描述} | `{SQL}` | ✅/❌ | {简要说明} |
+
+---
+
+## 七、运行时可观测性
+
+### 7.1 容器日志检查
+
+| 检查项 | 结果 | 详情 |
+|--------|------|------|
+| ERROR 级别日志 | {无 / 有 N 条} | {如有，列出关键行} |
+| WARNING 级别日志 | {无 / 有 N 条} | {如有，列出关键行} |
+| 容器重启 | {无 / 有} | — |
+| 内存使用 | {正常 / 异常增长} | `docker stats --no-stream` 快照 |
+
+### 7.2 LLM 调用链分析（基于 `emily-data/logs/llm_trace.jsonl`）
+
+| 检查项 | 结果 | 详情 |
+|--------|------|------|
+| 调用次数与顺序 | {符合/不符合预期} | {如 intent → planner → auditor → composer → auditor，共 N 次} |
+| model 分层 | {符合/不符合} | {intent 用 flash，composer 用 pro 等} |
+| token 消耗 | {正常/异常} | {总 tokens / 各调用 tokens 明细} |
+| cache 命中率 | {N%} | {prompt_cache_hit_tokens / prompt_tokens；同 Session 第 2 条起应 >50%} |
+| finish_reason | {正常/异常} | {是否有 length/content_filter 异常；是否有 content 空白 + reasoning 长} |
+| prompt 渲染 | {正确/错误} | {占位符是否替换、前缀是否字节级稳定} |
+
+### 7.3 Session 归档验证（基于 `emily-data/session_archives/`）
+
+| 检查项 | 结果 | 详情 |
+|--------|------|------|
+| 归档文件 | {路径} | {YYYY-MM-DD_用户_会话ID.md} |
+| 权限快照 | {未降级/已降级} | {sop_allow 列表、level、授权节点、scopes} |
+| 意图识别 | {正确/错误} | {各轮 sop_id、confidence} |
+| 调用链 | {合理/不合理} | {各轮调用次数、各阶段 model} |
+| 回复质量 | {合格/不合格} | {无幻觉、IM 格式合规、引用来源正确} |
+
+### 7.4 异常详情（如有）
+
+{粘贴测试期间出现的异常日志行 / 异常 LLM trace 记录 / 归档中的异常段。如无此节可省略。}
+
+---
+
+## 八、约束与合规
+
+> 对照 [项目宪法](../_shared/constitution.md)：架构铁律（C0~C11）、质量红线（Q1~Q5）、以及 PRD §4.4 的约束型技术决策是否被遵守。
+
+### 8.1 架构铁律合规（C0~C11）
+
+| 铁律 | 是否涉及 | 判定 | 证据 |
+|------|---------|------|------|
+| C2 分层不可跳 | 是/否 | ✅ 合规 / ❌ 违反 | {证据} |
+| C11 功能注册接入 | 是/否 | ✅ / ❌ | {是否经注册通道接入、有无孤儿代码} |
+
+### 8.2 质量红线合规（Q1~Q5）
+
+| 红线 | 判定 | 证据 |
+|------|------|------|
+| Q1 验收可执行 | ✅/❌ | {验收命令是否可执行} |
+| Q3 真实用户测试 | ✅/❌ | {sender-id 取自 users 表} |
+| Q4 无残留 | ✅/❌ | {清理情况} |
+
+### 8.3 PRD 约束合规（§4.4 约束型技术决策）
+
+> 逐条核对 PRD 声明的约束是否被遵守，并对照计划的"PRD 约束落实"表。
+
+| # | PRD 约束（原文摘录） | 计划声称如何遵守 | 实测判定 | 证据 |
+|---|-------------------|----------------|---------|------|
+| 1 | {如：不得引入新依赖} | {复用已有 pyyaml} | ✅ 遵守 / ❌ 违反 | {依赖清单比对结果} |
+
+**合规总评**：{全部合规 / 存在 N 项违反}
+
+---
+
+## 九、结论与建议
+
+### 9.1 测试结论
+
+{一句话总结。例如："XX 模块核心功能验证通过，规格符合度 N/M（{N/M*100}%），N/N 条用例全部 PASS，可投入使用。"}
+
+{2-3 段详细结论，覆盖：**规格符合度（哪些 US 满足/不满足）**、核心路径表现、边界/异常处理、权限控制、数据一致性、宪法合规、发现的问题}
+
+### 9.2 待改进项
+
+1. {改进建议 1}
+2. {改进建议 2}
+
+### 9.3 遗留风险
+
+{如果有未覆盖的测试场景、已知但未修复的 Bug、或环境限制导致的未验证项，在此列出。无则写"无。"}
+
+---
+
+## 十、附录
+
+### 10.1 测试命令清单
+
+{列出所有执行过的关键命令，方便复现：}
+
+```bash
+# 环境检查
+curl -s http://localhost:18080/api/v1/health
+docker compose -f docker-compose-napcat.yml ps
+
+# TC01: {用例名}
+uv run python .claude/skills/emy-test/cli.py --managed --llm --message "..." --sender "..." --sender-id "..."
+
+# TC02: {用例名}
+...
+```
+
+### 10.2 清理操作
+
+| 清理项 | 操作 | 状态 |
+|--------|------|------|
+| 预埋 DB 数据 | `DELETE FROM ... WHERE ...` | ✅ 已清理 / ⏭️ 保留供后续使用 |
+| 文件系统桩 | `rm {路径}` | ✅ 已删除 |
+| 临时脚本 | 已删除 | ✅ |
+| 配置变更 | {恢复 / 无变更} | ✅ |
+
+---
+
+*本报告由 AI 资深测试工程师通过 req-verify 技能生成，测试于真实 Docker 环境，遵循项目宪法 v1.0。*
+```
+
+---
+
+## 6. 反模式（不要做的事）
+
+| # | ❌ 不要做 | ✅ 应该做 |
+|---|----------|----------|
+| 1 | 不看文档就设计测试用例 | 先完整阅读 PRD（规格基准）、计划、实施记录，理解模块功能边界与 US 清单 |
+| 2 | 不检查 Docker 环境就发消息 | 先确认所有容器健康，记录环境状态。环境不健康不测试 |
+| 3 | 只测正常路径 | 必须覆盖规格符合度、边界条件、异常场景、权限边界、状态机非法流转 |
+| 4 | 测试结果只写"通过"/"失败" | 记录具体的输入输出、API 响应体、DB 数据——作为证据 |
+| 5 | 忽略 Docker 日志 | 测试结束后必须检查 ERROR/WARNING 日志 |
+| 6 | 不清理测试产物 | 删除临时脚本/stub 文件，清理或标注预埋数据 |
+| 7 | 测试报告放错位置 | 保存在模块目录或其 `测试文件/` 子目录下 |
+| 8 | 在不健康环境中强行测试 | 环境异常时先排查报告，不强行执行 |
+| 9 | 单轮对话覆盖多轮 IM 场景 | 多轮对话必须使用相同的 `--sender-id` 保持 Session |
+| 10 | 跳过测试用例不注明原因 | SKIP 的用例必须写明原因（环境限制/LLM不可用/功能未实现等） |
+| 11 | 编造测试结果 | 实际未执行的测试不能写 PASS。没有证据支撑的结论不能下 |
+| 12 | 报告写得像日志流水账 | 报告必须有结构：环境→计划→规格符合度→结果→Bug→合规→结论。逐项结果用表格 |
+| **13** | **用假 sender-id 测试** | **绝对禁止随便造一个 sender-id！必须先查 users 表，用真实存在的 ID 测试，否则测试的是访客降级路径，结果完全无参考价值** |
+| **14** | **LLM 相关结论只凭回复文本下判断** | **必须查 `llm_trace.jsonl` 或 `session_archives/` 作为证据——回复"看起来对"不代表 prompt 渲染对、model 分层对、cache 命中对、调用链合理** |
+| **15** | **不查 session_archive 就下权限/路由结论** | **session_archive 的"会话快照"段是权限是否降级的直接证据；"意图识别"段是路由是否正确的直接证据。不查就下结论 = 猜测** |
+| **16** | **只测"功能跑通"，不做规格符合度判定** | **对照 PRD 逐条 US 判定是否满足，产出"规格符合度总评"——这是 SDD Verify 的核心，不可省略** |
+| **17** | **测试用例不回指 US / 追溯不闭合** | **每条 TC 声明"回验的规格：US-xx"；产出"未覆盖规格清单"，有 US 未被覆盖必须显式列出** |
+| **18** | **不做约束与合规判定** | **报告中单列"约束与合规"章：逐条核对架构铁律（C0~C11）、质量红线（Q1~Q5）、以及 PRD §4.4 的约束型技术决策是否被遵守** |
+| **19** | **凭"计划说遵守了"就放过 PRD 约束** | **必须实测（依赖清单比对 / 代码检索 / 配置核对），不能只抄计划的"约束落实"表当结论** |
+
+---
+
+## 7. 测试结论判定标准
+
+| 结论 | 判定条件 |
+|------|---------|
+| ✅ **通过** | **规格符合度 100%（全部 US 满足）**，所有测试用例 PASS（SKIP 项 < 总数 10% 且有合理原因），无 🔴高 严重度 Bug，架构铁律与 **PRD 约束**均无违反 |
+| ⚠️ **有条件通过** | 核心路径 US 满足，但存在 US 部分满足/未覆盖，或存在 🟡中 / 🟢低 严重度 Bug，或有 > 10% 用例因环境限制 SKIP |
+| ❌ **未通过** | 存在 US 不满足，或**违反 PRD §4.4 约束型技术决策**，或核心路径 FAIL，或存在 🔴高 严重度 Bug，或违反架构铁律，或 > 30% 用例 FAIL/SKIP |
+
+---
+
+## 8. 工具速查
+
+| 工具 | 命令模式 | 用途 |
+|------|---------|------|
+| **emy-test CLI** | `uv run python .claude/skills/emy-test/cli.py --managed --llm --message "..." --sender "..." --sender-id "..."` | IM 对话模拟 |
+| **emy-test CLI（群聊）** | `... --cid "project_x"` | 群聊上下文 |
+| **健康检查** | `curl -s http://localhost:18080/api/v1/health` | Core 存活 |
+| **Docker 状态** | `docker compose -f docker-compose-napcat.yml ps` | 容器状态 |
+| **Docker 日志** | `docker logs --tail N emily-core 2>&1` | 运行时日志 |
+| **psql 查询** | `docker exec emily-postgres psql -U emily -d emily -c "..."` | 直接 DB 查询 |
+| **psql 文件** | `docker exec -i emily-postgres psql -U emily -d emily < file.sql` | 执行 SQL 文件 |
+| **重启 Core** | `docker compose -f docker-compose-napcat.yml restart emily-core` | 配置变更后重启 |
+| **Core 日志实时** | `docker logs -f emily-core 2>&1` | 实时日志跟踪 |
+| **种子数据** | `uv run python scripts/generate_test_data.py` | 生成测试用户/公司/项目 |
+| **验证种子数据** | `uv run python scripts/verify_test_data.py` | 验证种子数据完整性 |
+| **离线烟雾测试** | `uv run python scripts/smoke_test.py` | Session→WorkItem→BUS 骨架（无 LLM） |
+| **配置检查** | `uv run python -c "from config_loader import get_core_url, get_llm_config; print(get_core_url()); print(get_llm_config())"` | 确认 emy-test 配置 |
+| **清除 pycache** | `docker exec emily-core find /app/emily_core -name '__pycache__' -type d -exec rm -rf {} +` | 代码变更后强制重编译 |
+| **LLM trace（jsonl）** | `docker exec mitmproxy tail -N /app/logs/llm_trace.jsonl` | LLM 调用逐行记录（messages/usage/model/finish_reason） |
+| **LLM trace（md 全量）** | Read `emily-data/logs/llm_trace.md` | 人读全量（含完整 system prompt + 思维链） |
+| **应用日志文件** | `Get-Content "emily-data\logs\emily_YYYYMMDD.log" -Tail N` | emily-core 文件级日志（补充 docker logs） |
+| **Session 归档定位** | `Get-ChildItem "emily-data\session_archives" -Filter "*.md" \| Sort-Object LastWriteTime -Descending` | 会话归档文件列表 |
+| **mitmweb UI** | 浏览器 `http://localhost:8081`（密码 `emily_proxy_2026`） | 实时 LLM 流量观察 |
+
+> **注意**：Python 环境基于 uv，命令使用 `uv run python` 而非裸 `python`。
+
+---
+
+## 9. 自检清单
+
+测试报告输出前逐项确认：
+
+- [ ] 已读取 **PRD（规格基准）**、实施计划、实施记录（如存在）
+- [ ] 已提取 PRD 的完整 `US-xx` 清单与各条 AC（规格符合度判定基准）
+- [ ] 已提取 PRD §4.4 的约束型技术决策与 §4.1 触碰铁律（约束合规核对基准）
+- [ ] 已确认 Docker 环境健康（docker ps + curl health）
+- [ ] 已确认 LLM 可用性（如测试需要）
+- [ ] 测试用例覆盖：**规格符合度**、**约束合规**、正常路径、边界、异常、权限、状态机、API契约、数据持久化、LLM 调用链、运行时
+- [ ] 每条用例声明"回验的规格：US-xx"与"靶向模块：Mx"（追溯字段）
+- [ ] 已建立 `US → TC` 映射，每个 US 至少被一条 TC 覆盖
+- [ ] 已产出"未覆盖规格清单"（无遗漏则写"无"）
+- [ ] 每条用例有明确的预期行为和通过标准
+- [ ] 实际执行了所有测试（非假设结果、非编造）
+- [ ] 每条用例记录了实际输入输出作为证据
+- [ ] **已逐条 US 判定规格符合度**，产出"规格符合度总评"（N/M 满足率）
+- [ ] 报告包含所有 10 个章节（环境→计划→规格符合度→结果→Bug→DB验证→运行时可观测性→约束与合规→结论→附录）
+- [ ] **已完成约束与合规判定**：架构铁律（C0~C11）、质量红线（Q1~Q5）、**PRD §4.4 约束型技术决策**逐条核对
+- [ ] PRD 约束的判定有实测证据（依赖清单比对 / 代码检索 / 配置核对），非仅抄计划的"约束落实"表
+- [ ] 已知 Bug 有严重程度、复现步骤、影响范围、修复建议
+- [ ] 测试结论明确（✅通过 / ⚠️有条件通过 / ❌未通过），符合判定标准
+- [ ] 已检查 Docker 日志中的 ERROR/WARNING
+- [ ] 已分析 LLM 调用链（`llm_trace.jsonl`）：调用次数/顺序、model 分层、token 消耗、cache 命中率、异常 finish_reason
+- [ ] 已验证 Session 归档（`session_archives/`）：权限快照未降级、意图识别路由正确、调用链合理
+- [ ] LLM/路由/权限相关结论有 llm_trace 或 session_archive 证据支撑（非仅凭 emy-test 回复文本判断）
+- [ ] 已进行 DB 数据验证（如测试涉及数据写入）
+- [ ] 测试报告命名遵循统一约定（`{模块标识}_测试报告_V{版本号}.md`），保存位置正确
+- [ ] 报告头部声明了"基于 PRD（规格）"与"基于计划"的版本
+- [ ] 已清理临时脚本、文件桩、测试数据（或标注保留原因）
+- [ ] 如清理涉及生产数据库，清理操作在报告中列出，由用户确认后执行
+
+---
+
+*本 skill 为 req-verify（Emily 模块验证测试 + 规格符合度判定），遵循项目宪法，是 SDD 流水线的 Verify 阶段。*

@@ -40,7 +40,6 @@ SELECT
     1, 1,
     NULL,          -- supervisor_id（无直属上级）
     NULL,          -- company（关键：访客无公司，③ 节点集为空）
-    NULL,          -- project_id
     '["访客"]', NOW()::text, NOW()::text
 FROM users
 WHERE username = '王建国' AND is_deleted = false

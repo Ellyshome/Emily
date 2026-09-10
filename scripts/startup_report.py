@@ -141,13 +141,14 @@ def _collect_active_projects() -> list[dict]:
                 # 项目负责人：通过该项目管理单位（CompanyInfo.is_admin=True）的 project_leader_id 查找
                 leader_name = ""
                 try:
-                    # 找到该项目的管理单位
+                    # 找到该项目的管理单位（= 本项目节点上有参与记录、且为管理单位的企业）
+                    from emily_core.repositories.participation_repo import ParticipationRepo
+                    _company_ids = ParticipationRepo.company_ids_of_projects([p.id])
                     mgmt_company = (
                         session.query(CompanyInfo)
-                        .join(User, User.company == CompanyInfo.id)
-                        .filter(User.project_id == p.id, CompanyInfo.is_admin == True)
+                        .filter(CompanyInfo.id.in_(_company_ids), CompanyInfo.is_admin == True)
                         .first()
-                    )
+                    ) if _company_ids else None
                     if mgmt_company and mgmt_company.project_leader_id:
                         leader = session.query(User).filter(
                             User.id == mgmt_company.project_leader_id,
@@ -158,16 +159,11 @@ def _collect_active_projects() -> list[dict]:
                 except Exception:
                     pass
 
-                # 超级管理员：项目中 level >= 5 的用户
-                admins = (
-                    session.query(User)
-                    .filter(
-                        User.project_id == p.id,
-                        User.level >= 5,
-                        User.is_deleted == False,
-                    )
-                    .all()
-                )
+                # 超级管理员：项目中 level >= 5 的用户（项目人员 = 参与单位所属人员）
+                admins = [
+                    u for u in ParticipationRepo.users_of_projects([p.id])
+                    if (u.level or 1) >= 5
+                ]
                 admin_names = [u.username for u in admins]
 
                 result.append({

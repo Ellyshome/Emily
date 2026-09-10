@@ -80,12 +80,10 @@ class InitializationChecker:
             # T1-5: 生命周期阶段非0
             t1["T1_lifecycle_stage"] = (project.lifecycle_stage or 0) != 0
 
-            # T1-6: 项目管理员账户
-            admins = session.query(User).filter(
-                User.project_id == project_id,
-                User.is_deleted == False,
-                User.is_admin == True,
-            ).all()
+            # T1-6: 项目管理员账户（项目人员 = 参与单位所属人员）
+            from ..repositories.participation_repo import ParticipationRepo
+            users_in_project = ParticipationRepo.users_of_projects([project_id])
+            admins = [u for u in users_in_project if u.is_admin]
             t1["T1_admin_user"] = len(admins) > 0
 
             # T1-7: 管理员邮箱
@@ -97,12 +95,8 @@ class InitializationChecker:
             # ── T2：有组织（6 项）──
             t2 = {}
 
-            # 查询关联公司
-            users_in_project = session.query(User).filter(
-                User.project_id == project_id,
-                User.is_deleted == False,
-            ).all()
-            company_ids = list(set(u.company for u in users_in_project if u.company))
+            # 查询关联公司（= 本项目节点上有参与记录的企业）
+            company_ids = ParticipationRepo.company_ids_of_projects([project_id])
             companies = session.query(CompanyInfo).filter(CompanyInfo.id.in_(company_ids)).all() if company_ids else []
             company_types = [c.type for c in companies if c.type]
 

@@ -88,6 +88,7 @@ services:
       - ./emily-core/emily_core:/app/emily_core:ro
       - ./emily-core/api:/app/api:ro
       - ./emily-core/static:/app/static:ro
+      - ./scripts:/app/scripts:ro                      # ScriptManager 执行目标（只读）
       - /var/run/docker.sock:/var/run/docker.sock:ro   # Docker API（容器状态查询）
     networks:
       - emily_network

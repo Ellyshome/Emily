@@ -62,6 +62,8 @@ class SessionFactory:
         )
         # 将 EmilyCore 注入 scheduler（graph 引擎通过 _core 获取 _workitem_graph）
         agent.scheduler._core = self._core
+        # M7: 将 EmilyCore 注入 orchestrator（取 config：orchestrator_enabled / max_depth / max_dynamic_wis）
+        agent.orchestrator.attach_core(self._core)
         logger.info(
             "SessionFactory created session: conv=%s user=%s llm=%s skill_registry=%s journal=%s archive_writer=%s",
             conv_id, user_id or "?",

@@ -215,6 +215,16 @@ class Config:
     """Agent loop 最大迭代次数（agent_node↔tool_node 循环上限，防 runaway）。
     超限升级外层 error_analysis 兜底。"""
 
+    # ── 会话编排（M7/M8）──
+    orchestrator_enabled: bool = True
+    """会话编排总开关。关闭时 SessionAgent 走原 flat 拆分 + run_all_with_message"""
+
+    orchestrator_max_depth: int = 3
+    """WI DAG 最大深度（防无限编排；动态追加 WI 的 depth 超过此值即丢弃）"""
+
+    orchestrator_max_dynamic_wis: int = 2
+    """单轮动态追加 WI 上限（跨域检索编排；达到上限后 on_wi_done 返回空）"""
+
     # ── Checkpoint 持久化 ──
     checkpoint_enabled: bool = True
     """检查点持久化开关"""

@@ -137,6 +137,24 @@ def _write_category_section(w, cat_key: str, cat_label: str, entries: list, regi
         if e.check_arg:
             w(f"**自检**：`{e.check_arg}`\n\n")
         w(f"**调用**：\n```bash\n{e.invocation}\n```\n\n")
+        if e.params:
+            w("**参数**（Web 控制台据此渲染表单）：\n\n")
+            w("| 参数 | 类型 | 说明 | 取值 |\n")
+            w("|------|------|------|------|\n")
+            for p in e.params:
+                form = f"`{p.name}`" if p.positional else f"`--{p.name}`"
+                req = " *(必填)*" if p.required and not p.group else ""
+                grp = f" *(互斥组 {p.group})*" if p.group else ""
+                if p.choices:
+                    vals = "、".join(str(c) for c in p.choices[:6])
+                    if len(p.choices) > 6:
+                        vals += f" 等 {len(p.choices)} 项"
+                elif p.min is not None or p.max is not None:
+                    vals = f"{p.min if p.min is not None else '-'} ~ {p.max if p.max is not None else '-'}"
+                else:
+                    vals = "—"
+                w(f"| {form}{req}{grp} | {p.type} | {p.help or p.label or '—'} | {vals} |\n")
+            w("\n")
         if e.writes_db:
             w("**写数据库**：是\n\n")
         w("---\n\n")

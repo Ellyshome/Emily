@@ -26,6 +26,14 @@ BEIJING_TZ = timezone(timedelta(hours=8))
 # 生命周期阶段标签
 LIFECYCLE_LABELS = {0: "立项", 1: "规划设计", 2: "工程施工", 3: "交付结算"}
 
+# M1a: 节点状态中文映射（与 fetch_world_book 保持一致）
+_STATUS_CN = {
+    "COMPLETED": "已完成",
+    "IN_PROGRESS": "进行中",
+    "CONDITIONS_NOT_MET": "条件未满足",
+    "NOT_ACTIVATED": "未激活",
+}
+
 
 class ProjectWorldBookBuilder:
     """项目世界书构建器。"""
@@ -140,10 +148,10 @@ class ProjectWorldBookBuilder:
                 if project is None:
                     return {"name": "", "code": "", "error": "项目不存在"}
 
-                # 查询关联公司
+                # 参建单位 = 在本项目节点上有参与记录的企业（唯一口径见 ParticipationRepo）
+                from ..repositories.participation_repo import ParticipationRepo
                 companies = []
-                users = session.query(User).filter(User.project_id == project_id, User.is_deleted == False).all()
-                company_ids = list(set(u.company for u in users if u.company))
+                company_ids = ParticipationRepo.company_ids_of_projects([project_id])
                 if company_ids:
                     company_records = session.query(CompanyInfo).filter(CompanyInfo.id.in_(company_ids)).all()
                     for c in company_records:
@@ -171,11 +179,10 @@ class ProjectWorldBookBuilder:
         """层2：人员认知——关键人员、职责边界。"""
         try:
             with get_session() as session:
-                users = session.query(User).filter(
-                    User.project_id == project_id,
-                    User.is_deleted == False,
-                    User.status == "active",
-                ).all()
+                # 项目人员 = 参与单位所属人员（唯一口径见 ParticipationRepo）
+                from ..repositories.participation_repo import ParticipationRepo
+                users = [u for u in ParticipationRepo.users_of_projects([project_id])
+                         if u.status == "active"]
 
                 key_personnel = []
                 department_leads = []
@@ -262,6 +269,20 @@ class ProjectWorldBookBuilder:
                 if total > 0:
                     total_progress = (completed / total) * 100
 
+                # M1a: 按节点分段的骨架（供会话侧按 authorized_node_ids 裁剪）
+                node_segments: dict[str, dict] = {}
+                for n in nodes:
+                    try:
+                        progress = float(n.progress or 0)
+                    except (TypeError, ValueError):
+                        progress = 0.0
+                    node_segments[n.node_id] = {
+                        "name": n.node_name or "",
+                        "status": n.status or "",
+                        "progress": round(progress, 1),
+                        "milestone": (getattr(n, "node_type", "") == "MILESTONE"),
+                    }
+
                 return {
                     "total_nodes": total,
                     "completed": completed,
@@ -271,6 +292,7 @@ class ProjectWorldBookBuilder:
                     "overdue": overdue,
                     "overall_progress": f"{total_progress:.1f}%",
                     "milestones": milestones[:10],
+                    "node_segments": node_segments,
                 }
         except Exception as e:
             logger.error("_build_structure failed: %s", e)
@@ -317,12 +339,14 @@ class ProjectWorldBookBuilder:
 
                         if dl < now_beijing:
                             overdue_items.append({
+                                "node_id": n.node_id,
                                 "name": n.node_name,
                                 "deadline": dl_str,
                                 "status": n.status,
                             })
                         elif dl_str <= week_later:
                             upcoming_deadlines.append({
+                                "node_id": n.node_id,
                                 "name": n.node_name,
                                 "deadline": dl_str,
                                 "status": n.status,
@@ -376,8 +400,10 @@ class ProjectWorldBookBuilder:
                         # 上游未完成 → 下游被阻塞
                         if upstream_node.status != "COMPLETED":
                             blocked_nodes.append({
+                                "node_id": downstream_node.node_id,
                                 "node": downstream_node.node_name,
                                 "blocked_by": f"{upstream_node.node_name}未完成",
+                                "blocked_by_node_id": upstream_node.node_id,
                                 "impact": "",
                             })
 
@@ -503,6 +529,18 @@ class ProjectWorldBookBuilder:
                     for m in ms[:3]
                 )
                 lines.append(f"🏁 {ms_str}")
+
+            # M1a: 有 node_segments 时补一行"可见节点概览"占位（实际裁剪在会话侧）
+            # 这里只输出不带权限过滤的全景骨架前 3 个，保持 content_text 语义不变
+            segs = s.get("node_segments") or {}
+            if segs:
+                head = list(segs.values())[:3]
+                seg_str = " / ".join(
+                    f"{seg.get('name', '')}[{_STATUS_CN.get(seg.get('status', ''), seg.get('status', ''))}]"
+                    for seg in head
+                )
+                if seg_str:
+                    lines.append(f"🔖 节点骨架：{seg_str}")
 
         # 层4：时间
         t = content_json.get("temporal", {})

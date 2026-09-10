@@ -7,7 +7,7 @@
 所有注册逻辑集中在此文件，开发者查看此文件即可了解全部可用工具及其分类归属。
 
 文件组织（tools/ 目录）：
-  base/         __init__.py — 从原始平铺文件导入并分组导出（基座能力）
+  base/         __init__.py — 从原始平铺文件导入并分组导出（基座能力：query_data / knowledge_search / ocr / meta_cognition_read）
   business/     __init__.py — 从原始平铺文件导入并分组导出（业务工具）
   project/      __init__.py — 从原始平铺文件导入并分组导出（项目级工具）
   registry.py   本文件 — 统一注册入口
@@ -200,6 +200,15 @@ def _register_base(core, reg):
         reg.register(_tool("ocr_document", _OCR_DESCRIPTION, _OCR_SCHEMA,
                            partial(handle_ocr_document, vlm_client=vlc)))
         _bc += 1
+
+    # meta_cognition_read —— 三书全文按需检索（M2）
+    from .meta_cognition_tool import (
+        handle_meta_cognition_read, _META_COG_SCHEMA, _META_COG_DESCRIPTION,
+    )
+    reg.register(_tool("meta_cognition_read", _META_COG_DESCRIPTION, _META_COG_SCHEMA,
+                       partial(handle_meta_cognition_read, core=core),
+                       category="base", permission_flag="all", write_mode="read"))
+    _bc += 1
 
 
 # ══════════════════════════════════════════════════════════════════════════════

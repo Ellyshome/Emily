@@ -1,4 +1,4 @@
-﻿# ============================================================
+# ============================================================
 # 004_seed_nodes.yaml —— 全景节点树定义（ECOCITY-26 生态城一期）
 #
 # 用法：
@@ -9,7 +9,8 @@
 #   - node_id 为业务编号，统一前缀 ECOC（ECOCITY缩写）
 #   - stage_id: 0=立项 1=规划设计 2=工程施工 3=交付结算
 #   - node_type: MILESTONE / WORK_PACKAGE / TASK
-#   - owner_dept_id 和 related_company_id 用中文名称，batch 创建时会解析
+#   - owner_dept_id 用中文部门名（现状口径）；related_company_id 可写中文单位名称/类型，
+#     入口由 CompanyResolver 解析为 company_info.id 落库，并自动登记为该节点的参与单位
 #   - children 嵌套自动展平并设 parent_node_id
 #   - deliverables 为节点需产出的成果清单
 #   - dependencies 为前置依赖（按 deliverable_name 模糊匹配）

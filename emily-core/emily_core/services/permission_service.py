@@ -35,77 +35,6 @@ logger = logging.getLogger("emily.permission")
 
 
 # ══════════════════════════════════════════════════════════════════════════════
-# 模块级工具函数（function_scope 解析）
-# ══════════════════════════════════════════════════════════════════════════════
-
-def _extract_node_ids(fs) -> list[str]:
-    """从 function_scope 解析出的 JSON 结构提取节点 ID。
-
-    兼容三种格式：
-      1. list: [{"nodeIds": ["design", "construction"]}]
-      2. dict (值是 list): {"design": ["node-001", "node-002"]}
-      3. dict (值是 str): {"design": "design", "construction": "construction"}
-    """
-    nodes: list[str] = []
-
-    if isinstance(fs, list):
-        for item in fs:
-            if isinstance(item, dict):
-                # 格式1: {"nodeIds": [...]}
-                if "nodeIds" in item:
-                    nodes.extend(item["nodeIds"] or [])
-                else:
-                    # 也可能是 [{"design": [...]}]
-                    for v in item.values():
-                        if isinstance(v, list):
-                            nodes.extend(v)
-                        elif isinstance(v, str):
-                            nodes.append(v)
-
-    elif isinstance(fs, dict):
-        for v in fs.values():
-            if isinstance(v, list):
-                nodes.extend(v)
-            elif isinstance(v, str):
-                nodes.append(v)
-
-    return nodes
-
-
-# 中文业务范围 → 英文节点 ID 映射（兜底推导）
-_SCOPE_NODE_MAP: dict[str, str] = {
-    "室内精装": "design",
-    "软装深化": "design",
-    "BIM建模": "design",
-    "幕墙精装": "design",
-    "精装": "design",
-    "设计": "design",
-    "施工": "construction",
-    "工程": "construction",
-    "监理": "supervision",
-    "景观": "landscape",
-    "总包": "construction",
-    "分包": "construction",
-    "采购": "procurement",
-    "供货": "procurement",
-}
-
-
-def _scope_to_node_ids(scopes: list[str]) -> list[str]:
-    """从 company.scope 推导节点 ID（宽松兜底）。
-
-    当 function_scope 为空时，从 scope 的中文关键词推导英文节点 ID。
-    这确保了 scope 非空的公司不会返回零节点——至少有一个合理的节点范围。
-    """
-    node_set: set[str] = set()
-    for scope_text in scopes:
-        for cn_keyword, node_id in _SCOPE_NODE_MAP.items():
-            if cn_keyword in scope_text:
-                node_set.add(node_id)
-    return sorted(node_set) if node_set else []
-
-
-# ══════════════════════════════════════════════════════════════════════════════
 # 二维权限矩阵：level × company_type → db_perms
 # ══════════════════════════════════════════════════════════════════════════════
 #
@@ -251,7 +180,7 @@ class PermissionService:
                 is_management_unit=bool(company and getattr(company, 'is_admin', False)),
             ),
             "supervisor_id": user.supervisor_id or "",
-            "authorized_node_ids": self._derive_authorized_nodes(company),
+            "authorized_node_ids": self._derive_authorized_nodes(user, company),
             "granted_codes": granted_codes,
             "denied_codes": denied_codes,
             "permissions_loaded_at": _utc_now(),
@@ -418,48 +347,34 @@ class PermissionService:
         return dict(_PARTICIPANT_DB_PERMS[key])
 
     @staticmethod
-    def _derive_authorized_nodes(company: Optional[CompanyInfo]) -> list[str]:
-        """从 company.function_scope 推导用户可访问的全景节点 ID（需求 §4.1）。
+    def _derive_authorized_nodes(user: User, company: Optional[CompanyInfo]) -> list[str]:
+        """用户可见的全景节点集合（唯一实现见 ParticipationRepo）。
 
-        兼容三种 JSON 格式：
-          1. 列表格式（推荐）: [{"nodeIds": ["design", "construction"]}]
-          2. 字典格式（常见）: {"design": ["node-001", "node-002"], "construction": ["node-003"]}
-          3. 扁平字典: {"design": "design", "construction": "construction"}
-        若 function_scope 为空或无法解析，从 company.scope 推导节点关键词作为兜底。
+        口径：
+          - 管理单位（company_info.is_admin=True）→ 本项目全部节点
+          - 其他单位 → 企业参与节点
+          - 无企业 / 无参与 → 空集（fail-closed）
         """
         if not company:
             return []
-
-        # ── 主路径：解析 function_scope ──
-        if company.function_scope and company.function_scope not in ("{}", "[]", ""):
-            try:
-                fs = json.loads(company.function_scope)
-                nodes = _extract_node_ids(fs)
-                if nodes:
-                    return nodes
-            except (json.JSONDecodeError, TypeError):
-                pass
-
-        # ── 兜底：从 company.scope 推导节点关键词 ──
-        # scope 如 ["室内精装", "软装深化", "BIM建模"] → 提取英文前缀作为节点 ID
-        # 这是一个宽松兜底，确保 scope 非空时不会返回零节点
-        scopes = PermissionService._load_json_list(company.scope) if company.scope else []
-        if scopes:
-            return _scope_to_node_ids(scopes)
-
-        return []
+        from ..repositories.participation_repo import ParticipationRepo
+        if getattr(company, "is_admin", False):
+            project_ids = ParticipationRepo.project_ids_of_company(company.id)
+            return ParticipationRepo.all_node_ids_of_projects(project_ids)
+        return ParticipationRepo.node_ids_of_company(company.id)
 
     @staticmethod
     def _derive_project_ids(user: User, company: Optional[CompanyInfo]) -> list[str]:
         """用户参与的项目 ID 列表。
 
-        当前阶段：从 user.project_id 取主项目。阶段二需扩展为
-        从 project_members 关联表查询全部参与项目。
+        口径：人员不带项目归属字段，参与项目由
+        「企业 → 其在节点上的参与记录 → 节点所属项目」推导。
+        唯一实现见 ParticipationRepo。
         """
-        pid = getattr(user, "project_id", None)
-        if pid:
-            return [pid]
-        return []
+        if not company:
+            return []
+        from ..repositories.participation_repo import ParticipationRepo
+        return ParticipationRepo.project_ids_of_company(company.id)
 
     @staticmethod
     def _load_json_list(raw: str) -> list:

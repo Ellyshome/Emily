@@ -39,7 +39,7 @@ SELECT id, company_name, type FROM company_info WHERE is_deleted = false;
 -- 4. 插入测试用户（7 个，覆盖 6 个权限层级）
 --    users 表字段: id, username, phone, email, status, is_admin, gender, id_card,
 --    qq, wechat, remark, creator_id, is_deleted, perm_list, org_category, level,
---    supervisor_id, company, project_id, position, long_term_memory,
+--    supervisor_id, company, position, long_term_memory,
 --    conversation_summary, created_at, updated_at
 -- ============================================================
 

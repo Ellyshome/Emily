@@ -142,17 +142,10 @@ def _build_allowed_company_ids(perms) -> list[str]:
 
 
 def _load_project_member_company_ids(project_ids: list[str]) -> list[str]:
-    """查询项目关联的所有参建单位 ID。"""
+    """查询项目关联的所有参建单位 ID（= 本项目节点上有参与记录的企业）。"""
     try:
-        from ..infrastructure.database import get_session
-        from ..infrastructure.database.models import User
-        with get_session() as session:
-            companies = session.query(User.company).filter(
-                User.project_id.in_(project_ids),
-                User.company != None,
-                User.is_deleted == False,
-            ).distinct().all()
-            return [c[0] for c in companies if c[0]]
+        from ..repositories.participation_repo import ParticipationRepo
+        return ParticipationRepo.company_ids_of_projects(project_ids)
     except Exception as e:
         logger.warning("_load_project_member_company_ids failed: %s", e)
         return []

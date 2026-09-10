@@ -108,12 +108,10 @@ class CognitionDriftDetector:
                     signals.append(f"lifecycle_stage: {recorded_stage}->{current_stage}")
                     stale = True
 
-                # 新增参建单位
-                users = session.query(User).filter(User.project_id == project_id, User.is_deleted == False).all()
-                company_ids = list(set(u.company for u in users if u.company))
-                current_company_count = 0
-                if company_ids:
-                    current_company_count = session.query(CompanyInfo).filter(CompanyInfo.id.in_(company_ids)).count()
+                # 新增参建单位（= 本项目节点上有参与记录的企业）
+                from ..repositories.participation_repo import ParticipationRepo
+                company_ids = ParticipationRepo.company_ids_of_projects([project_id])
+                current_company_count = len(company_ids)
                 recorded_company_count = len(layer.get("organizations", []))
                 if current_company_count > recorded_company_count:
                     signals.append(f"新增参建单位: {recorded_company_count}->{current_company_count}")
@@ -129,9 +127,9 @@ class CognitionDriftDetector:
         stale = False
         try:
             with get_session() as session:
-                # 检查最近更新的用户数
-                users = session.query(User).filter(User.project_id == project_id, User.is_deleted == False).all()
-                current_count = len(users)
+                # 检查项目人员数（= 参与单位所属人员）
+                from ..repositories.participation_repo import ParticipationRepo
+                current_count = len(ParticipationRepo.users_of_projects([project_id]))
                 recorded_count = layer.get("total_users", 0)
                 if current_count != recorded_count:
                     signals.append(f"用户数变化: {recorded_count}->{current_count}")

@@ -40,7 +40,7 @@ logger = logging.getLogger("emily.infrastructure.tools_consistency")
 # 新增/删除工具时，需同步更新此集合（V13 的 DB 对比能间接发现遗漏，但显式维护更可靠）。
 REGISTERED_TOOLS: set[str] = {
     # base
-    "query_data", "knowledge_search",
+    "query_data", "knowledge_search", "meta_cognition_read",
     # business
     "record_event", "record_task", "record_meeting", "record_file",
     "query_files", "update_file_category", "send_file", "write_user_memory",
@@ -65,6 +65,7 @@ TOOL_META_MAP: dict[str, tuple[str, str, str, str]] = {
     # base
     "query_data":         ("查询项目数据",          "base",     "all",   "meta"),
     "knowledge_search":   ("搜索知识库获取领域知识", "base",     "all",   "meta"),
+    "meta_cognition_read": ("三书全文按需检索",     "base",     "all",   "meta"),
     "send_email":         ("发送邮件",              "base",     "all",   "meta"),
     "fetch_inbox":        ("获取收件箱",            "base",     "all",   "meta"),
     "chat_archive":       ("聊天归档查询",          "base",     "all",   "meta"),
@@ -124,6 +125,7 @@ TOOL_WRITE_MODE_MAP: dict[str, str] = {
 TOOL_SCHEMA_MAP: dict[str, tuple[str, str]] = {
     "query_data": ("emily_core.tools.query_tool", "_QUERY_TOOL_SCHEMA"),
     "knowledge_search": ("emily_core.tools.knowledge_search_tool", "_KNOWLEDGE_SEARCH_SCHEMA"),
+    "meta_cognition_read": ("emily_core.tools.meta_cognition_tool", "_META_COG_SCHEMA"),
     "record_event": ("emily_core.tools.event_tool", "_EVENT_TOOL_SCHEMA"),
     "record_task": ("emily_core.tools.task_tool", "_TASK_TOOL_SCHEMA"),
     "record_meeting": ("emily_core.tools.meeting_tool", "_MEETING_TOOL_SCHEMA"),

@@ -199,11 +199,33 @@ class NodeService:
         # 管理员直接以 CONDITIONS_NOT_MET 创建，普通用户以 NOT_ACTIVATED 创建
         initial_status = CONDITIONS_NOT_MET if is_admin else NOT_ACTIVATED
 
-        # ── 关联单位：显式 related_company_id 优先（兼容批量种子中文单位名）；否则从参与单位推导 ──
-        participant_company_ids = getattr(cmd, 'participant_company_ids', None) or []
-        related_company_id = getattr(cmd, 'related_company_id', '') or _derive_related_company_from_participants(
-            participant_company_ids, default="建设单位"
-        )
+        # ── 单位引用统一解析（口径见 docs/Spec/项目归属与可见范围_Spec.md）──
+        # 中文单位名/类型只是输入写法，必须解析为 company_info.id 后才落库。
+        from .company_resolver import CompanyResolver
+
+        raw_participants = getattr(cmd, 'participant_company_ids', None) or []
+        participant_company_ids = [
+            cid for cid in (CompanyResolver.resolve(x, cmd.project_id) for x in raw_participants) if cid
+        ]
+
+        related_ref = str(getattr(cmd, 'related_company_id', '') or "").strip()
+        related_company_id = CompanyResolver.resolve(related_ref, cmd.project_id) if related_ref else None
+
+        # 参与单位兜底顺序：显式传入 → 关联单位 → 创建人所属企业
+        # （归属口径：可见范围由「企业参与节点」推导；不登记则所有人都看不到该项目态势）
+        if not participant_company_ids:
+            if related_company_id:
+                participant_company_ids = [related_company_id]
+            else:
+                participant_company_ids = await asyncio.to_thread(
+                    self._resolve_creator_company_ids, cmd.creator_id,
+                )
+
+        # 关联单位兜底：未显式指定时从参与单位推导（管理单位优先）
+        if not related_company_id:
+            related_company_id = _derive_related_company_from_participants(
+                participant_company_ids, default=""
+            )
 
         node = await asyncio.to_thread(
             self._node_repo.create,
@@ -325,12 +347,24 @@ class NodeService:
         if cmd.remark is not None:
             updates["remark"] = cmd.remark
 
-        if not updates:
+        if not updates and cmd.related_company_id is None:
             return NodeOperationResult(success=False, node_id=cmd.node_id, message="无更新字段")
 
         old_node = await asyncio.to_thread(self._node_repo.get_by_node_id, cmd.node_id)
         if old_node is None:
             return NodeOperationResult(success=False, node_id=cmd.node_id, message="节点不存在")
+
+        # 关联单位：中文写法需解析为 company_info.id；解析不出即失败（不静默存标签/不静默忽略）
+        if cmd.related_company_id is not None:
+            from .company_resolver import CompanyResolver
+            ref = str(cmd.related_company_id or "").strip()
+            resolved = CompanyResolver.resolve(ref, getattr(old_node, "project_id", "")) if ref else ""
+            if ref and not resolved:
+                return NodeOperationResult(
+                    success=False, node_id=cmd.node_id,
+                    message=f"关联单位「{ref}」无法唯一解析为单位 ID，请改用单位全称或 ID",
+                )
+            updates["related_company_id"] = resolved or ""
 
         node = await asyncio.to_thread(self._node_repo.update_fields, cmd.node_id, **updates)
         if node is None:
@@ -876,6 +910,20 @@ class NodeService:
         return NodeOperationResult(success=True, node_id=cmd.node_id, message="责任人变更成功")
 
     # ── 参与单位管理 ──
+
+    @staticmethod
+    def _resolve_creator_company_ids(creator_id: str) -> list[str]:
+        """创建人所属企业（用于"参与单位默认兜底"，见归属口径 Spec）。"""
+        if not creator_id:
+            return []
+        try:
+            from ..repositories.user_repo import UserRepository
+            user = UserRepository.get_by_id(creator_id)
+            company_id = getattr(user, "company", "") if user is not None else ""
+            return [company_id] if company_id else []
+        except Exception as e:
+            logger.warning("resolve creator company failed user=%s: %s", creator_id, e)
+            return []
 
     async def add_participant_company(self, cmd: AddParticipantCompanyCommand) -> NodeOperationResult:
         """添加节点参与单位。"""

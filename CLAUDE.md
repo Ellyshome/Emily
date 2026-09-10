@@ -81,7 +81,7 @@ QQ → NapCat → AstrBot → emily_agent 薄插件
 | [docs/数据库设计.md](docs/数据库设计.md) | 53 表速查 + 每表完整字段架构 + ER 关系图 + 维护注意事项 | 改模型、加表/字段、排查数据问题 |
 | [docs/开发记录.md](docs/开发记录.md) | EmyBot M1-M15→Emily Phase 0/A/B/C 演进 + 7 项架构决策 + 权威文档索引 | 了解历史决策原因、查阅原始设计文档 |
 | [docs/技术踩坑备忘录.md](docs/技术踩坑备忘录.md) | 按类别的 20+ 踩坑（容器/DB/AstrBot/异步/Hook/RAG/模式切换），每条现象+原因+解决 | 遇到问题先查、写新代码避坑 |
-| [docs/脚本工具目录.md](docs/脚本工具目录.md) | 31 个脚本按功能域分组，由 `scriptmgr export` 从 `emily-data/config/scripts_registry.yaml` 自动生成 | 手动执行脚本前查用法、了解脚本间聚合关系 |
+| [docs/Manual/脚本工具目录.md](docs/Manual/脚本工具目录.md) | 44 个脚本按功能域分组，由 `scriptmgr export` 从 `emily-data/config/scripts_registry.yaml` 自动生成；含 Web 控制台的参数 schema | 手动执行脚本前查用法、了解脚本间聚合关系 |
 
 ---
 
@@ -100,6 +100,7 @@ QQ → NapCat → AstrBot → emily_agent 薄插件
 | 8 | **`agent/` 已删除** | 原 MasterAgent/BusinessFlowAgent 等已提取到 SessionAgent/WorkItemAgent。SOPIntentRegistry 和 ToolRegistry 已废弃删除，`agent/sop_parser.py`（SOP §3.2 白名单提取，已无调用者）随之清理，整个 `agent/` 目录移除。工具白名单现由 Skill YAML 的 tools 字段声明，SkillExecutor 执行时校验 |
 | 9 | **PipelineBUS 已废弃** | 2026-07-28 起，WorkItem 执行引擎统一为 LangGraph StateGraph（5 节点含 error_analysis 纠错闭环）。PipelineBUS / BusContext / WorkItemState / confirm_queue 代码保留在 `pipeline/` 目录下供历史参考，但不再被任何执行路径调用。唯一执行路径是 `SessionScheduler._run_one()` → `_run_graph()` → `graph.ainvoke()` |
 | 10 | **ToolManager vs ScriptManager 边界** | ToolManager 管 LLM 运行时工具（`BusinessFlowTool.handler`，进程内 async）；ScriptManager 管 `scripts/` 开发者脚本（subprocess CLI），共享 service 层，互不调用。脚本元信息声明在 `emily-data/config/scripts_registry.yaml`，目录由 `scriptmgr export` 生成。 |
+| 10b | **脚本参数 schema（Web 控制台前置条件）** | 脚本要能在 Web 控制台（`http://127.0.0.1:18080/console/`）以表单方式调用，必须在 `scripts_registry.yaml` 的 `params:` 字段声明参数 schema——这是约束 11 在脚本侧的等价物：**没有 schema，调用方就不知道参数类型与取值约束**。字段：`name`/`type`(str\|int\|flag\|enum\|multi)/`label`/`help`/`required`/`choices`/`positional`/`group`(互斥组)/`min`/`max`。未声明 `params` 的脚本 Web 端只读不可执行（CLI 不受影响）。**安全**：Web 通道走 `params.build_cli_args()` 白名单校验，未声明的参数一律拒绝；`writes_db: true` 的脚本未显式二次确认时强制降级为 `check_arg` 预览。 |
 | 11 | **工具必须带参数 schema** | 所有需要 LLM 填参数的业务工具，注册时必须提供 JSON Schema（`params` 参数）。Schema 定义在工具源文件中（如 `_EVENT_TOOL_SCHEMA`），在 `registry.py` 中注册时通过 `params=_XXX_S` 传入。`_reg_biz()` 缺少 schema 时会在启动日志打印 SchemaGuard WARNING；CI `check_tools_consistency.py` V5/V14 会将其报告为 error。此前 16 个工具在 `_reg_biz()` 中硬编码空 schema 导致 LLM 填参时完全不知道约束（如 project_id 应是 UUID 而非项目名称），是系统性事故。新工具添加流程：① 在 tool 源文件定义 `_XXX_SCHEMA` 常量 → ② 在 `registry.py` 注册时传 `params=_XXX_S` → ③ 在 `tools_consistency.py` 的 `TOOL_SCHEMA_MAP` 添加映射条目。三步缺一不可。 |
 | 12 | **功能注册接入（元原则）** | 除核心不可拆分功能与主循环（Session 主循环、LangGraph 执行引擎、权限/鉴权引擎、消息收发、DB 基础设施）外，一切新功能必须以可组合模块形态注册接入主系统，禁止裸文件/裸调用/硬编码接线。标准通道：业务工具 → `tools/registry.py`；调度任务 → `JobHandlerRegistry` + `scheduler_config.json`；Hook → `hook_config.json`；SOP → `emily-data/sops/`；脚本 → `scripts_registry.yaml`；Provider（RAG/Email/语音等）→ 实现抽象基类后经注册点接入（RAG/Email 现有 bootstrap if-else 接线属历史遗留，新 Provider 不得沿用此模式）。**提醒义务**：当新增功能无法归入任一注册通道、或出现"实现文件无人调用 / 注册表挂 stub"迹象时，AI 须停下提醒用户先定义注册点或删除，不得留下孤儿代码。 |
 
@@ -221,8 +222,10 @@ uv run python scripts/scriptmgr.py describe <name>         # 显示脚本详情
 uv run python scripts/scriptmgr.py check                   # 跑全部脚本自检
 uv run python scripts/scriptmgr.py run <name> --args "..." # 执行脚本
 uv run python scripts/scriptmgr.py test                    # 跑 smoke 用例
-uv run python scripts/scriptmgr.py export --out docs/脚本工具目录.md  # 重生成脚本目录
+uv run python scripts/scriptmgr.py export --out docs/Manual/脚本工具目录.md  # 重生成脚本目录
 ```
+
+**脚本 Web 控制台**：浏览器打开 `http://127.0.0.1:18080/console/` → 左侧选脚本 → 表单填参 → 执行看结果。写库脚本强制预览后再确认。若页面 404，需先重启 emily-core 容器使 Volume Mount 生效。
 
 ---
 

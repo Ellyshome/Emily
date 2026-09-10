@@ -175,13 +175,13 @@ class SessionDataFetcher:
 
         long_term_memory = user.long_term_memory or ""
 
-        project_id = getattr(user, "project_id", None)
-
         # ── 步骤 2: 权限快照（调 PermissionService.build_permission_dict） ──
         perms = _sub_fetch_permissions(user_id, core)
 
-        # ── 步骤 3: 项目上下文（直查 Project 模型） ──
-        project = _sub_fetch_project(project_id)
+        # ── 步骤 3: 项目上下文 ──
+        # 人员不带项目归属字段；参与项目 = 所属企业参与节点所归属的项目（可能多个，全部载入）
+        project_ids = list(perms.get("project_ids", []) or [])
+        project = _sub_fetch_project(project_ids)
 
         # ── 步骤 4: （已关闭）最近对话不再在 Session 拉起时批量载入
         # Agent 需要历史时通过 chat_archive 工具按需检索
@@ -221,6 +221,7 @@ class SessionDataFetcher:
             "sop_allow": perms.get("sop_allow", []),
             "db_perms": perms.get("db_perms", {}),
             "info_level": perms.get("info_level", "public"),
+            "is_management_unit": perms.get("is_management_unit", False),
             "supervisor_id": perms.get("supervisor_id", ""),
             "granted_codes": perms.get("granted_codes", []),
             "denied_codes": perms.get("denied_codes", []),
@@ -237,9 +238,13 @@ class SessionDataFetcher:
             "rag_available": rag_info.get("available", False),
             "rag_collections": rag_info.get("collections", []),
             # 元认知字段
-            "project_world_book": _sub_fetch_world_book(project_id),
+            "project_world_book": _sub_fetch_world_book(project_ids),
             "rule_book": _sub_fetch_rule_book(),
             "system_description": system_description,
+            # M1: 三书裁剪源数据（供 get_prompt_variables 按操作者权限实时裁剪）
+            "world_books_json": _sub_fetch_world_books_json(project_ids),
+            "system_description_json": _sub_fetch_system_description_json(),
+            "rule_book_sections": _sub_fetch_rule_book_sections(),
         }
 
         session_runtime = {}
@@ -285,32 +290,46 @@ def _sub_fetch_permissions(user_id: str, core=None) -> dict:
         return {"level": 1}
 
 
-def _sub_fetch_project(project_id: Optional[str]) -> dict:
-    """直查 Project 模型获取项目上下文。"""
-    if not project_id:
+def _dedup_join(values) -> str:
+    """去重后按「、」拼接（保持出现顺序，忽略空值）。"""
+    seen: list[str] = []
+    for v in values:
+        s = str(v or "").strip()
+        if s and s not in seen:
+            seen.append(s)
+    return "、".join(seen)
+
+
+def _sub_fetch_project(project_ids: Optional[list[str]]) -> dict:
+    """项目上下文（= 用户参与的项目，可能多个，合并展示）。"""
+    pids = [p for p in (project_ids or []) if p]
+    if not pids:
         return {"project_name": "", "project_type": "", "project_status": ""}
     try:
         from ..infrastructure.database import get_session
         from ..infrastructure.database.models import Project
 
         with get_session() as session:
-            project = session.query(Project).filter(
-                Project.id == project_id,
+            projects = session.query(Project).filter(
+                Project.id.in_(pids),
                 Project.is_deleted == False,
-            ).first()
+            ).all()
 
-            if project is None:
-                return {"project_name": "", "project_type": "", "project_status": ""}
+        if not projects:
+            return {"project_name": "", "project_type": "", "project_status": ""}
 
-            stage = getattr(project, "lifecycle_stage", 0) or 0
-            type_map = {0: "工程项目", 1: "工程项目", 2: "房屋建筑", 3: "工程项目"}
-            return {
-                "project_name": project.name or "",
-                "project_type": type_map.get(stage, ""),
-                "project_status": _translate_project_status(project.status or ""),
-            }
+        type_map = {0: "工程项目", 1: "工程项目", 2: "房屋建筑", 3: "工程项目"}
+        return {
+            "project_name": _dedup_join(p.name or "" for p in projects),
+            "project_type": _dedup_join(
+                type_map.get(getattr(p, "lifecycle_stage", 0) or 0, "") for p in projects
+            ),
+            "project_status": _dedup_join(
+                _translate_project_status(p.status or "") for p in projects
+            ),
+        }
     except Exception as e:
-        logger.error("_sub_fetch_project failed project_id=%s: %s", project_id, e)
+        logger.error("_sub_fetch_project failed project_ids=%s: %s", pids, e)
         return {"project_name": _SENTINEL, "project_type": _SENTINEL, "project_status": _SENTINEL}
 
 
@@ -379,6 +398,7 @@ def _empty_result(conversation_id: str, user_id: str, errors: list[str]) -> dict
             "sop_allow": [],
             "db_perms": {},
             "info_level": "public",
+            "is_management_unit": False,
             "supervisor_id": "",
             "granted_codes": [],
             "denied_codes": [],
@@ -398,6 +418,9 @@ def _empty_result(conversation_id: str, user_id: str, errors: list[str]) -> dict
             "project_world_book": "",
             "rule_book": "",
             "system_description": "",
+            "world_books_json": "",
+            "system_description_json": "",
+            "rule_book_sections": [],
         },
         "session_runtime": {},
         "errors": errors,
@@ -410,19 +433,23 @@ def _sub_fetch_system_description(perms: dict) -> str:
     return fetch(perms=perms)
 
 
-def _sub_fetch_world_book(project_id: Optional[str]) -> str:
-    """获取项目世界书纯文本摘要。"""
-    if not project_id:
-        return ""
+def _load_world_books(project_ids: Optional[list[str]]):
+    """按「用户参与项目」批量载入世界书（无参与项目则返回空列表）。"""
+    pids = [p for p in (project_ids or []) if p]
+    if not pids:
+        return []
     try:
         from ..repositories.world_book_repo import ProjectWorldBookRepo
-        wb = ProjectWorldBookRepo.get_by_project(project_id)
-        if wb is None:
-            return ""
-        return wb.content_text or ""
+        return ProjectWorldBookRepo.get_by_projects(pids)
     except Exception as e:
-        logger.error("_sub_fetch_world_book failed project=%s: %s", project_id, e)
-        return ""
+        logger.error("_load_world_books failed projects=%s: %s", pids, e)
+        return []
+
+
+def _sub_fetch_world_book(project_ids: Optional[list[str]]) -> str:
+    """项目世界书纯文本（多项目合并；无参与项目则为空串）。"""
+    texts = [wb.content_text for wb in _load_world_books(project_ids) if wb.content_text]
+    return "\n\n".join(texts)
 
 
 def _sub_fetch_rule_book() -> str:
@@ -434,3 +461,41 @@ def _sub_fetch_rule_book() -> str:
     except Exception as e:
         logger.error("_sub_fetch_rule_book failed: %s", e)
         return ""
+
+
+def _sub_fetch_world_books_json(project_ids: Optional[list[str]]) -> str:
+    """世界书 content_json 原文（JSON 数组，多项目合并；无参与项目则为空串）。
+
+    结构与消费方约定：
+        [{"project_id": "<uuid>", "content_json": "<原文>"}, ...]
+    供会话侧按操作者权限实时裁剪（render_brief / render_full 逐本渲染后合并）。
+    """
+    items = [
+        {"project_id": wb.project_id, "content_json": wb.content_json}
+        for wb in _load_world_books(project_ids)
+        if wb.content_json
+    ]
+    if not items:
+        return ""
+    return json.dumps(items, ensure_ascii=False)
+
+
+def _sub_fetch_system_description_json() -> str:
+    """获取认知书 content_json 原文（供按操作者权限裁剪）。"""
+    try:
+        from ..repositories.system_description_repo import SystemDescriptionRepo
+        desc = SystemDescriptionRepo.get_latest()
+        return (desc.content_json or "") if desc is not None else ""
+    except Exception as e:
+        logger.error("_sub_fetch_system_description_json failed: %s", e)
+        return ""
+
+
+def _sub_fetch_rule_book_sections() -> list[dict]:
+    """获取规则书解析后章节（供按操作者权限裁剪）。"""
+    try:
+        from ..services.rule_book_loader import RuleBookLoader, parse_sections
+        return parse_sections(RuleBookLoader().content)
+    except Exception as e:
+        logger.error("_sub_fetch_rule_book_sections failed: %s", e)
+        return []

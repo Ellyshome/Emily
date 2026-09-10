@@ -144,7 +144,6 @@ async def run_cold_start(*, db_url: str = "", dry_run: bool = False) -> dict:
         if creds is None:
             logger.warning("邮件通知跳过：未配置 EMILY_EMAIL_IDKEY / EMILY_EMAIL_PASSWORD，请检查 .env")
         else:
-            from emily_core.infrastructure.database.models import User
             from emily_core.providers.email.smtp_provider import SMTPEmailProvider
             from emily_core.services.email_service import EmailService
 
@@ -153,12 +152,11 @@ async def run_cold_start(*, db_url: str = "", dry_run: bool = False) -> dict:
 
             for init_r in init_results:
                 try:
-                    with get_session() as session:
-                        admins = session.query(User).filter(
-                            User.project_id == init_r["project_id"],
-                            User.is_deleted == False,
-                            User.is_admin == True,
-                        ).all()
+                    from emily_core.repositories.participation_repo import ParticipationRepo
+                    admins = [
+                        u for u in ParticipationRepo.users_of_projects([init_r["project_id"]])
+                        if u.is_admin
+                    ]
 
                     for admin in admins:
                         if admin.email:

@@ -14,6 +14,7 @@ from __future__ import annotations
 
 import logging
 from contextlib import asynccontextmanager
+from pathlib import Path
 
 from fastapi import FastAPI
 
@@ -89,6 +90,17 @@ app.include_router(monitor.router, prefix="/api/v1")
 from .routes import trace as trace_routes  # noqa: E402
 
 app.include_router(trace_routes.router, prefix="/api/v1")
+
+# 脚本执行控制台（独立前端页面）
+from .routes import scripts_runner  # noqa: E402
+
+app.include_router(scripts_runner.router, prefix="/api/v1")
+
+# 脚本控制台静态文件（挂 /console/ 前缀，已加入 AuthMiddleware 白名单）
+_console_static = Path(__file__).resolve().parent.parent / "static" / "scripts_tool"
+if _console_static.exists():
+    from fastapi.staticfiles import StaticFiles
+    app.mount("/console", StaticFiles(directory=str(_console_static), html=True), name="console")
 
 # 群列表同步 API
 from .routes import groups  # noqa: E402
