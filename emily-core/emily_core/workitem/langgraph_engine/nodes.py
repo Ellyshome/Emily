@@ -199,10 +199,12 @@ def make_created(hook_adapter, *, business_tools, resolvers):
                 state["current_sop_id"] = sop_id
             # 构建 tool_specs 并固化到 state（workitem 拉起后工具集固定，全 loop 只读取用）
             session_api_ids = _session_api_ids(ctx)
-            # fallback 路径（意图识别失败）限制为查询类白名单工具，避免 LLM 乱写 DB
+            # fallback 路径（意图识别失败）限制为档位白名单工具，避免 LLM 乱写 DB
             fallback_mode = (getattr(wi, "intent_type", "") == "fallback")
+            fallback_tier = getattr(wi, "fallback_tier", "basic") or "basic"
             tool_specs = build_tool_specs(business_tools, resolvers, session_api_ids,
-                                          fallback_mode=fallback_mode)
+                                          fallback_mode=fallback_mode,
+                                          fallback_tier=fallback_tier)
             # prompt_info 供 ArchiveHook 使用
             ctx.set("prompt_info_created", {
                 "sop_id": sop_id,

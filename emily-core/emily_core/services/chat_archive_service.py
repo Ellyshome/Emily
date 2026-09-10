@@ -94,36 +94,71 @@ class ChatArchiveService:
 
     # ── 查询 ──
 
+    @staticmethod
+    def _filter_by_scope(
+        messages: list[Message],
+        allowed: dict[str, str | None],
+    ) -> list[Message]:
+        """按分级兜底作用域过滤消息（M0）。
+
+        allowed 为 MessageRepository.resolve_allowed_conversations(actor) 的返回值：
+          - 会话不在 allowed → 丢弃；
+          - 群聊且消息早于 actor 入群时间 → 丢弃。
+        """
+        if not allowed:
+            return []
+        out: list[Message] = []
+        for m in messages:
+            cid = getattr(m, "conversation_id", None)
+            if cid is None or cid not in allowed:
+                continue
+            visible_from = allowed[cid]
+            if visible_from:
+                created = getattr(m, "created_at", None)
+                if created and str(created) < str(visible_from):
+                    continue
+            out.append(m)
+        return out
+
     def get_conversation_history(
         self,
+        actor_user_id: str,
         conversation_id: str,
         limit: int = 100,
         offset: int = 0,
         include_progress: bool = False,
     ) -> list[Message]:
-        """查询完整对话历史（入站+出站，按时间正序）。"""
-        return MessageRepository.list_by_conversation_full(
+        """查询完整对话历史（入站+出站，按时间正序），收敛到 actor 可见作用域（M0）。"""
+        allowed = MessageRepository.resolve_allowed_conversations(actor_user_id)
+        if conversation_id not in allowed:
+            return []
+        messages = MessageRepository.list_by_conversation_full(
             conversation_id=conversation_id,
             limit=limit,
             offset=offset,
             include_progress=include_progress,
         )
+        return self._filter_by_scope(messages, allowed)
 
     def get_user_history(
         self,
+        actor_user_id: str,
         user_id: str,
         platform: str | None = None,
         limit: int = 50,
     ) -> list[Message]:
-        """查询指定用户的历史消息（跨会话）。"""
-        return MessageRepository.get_user_history(
+        """查询指定用户的历史消息（跨会话），收敛到 actor 可见作用域（M0）。"""
+        allowed = MessageRepository.resolve_allowed_conversations(actor_user_id)
+        messages = MessageRepository.get_user_history(
             user_id=user_id,
             platform=platform,
             limit=limit,
         )
+        return self._filter_by_scope(messages, allowed)
 
     def search_messages(
         self,
+        actor_user_id: str,
         keyword: str,
         *,
         conversation_id: str | None = None,
@@ -131,14 +166,16 @@ class ChatArchiveService:
         time_range: str = "all",
         limit: int = 50,
     ) -> list[Message]:
-        """全文搜索消息。"""
-        return MessageRepository.search_messages_fulltext(
+        """全文搜索消息，收敛到 actor 可见作用域（M0）。"""
+        allowed = MessageRepository.resolve_allowed_conversations(actor_user_id)
+        messages = MessageRepository.search_messages_fulltext(
             keyword=keyword,
             conversation_id=conversation_id,
             user_id=user_id,
             time_range=time_range,
             limit=limit,
         )
+        return self._filter_by_scope(messages, allowed)
 
     def get_attachments_for_message(self, message_id: str) -> list[dict]:
         """获取消息的所有附件记录。"""

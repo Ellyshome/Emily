@@ -38,6 +38,38 @@ scripts:
     timeout_seconds: 60
     scheduling_note: "纯手动"
 
+  check_fallback_policy:
+    description: "check_fallback_policy.py — 分级兜底策略一致性检查（白名单自洽 + Config 对齐）。"
+    category: system_maintenance
+    source_path: scripts/check_fallback_policy.py
+    invocation: uv run python scripts/check_fallback_policy.py {args}
+    check_arg: null
+    run_args: []
+    auto_run: null
+    auto_run_args: []
+    writes_db: false
+    aggregation_parent: null
+    status: active
+    entrypoint: null
+    timeout_seconds: 60
+    scheduling_note: "纯手动"
+
+  check_fallback_tools:
+    description: "check_fallback_tools.py — 分级兜底白名单 ↔ 工具写语义一致性检查。"
+    category: system_maintenance
+    source_path: scripts/check_fallback_tools.py
+    invocation: uv run python scripts/check_fallback_tools.py {args}
+    check_arg: null
+    run_args: []
+    auto_run: null
+    auto_run_args: []
+    writes_db: false
+    aggregation_parent: null
+    status: active
+    entrypoint: null
+    timeout_seconds: 60
+    scheduling_note: "纯手动"
+
   check_initialization:
     description: "check_initialization.py — 检查项目初始化层级和缺失项。"
     category: cold_start

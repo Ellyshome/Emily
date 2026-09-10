@@ -9,28 +9,13 @@ from __future__ import annotations
 import logging
 from typing import TYPE_CHECKING
 
+from .fallback_policy import FallbackPolicy
+
 if TYPE_CHECKING:
     from ...tools.business_flow_tools import BusinessFlowToolRegistry
     from .resolver import ResolverRegistry
 
 logger = logging.getLogger("emily.langgraph.tool_adapter")
-
-
-# fallback 路径白名单：意图识别失败时（无 SOP 约束），LLM 只能查询不能写入，
-# 避免 LLM 自作主张调 record_event / create_node 等工具乱写 DB。
-# 写入类工具必须由 SOP 路由命中后才暴露（intent_type="sop"）。
-FALLBACK_SAFE_TOOLS: set[str] = {
-    "query_data",
-    "query_node",
-    "query_my_nodes",
-    "query_files",
-    "query_experts",
-    "knowledge_search",
-    "list_attachments",
-    "list_file_versions",
-    "chat_archive",
-    "fetch_inbox",
-}
 
 
 def _session_api_ids(ctx) -> set[str]:
@@ -51,6 +36,7 @@ def build_tool_specs(
     session_api_ids: set[str],
     *,
     fallback_mode: bool = False,
+    fallback_tier: str = "basic",
 ) -> list[dict]:
     """构建 LLM 可见的 tool spec 列表，按 session 权限过滤。
 
@@ -58,8 +44,9 @@ def build_tool_specs(
         business_tools: BusinessFlowToolRegistry 实例
         resolvers: ResolverRegistry 实例
         session_api_ids: 用户可见工具 api_id 集合（来自 SessionContext.available_tools）
-        fallback_mode: 意图识别失败时的兜底模式。True 时只暴露查询类白名单工具
-            （FALLBACK_SAFE_TOOLS），不暴露任何写入类工具，避免 LLM 在无 SOP 约束时乱写 DB。
+        fallback_mode: 意图识别失败时的兜底模式。True 时按 fallback_tier 裁剪工具集，
+            避免 LLM 在无 SOP 约束时乱写 DB。
+        fallback_tier: 兜底档位（basic|advanced），仅 fallback_mode=True 时生效。
 
     Returns:
         list[dict]: OpenAI tool spec 列表
@@ -70,11 +57,13 @@ def build_tool_specs(
         logger.warning("build_tool_specs: session_api_ids 为空，tool_registry 表可能未填充，fail-closed")
         # fail-closed：仅暴露 resolver（resolver 内部做权限约束），不暴露任何业务工具
     else:
+        # M4: 兜底可见集 = FallbackPolicy.resolve(tier, with_write=True) ∩ session_api_ids
+        allowed = FallbackPolicy.resolve(fallback_tier, with_write=True) if fallback_mode else None
         for name in business_tools.list_names():
             if name not in session_api_ids:
                 continue  # fail-closed：用户无权限的工具不暴露
-            if fallback_mode and name not in FALLBACK_SAFE_TOOLS:
-                continue  # fallback 模式：只暴露查询类白名单工具
+            if fallback_mode and (allowed is None or name not in allowed):
+                continue  # 兜底模式：只暴露档位白名单工具
             tool = business_tools.get(name)
             if tool is None:
                 continue
@@ -99,6 +88,6 @@ def build_tool_specs(
     resolver_count = len(list(resolvers.list_all()))
     control_count = len(CONTROL_TOOL_SPECS)
     business_count = len(specs) - resolver_count - control_count
-    logger.info("build_tool_specs: %d business tools + %d resolvers + %d control = %d specs (fallback=%s)",
-                business_count, resolver_count, control_count, len(specs), fallback_mode)
+    logger.info("build_tool_specs: %d business tools + %d resolvers + %d control = %d specs (fallback=%s, tier=%s)",
+                business_count, resolver_count, control_count, len(specs), fallback_mode, fallback_tier)
     return specs
