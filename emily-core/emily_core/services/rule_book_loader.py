@@ -87,13 +87,28 @@ def _truncate(text: str, max_chars: int) -> str:
     return cut[:nl] if nl > 0 else cut
 
 
+def _section_levels(s: dict) -> list[int]:
+    """章节可见等级；缺失/为空时按全员可见（fail-open，避免条文静默失效）。"""
+    levels = s.get("levels")
+    if levels:
+        return levels
+    logger.warning(
+        "rule section %r has no applicable_levels, fallback to all levels",
+        s.get("title", ""),
+    )
+    return list(_SECTION_DEFAULT_LEVELS)
+
+
+def _is_visible(s: dict, level: int) -> bool:
+    """章节是否对当前等级可见（llm_inject 与等级裁剪统一判定）。"""
+    return bool(s.get("llm_inject", True)) and level in _section_levels(s)
+
+
 def render_full(sections: list[dict], level: int) -> str:
     """按 level 过滤后输出规则全文（供 meta_cognition_read）。"""
     parts: list[str] = []
     for s in sections:
-        if not s.get("llm_inject", True):
-            continue
-        if level not in (s.get("levels") or []):
+        if not _is_visible(s, level):
             continue
         parts.append(f"## {s['title']}\n{s.get('body', '')}")
     return "\n\n".join(parts)
@@ -101,10 +116,7 @@ def render_full(sections: list[dict], level: int) -> str:
 
 def render_brief(sections: list[dict], level: int, max_chars: int = 200) -> str:
     """按 level 过滤后生成常驻摘要（≤max_chars）。"""
-    picked = [
-        s for s in sections
-        if s.get("llm_inject", True) and level in (s.get("levels") or [])
-    ]
+    picked = [s for s in sections if _is_visible(s, level)]
     if not picked:
         return ""
     text = "适用规则（{}）：{}".format(len(picked), " / ".join(s["title"] for s in picked))

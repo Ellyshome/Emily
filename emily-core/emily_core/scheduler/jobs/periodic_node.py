@@ -44,7 +44,6 @@ class PeriodicNodeHandler(SchedulerJobHandler):
             node_name=node_name,
             responsible_user_id=params.get("responsible_user_id", ""),
             deadline=params.get("deadline", ""),
-            owner_dept_id=params.get("owner_dept_id", "项目总"),
             remark=params.get("description", ""),
             creator_id=params.get("creator_id", "scheduler"),
             node_type="TASK",

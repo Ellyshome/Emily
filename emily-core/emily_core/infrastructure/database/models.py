@@ -806,7 +806,7 @@ class SOPBusinessFlow(Base):
     鉴权逻辑：
       1. 用户所属权限组（PermissionGroup）决定可见的 SOP 范围
       2. SOP 关联的权限组定义谁可以访问
-      3. 部门权限过滤：只有归属部门匹配的用户才能看到对应的 SOP
+      3. 级别 / 密级 / 企业类型 / 节点范围 过滤（部门维度已移除，PRD R1）
     """
     __tablename__ = "sop_business_flows"
 
@@ -1067,7 +1067,7 @@ class ProjectNode(Base):
     project_id = Column(String(100), nullable=False, comment="项目归属ID（FK→projects.id）")
     node_id = Column(String(100), nullable=False, comment="节点编号（业务主键），例：SG-JG-01-2026")
     node_name = Column(String(500), nullable=False, comment="节点名称")
-    owner_dept_id = Column(String(100), nullable=False, default="项目总", comment="主责条线（FK→company_info.id）")
+    owner_dept_id = Column(String(100), nullable=False, default="", comment="主责条线（已废弃：部门维度移除，保留列恒为空）")
     related_company_id = Column(String(100), nullable=False, default="", comment="关联单位 company_info.id（禁止存中文标签；输入侧中文由 CompanyResolver 解析）")
     deadline = Column(String(50), nullable=False, comment="截止时间（ISO8601）")
 
@@ -1077,11 +1077,15 @@ class ProjectNode(Base):
     # ── 系统字段（8个）──
     creator_id = Column(String(100), nullable=False, comment="录入人ID")
     created_at = Column(String(50), nullable=False, default=_utc_now, comment="录入时间（ISO8601）")
-    approver_id = Column(String(100), default="", comment="批准人ID")
-    approved_at = Column(String(50), default="", comment="批准时间（ISO8601）")
+    approver_id = Column(String(100), default="", comment="批准人ID（已废弃：审批改为签认，改用 acknowledged_by）")
+    approved_at = Column(String(50), default="", comment="批准时间（已废弃：审批改为签认，改用 acknowledged_at）")
+    # ── 签认承载字段（替代审批，PRD US-06）──
+    acknowledged_by = Column(String(100), default="", comment="签认人ID（空=未签认）")
+    acknowledged_at = Column(String(50), default="", comment="签认时间（ISO8601）")
+    acknowledged_level = Column(Integer, default=0, comment="签认时的等级")
     completed_at = Column(String(50), default="", comment="完成时间（ISO8601）")
     is_discarded = Column(Boolean, default=False, comment="是否被废弃")
-    status = Column(String(20), default="NOT_ACTIVATED", comment="当前状态：NOT_ACTIVATED / CONDITIONS_NOT_MET / IN_PROGRESS / COMPLETED")
+    status = Column(String(20), default="CONDITIONS_NOT_MET", comment="当前状态：CONDITIONS_NOT_MET / IN_PROGRESS / COMPLETED")
     responsible_user_id = Column(String(100), nullable=False, default="", comment="责任人（FK→users.id，创建时默认取 creator_id）")
     node_type = Column(String(20), nullable=False, default="WORK_PACKAGE", comment="节点类型：MILESTONE / WORK_PACKAGE / TASK")
     visibility_mode = Column(

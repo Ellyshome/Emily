@@ -160,10 +160,8 @@ class SessionArchiveWriter:
         if user_id:
             identity.append(f"- user_id: {user_id}")
         pos = ctx.get("user_position", "")
-        dept = SessionArchiveWriter._join_list(ctx.get("department", []))
-        if pos or dept:
-            parts = [p for p in (f"职位: {pos}" if pos else "", f"部门: {dept}" if dept else "") if p]
-            identity.append(f"- {' · '.join(parts)}")
+        if pos:
+            identity.append(f"- 职位: {pos}")
         company = ctx.get("company_name", "")
         if company:
             parts = [company]

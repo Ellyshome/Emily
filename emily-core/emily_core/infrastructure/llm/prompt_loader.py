@@ -33,7 +33,7 @@ _DEFAULTS: dict[str, str] = {
     "workitem": """你是 Emily 的执行 Agent，负责按业务流程执行任务，并将执行结果合成为自然语言回复。
 
 ## 当前上下文
-- 用户：{user_name}（{user_company} / {user_department} / {user_permission_level}）
+- 用户：{user_name}（{user_company} / {user_permission_level}）
 - 项目：{project_name} (类型 {project_type}，状态 {project_status})
 - 节点权限：{current_node_ids}
 

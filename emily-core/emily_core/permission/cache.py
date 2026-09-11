@@ -152,11 +152,12 @@ class PermissionCache:
 
     def get_user_whitelist(
         self, user_id: str, user_level: int,
-        company_type: str, department: str,
+        company_type: str,
     ) -> tuple[list[str], list[str]]:
         """获取用户 SOP 白名单 + 拒绝列表（L2 缓存）。
 
-        基于当前 L1 矩阵 + 用户属性计算。矩阵版本变化时自动重算。
+        基于当前 L1 矩阵 + 用户属性（等级 + 单位性质）计算。矩阵版本变化时自动重算。
+        部门维度已移除（PRD US-01/US-02）。
 
         Returns:
             (sop_allow, denied_sop_ids)
@@ -173,7 +174,7 @@ class PermissionCache:
 
         # L2 未命中或版本不一致 —— 重新计算
         sop_allow, denied_sop_ids = self._compute_user_whitelist(
-            matrix, user_level, company_type, department,
+            matrix, user_level, company_type,
         )
 
         with self._user_lock:
@@ -188,34 +189,30 @@ class PermissionCache:
         matrix: PermissionMatrix,
         user_level: int,
         company_type: str,
-        department: str | list[str],
     ) -> tuple[list[str], list[str]]:
-        """基于矩阵 + 用户属性计算白名单（阶段二含企业类型/部门细筛）。
+        """基于矩阵 + 用户属性（等级 × 单位性质）计算白名单。
 
         规则：
           1. deny 绑定（用户匹配组）→ denied
           2. is_public=True → allow
           3. can_access(level, min_level) → level check
-          4. 企业类型/部门细筛（阶段二新增）
+          4. 企业类型细筛
+          （部门匹配已移除，PRD R1）
         """
         from .level import can_access
 
-        # 匹配用户的权限组
+        # 匹配用户的权限组（仅按企业类型）
         matched_group_ids: set[str] = set()
         for g in matrix.groups:
             if g.company_type and g.company_type != company_type:
-                continue
-            # 多部门交集匹配：用户任一部门命中权限组的部门要求即可
-            user_depts = department if isinstance(department, list) else [department] if department else []
-            if g.department and g.department not in user_depts:
                 continue
             matched_group_ids.add(g.id)
 
         sop_allow: list[str] = []
         denied_sop_ids: list[str] = []
 
-        logger.info("_compute_user_whitelist: level=%s company=%s dept=%s flows=%d",
-                     user_level, company_type, department, len(matrix.sop_flows))
+        logger.info("_compute_user_whitelist: level=%s company=%s flows=%d",
+                     user_level, company_type, len(matrix.sop_flows))
 
         for flow in matrix.sop_flows:
             flow_bindings = [b for b in matrix.bindings
@@ -236,19 +233,14 @@ class PermissionCache:
             if flow.min_level is not None and not can_access(user_level, flow.min_level):
                 continue
 
-            # 4. 企业类型匹配（阶段二新增）
+            # 4. 企业类型匹配
             if flow.require_company_match:
                 import json
                 allowed_types = json.loads(flow.allowed_company_types) if flow.allowed_company_types else []
                 if allowed_types and company_type not in allowed_types:
                     continue
 
-            # 5. 部门匹配（阶段二新增）
-            if flow.require_department_match:
-                import json
-                allowed_depts = json.loads(flow.allowed_departments) if flow.allowed_departments else []
-                if allowed_depts and department not in allowed_depts:
-                    continue
+            # 部门匹配（require_department_match / allowed_departments）已移除（PRD R1）
 
             sop_allow.append(flow.sop_id)
 

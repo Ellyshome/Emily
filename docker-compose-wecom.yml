@@ -40,7 +40,6 @@ services:
       - EMILY_VLM_MODEL=${EMILY_VLM_MODEL:-Qwen/Qwen3-VL-8B-Instruct}
       - EMILY_STORAGE_ROOT=/app/attachments
       - EMILY_HOOK_CONFIG_PATH=/app/config/hook_config.json
-      - EMILY_SOP_REPOSITORY_DIR=/app/sops
       - EMILY_API_TOKEN=${EMILY_API_TOKEN:-}
     volumes:
       # 人类编辑（只读）

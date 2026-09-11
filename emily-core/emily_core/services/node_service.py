@@ -21,7 +21,6 @@ from .node_commands import (
     CreateNodeCommand,
     UpdateNodeCommand,
     DiscardNodeCommand,
-    ActivateNodeCommand,
     CreateDeliverableCommand,
     UpdateDeliverableProgressCommand,
     AddDependencyCommand,
@@ -161,10 +160,11 @@ class NodeService:
     # ── 节点 CRUD ──
 
     async def create_node(self, cmd: CreateNodeCommand) -> NodeOperationResult:
-        """创建节点。
+        """创建节点（入库即生效，无审批阻断）。
 
-        权限要求：仅建设单位（company_type == "建设单位"）人员可创建。
-        管理员快捷通道：创建人 level >= 5 时自动激活，跳过审批。
+        权限要求：仅建设单位（company_type == "建设单位"）人员可创建（管理员不限）。
+        所有节点创建后即为 CONDITIONS_NOT_MET（信息先记录、后认可，PRD US-04），
+        不再存在"待审批才生效"的阻断态。
         """
         # ── 责任人默认值 + FK 校验 ──
         responsible_user_id = getattr(cmd, 'responsible_user_id', '') or cmd.creator_id
@@ -177,12 +177,10 @@ class NodeService:
                     error_code="40002",
                 )
 
-        # ── 权限校验 + 管理员级别检测 ──
-        is_admin = False
+        # ── 权限校验 ──
         if cmd.creator_id and self._user_repo:
             user = await asyncio.to_thread(self._user_repo.get_user, cmd.creator_id)
             if user:
-                # 管理员（Level 5/6）跳过审批
                 is_admin = getattr(user, "level", 0) >= 5
                 # 非管理员：仅建设单位人员可创建节点
                 if not is_admin:
@@ -196,8 +194,8 @@ class NodeService:
                             error_code="40301",
                         )
 
-        # 管理员直接以 CONDITIONS_NOT_MET 创建，普通用户以 NOT_ACTIVATED 创建
-        initial_status = CONDITIONS_NOT_MET if is_admin else NOT_ACTIVATED
+        # 入库即生效：所有节点初始状态均为 CONDITIONS_NOT_MET（不再阻断）
+        initial_status = CONDITIONS_NOT_MET
 
         # ── 单位引用统一解析（口径见 docs/Spec/项目归属与可见范围_Spec.md）──
         # 中文单位名/类型只是输入写法，必须解析为 company_info.id 后才落库。
@@ -232,7 +230,6 @@ class NodeService:
             project_id=cmd.project_id,
             node_id=cmd.node_id,
             node_name=cmd.node_name,
-            owner_dept_id=cmd.owner_dept_id,
             related_company_id=related_company_id,
             deadline=cmd.deadline,
             creator_id=cmd.creator_id,
@@ -249,91 +246,28 @@ class NodeService:
                 cmd.node_id, participant_company_ids, cmd.creator_id,
             )
 
-        now_iso = self._now_iso()
+        self._record_event(
+            node_id=cmd.node_id,
+            event_type="node_created",
+            new_value=json.dumps({
+                "node_name": cmd.node_name,
+                "project_id": cmd.project_id,
+                "creator_id": cmd.creator_id,
+                "status": initial_status,
+            }),
+            operator_id=cmd.creator_id,
+            remark="节点创建（入库即生效，无需审批）",
+        )
 
-        if is_admin:
-            # ── 管理员自动激活 ──
-            # 记录审批信息（创建人即审批人）
-            await asyncio.to_thread(
-                self._node_repo.update_fields,
-                cmd.node_id,
-                approver_id=cmd.creator_id,
-                approved_at=now_iso,
-            )
-
-            self._record_event(
-                node_id=cmd.node_id,
-                event_type="node_created_auto_activated",
-                new_value=json.dumps({
-                    "node_name": cmd.node_name,
-                    "project_id": cmd.project_id,
-                    "owner_dept_id": cmd.owner_dept_id,
-                    "creator_id": cmd.creator_id,
-                    "auto_activated": True,
-                }),
-                operator_id=cmd.creator_id,
-                remark=f"管理员创建节点，自动激活（跳过审批）",
-            )
-
-            # 通知：管理员创建并自动激活
-            if self._outbound_bus:
-                try:
-                    self._outbound_bus.publish("node_auto_activated", {
-                        "node_id": cmd.node_id,
-                        "node_name": cmd.node_name,
-                        "project_id": cmd.project_id,
-                        "owner_dept_id": cmd.owner_dept_id,
-                        "creator_id": cmd.creator_id,
-                    })
-                except Exception:
-                    logger.exception("Failed to publish node_auto_activated event")
-
-            logger.info("Node created (auto-activated by admin): %s (project=%s, dept=%s)",
-                        cmd.node_id, cmd.project_id, cmd.owner_dept_id)
-            return NodeOperationResult(
-                success=True,
-                node_id=cmd.node_id,
-                status=CONDITIONS_NOT_MET,
-                progress=_parse_decimal(node.progress),
-                message=f"节点「{cmd.node_name}」已创建并激活",
-            )
-        else:
-            # ── 普通用户：待审批 ──
-            self._record_event(
-                node_id=cmd.node_id,
-                event_type="node_created_pending_approval",
-                new_value=json.dumps({
-                    "node_name": cmd.node_name,
-                    "project_id": cmd.project_id,
-                    "owner_dept_id": cmd.owner_dept_id,
-                    "creator_id": cmd.creator_id,
-                }),
-                operator_id=cmd.creator_id,
-                remark=f"节点创建，待「{cmd.owner_dept_id}」部门负责人审批",
-            )
-
-            # 通知：通过 OutboundEventBus 发布待审批事件
-            if self._outbound_bus:
-                try:
-                    self._outbound_bus.publish("node_pending_approval", {
-                        "node_id": cmd.node_id,
-                        "node_name": cmd.node_name,
-                        "project_id": cmd.project_id,
-                        "owner_dept_id": cmd.owner_dept_id,
-                        "creator_id": cmd.creator_id,
-                    })
-                except Exception:
-                    logger.exception("Failed to publish node_pending_approval event")
-
-            logger.info("Node created (pending approval): %s (project=%s, dept=%s)",
-                        cmd.node_id, cmd.project_id, cmd.owner_dept_id)
-            return NodeOperationResult(
-                success=True,
-                node_id=cmd.node_id,
-                status=node.status,
-                progress=_parse_decimal(node.progress),
-                message=f"节点「{cmd.node_name}」已创建，待「{cmd.owner_dept_id}」部门负责人审批后启用",
-            )
+        logger.info("Node created: %s (project=%s, status=%s)",
+                    cmd.node_id, cmd.project_id, initial_status)
+        return NodeOperationResult(
+            success=True,
+            node_id=cmd.node_id,
+            status=initial_status,
+            progress=_parse_decimal(node.progress),
+            message=f"节点「{cmd.node_name}」已创建并入库（状态：条件未满足）",
+        )
 
     async def update_node(self, cmd: UpdateNodeCommand) -> NodeOperationResult:
         """更新节点字段。"""
@@ -342,8 +276,6 @@ class NodeService:
             updates["node_name"] = cmd.node_name
         if cmd.deadline is not None:
             updates["deadline"] = cmd.deadline
-        if cmd.owner_dept_id is not None:
-            updates["owner_dept_id"] = cmd.owner_dept_id
         if cmd.remark is not None:
             updates["remark"] = cmd.remark
 
@@ -405,93 +337,6 @@ class NodeService:
 
         return NodeOperationResult(success=True, node_id=cmd.node_id, message="节点已废弃")
 
-    # ── 节点激活（审批）──
-
-    async def activate_node(self, cmd: ActivateNodeCommand) -> NodeOperationResult:
-        """激活节点 —— 部门负责人审批通过/拒绝。
-
-        审批通过：NOT_ACTIVATED → CONDITIONS_NOT_MET，正式纳入全景图。
-        审批拒绝：节点废弃（is_discarded=True）。
-
-        权限要求：
-          - 审批人必须是该节点 owner_dept_id 对应部门的负责人，或 L5+ 管理员
-        """
-        node = await asyncio.to_thread(self._node_repo.get_by_node_id, cmd.node_id)
-        if node is None:
-            return NodeOperationResult(success=False, node_id=cmd.node_id, message="节点不存在")
-
-        # 状态校验：仅 NOT_ACTIVATED 可审批
-        if node.status != NOT_ACTIVATED:
-            return NodeOperationResult(
-                success=False, node_id=cmd.node_id,
-                message=f"节点状态为「{node.status}」，非待审批状态，无法审批",
-            )
-
-        # 权限校验：审批人须为部门负责人或 L5+ 管理员
-        if cmd.approver_id and self._user_repo:
-            is_authorized = await asyncio.to_thread(
-                self._check_approver_permission,
-                cmd.approver_id, node.owner_dept_id,
-            )
-            if not is_authorized:
-                return NodeOperationResult(
-                    success=False, node_id=cmd.node_id,
-                    message=f"仅「{node.owner_dept_id}」部门负责人或管理员（L5+）可审批此节点",
-                    error_code="40302",
-                )
-
-        now_iso = self._now_iso()
-
-        if cmd.approved:
-            # 审批通过：NOT_ACTIVATED → CONDITIONS_NOT_MET
-            await asyncio.to_thread(self._node_repo.update_status, cmd.node_id, CONDITIONS_NOT_MET)
-            # 记录审批信息
-            await asyncio.to_thread(
-                self._node_repo.update_fields,
-                cmd.node_id,
-                approver_id=cmd.approver_id,
-                approved_at=now_iso,
-            )
-
-            self._record_event(
-                node_id=cmd.node_id,
-                event_type="node_activated",
-                old_value=json.dumps({"status": NOT_ACTIVATED}),
-                new_value=json.dumps({"status": CONDITIONS_NOT_MET, "approver_id": cmd.approver_id}),
-                operator_id=cmd.approver_id,
-                remark=f"审批通过：{cmd.remark}" if cmd.remark else "审批通过",
-            )
-
-            logger.info("Node activated: %s by %s", cmd.node_id, cmd.approver_id)
-            return NodeOperationResult(
-                success=True,
-                node_id=cmd.node_id,
-                status=CONDITIONS_NOT_MET,
-                progress=_parse_decimal(node.progress),
-                message=f"节点「{node.node_name}」审批通过，已启用",
-            )
-        else:
-            # 审批拒绝：废弃节点
-            await asyncio.to_thread(self._node_repo.discard, cmd.node_id)
-
-            self._record_event(
-                node_id=cmd.node_id,
-                event_type="node_activation_rejected",
-                old_value=json.dumps({"status": NOT_ACTIVATED}),
-                new_value=json.dumps({"is_discarded": True, "approver_id": cmd.approver_id}),
-                operator_id=cmd.approver_id,
-                remark=f"审批拒绝：{cmd.remark}" if cmd.remark else "审批拒绝",
-            )
-
-            logger.info("Node activation rejected: %s by %s", cmd.node_id, cmd.approver_id)
-            return NodeOperationResult(
-                success=True,
-                node_id=cmd.node_id,
-                status="DISCARDED",
-                progress=0.0,
-                message=f"节点「{node.node_name}」审批拒绝，已废弃",
-            )
-
     # ── 权限辅助 ──
 
     def _get_creator_company_type(self, creator_id: str) -> str:
@@ -504,41 +349,24 @@ class NodeService:
         company = self._user_repo.get_company(user.company) if user.company else None
         return company.type if company else ""
 
-    def _check_approver_permission(self, approver_id: str, owner_dept_id: str) -> bool:
-        """检查审批人是否有权审批指定部门的节点。
+    def _check_operator_level(self, operator_id: str, min_level: int) -> bool:
+        """检查操作人等级是否达到要求（替代原"部门负责人"判定，PRD R1）。
 
-        L5+ 管理员可审批任何部门；部门负责人可审批本部门。
+        部门维度已移除：不再以"是否本部门负责人"判定，改以等级门槛判定。
+        无 user_repo 时放行（由上层把关）。
         """
         if self._user_repo is None:
-            return True  # 无 user_repo 时放行
-
-        user = self._user_repo.get_user(approver_id)
+            return True
+        user = self._user_repo.get_user(operator_id)
         if user is None:
             return False
-
-        # L5+ 管理员：可审批任何部门
-        if user.level >= 5:
-            return True
-
-        # 部门负责人：user.department 包含 owner_dept_id
-        if user.department and owner_dept_id:
-            import json as _json
-            try:
-                depts = _json.loads(user.department) if isinstance(user.department, str) else user.department
-                if isinstance(depts, list) and owner_dept_id in depts:
-                    return True
-            except (_json.JSONDecodeError, TypeError):
-                pass
-            # 直接字符串匹配作为兜底
-            if user.department == owner_dept_id:
-                return True
-
-        return False
+        return getattr(user, "level", 0) >= min_level
 
     def _check_submission_permission(self, submitter_id: str, node) -> bool:
         """检查提交人是否有权提交节点成果。
 
-        规则：提交人必须是节点责任人或同部门（owner_dept_id）人员。
+        规则（去部门化后）：提交人须为节点责任人、管理员（L5+），
+        或节点参与单位的人员（以「企业归属」替代原「同部门」，PRD R1）。
         """
         if not submitter_id:
             return True  # 无提交人信息时放行（由 API 层把关）
@@ -550,21 +378,25 @@ class NodeService:
         if resp_id and submitter_id == resp_id:
             return True
 
-        # 同部门人员可提交
         user = self._user_repo.get_user(submitter_id)
         if user is None:
             return False
-        owner_dept = getattr(node, 'owner_dept_id', '')
-        if user.department and owner_dept:
-            if user.department == owner_dept:
-                return True
-            import json as _json
+
+        # 管理员放行
+        if getattr(user, "level", 0) >= 5:
+            return True
+
+        # 节点参与单位人员可提交（企业归属，非部门）
+        if user.company:
             try:
-                depts = _json.loads(user.department) if isinstance(user.department, str) else user.department
-                if isinstance(depts, list) and owner_dept in depts:
+                participant_ids = self._npc_repo.find_company_ids_by_node(
+                    getattr(node, 'node_id', '')
+                )
+                if user.company in participant_ids:
                     return True
-            except (_json.JSONDecodeError, TypeError):
-                pass
+            except Exception:
+                logger.warning("submit permission: participant lookup failed node=%s",
+                               getattr(node, 'node_id', ''))
 
         return False
 
@@ -882,17 +714,19 @@ class NodeService:
                     error_code="40002",
                 )
 
-        # 权限校验：部门负责人或 L5+
+        # 权限校验（去部门化）：管理员（L5+）、节点创建人或现责任人可变更责任人
         if cmd.operator_id and self._user_repo:
-            is_authorized = await asyncio.to_thread(
-                self._check_approver_permission, cmd.operator_id, node.owner_dept_id,
-            )
-            if not is_authorized:
-                return NodeOperationResult(
-                    success=False, node_id=cmd.node_id,
-                    message=f"仅「{node.owner_dept_id}」部门负责人或管理员（L5+）可变更责任人",
-                    error_code="40302",
+            if not await asyncio.to_thread(self._check_operator_level, cmd.operator_id, 5):
+                is_owner = cmd.operator_id in (
+                    getattr(node, "creator_id", ""),
+                    getattr(node, "responsible_user_id", ""),
                 )
+                if not is_owner:
+                    return NodeOperationResult(
+                        success=False, node_id=cmd.node_id,
+                        message="仅管理员（L5+）、节点创建人或现责任人可变更责任人",
+                        error_code="40302",
+                    )
 
         await asyncio.to_thread(
             self._node_repo.update_fields, cmd.node_id,
@@ -981,11 +815,11 @@ class NodeService:
                 message=f"节点状态为「{getattr(node, 'status', '未知')}」，非「IN_PROGRESS」",
             )
 
-        # 权限校验：提交人必须是节点责任人或同部门人员
+        # 权限校验：提交人必须是节点责任人或同单位人员
         if not self._check_submission_permission(cmd.submitted_by, node):
             return NodeOperationResult(
                 success=False, node_id=deliv.node_id,
-                message="仅节点责任人或同部门人员可提交成果",
+                message="仅节点责任人、管理员或同单位人员可提交成果",
                 error_code="40303",
             )
 
@@ -1136,18 +970,23 @@ class NodeService:
         deps = await asyncio.to_thread(self._dep_repo.find_by_node, node_id)
         participant_company_ids = await asyncio.to_thread(self._npc_repo.find_company_ids_by_node, node_id)
 
+        ack_by = getattr(node, "acknowledged_by", "") or ""
         return {
             "node_id": node.node_id,
             "node_name": node.node_name,
             "project_id": node.project_id,
             "status": node.status,
             "deadline": node.deadline,
-            "owner_dept_id": node.owner_dept_id,
             "related_company_id": _derive_related_company_from_participants(participant_company_ids, default=node.related_company_id),
             "participant_company_ids": participant_company_ids,
             "remark": node.remark,
             "is_discarded": node.is_discarded,
             "created_at": node.created_at,
+            # 签认状态（替代原审批，PRD US-05/US-06）
+            "acknowledged": bool(ack_by),
+            "acknowledged_by": ack_by,
+            "acknowledged_at": getattr(node, "acknowledged_at", "") or "",
+            "acknowledged_level": getattr(node, "acknowledged_level", 0) or 0,
             "deliverables": [
                 {
                     "deliverable_id": d.deliverable_id,

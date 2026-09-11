@@ -105,7 +105,7 @@ _TOOL_SCRIPTS = [
     ("add_node_dependency", "emily_core.tools.node_tool", "_ADD_DEPENDENCY_SCHEMA", "添加节点依赖", "project", "admin"),
     ("mount_child_node", "emily_core.tools.node_tool", "_MOUNT_CHILD_SCHEMA", "挂载子节点", "project", "admin"),
     ("update_nodes", "emily_core.tools.node_tool", "_UPDATE_NODES_SCHEMA", "批量更新节点", "project", "admin"),
-    ("activate_nodes", "emily_core.tools.node_tool", "_ACTIVATE_NODES_SCHEMA", "批量激活节点", "project", "admin"),
+    ("acknowledge_nodes", "emily_core.tools.node_tool", "_ACK_NODES_SCHEMA", "批量签认节点", "project", "admin"),
     ("discard_nodes", "emily_core.tools.node_tool", "_DISCARD_NODES_SCHEMA", "批量废弃节点", "project", "admin"),
     # project — 邮箱 2 个
     ("send_email", "emily_core.tools.project", "_SEND_EMAIL_SCHEMA", "发送邮件", "base", "all"),

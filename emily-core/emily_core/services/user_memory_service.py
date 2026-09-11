@@ -4,6 +4,10 @@ M8c: 为每个用户维护一个长期记忆 Markdown 文件。
 当用户表达明显的长期工作要求时，Agent 调用 write_user_memory 工具写入。
 每次新对话开始时，加载用户记忆作为 system prompt 上下文。
 
+消费链路（读侧）：
+    SessionDataFetcher.fetch() 调 load_memory_context() 取出条目文本，
+    注入 {user_memory} 变量（文件记忆优先，users.long_term_memory 列兜底）。
+
 文件格式：
     # 用户名 - 长期工作记忆
 

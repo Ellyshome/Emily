@@ -565,6 +565,13 @@ def make_expert_review(hook_adapter, *, llm_client, config):
     async def expert_review(state: dict) -> dict:
         ctx = _get_context()
         wi = ctx.work_item
+
+        # 防御性兜底：全局开关关闭时跳过评审（正常情况下 routing 已短路，此处防第二条进入路径）
+        if not getattr(config, "expert_review_enabled", True):
+            logger.info("expert_review: disabled by config, fallback to executing (WI %s)",
+                        getattr(wi, "id", "?"))
+            return {"wi_state": "executing"}
+
         t = _enter_stage(state, "expert_review")
 
         if not await hook_adapter.fire_before("expert_review", ctx):

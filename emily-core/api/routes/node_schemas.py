@@ -32,7 +32,6 @@ class CreateNodeRequest(BaseModel):
     project_id: str = Field(..., description="项目归属ID")
     node_id: str = Field(..., description="节点编号（业务主键），例：SG-JG-01-2026")
     node_name: str = Field(..., description="节点名称")
-    owner_dept_id: str = Field(default="项目总", description="主责条线")
     participant_company_ids: list[str] = Field(default_factory=list, description="参与单位ID列表（至少一项；首项自动成为关联单位）")
     deadline: str = Field(..., description="截止时间（ISO8601）")
     remark: str = Field(default="", description="备注")
@@ -44,19 +43,17 @@ class CreateNodeRequest(BaseModel):
 class UpdateNodeRequest(BaseModel):
     node_name: str | None = Field(default=None, description="节点名称")
     deadline: str | None = Field(default=None, description="截止时间")
-    owner_dept_id: str | None = Field(default=None, description="主责条线")
     remark: str | None = Field(default=None, description="备注")
     operator_id: str = Field(default="", description="操作人ID")
 
 
 # ══════════════════════════════════════════════════════════════════════════════
-# 节点审批
+# 节点签认（替代原审批）
 # ══════════════════════════════════════════════════════════════════════════════
 
-class ActivateNodeRequest(BaseModel):
-    approved: bool = Field(..., description="是否通过审批")
-    approver_id: str = Field(..., description="审批人ID")
-    remark: str = Field(default="", description="审批意见")
+class AcknowledgeNodeRequest(BaseModel):
+    user_id: str = Field(..., description="签认人ID")
+    remark: str = Field(default="", description="签认备注")
 
 
 # ══════════════════════════════════════════════════════════════════════════════

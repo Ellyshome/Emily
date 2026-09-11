@@ -22,6 +22,10 @@ logger = logging.getLogger("emily.session_data_fetcher")
 
 _SENTINEL = "XXXXXXXXXX"
 
+# 注入 {user_memory} 的记忆文本上限（字符）。记忆文件按条目累积，需在进入提示词变量区前截断，
+# 避免长期使用的用户把变量区撑爆（稳定前缀本身不受影响，见 Pi 对比报告 §1.4 缓存友好约束）。
+_MEMORY_CONTEXT_MAX_CHARS = 2000
+
 
 def _beijing_now_str() -> str:
     return (datetime.now(timezone.utc) + timedelta(hours=8)).strftime("%Y-%m-%d %H:%M:%S")
@@ -88,6 +92,35 @@ def _translate_project_status(status: str) -> str:
     return status_map.get(status, status)
 
 
+def resolve_long_term_memory(user, user_name: str, core=None) -> str:
+    """解析注入 {user_memory} 的长期记忆文本。
+
+    优先级：UserMemoryService 文件记忆 > users.long_term_memory 列（兜底）。
+    文件记忆由 write_user_memory 工具写入（M8c）；DB 列无写入方，仅为兼容历史数据保留。
+    结果超过 _MEMORY_CONTEXT_MAX_CHARS 时截断（防变量区膨胀）。
+    """
+    memory = getattr(user, "long_term_memory", "") or ""
+
+    if core is not None:
+        mem_svc = getattr(core, "_user_memory_service", None)
+        if mem_svc is not None and getattr(mem_svc, "enabled", False):
+            try:
+                file_memory = mem_svc.load_memory_context(user_name)
+            except Exception as e:
+                logger.warning("load_memory_context failed for user=%s: %s", user_name, e)
+                file_memory = ""
+            if file_memory:
+                memory = file_memory
+
+    if len(memory) > _MEMORY_CONTEXT_MAX_CHARS:
+        logger.info(
+            "long_term_memory truncated for user=%s: %d -> %d chars",
+            user_name, len(memory), _MEMORY_CONTEXT_MAX_CHARS,
+        )
+        memory = memory[:_MEMORY_CONTEXT_MAX_CHARS]
+    return memory
+
+
 # ══════════════════════════════════════════════════════════════════════════════
 # SessionDataFetcher
 # ══════════════════════════════════════════════════════════════════════════════
@@ -101,7 +134,7 @@ class SessionDataFetcher:
     # 权限快照字段白名单
     _PERM_KEYS = frozenset({
         "level", "is_management_unit", "company_id", "company_type", "company_name",
-        "department", "project_ids", "partner_ids", "scopes", "sop_allow",
+        "project_ids", "partner_ids", "scopes", "sop_allow",
         "db_perms", "info_level", "supervisor_id", "granted_codes", "denied_codes",
         "authorized_node_ids", "permission_version", "permissions_loaded_at",
     })
@@ -120,7 +153,7 @@ class SessionDataFetcher:
         Returns:
             dict: {level, sop_allow, authorized_node_ids, db_perms, info_level,
                    supervisor_id, granted_codes, denied_codes, company_id,
-                   company_type, is_management_unit, department, scopes, ...}
+                   company_type, is_management_unit, scopes, ...}
         """
         if not user_id:
             return {}
@@ -173,7 +206,7 @@ class SessionDataFetcher:
         user_name = _resolve_user_name(user)
         user_position = _parse_position_json(user.position or "")
 
-        long_term_memory = user.long_term_memory or ""
+        long_term_memory = resolve_long_term_memory(user, user_name, core)
 
         # ── 步骤 2: 权限快照（调 PermissionService.build_permission_dict） ──
         perms = _sub_fetch_permissions(user_id, core)
@@ -214,7 +247,6 @@ class SessionDataFetcher:
             "company_id": perms.get("company_id", ""),
             "company_type": perms.get("company_type", ""),
             "company_name": perms.get("company_name", ""),
-            "department": perms.get("department", []),
             "project_ids": perms.get("project_ids", []),
             "partner_ids": perms.get("partner_ids", []),
             "scopes": perms.get("scopes", []),
@@ -391,7 +423,6 @@ def _empty_result(conversation_id: str, user_id: str, errors: list[str]) -> dict
             "company_id": "",
             "company_type": "",
             "company_name": "",
-            "department": [],
             "project_ids": [],
             "partner_ids": [],
             "scopes": [],

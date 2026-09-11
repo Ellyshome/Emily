@@ -461,14 +461,14 @@ def _register_project(core, reg):
             from .node_tool import (
                 handle_create_node, handle_query_node, handle_update_node_progress,
                 handle_add_node_dependency, handle_mount_child_node,
-                handle_update_nodes, handle_activate_nodes, handle_discard_nodes,
+                handle_update_nodes, handle_acknowledge_nodes, handle_discard_nodes,
                 _CREATE_NODE_SCHEMA, _CREATE_NODE_DESCRIPTION,
                 _QUERY_NODE_SCHEMA, _QUERY_NODE_DESCRIPTION,
                 _UPDATE_PROGRESS_SCHEMA, _UPDATE_PROGRESS_DESCRIPTION,
                 _ADD_DEPENDENCY_SCHEMA, _ADD_DEPENDENCY_DESCRIPTION,
                 _MOUNT_CHILD_SCHEMA, _MOUNT_CHILD_DESCRIPTION,
                 _UPDATE_NODES_SCHEMA, _UPDATE_NODES_DESCRIPTION,
-                _ACTIVATE_NODES_SCHEMA, _ACTIVATE_NODES_DESCRIPTION,
+                _ACK_NODES_SCHEMA, _ACK_NODES_DESCRIPTION,
                 _DISCARD_NODES_SCHEMA, _DISCARD_NODES_DESCRIPTION,
             )
             for name, desc, schema, handler in [
@@ -478,7 +478,7 @@ def _register_project(core, reg):
                 ("add_node_dependency", _ADD_DEPENDENCY_DESCRIPTION, _ADD_DEPENDENCY_SCHEMA, handle_add_node_dependency),
                 ("mount_child_node", _MOUNT_CHILD_DESCRIPTION, _MOUNT_CHILD_SCHEMA, handle_mount_child_node),
                 ("update_nodes", _UPDATE_NODES_DESCRIPTION, _UPDATE_NODES_SCHEMA, handle_update_nodes),
-                ("activate_nodes", _ACTIVATE_NODES_DESCRIPTION, _ACTIVATE_NODES_SCHEMA, handle_activate_nodes),
+                ("acknowledge_nodes", _ACK_NODES_DESCRIPTION, _ACK_NODES_SCHEMA, handle_acknowledge_nodes),
                 ("discard_nodes", _DISCARD_NODES_DESCRIPTION, _DISCARD_NODES_SCHEMA, handle_discard_nodes),
             ]:
                 if not reg.has(name):

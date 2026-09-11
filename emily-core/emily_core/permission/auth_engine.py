@@ -1,6 +1,6 @@
 """PermissionAuthEngine —— 三维树形鉴权引擎（需求 §4 + §14）。
 
-三维鉴权 = 主体属性(权限层级) × 资源属性(密级/企业类型/部门/节点) × 授权形式(临时/永久/deny)
+三维鉴权 = 主体属性(权限层级) × 资源属性(密级/企业类型/节点) × 授权形式(临时/永久/deny)
 
 优先级短路求值（需求 §1.4）：
   拒绝(DENY) > 单独文件授权 > 临时授权(TEMP) > 永久授权(PERMANENT) > 单位归属自动授权(AUTO)
@@ -13,8 +13,8 @@ check_sop_access() 流程：
      3.2 树形继承：can_access(perms.level, sop_flow.min_level)
      3.3 密级校验：sop_flow.security_level 可见性 ⊆ perms.info_level
      3.4 企业类型匹配：require_company_match 且 perms.company_type 不在 allowed → DENY
-     3.5 部门匹配：require_department_match 且 perms.department 不在 allowed → DENY
-     3.6 节点范围：required_node_ids 与 perms.authorized_node_ids 有交集（或含 *）
+     3.5 节点范围：required_node_ids 与 perms.authorized_node_ids 有交集（或含 *）
+     （部门匹配已移除，PRD R1）
   4. 全部通过 → ALLOW
   5. DENY 时写 permission_audit_log(operation_type=ACCESS_DENIED)
 """
@@ -187,7 +187,7 @@ class PermissionAuthEngine:
 
     async def _check_sop_matrix(self, perms: dict,
                                 sop_id: str) -> Optional[AccessCheckResult]:
-        """三维矩阵检查：level × security_level × company_type × department × node_ids。
+        """三维矩阵检查：level × security_level × company_type × node_ids。
 
         从 L1 缓存获取 SOP 流定义，逐维度检查。
         """
@@ -198,7 +198,6 @@ class PermissionAuthEngine:
         perm_level = perms.get("level", 1)
         info_level = perms.get("info_level", "public")
         company_type = perms.get("company_type", "")
-        department = perms.get("department", [])
         authorized_node_ids = perms.get("authorized_node_ids", [])
         supervisor_id = perms.get("supervisor_id", "")
 
@@ -254,22 +253,7 @@ class PermissionAuthEngine:
                     suggested_approver=supervisor_id,
                 )
 
-        # 3.5 部门匹配（交集匹配：用户任一部门命中 SOP 允许部门即可）
-        if sop_flow.require_department_match:
-            allowed_depts = json.loads(sop_flow.allowed_departments) \
-                if sop_flow.allowed_departments else []
-            user_departments = department if isinstance(department, list) else [department] if department else []
-            if allowed_depts and not (set(user_departments) & set(allowed_depts)):
-                return AccessCheckResult(
-                    allowed=False,
-                    reason=f"部门不匹配（SOP 要求 {allowed_depts}，用户 {user_departments}）",
-                    matched_details={
-                        "check": "department",
-                        "allowed_depts": allowed_depts,
-                        "user_dept": user_departments,
-                    },
-                    suggested_approver=supervisor_id,
-                )
+        # 3.5 部门匹配已移除（PRD R1/R2：部门不参与权限判定）
 
         # 3.6 节点范围
         required_nodes = json.loads(sop_flow.required_node_ids) \

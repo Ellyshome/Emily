@@ -10,9 +10,9 @@ from __future__ import annotations
 import logging
 
 from langgraph.graph import StateGraph, START, END
-from langgraph.checkpoint.memory import MemorySaver
 
 from .state import AgentLoopState
+from .checkpointer import build_checkpointer
 from .nodes import (
     make_created, make_routing, make_executing, make_summarizing, make_error_analysis,
     make_quality_gate, make_expert_review,
@@ -65,10 +65,10 @@ def build_workitem_graph(
     # ── 边 ──
     gs.add_edge(START, "created")
     gs.add_edge("created", "routing")
-    # routing → 条件路由（expert_required → expert_review，否则 → executing）
+    # routing → 条件路由（开关关：→ executing；开关开：expert_required → expert_review，否则 → executing）
     gs.add_conditional_edges(
         "routing",
-        route_after_routing,
+        make_route_after_routing(config),
         {"executing": "executing", "expert_review": "expert_review"},
     )
 
@@ -107,9 +107,10 @@ def build_workitem_graph(
         {"failed": END, "agent_node": "agent_node"},
     )
 
-    graph = gs.compile(checkpointer=MemorySaver())
+    graph = gs.compile(checkpointer=build_checkpointer(config))
     logger.info("Unified lifecycle graph built: created→routing→executing(agent loop)→summarizing, "
-                "max_iterations=%d, checkpointer=MemorySaver", max_iterations)
+                "max_iterations=%d, checkpointer=%s", max_iterations,
+                getattr(config, "langgraph_checkpointer", "postgres"))
     return graph
 
 
@@ -121,8 +122,42 @@ def route_after_error(state: dict) -> str:
     return "agent_node"
 
 
+def make_route_after_routing(config):
+    """构造 routing 后的路由闭包，注入 expert_review_enabled 开关。
+
+    config.expert_review_enabled 为 False 时全局跳过专家评审（即使 SOP 已绑定专家），
+    直接进 executing 并记录一条跳过说明；为 True（默认）时维持原判定逻辑。
+    """
+    enabled = getattr(config, "expert_review_enabled", True)
+
+    def _route(state: dict) -> str:
+        if not enabled:
+            wi_id = "?"
+            try:
+                from .state import get_bus_context
+                _wi = getattr(get_bus_context(), "work_item", None)
+                if _wi is not None:
+                    wi_id = getattr(_wi, "id", "?")
+            except RuntimeError:
+                pass
+            logger.info(
+                "route_after_routing: WI %s → executing (expert_review disabled by config)",
+                wi_id,
+            )
+            return "executing"
+        return _route_expert_or_executing(state)
+
+    _route.__name__ = "route_after_routing"
+    return _route
+
+
 def route_after_routing(state: dict) -> str:
-    """routing 之后路由：expert_required → expert_review，否则 → executing。"""
+    """向后兼容入口（默认启用专家评审）；图内实际使用 make_route_after_routing(config)。"""
+    return _route_expert_or_executing(state)
+
+
+def _route_expert_or_executing(state: dict) -> str:
+    """expert_required && expert_id → expert_review，否则 → executing。"""
     ctx = None
     try:
         from .state import get_bus_context

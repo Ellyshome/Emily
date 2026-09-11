@@ -71,9 +71,6 @@ class Config:
     routing.md / planner.md / guardian_step.md / guardian_reply.md"""
 
     # ---- Mermaid 决策树 ----
-    pending_issues_enabled: bool = True
-    """待解决问题清单开关"""
-
     pending_issues_path: str = ""
     """待解决问题清单文件路径（为空时默认 tem_log/待解决问题.md）"""
 
@@ -92,10 +89,6 @@ class Config:
 
     user_memory_max_entries: int = 50
     """每个用户长期记忆最大条目数"""
-
-    # ---- SOP 发现式路由 ----
-    sop_repository_dir: str = ""
-    """SOP 仓库目录路径（为空时默认 SOPrepository/）"""
 
     # ---- RAG / pgvector 知识库 ----
     kb_enabled: bool = False
@@ -133,21 +126,8 @@ class Config:
     """VLM 模型名称"""
 
     # ---- 前导信息机制 ----
-    enable_progress_message: bool = True
-    """前导信息开关（深度操作时先发"处理中..."再发结果）"""
-
     progress_message_template: str = "收到，正在为你{action}，请稍候..."
     """前导信息模板，{action} 由系统根据操作类型自动填充"""
-
-    progress_threshold_iterations: int = 3
-    """对话上下文超过此轮数时自动发送前导信息"""
-
-    # ── 聊天归档 ──
-    chat_archive_enabled: bool = True
-    """全量聊天记录存档开关（入站+出站双向归档）"""
-
-    chat_archive_include_progress: bool = False
-    """前导消息是否纳入对话历史查询（默认否）"""
 
     # ── 分级兜底（Fallback Tiering）──
     fallback_basic_tools: str = "knowledge_search,chat_archive"
@@ -158,23 +138,6 @@ class Config:
 
     fallback_admin_min_level: int = 4
     """高级兜底所需的最低权限等级（>= 此值或 is_management_unit 视为高级档）。"""
-
-    # ── Agent 追踪 ──
-    agent_trace_enabled: bool = True
-    """Agent 推理过程记录总开关"""
-
-    agent_trace_detail_level: str = "summary"
-    """追踪详细级别: summary(仅元数据) / full(含完整prompt)"""
-
-    llm_interaction_log_enabled: bool = True
-    """LLM 交互日志开关（token消耗/延迟/响应类型）"""
-
-    tool_call_log_enabled: bool = True
-    """工具调用日志开关（工具名/参数/结果摘要）"""
-
-    # ── 文件下载 ──
-    file_download_enabled: bool = True
-    """附件自动下载开关（默认开启，下载失败会自动跳过不阻断管道）"""
 
     # ── Session 主线编排：公共 Pipeline BUS（4 节点）──
     hook_config_path: str = ""
@@ -196,13 +159,16 @@ class Config:
     0 = 禁用重规划（node3 失败直接走 error_analysis 分类，但不重规划）。
     1 = 允许 1 次重规划（默认，平衡纠错能力与成本）。"""
 
-    langgraph_max_retry: int = 2
-    """LangGraph 引擎最大直接重试次数（node3→error_analysis→node3 循环上限，防死循环）。
-    超过后升级为 REPLAN（回 node2 重规划），避免 transient_failure 分类导致的无限重试。"""
+    langgraph_checkpointer: str = "postgres"
+    """图检查点后端：postgres（默认，AsyncPostgresSaver 持久化，进程重启断点不丢）或
+    memory（MemorySaver，仅用于本地调试/无库环境）。Postgres 不可达时自动回退 memory
+    并打 WARNING，不阻断启动。可通过环境变量 EMILY_LANGGRAPH_CHECKPOINTER 覆盖。"""
 
     # ── 专家Agent 配置 ──
     expert_review_enabled: bool = True
-    """专家评审功能开关"""
+    """专家评审功能开关。False 时全局跳过专家评审——即使 SOP 已绑定 ACTIVE 专家，
+    routing 也直接进 executing（agent loop），并在日志中记录跳过说明。
+    可通过环境变量 EMILY_EXPERT_REVIEW_ENABLED 覆盖（false/0/no/off 视为关闭）。"""
 
     expert_model: str = "deepseek-chat"
     """专家评审用模型（chat 类，支持 temperature + json_mode）"""
@@ -226,17 +192,8 @@ class Config:
     """单轮动态追加 WI 上限（跨域检索编排；达到上限后 on_wi_done 返回空）"""
 
     # ── Checkpoint 持久化 ──
-    checkpoint_enabled: bool = True
-    """检查点持久化开关"""
-
-    checkpoint_ttl_seconds: int = 300
-    """检查点超时时间（秒），默认 5 分钟"""
-
     checkpoint_resume_window_seconds: int = 1800
     """超时后可恢复的时间窗口（秒），默认 30 分钟"""
-
-    checkpoint_max_per_user: int = 5
-    """每用户最大活跃检查点数"""
 
     # ---- 计划任务系统 (Scheduled Task Module) ----
     scheduler_enabled: bool = True
@@ -244,15 +201,6 @@ class Config:
 
     scheduler_tick_seconds: int = 60
     """调度循环间隔（秒），默认 60 秒"""
-
-    # ---- 权限管理 (Permission) ----
-    """临近超时提醒提前量（分钟），默认 60 分钟"""
-
-    scheduler_overdue_check_interval: int = 300
-    """超时检测间隔（秒），默认 300 秒"""
-
-    scheduler_escalate_after_overdue_days: int = 7
-    """超期 N 天后自动升级给上级（P2），默认 7 天"""
 
     # ── Session 归档 md 文件 ----
     session_archive_enabled: bool = True
@@ -271,24 +219,11 @@ class Config:
     白名单内的 im_user_id 仍可自动创建用户。"""
 
     # ---- 权限管理 (Permission) ----
-    permission_enabled: bool = True
-    """权限管理模块总开关"""
-
     permission_cache_ttl_seconds: int = 300
     """权限矩阵缓存 TTL（秒），默认 5 分钟"""
 
-    permission_super_admin_level: int = 6
-    """系统管理员 level 阈值（L6）"""
-
-    permission_session_max_ttl_hours: int = 24
-    """Session 权限快照最大存活时间（小时），超时自动刷新"""
-
     permission_fail_open: bool = True
     """权限查询失败时降级为访客（True）或拒绝（False）"""
-
-    permission_agent_issue_integration_enabled: bool = False
-    """协同待办模块集成开关 —— 关闭时 permission_requests 自身承载审批流；
-    待 agent_issues 模块落地后置 True 切换为真实 HTTP 调用"""
 
     # ---- 邮箱模块 (Email) ----
     email_smtp_host: str = "smtp.qq.com"

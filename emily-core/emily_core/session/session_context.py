@@ -51,7 +51,6 @@ class SessionContext:
     company_id: str = ""
     company_type: str = ""
     company_name: str = ""
-    department: list[str] = field(default_factory=list)
     project_ids: list[str] = field(default_factory=list)
     partner_ids: list[str] = field(default_factory=list)
     scopes: list[str] = field(default_factory=list)
@@ -167,7 +166,6 @@ class SessionContext:
         ctx.company_id = snapshot.get("company_id", "")
         ctx.company_type = snapshot.get("company_type", "")
         ctx.company_name = snapshot.get("company_name", "")
-        ctx.department = list(snapshot.get("department", []))
         ctx.project_ids = list(snapshot.get("project_ids", []))
         ctx.partner_ids = list(snapshot.get("partner_ids", []))
         ctx.scopes = list(snapshot.get("scopes", []))
@@ -401,9 +399,6 @@ class SessionContext:
         company_type = a.get("company_type")
         if company_type is None:
             company_type = self.company_type
-        department = a.get("department")
-        if department is None:
-            department = self.department
         authorized_node_ids = a.get("authorized_node_ids")
         if authorized_node_ids is None:
             authorized_node_ids = self.authorized_node_ids
@@ -427,7 +422,6 @@ class SessionContext:
             "{user_position}": self.user_position,
             "{user_company}": company_name,
             "{user_company_type}": company_type,
-            "{user_department}": "、".join(department) if department else "",
             "{user_level}": _level_label(level),
             "{user_permission_level}": _level_label(level),
             "{current_node_ids}": "、".join(authorized_node_ids),
@@ -613,7 +607,6 @@ class SessionContext:
             "company_id": snapshot.get("company_id"),
             "company_type": snapshot.get("company_type"),
             "company_name": snapshot.get("company_name"),
-            "department": snapshot.get("department"),
             "project_ids": snapshot.get("project_ids"),
             "partner_ids": snapshot.get("partner_ids"),
             "scopes": snapshot.get("scopes"),

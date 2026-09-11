@@ -31,7 +31,6 @@ _STATUS_CN = {
     "COMPLETED": "已完成",
     "IN_PROGRESS": "进行中",
     "CONDITIONS_NOT_MET": "条件未满足",
-    "NOT_ACTIVATED": "未激活",
 }
 
 
@@ -239,7 +238,6 @@ class ProjectWorldBookBuilder:
                 completed = sum(1 for n in nodes if n.status == "COMPLETED")
                 in_progress = sum(1 for n in nodes if n.status == "IN_PROGRESS")
                 conditions_not_met = sum(1 for n in nodes if n.status == "CONDITIONS_NOT_MET")
-                not_activated = sum(1 for n in nodes if n.status == "NOT_ACTIVATED")
 
                 now_beijing = datetime.now(BEIJING_TZ)
                 overdue = 0
@@ -281,6 +279,8 @@ class ProjectWorldBookBuilder:
                         "status": n.status or "",
                         "progress": round(progress, 1),
                         "milestone": (getattr(n, "node_type", "") == "MILESTONE"),
+                        # 签认状态（PRD US-05：未签认信息在使用时须标注）
+                        "acknowledged": bool(getattr(n, "acknowledged_by", "") or ""),
                     }
 
                 return {
@@ -288,7 +288,6 @@ class ProjectWorldBookBuilder:
                     "completed": completed,
                     "in_progress": in_progress,
                     "conditions_not_met": conditions_not_met,
-                    "not_activated": not_activated,
                     "overdue": overdue,
                     "overall_progress": f"{total_progress:.1f}%",
                     "milestones": milestones[:10],

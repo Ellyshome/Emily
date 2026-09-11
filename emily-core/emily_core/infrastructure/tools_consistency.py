@@ -51,7 +51,7 @@ REGISTERED_TOOLS: set[str] = {
     "return_node_deliverable", "query_my_nodes",
     # project
     "create_node", "query_node", "update_node_progress", "add_node_dependency",
-    "mount_child_node", "update_nodes", "activate_nodes", "discard_nodes",
+    "mount_child_node", "update_nodes", "acknowledge_nodes", "discard_nodes",
     "send_email", "fetch_inbox", "chat_archive", "manage_pending_issues",
     # expert_agent
     "create_expert", "approve_expert", "toggle_expert", "query_experts",
@@ -105,7 +105,7 @@ TOOL_META_MAP: dict[str, tuple[str, str, str, str]] = {
     "add_node_dependency":   ("添加节点依赖",   "project", "admin", "sop_only"),
     "mount_child_node":      ("挂载子节点",     "project", "admin", "sop_only"),
     "update_nodes":          ("批量更新节点",   "project", "admin", "sop_only"),
-    "activate_nodes":        ("批量激活节点",   "project", "admin", "sop_only"),
+    "acknowledge_nodes":     ("批量签认节点",   "project", "admin", "sop_only"),
     "discard_nodes":         ("批量废弃节点",   "project", "admin", "sop_only"),
 }
 
@@ -152,7 +152,7 @@ TOOL_SCHEMA_MAP: dict[str, tuple[str, str]] = {
     "add_node_dependency": ("emily_core.tools.node_tool", "_ADD_DEPENDENCY_SCHEMA"),
     "mount_child_node": ("emily_core.tools.node_tool", "_MOUNT_CHILD_SCHEMA"),
     "update_nodes": ("emily_core.tools.node_tool", "_UPDATE_NODES_SCHEMA"),
-    "activate_nodes": ("emily_core.tools.node_tool", "_ACTIVATE_NODES_SCHEMA"),
+    "acknowledge_nodes": ("emily_core.tools.node_tool", "_ACK_NODES_SCHEMA"),
     "discard_nodes": ("emily_core.tools.node_tool", "_DISCARD_NODES_SCHEMA"),
     "send_email": ("emily_core.tools.project", "_SEND_EMAIL_SCHEMA"),
     "fetch_inbox": ("emily_core.tools.project", "_FETCH_INBOX_SCHEMA"),
@@ -170,6 +170,7 @@ TOOL_SCHEMA_MAP: dict[str, tuple[str, str]] = {
 # 新增移除工具时：① 从 REGISTERED_TOOLS/TOOL_META_MAP/TOOL_SCHEMA_MAP 摘除 ② 加到此集合。
 REMOVED_TOOLS: set[str] = {
     "voice_entry",  # 2026-09 摘除：实现文件孤儿且坏导入（audit 报告 §3.1），stub 已删
+    "activate_nodes",  # 2026-09 摘除：审批改签认，被 acknowledge_nodes 取代（PRD US-04/US-06）
 }
 
 

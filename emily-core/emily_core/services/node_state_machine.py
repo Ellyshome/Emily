@@ -21,20 +21,18 @@ logger = logging.getLogger("emily.node_state_machine")
 # 状态常量
 # ══════════════════════════════════════════════════════════════════════════════
 
-NOT_ACTIVATED = "NOT_ACTIVATED"
+NOT_ACTIVATED = "NOT_ACTIVATED"  # 已废弃：仅存量迁移用（PRD US-04，节点入库不再阻断）
 CONDITIONS_NOT_MET = "CONDITIONS_NOT_MET"
 IN_PROGRESS = "IN_PROGRESS"
 COMPLETED = "COMPLETED"
 
-VALID_STATUSES = frozenset({NOT_ACTIVATED, CONDITIONS_NOT_MET, IN_PROGRESS, COMPLETED})
+VALID_STATUSES = frozenset({CONDITIONS_NOT_MET, IN_PROGRESS, COMPLETED})
 
-# 四态流转规则
-# NOT_ACTIVATED → CONDITIONS_NOT_MET：部门负责人审批通过
+# 三态流转规则（NOT_ACTIVATED 已退场，PRD US-04）
 # CONDITIONS_NOT_MET → IN_PROGRESS：条件满足
 # IN_PROGRESS → COMPLETED：成果 100% 完成
 # IN_PROGRESS → CONDITIONS_NOT_MET：阻塞时回退
 VALID_TRANSITIONS: dict[str, frozenset[str]] = {
-    NOT_ACTIVATED: frozenset({CONDITIONS_NOT_MET}),   # 审批通过后激活
     CONDITIONS_NOT_MET: frozenset({IN_PROGRESS}),
     IN_PROGRESS: frozenset({COMPLETED, CONDITIONS_NOT_MET}),  # 阻塞时回退
     COMPLETED: frozenset(),  # 终态
@@ -49,7 +47,7 @@ class NodeSnapshot:
     """节点快照 —— 引擎计算的输入单元。"""
     __slots__ = ("node_id", "status", "progress", "dependencies", "deliverables", "children")
 
-    def __init__(self, node_id: str, status: str = NOT_ACTIVATED, progress: float = 0.0):
+    def __init__(self, node_id: str, status: str = CONDITIONS_NOT_MET, progress: float = 0.0):
         self.node_id = node_id
         self.status = status
         self.progress = progress
