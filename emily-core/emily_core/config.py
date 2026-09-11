@@ -204,6 +204,19 @@ class Config:
     orchestrator_max_dynamic_wis: int = 2
     """单轮动态追加 WI 上限（跨域检索编排；达到上限后 on_wi_done 返回空）"""
 
+    # ── 会话主循环（新路径，M8 灰度开关）──
+    session_loop_enabled: bool = False
+    """新会话主循环总开关（默认 False = 走旧派发路径）。
+    True 时 EmilyCore.handle_message 分派到 SessionLoopPool（并行模块，旧链路原样保留）。
+    可通过环境变量 EMILY_SESSION_LOOP_ENABLED 覆盖。"""
+
+    session_loop_sop_allowlist: str = ""
+    """新循环的 SOP 能力准入清单（逗号分隔短形编号，如 "SOP-002-REC,SOP-005-QRY"）。
+    空 = 全部放开。未列入的 SOP 能力不进入新循环的能力目录（灰度逐 SOP 放开）。"""
+
+    capability_call_timeout_seconds: int = 120
+    """单次能力调用超时（秒）；超时以结构化失败结果回灌对话，由循环收敛（AC-US-01.4）。"""
+
     # ── Checkpoint 持久化 ──
     checkpoint_resume_window_seconds: int = 1800
     """超时后可恢复的时间窗口（秒），默认 30 分钟"""

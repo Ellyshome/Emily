@@ -70,16 +70,29 @@ def _config_from_env(config_data: dict | None) -> dict:
         "EMILY_EMBEDDING_MODEL": "embedding_model",
         "EMILY_EXPERT_REVIEW_ENABLED": "expert_review_enabled",
         "EMILY_LANGGRAPH_CHECKPOINTER": "langgraph_checkpointer",
+        "EMILY_SESSION_LOOP_ENABLED": "session_loop_enabled",
+        "EMILY_SESSION_LOOP_SOP_ALLOWLIST": "session_loop_sop_allowlist",
+        "EMILY_CAPABILITY_CALL_TIMEOUT_SECONDS": "capability_call_timeout_seconds",
     }
     # 布尔字段：环境变量为字符串，需显式转换
     bool_fields = {
         "llm_console_trace_enabled", "kb_enabled", "expert_review_enabled",
+        "session_loop_enabled",
+    }
+    # 整数字段：环境变量为字符串，需显式转换
+    int_fields = {
+        "capability_call_timeout_seconds",
     }
     for env_key, cfg_key in env_map.items():
         val = os.environ.get(env_key)
         if val and not data.get(cfg_key):
             if cfg_key in bool_fields:
                 data[cfg_key] = val.strip().lower() in ("1", "true", "yes", "on")
+            elif cfg_key in int_fields:
+                try:
+                    data[cfg_key] = int(str(val).strip())
+                except ValueError:
+                    _logger.warning("Invalid int env %s=%r — ignored", env_key, val)
             else:
                 data[cfg_key] = val
     return data

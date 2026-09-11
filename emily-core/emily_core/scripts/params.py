@@ -12,7 +12,7 @@
 
 from __future__ import annotations
 
-from .script_entry import ScriptEntry, ScriptParam
+from .script_entry import ScriptEntry, ScriptParam, ScriptSubcommand
 
 
 class ParamError(ValueError):
@@ -43,6 +43,28 @@ def parse_params(raw: list) -> list[ScriptParam]:
             group=item.get("group"),
             min=item.get("min"),
             max=item.get("max"),
+            options_source=item.get("options_source"),
+        ))
+    return result
+
+
+def parse_subcommands(raw: list) -> list[ScriptSubcommand]:
+    """从 YAML 原始 list 构造 ScriptSubcommand 列表。
+
+    容错同 parse_params：单条解析失败跳过，不影响整个 registry 加载。
+    """
+    result: list[ScriptSubcommand] = []
+    for item in raw or []:
+        if not isinstance(item, dict):
+            continue
+        name = item.get("name")
+        if not name:
+            continue
+        result.append(ScriptSubcommand(
+            name=str(name),
+            label=item.get("label", ""),
+            help=item.get("help", ""),
+            params=parse_params(item.get("params", [])),
         ))
     return result
 
@@ -61,25 +83,61 @@ def param_to_dict(p: ScriptParam) -> dict:
         "group": p.group,
         "min": p.min,
         "max": p.max,
+        "options_source": p.options_source,
     }
 
 
-def build_cli_args(entry: ScriptEntry, values: dict) -> list[str]:
+def subcommand_to_dict(sub: ScriptSubcommand) -> dict:
+    """子命令序列化为前端可消费的 JSON。"""
+    return {
+        "name": sub.name,
+        "label": sub.label or sub.name,
+        "help": sub.help,
+        "params": [param_to_dict(p) for p in sub.params],
+    }
+
+
+def build_cli_args(entry: ScriptEntry, values: dict,
+                   subcommand: str | None = None) -> list[str]:
     """按 schema 把表单值拼成 argv。
 
     Args:
-        entry: 目标脚本条目（须已声明 params）。
+        entry: 目标脚本条目。
         values: {参数名: 值}，来自 Web 表单。未声明的键直接报错。
+        subcommand: 带子命令脚本选中的动作名（如 "query"），拼在 argv 首位。
 
     Returns:
-        argv 列表，如 ["放线验收标准", "--top-k", "8"]。位置参数排在选项前。
+        argv 列表，如 ["query", "--project-id", "xxx"]。位置参数排在选项前。
 
     Raises:
-        ParamError: 未知参数 / 缺必填 / 类型错 / 取值不在 choices / 越界 / 互斥组冲突。
+        ParamError: 未声明 schema / 未知子命令 / 未知参数 / 缺必填 / 类型错 /
+                    取值不在 choices / 越界 / 互斥组冲突。
     """
-    params = entry.params
-    if not params:
+    if entry.subcommands:
+        if not subcommand:
+            raise ParamError(f"脚本 '{entry.name}' 有多个动作，请先选择子命令")
+        sub = next((s for s in entry.subcommands if s.name == subcommand), None)
+        if sub is None:
+            names = ", ".join(s.name for s in entry.subcommands)
+            raise ParamError(f"未知子命令：{subcommand}（可选：{names}）")
+        return [sub.name, *_build_from_params(sub.params, values)]
+
+    if subcommand:
+        raise ParamError(f"脚本 '{entry.name}' 不接受子命令参数")
+
+    if not entry.params:
         raise ParamError(f"脚本 '{entry.name}' 未声明参数 schema，不支持表单调用")
+
+    return _build_from_params(entry.params, values)
+
+
+def _build_from_params(params: list, values: dict) -> list[str]:
+    """按 params schema 把表单值拼成 argv 片段（不含子命令名）。
+
+    子命令分支可以没有参数，此时返回空列表。
+    """
+    if not params:
+        return []
 
     by_name = {p.name: p for p in params}
 

@@ -10,6 +10,7 @@
 import os
 import re
 import logging
+from dataclasses import dataclass, field
 from pathlib import Path
 from datetime import datetime, timezone, timedelta
 from typing import Optional
@@ -45,6 +46,32 @@ def _beijing_time_str() -> str:
 def _beijing_datetime_str() -> str:
     """返回北京时间完整日期时间。"""
     return (datetime.now(timezone.utc) + timedelta(hours=8)).strftime("%Y-%m-%d %H:%M:%S")
+
+
+def _truncate(text: str, limit: int) -> str:
+    """截断文本并标注总长度（供能力调用清单渲染）。"""
+    s = str(text or "")
+    if len(s) <= limit:
+        return s
+    return f"{s[:limit]}…(共{len(s)}字)"
+
+
+@dataclass
+class CapabilityCallRecord:
+    """单次能力调用记录（会话内内存对象，随轮次归档落 md）。
+
+    计划 M7 / PRD D4：归档以会话轮次为**唯一锚点**，轮次记录内嵌能力调用清单，
+    一条记录同时满足审计与溯源，**不新增第二套执行记录存储**（PRD §4.4-5）。
+    """
+
+    capability: str = ""                 # 能力名（SOP 短形编号等）
+    params_digest: str = ""              # 入参摘要（截断）
+    result_status: str = ""              # success | partial | failed
+    result_digest: str = ""              # 成果摘要（facts 拼接，截断）
+    triggered_by: str = ""               # 触发者（姓名(user_id)）
+    elapsed_ms: int = 0
+    needs_input: bool = False            # 是否因缺参挂起
+    issues: list = field(default_factory=list)
 
 
 class SessionArchiveWriter:
@@ -746,6 +773,54 @@ class SessionArchiveWriter:
             "---",
             "",
         ])
+        return "\n".join(lines)
+
+    @staticmethod
+    def render_capability_section(calls: list, prompt_info=None) -> str:
+        """渲染轮次内的"能力调用"段（计划 M7 / US-08）。
+
+        五要素（AC-US-08.1）：调了哪些能力 / 入参摘要 / 产出什么 / 由谁触发 / 成败。
+        纯函数、无 I/O；由会话主循环在轮次收口时经 `append_section()` 写入。
+        """
+        items = [c for c in (calls or []) if c is not None]
+        if not items:
+            return ""
+        lines = ["### 🔧 能力调用"]
+        for i, c in enumerate(items, 1):
+            name = getattr(c, "capability", "") or "?"
+            status = getattr(c, "result_status", "") or "?"
+            needs_input = bool(getattr(c, "needs_input", False))
+            if needs_input:
+                icon = "⏸"
+                status_display = "待用户补充"
+            elif status == "success":
+                icon = "✓"
+                status_display = "成功"
+            elif status == "partial":
+                icon = "◐"
+                status_display = "部分完成"
+            else:
+                icon = "✗"
+                status_display = "失败"
+
+            elapsed = getattr(c, "elapsed_ms", 0) or 0
+            lines.append(f"- {icon} {i}. 能力: {name}　{status_display}（{elapsed}ms）")
+
+            digest = (getattr(c, "params_digest", "") or "").strip()
+            if digest:
+                lines.append(f"  参数: {_truncate(digest, 120)}")
+            result = (getattr(c, "result_digest", "") or "").strip()
+            if result:
+                lines.append(f"  成果: {_truncate(result, 300)}")
+            triggered = (getattr(c, "triggered_by", "") or "").strip()
+            if triggered:
+                lines.append(f"  触发者: {triggered}")
+            for issue in (getattr(c, "issues", None) or [])[:3]:
+                lines.append(f"  问题: {_truncate(str(issue), 150)}")
+
+        if prompt_info:
+            lines.extend(SessionArchiveWriter._render_prompt_info(prompt_info))
+        lines.append("")
         return "\n".join(lines)
 
     @staticmethod

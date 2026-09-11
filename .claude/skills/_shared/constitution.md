@@ -117,6 +117,7 @@
 | C9 | **ToolManager / ScriptManager 边界** | 进程内 LLM 工具 vs subprocess 脚本，共享 service 层但互不调用 |
 | C10 | **工具必须带参数 schema** | 三步缺一不可：源文件 `_XXX_SCHEMA` → 注册 `params=` → 一致性映射 `TOOL_SCHEMA_MAP` |
 | C11 | **功能注册接入（元原则）** | 新功能必须经注册通道接入（tools/scheduler/hook/sop/scripts/provider），禁止裸文件/硬编码接线；出现孤儿代码须**停下提醒用户** |
+| C12 | **Session 主循环冻结（元原则）** | ⚠️ 最高优先级架构纪律：Session 主循环只因对话机制本身而改，**永不因业务功能增长而改**；功能增长一律落能力层（新工具/新 SOP 能力/协作封装为新能力）。**腐化判据：业务功能的 PR diff 到主循环文件即违反本条** |
 
 ---
 

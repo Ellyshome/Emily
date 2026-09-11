@@ -97,6 +97,7 @@ from __future__ import annotations
 import argparse
 import asyncio
 import logging
+import os
 import sys
 from pathlib import Path
 
@@ -255,7 +256,11 @@ def main():
     sub = parser.add_subparsers(dest="command", required=True)
 
     # ── 共用 DB 参数 ──
-    db_url_default = "postgresql://emily:emily_secret_2026@localhost:25432/emily"
+    # 容器内 localhost:25432 不可达（那是宿主机映射端口），优先用注入的库地址
+    db_url_default = os.environ.get(
+        "EMILY_DATABASE_URL",
+        "postgresql://emily:emily_secret_2026@localhost:25432/emily",
+    )
 
     # ── create 子命令 ──
     p = sub.add_parser("create", help="从 YAML 文件批量创建节点")

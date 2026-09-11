@@ -13,7 +13,7 @@ import logging
 from pathlib import Path
 
 from .script_entry import ScriptEntry
-from .params import parse_params
+from .params import parse_params, parse_subcommands
 
 logger = logging.getLogger("emily.scripts.registry")
 
@@ -105,6 +105,7 @@ def load_registry(yaml_path: str | None = None) -> ScriptRegistry:
                 flow_note=data.get("flow_note"),
                 scheduling_note=data.get("scheduling_note"),
                 params=parse_params(data.get("params", [])),
+                subcommands=parse_subcommands(data.get("subcommands", [])),
             )
             entries.append(entry)
         except Exception as e:

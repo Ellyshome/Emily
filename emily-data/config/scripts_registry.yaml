@@ -197,6 +197,21 @@ scripts:
     entrypoint: null
     timeout_seconds: 120
     scheduling_note: "纯手动"
+    params:
+      - name: user-id
+        type: str
+        label: 用户 UUID
+        help: USERS 表中的用户 UUID
+        required: true
+        options_source: users
+      - name: out-dir
+        type: str
+        label: 输出目录
+        help: 留空则用容器默认目录
+      - name: prompt-only
+        type: flag
+        label: 仅打印 prompt
+        help: 只输出渲染后的 System Prompt，不落盘
 
   dump_meta_cognition:
     description: "dump_meta_cognition.py — 按 book(+query) 打印三书裁剪后全文（校验 meta_cognition_read 的裁剪口径与输出规模）。"
@@ -213,6 +228,54 @@ scripts:
     entrypoint: null
     timeout_seconds: 120
     scheduling_note: "纯手动"
+    params:
+      - name: user-id
+        type: str
+        label: 用户 UUID
+        help: 真实用户 UUID
+        required: true
+        options_source: users
+      - name: book
+        type: enum
+        label: 书目
+        help: 选择要裁剪输出的一本书
+        choices: [world, rule, system]
+        required: true
+      - name: query
+        type: str
+        label: 检索词
+        help: 可选，按关键词裁剪定位
+
+  repro_user_memory_loop:
+    description: "repro_user_memory_loop.py — 复现/回归：用户长期记忆写而不读缺陷的验证（写后 {user_memory} 是否可见）。会向用户记忆文件写入一条测试记忆。"
+    category: system_maintenance
+    source_path: scripts/repro_user_memory_loop.py
+    invocation: uv run python scripts/repro_user_memory_loop.py {args}
+    check_arg: null
+    run_args: []
+    auto_run: null
+    auto_run_args: []
+    writes_db: true
+    aggregation_parent: null
+    status: active
+    entrypoint: null
+    timeout_seconds: 120
+    scheduling_note: "纯手动"
+    params:
+      - name: user-id
+        type: str
+        label: 用户 UUID
+        help: DB 中已存在的用户 UUID
+        required: true
+        options_source: users
+      - name: username
+        type: str
+        label: 用户名
+        help: 留空则从 DB 解析
+      - name: legacy
+        type: flag
+        label: 模拟修复前
+        help: 不传 core，仅看 DB 列，用于复现旧缺陷
 
   three_books_dump:
     description: "三书产出观察工具 —— 导出世界书/规则书/认知书内容与 manifest（--rebuild 重建并落 DB）"
@@ -341,6 +404,17 @@ scripts:
     entrypoint: null
     timeout_seconds: 60
     scheduling_note: "纯手动"
+    params:
+      - name: node-id
+        type: str
+        label: 节点编号
+        help: 取自当前真实环境的节点列表
+        required: true
+        options_source: nodes
+      - name: preview
+        type: flag
+        label: 预览模式
+        help: 只生成总结报告，不落库
 
   evolution_patch:
     description: "evolution_patch.py — 补丁生成脚本。"
@@ -421,6 +495,21 @@ scripts:
     entrypoint: null
     timeout_seconds: 60
     scheduling_note: "纯手动"
+    params:
+      - name: user-id
+        type: str
+        label: 用户 UUID
+        help: USERS 表中的真实用户 UUID
+        required: true
+        options_source: users
+      - name: dry-run
+        type: flag
+        label: 预览模式
+        help: 只做只读生成，不产生写入
+      - name: show-text
+        type: flag
+        label: 显示完整文本
+        help: 默认只输出统计，勾选后打印世界书全文
 
   maintain_node_template_index:
     description: "扫描 node_templates/*.md 模板，生成/更新 index.yaml 索引"
@@ -453,6 +542,95 @@ scripts:
     entrypoint: null
     timeout_seconds: 60
     scheduling_note: "纯手动"
+    subcommands:
+      - name: query
+        label: 查询项目节点概览
+        help: 按项目输出节点进度概览
+        params:
+          - name: project-id
+            type: str
+            label: 项目
+            help: 取自当前真实环境的项目列表
+            required: true
+            options_source: projects
+      - name: create
+        label: 从 YAML 创建节点
+        help: 按定义文件批量创建节点
+        params:
+          - name: file
+            type: str
+            label: YAML 定义文件
+            help: 容器内可访问的路径，如 /app/config/nodes.yaml
+            required: true
+          - name: dry-run
+            type: flag
+            label: 预览模式
+      - name: update
+        label: 从 YAML 更新节点
+        help: 按更新文件批量修改节点字段
+        params:
+          - name: file
+            type: str
+            label: YAML 更新文件
+            required: true
+          - name: dry-run
+            type: flag
+            label: 预览模式
+      - name: acknowledge
+        label: 批量签认节点
+        params:
+          - name: node-ids
+            type: str
+            label: 节点编号
+            help: 多个用英文逗号分隔
+            required: true
+          - name: operator-id
+            type: str
+            label: 签认人
+            required: true
+            options_source: users
+          - name: remark
+            type: str
+            label: 签认备注
+          - name: dry-run
+            type: flag
+            label: 预览模式
+      - name: discard
+        label: 批量废弃节点
+        params:
+          - name: node-ids
+            type: str
+            label: 节点编号
+            help: 多个用英文逗号分隔
+            required: true
+          - name: operator-id
+            type: str
+            label: 操作人
+            required: true
+            options_source: users
+          - name: dry-run
+            type: flag
+            label: 预览模式
+      - name: progress
+        label: 更新成果进度
+        params:
+          - name: file
+            type: str
+            label: YAML 进度文件
+            required: true
+          - name: dry-run
+            type: flag
+            label: 预览模式
+      - name: link-files
+        label: 管理节点文件关联
+        params:
+          - name: file
+            type: str
+            label: YAML 文件关联定义
+            required: true
+          - name: dry-run
+            type: flag
+            label: 预览模式
 
   rag_dry_run:
     description: "rag_dry_run.py — RAG 基座 dry-run 测试脚本。"
@@ -646,6 +824,36 @@ scripts:
     entrypoint: null
     timeout_seconds: 600
     scheduling_note: "纯手动"
+    params:
+      - name: dir
+        type: str
+        label: 扫描目录
+        help: 待向量化入库的文档目录
+        required: true
+      - name: collection
+        type: str
+        label: 知识库集合
+        help: 写入 metadata.collection，默认 company_policies
+      - name: backend
+        type: enum
+        label: Embedding 后端
+        help: remote=SiliconFlow API；tei=本地 TEI 容器
+        choices: [remote, tei]
+        default: remote
+      - name: uploaded-by
+        type: str
+        label: 上传者 UUID
+        help: 写入 files.uploaded_by，用于 doc_id 锚定
+      - name: confidentiality
+        type: int
+        label: 密级
+        help: 0=公开 1=内部 2=机密 3=绝密
+        min: 0
+        max: 3
+      - name: dry-run
+        type: flag
+        label: 预览分块
+        help: 只做分块预览，不写库
 
   backfill_doc_id:
     description: "backfill_doc_id.py — 识别历史断链 chunk（doc_id 无对应 files 记录）。"
@@ -694,6 +902,27 @@ scripts:
     entrypoint: null
     timeout_seconds: 60
     scheduling_note: "纯手动"
+    params:
+      - name: user-id
+        type: str
+        label: 用户 UUID
+        help: 待校验的用户 UUID
+        required: true
+        options_source: users
+      - name: query
+        type: str
+        label: 检索词
+        help: 留空则只输出可见文件集
+      - name: top-k
+        type: int
+        label: 返回条数
+        help: 检索返回条数，默认 5
+        min: 1
+        max: 50
+      - name: rerank
+        type: flag
+        label: 触发重排
+        help: 对比重排前后的命中结果
 
   rag_governance:
     description: "rag_governance.py — 零可见治理：识别无任何可见来源的文件。"
@@ -877,6 +1106,75 @@ scripts:
     entrypoint: null
     timeout_seconds: 60
     scheduling_note: "纯手动（幂等，可重复执行）"
+
+  capability_catalog:
+    description: "capability_catalog.py — 能力目录枚举与准入一致性校验（会话主循环 M2/M3）。"
+    category: system_maintenance
+    source_path: scripts/capability_catalog.py
+    invocation: uv run python scripts/capability_catalog.py {args}
+    check_arg: --check
+    run_args: []
+    auto_run: null
+    auto_run_args: []
+    writes_db: false
+    aggregation_parent: null
+    status: active
+    entrypoint: null
+    timeout_seconds: 60
+    scheduling_note: "纯手动"
+    params:
+      - name: check
+        type: flag
+        label: 准入一致性校验
+        help: 校验"sops 总数 = 准入能力数 + 排除集命中数"，无孤儿；不依赖 DB
+      - name: list
+        type: flag
+        label: 列出能力目录
+        help: 需要 --actor-id（真实用户 UUID）
+      - name: json
+        type: flag
+        label: JSON 输出
+        help: 以 JSON 输出，供下游断言/脚本消费
+      - name: actor-id
+        type: str
+        label: 操作者 UUID
+        help: users 表真实 UUID（伪造会新建用户并降级到访客路径，结果不可信）
+
+  golden_session_loop:
+    description: "golden_session_loop.py — 会话主循环 golden 语料回放与四类断言度量（US-10）。"
+    category: system_maintenance
+    source_path: scripts/golden_session_loop.py
+    invocation: uv run python scripts/golden_session_loop.py {args}
+    check_arg: --dry-run
+    run_args: []
+    auto_run: null
+    auto_run_args: []
+    writes_db: false
+    aggregation_parent: null
+    status: active
+    entrypoint: null
+    timeout_seconds: 600
+    scheduling_note: "纯手动"
+    params:
+      - name: corpus
+        type: str
+        label: 语料路径
+        help: golden 语料文件（yaml/json）
+        required: true
+      - name: path
+        type: enum
+        label: 被测路径
+        help: new = 会话主循环；old = 旧派发链路（基线对照）
+        choices: [new, old]
+        default: new
+      - name: report
+        type: str
+        label: 报告输出路径
+        help: 断言与度量报告（json）
+      - name: dry-run
+        type: flag
+        label: 仅预览
+        help: 只打印待执行语料与断言分组，不发请求
 
 aggregations:
   evolution.py:
