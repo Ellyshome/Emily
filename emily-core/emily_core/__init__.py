@@ -486,8 +486,9 @@ class EmilyCore:
             max_iterations=getattr(self.config, "agent_loop_max_iterations", 12),
         )
         logger.info(
-            "Unified lifecycle graph built: agent loop, max_iterations=%d, checkpointer=MemorySaver",
+            "Unified lifecycle graph built: agent loop, max_iterations=%d, checkpointer=%s",
             getattr(self.config, "agent_loop_max_iterations", 12),
+            getattr(self.config, "langgraph_checkpointer", "postgres"),
         )
 
     def _build_session_pool(self) -> None:
@@ -849,7 +850,7 @@ class EmilyCore:
                 handle_add_node_dependency,
                 handle_mount_child_node,
                 handle_update_nodes,
-                handle_activate_nodes,
+                handle_acknowledge_nodes,
                 handle_discard_nodes,
                 _CREATE_NODE_SCHEMA,
                 _CREATE_NODE_DESCRIPTION,
@@ -863,8 +864,8 @@ class EmilyCore:
                 _MOUNT_CHILD_DESCRIPTION,
                 _UPDATE_NODES_SCHEMA,
                 _UPDATE_NODES_DESCRIPTION,
-                _ACTIVATE_NODES_SCHEMA,
-                _ACTIVATE_NODES_DESCRIPTION,
+                _ACK_NODES_SCHEMA,
+                _ACK_NODES_DESCRIPTION,
                 _DISCARD_NODES_SCHEMA,
                 _DISCARD_NODES_DESCRIPTION,
             )
@@ -877,7 +878,7 @@ class EmilyCore:
                 ("add_node_dependency", _ADD_DEPENDENCY_DESCRIPTION, _ADD_DEPENDENCY_SCHEMA, handle_add_node_dependency),
                 ("mount_child_node", _MOUNT_CHILD_DESCRIPTION, _MOUNT_CHILD_SCHEMA, handle_mount_child_node),
                 ("update_nodes", _UPDATE_NODES_DESCRIPTION, _UPDATE_NODES_SCHEMA, handle_update_nodes),
-                ("activate_nodes", _ACTIVATE_NODES_DESCRIPTION, _ACTIVATE_NODES_SCHEMA, handle_activate_nodes),
+                ("acknowledge_nodes", _ACK_NODES_DESCRIPTION, _ACK_NODES_SCHEMA, handle_acknowledge_nodes),
                 ("discard_nodes", _DISCARD_NODES_DESCRIPTION, _DISCARD_NODES_SCHEMA, handle_discard_nodes),
             ]:
                 self._business_flow_tools.register(BusinessFlowTool(
@@ -1075,7 +1076,7 @@ class EmilyCore:
             "initialized": self._initialized,
             "sessions": pool.size if pool else 0,
             "uptime": pool.uptime_seconds if pool else 0,
-            "langgraph_engine": self._graph is not None if hasattr(self, '_graph') else False,
+            "langgraph_engine": getattr(self, "_workitem_graph", None) is not None,
         }
         return result
 

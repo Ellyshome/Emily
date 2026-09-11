@@ -59,7 +59,7 @@ class ProjectNodeRepo:
         """创建节点（幂等：node_id 已存在则返回已有节点，不重复写入）。
 
         必填参数：project_id, node_id, node_name, creator_id, deadline
-        可选参数：owner_dept_id, related_company_id, remark
+        可选参数：related_company_id, remark
         """
         node_id = kwargs.get("node_id", "")
         if node_id:
@@ -112,22 +112,11 @@ class ProjectNodeRepo:
             return q.order_by(ProjectNode.created_at.desc()).limit(limit).all()
 
     @staticmethod
-    def find_by_owner(owner_dept_id: str, project_id: str | None = None) -> list[ProjectNode]:
-        """按主责条线查询节点。"""
-        with get_session() as session:
-            q = (
-                session.query(ProjectNode)
-                .filter(ProjectNode.owner_dept_id == owner_dept_id, ProjectNode.is_discarded == False)
-            )
-            if project_id:
-                q = q.filter(ProjectNode.project_id == project_id)
-            return q.order_by(ProjectNode.created_at.desc()).limit(200).all()
-
-    @staticmethod
     def update_fields(node_id: str, **kwargs) -> ProjectNode | None:
         """更新节点字段。自动设置 updated_at。
 
-        可更新字段：node_name, deadline, owner_dept_id, related_company_id, remark
+        可更新字段：node_name, deadline, related_company_id, remark,
+        acknowledged_by, acknowledged_at, acknowledged_level
         """
         with get_session() as session:
             node = (
@@ -212,14 +201,12 @@ class ProjectNodeRepo:
 
     @staticmethod
     def find_by_status(status: str, project_id: str | None = None,
-                       owner_dept_id: str | None = None,
                        limit: int = 200) -> list[ProjectNode]:
-        """按状态查询节点（用于查询待审批节点等）。
+        """按状态查询节点。
 
         Args:
-            status: 节点状态（NOT_ACTIVATED / CONDITIONS_NOT_MET / IN_PROGRESS / COMPLETED）
+            status: 节点状态（CONDITIONS_NOT_MET / IN_PROGRESS / COMPLETED）
             project_id: 可选项目过滤
-            owner_dept_id: 可选主责条线过滤
             limit: 返回上限
         """
         with get_session() as session:
@@ -232,27 +219,7 @@ class ProjectNodeRepo:
             )
             if project_id:
                 q = q.filter(ProjectNode.project_id == project_id)
-            if owner_dept_id:
-                q = q.filter(ProjectNode.owner_dept_id == owner_dept_id)
             return q.order_by(ProjectNode.created_at.desc()).limit(limit).all()
-
-    @staticmethod
-    def find_pending_approval(owner_dept_id: str | None = None,
-                              project_id: str | None = None,
-                              limit: int = 200) -> list[ProjectNode]:
-        """查询待审批节点（status=NOT_ACTIVATED）。
-
-        Args:
-            owner_dept_id: 可选按主责条线过滤（部门负责人查看自己部门的待审批节点）
-            project_id: 可选项目过滤
-            limit: 返回上限
-        """
-        return ProjectNodeRepo.find_by_status(
-            "NOT_ACTIVATED",
-            project_id=project_id,
-            owner_dept_id=owner_dept_id,
-            limit=limit,
-        )
 
     @staticmethod
     def get_ancestor_chain(node_id: str, max_depth: int = 3) -> list[ProjectNode]:

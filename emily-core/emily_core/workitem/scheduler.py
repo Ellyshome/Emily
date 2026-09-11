@@ -294,6 +294,9 @@ class SessionScheduler:
         finally:
             self._active.pop(wi.id, None)
             self._done.append(wi)
+            # 终态清理：删除图检查点（WAITING_FOR_INPUT 非终态，保留断点供 resume）
+            if wi.is_terminal:
+                await _cleanup_checkpoint(self._core, getattr(wi, "pipeline_run_id", ""))
         return wi
 
     async def _run_graph(self, context, is_resuming: bool = False, resume_input: str = "") -> None:
@@ -350,7 +353,7 @@ class SessionScheduler:
                 result = await graph.ainvoke(state, config=config)
 
             # 检测 interrupt 挂起
-            _check_interrupt(self, context, config, graph)
+            await _check_interrupt(self, context, config, graph)
         finally:
             clear_bus_context()
             LLMInteractionLogger.clear_context()
@@ -367,11 +370,15 @@ class SessionScheduler:
         return len(self._active)
 
 
-def _check_interrupt(scheduler, context, config, graph) -> None:
-    """检测图是否因 interrupt 挂起（WAITING_FOR_INPUT），若是则标记 WorkItem 状态。"""
+async def _check_interrupt(scheduler, context, config, graph) -> None:
+    """检测图是否因 interrupt 挂起（WAITING_FOR_INPUT），若是则标记 WorkItem 状态。
+
+    用 aget_state（异步）：checkpointer 为 AsyncPostgresSaver 时，同步 get_state
+    会在事件循环线程内跨 loop 复用连接而报错。
+    """
     try:
-        # langgraph 1.x：get_state 读 checkpoint，interrupt 时 __interrupt__ 非空
-        snap = graph.get_state(config)
+        # langgraph 1.x：aget_state 读 checkpoint，interrupt 时 next 非空
+        snap = await graph.aget_state(config)
         tasks = getattr(snap, "tasks", {}) or {}
         next_nodes = getattr(snap, "next", ()) or ()
         # interrupt 挂起时 next 含 tool_node（ask_user 在 tool_node 内 interrupt）
@@ -385,6 +392,26 @@ def _check_interrupt(scheduler, context, config, graph) -> None:
                         wi.id, wi.question[:60])
     except Exception as e:
         logging.getLogger("emily.scheduler").debug("interrupt check skipped: %s", e)
+
+
+async def _cleanup_checkpoint(core, thread_id: str) -> None:
+    """WorkItem 进入终态后删除其图检查点，防 checkpoints 表无界增长。
+
+    失败仅告警，不影响主流程（检查点残留只是存储冗余，语义上无害）。
+    """
+    if not thread_id:
+        return
+    graph = getattr(core, "_workitem_graph", None) if core else None
+    checkpointer = getattr(graph, "checkpointer", None) if graph else None
+    if checkpointer is None or not hasattr(checkpointer, "adelete_thread"):
+        return
+    try:
+        await checkpointer.adelete_thread(thread_id)
+        logging.getLogger("emily.scheduler").debug(
+            "Checkpoint cleaned for thread=%s", thread_id)
+    except Exception as e:
+        logging.getLogger("emily.scheduler").warning(
+            "Checkpoint cleanup failed for thread=%s: %s", thread_id, e)
 
 
 def _extract_interrupt_question(snap) -> str:

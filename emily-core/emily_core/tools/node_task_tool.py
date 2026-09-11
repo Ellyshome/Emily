@@ -24,7 +24,6 @@ _CREATE_TASK_NODE_SCHEMA = {
         "deadline_at": {"type": "string", "description": "截止日期（ISO格式）"},
         "parent_node_id": {"type": "string", "description": "父节点ID（UUID）"},
         "node_id": {"type": "string", "description": "节点ID（UUID，与parent_node_id二选一）"},
-        "owner_dept_id": {"type": "string", "description": "负责部门ID"},
         "description": {"type": "string", "description": "任务描述"},
     },
     "required": ["project_id", "title"],
@@ -90,7 +89,6 @@ async def handle_create_task_node(
         responsible_user_id=params.get("executor_id", params.get("responsible_user_id", "")),
         deadline=params.get("deadline_at", ""),
         parent_node_id=params.get("parent_node_id", params.get("node_id", "")),
-        owner_dept_id=params.get("owner_dept_id", "项目总"),
         description=params.get("description", ""),
         creator_id=user_id,
     )
@@ -213,9 +211,8 @@ async def handle_query_my_nodes(
     merged: list[dict] = []
     for n in resp_nodes + part_nodes:
         if n.node_id in seen:
-            nid = n.node_id
             continue
-        seen.add(nid)
+        seen.add(n.node_id)
         merged.append({
             "node_id": n.node_id,
             "node_name": n.node_name,

@@ -24,7 +24,6 @@ _STATUS_CN = {
     "COMPLETED": "已完成",
     "IN_PROGRESS": "进行中",
     "CONDITIONS_NOT_MET": "条件未满足",
-    "NOT_ACTIVATED": "未激活",
 }
 
 
@@ -64,7 +63,7 @@ def render_brief(content_json: str, authorized_node_ids: list[str], max_chars: i
     结构（缺数据则整行省略）：
       📋 {项目名}（{编号}） ｜ 阶段：{阶段}
       📊 {N}节点：{完成}完成 / {进行中}进行中 / {逾期}逾期 ｜ {整体进度}
-      🔖 我可见节点（{k}）：{节点名}[状态] / ...
+      🔖 我可见节点（{k}）：{节点名}[状态·未签认] / ...
       🔴 逾期：{节点名} / ...
     """
     data = _load(content_json)
@@ -91,7 +90,9 @@ def render_brief(content_json: str, authorized_node_ids: list[str], max_chars: i
             visible = [(nid, seg) for nid, seg in segs.items() if nid in auth]
             if visible:
                 names = [
-                    f"{seg.get('name', '')}[{_STATUS_CN.get(seg.get('status', ''), seg.get('status', ''))}]"
+                    f"{seg.get('name', '')}"
+                    f"[{_STATUS_CN.get(seg.get('status', ''), seg.get('status', ''))}"
+                    f"{'·未签认' if not seg.get('acknowledged', False) else ''}]"
                     for _, seg in visible[:3]
                 ]
                 lines.append(f"🔖 我可见节点（{len(visible)}）：" + " / ".join(names))
@@ -133,6 +134,7 @@ def render_full(content_json: str, authorized_node_ids: list[str],
                 f"[{_STATUS_CN.get(seg.get('status', ''), seg.get('status', ''))}]"
                 f" 进度{seg.get('progress', 0)}%"
                 + ("（里程碑）" if seg.get("milestone") else "")
+                + ("（未签认）" if not seg.get("acknowledged", False) else "")
             )
         if rows:
             lines.append("")

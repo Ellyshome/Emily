@@ -39,6 +39,15 @@ async def lifespan(app: FastAPI):
 
     logger.info("Emily Core API starting — bootstrapping EmilyCore...")
     _core = bootstrap.init()
+    # 图检查点启动恢复：验证 Postgres 可达 + 幂等建表 + 清扫超期残留
+    try:
+        # 注：图是懒构建的（首次 handle_message 才建），须先触发初始化，
+        #     否则 _workitem_graph 尚未存在，startup_recovery 会静默空转。
+        _core._ensure_initialized()
+        from emily_core.workitem.langgraph_engine.checkpointer import startup_recovery
+        await startup_recovery(_core)
+    except Exception as e:
+        logger.warning("Checkpointer startup recovery failed: %s", e)
     logger.info("Emily Core API ready")
     yield
     logger.info("Emily Core API shutting down")

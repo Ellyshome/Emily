@@ -59,7 +59,6 @@ def _config_from_env(config_data: dict | None) -> dict:
         "EMILY_LLM_MODEL": "llm_model",
         "EMILY_STORAGE_ROOT": "storage_root",
         "EMILY_HOOK_CONFIG_PATH": "hook_config_path",
-        "EMILY_SOP_REPOSITORY_DIR": "sop_repository_dir",
         "EMILY_TEI_URL": "tei_url",
         "EMILY_VLM_API_URL": "vlm_api_url",
         "EMILY_VLM_API_KEY": "vlm_api_key",
@@ -69,9 +68,13 @@ def _config_from_env(config_data: dict | None) -> dict:
         "EMILY_EMBEDDING_API_URL": "embedding_api_url",
         "EMILY_EMBEDDING_API_KEY": "embedding_api_key",
         "EMILY_EMBEDDING_MODEL": "embedding_model",
+        "EMILY_EXPERT_REVIEW_ENABLED": "expert_review_enabled",
+        "EMILY_LANGGRAPH_CHECKPOINTER": "langgraph_checkpointer",
     }
     # 布尔字段：环境变量为字符串，需显式转换
-    bool_fields = {"llm_console_trace_enabled", "kb_enabled"}
+    bool_fields = {
+        "llm_console_trace_enabled", "kb_enabled", "expert_review_enabled",
+    }
     for env_key, cfg_key in env_map.items():
         val = os.environ.get(env_key)
         if val and not data.get(cfg_key):

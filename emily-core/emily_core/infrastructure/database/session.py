@@ -88,6 +88,9 @@ def _ensure_columns(engine) -> list[dict]:
             ("progress", "VARCHAR", "'0.00'"),
             ("parent_node_id", "VARCHAR(100)", "''"),
             ("child_weight", "VARCHAR", "'1.0000'"),
+            ("acknowledged_by", "VARCHAR(100)", "''"),
+            ("acknowledged_at", "VARCHAR(50)", "''"),
+            ("acknowledged_level", "INTEGER", "0"),
         ],
         "events": [
             ("confirmed_by", "VARCHAR", "NULL"),

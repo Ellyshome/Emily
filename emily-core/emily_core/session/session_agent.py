@@ -131,7 +131,6 @@ class SessionAgent:
                     "company_name": context.company_name,
                     "company_type": context.company_type,
                     "company_id": context.company_id,
-                    "department": list(context.department),
                     "level": context.level,
                     "is_management_unit": context.is_management_unit,
                     # 可见范围
@@ -188,7 +187,7 @@ class SessionAgent:
     # 权限变量集合：随当前操作者变化，不进 base 缓存，由 _build_rendered_system_prompt 每条消息渲染
     # M1: 追加 3 个三书摘要键（摘要按 actor 权限裁剪，属权限相关变量）
     _PERM_PROMPT_KEYS = frozenset({
-        "{user_company}", "{user_company_type}", "{user_department}",
+        "{user_company}", "{user_company_type}",
         "{user_level}", "{user_permission_level}", "{current_node_ids}",
         "{available_skills}",
         "{project_brief}", "{rule_brief}", "{system_brief}",

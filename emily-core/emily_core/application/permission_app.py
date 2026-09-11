@@ -110,7 +110,6 @@ class PermissionApplication:
                     f"  权限层级: L{perms.get('level', 1)} {level_name}",
                     f"  所属单位: {perms.get('company_name', '-')}",
                     f"  企业类型: {perms.get('company_type', '-')}",
-                    f"  部门: {perms.get('department', '-')}",
                     f"  信息密级: {perms.get('info_level', '-')}",
                     f"  可用SOP ({len(sop_list)}): {', '.join(sop_list[:10])}{'...' if len(sop_list) > 10 else ''}",
                     f"  活跃授权 ({len(grants)}): " + (

@@ -53,7 +53,6 @@ def flatten_nodes(
             "node_id": node_id,
             "node_name": node_def.get("node_name", ""),
             "deadline": node_def.get("deadline", ""),
-            "owner_dept_id": node_def.get("owner_dept_id", "项目总"),
             "related_company_id": node_def.get("related_company_id", "建设单位"),
             "remark": node_def.get("remark", ""),
             "deliverables": node_def.get("deliverables", []),
@@ -148,7 +147,6 @@ async def create_node_tree(
     creator_id: str,
     nodes: list[dict],
     *,
-    auto_activate: bool = True,
     dry_run: bool = False,
 ) -> list[dict]:
     """批量创建全景节点树。
@@ -161,9 +159,8 @@ async def create_node_tree(
 
     Args:
         project_id: 项目 ID
-        creator_id: 创建人 UUID（管理员则自动激活）
+        creator_id: 创建人 UUID
         nodes: 节点列表，每个节点为字典格式，支持嵌套 children
-        auto_activate: 管理员创建时自动激活（跳过审批）
         dry_run: 只校验不写入
 
     Returns:
@@ -219,7 +216,6 @@ async def create_node_tree(
             node_id=node_id,
             node_name=fn["node_name"],
             deadline=fn.get("deadline", ""),
-            owner_dept_id=fn.get("owner_dept_id", "项目总"),
             related_company_id=fn.get("related_company_id", "建设单位"),
             creator_id=creator_id,
             remark=fn.get("remark", ""),

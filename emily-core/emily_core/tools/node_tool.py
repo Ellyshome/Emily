@@ -9,7 +9,7 @@
   - add_node_dependency: 添加前置依赖
   - mount_child_node: 挂载子节点
   - update_nodes: 批量更新节点字段
-  - activate_nodes: 批量激活（审批）节点
+  - acknowledge_nodes: 批量签认节点（替代原审批）
   - discard_nodes: 批量废弃节点
 """
 
@@ -30,7 +30,6 @@ _CREATE_NODE_SCHEMA = {
         "node_id": {"type": "string", "description": "节点编号（业务主键），如 SG-JG-01-2026。单节点模式必填"},
         "node_name": {"type": "string", "description": "节点名称/工作项描述。单节点模式必填"},
         "deadline": {"type": "string", "description": "截止时间（ISO8601格式）。单节点模式必填"},
-        "owner_dept_id": {"type": "string", "description": "主责条线/部门，默认'项目总'"},
         "remark": {"type": "string", "description": "备注/说明"},
         "nodes": {
             "type": "array",
@@ -134,7 +133,6 @@ async def handle_create_node(
             project_id=params.get("project_id", ""),
             creator_id=user_id,
             nodes=batch_nodes,
-            auto_activate=True,
             dry_run=False,
         )
         success_count = sum(1 for r in results if r.get("success"))
@@ -160,7 +158,6 @@ async def handle_create_node(
         node_id=params.get("node_id", ""),
         node_name=params.get("node_name", ""),
         deadline=params.get("deadline", ""),
-        owner_dept_id=params.get("owner_dept_id", "项目总"),
         remark=params.get("remark", ""),
         creator_id=user_id,
     )
@@ -188,10 +185,11 @@ async def handle_query_node(
     detail = await svc.get_node_detail(node_id)
     if detail is None:
         return {"success": False, "message": f"节点 {node_id} 不存在"}
+    ack_note = "" if detail.get("acknowledged") else "（未签认）"
     return {
         "success": True,
         "data": detail,
-        "message": f"节点「{detail['node_name']}」当前状态: {detail['status']}",
+        "message": f"节点「{detail['node_name']}」当前状态: {detail['status']}{ack_note}",
     }
 
 
@@ -284,7 +282,7 @@ _UPDATE_NODES_SCHEMA = {
     "properties": {
         "updates": {
             "type": "array",
-            "description": "节点更新列表。每项含 node_id（必填）+ 要更新的字段（node_name/deadline/owner_dept_id/remark 等）",
+            "description": "节点更新列表。每项含 node_id（必填）+ 要更新的字段（node_name/deadline/remark 等）",
             "items": {"type": "object"},
         },
     },
@@ -293,29 +291,26 @@ _UPDATE_NODES_SCHEMA = {
 
 _UPDATE_NODES_DESCRIPTION = (
     "批量更新节点字段。每项指定 node_id + 要修改的字段（只填要改的），"
-    "支持：node_name/deadline/owner_dept_id/related_company_id/remark。"
+    "支持：node_name/deadline/related_company_id/remark。"
 )
 
-_ACTIVATE_NODES_SCHEMA = {
+_ACK_NODES_SCHEMA = {
     "type": "object",
     "properties": {
         "node_ids": {
             "type": "array",
-            "description": "要激活（审批通过）的节点编号列表",
+            "description": "要签认的节点编号列表",
             "items": {"type": "string"},
         },
-        "approved": {
-            "type": "boolean",
-            "description": "True=审批通过，False=审批拒绝（默认 True）",
-        },
-        "remark": {"type": "string", "description": "审批备注"},
+        "remark": {"type": "string", "description": "签认备注"},
     },
     "required": ["node_ids"],
 }
 
-_ACTIVATE_NODES_DESCRIPTION = (
-    "批量激活（审批通过/拒绝）节点。审批通过：NOT_ACTIVATED → CONDITIONS_NOT_MET。"
-    "审批拒绝：节点废弃。需部门负责人或 L5+ 管理员权限。"
+_ACK_NODES_DESCRIPTION = (
+    "批量签认节点（替代原'审批'）。签认不阻断入库，仅表达'被谁认可'，"
+    "并记录签认人/签认时间/签认等级。需达到该业务对象的签认等级要求（节点为 L4+），"
+    "等级不足会明确拒绝。"
 )
 
 _DISCARD_NODES_SCHEMA = {
@@ -367,23 +362,22 @@ async def handle_update_nodes(
     }
 
 
-async def handle_activate_nodes(
+async def handle_acknowledge_nodes(
     params: dict[str, Any],
     user_id: str = "",
     message_id: str = "",
     **kw,
 ) -> dict[str, Any]:
-    """批量激活（审批）节点。"""
-    from emily_core.services.node_batch_update import batch_activate_nodes
+    """批量签认节点（替代原'审批'）。"""
+    from emily_core.services.node_batch_update import batch_acknowledge_nodes
 
     node_ids = params.get("node_ids", [])
     if not node_ids:
         return {"success": False, "message": "node_ids 列表为空"}
 
-    results = await batch_activate_nodes(
+    results = await batch_acknowledge_nodes(
         node_ids=node_ids,
-        approver_id=user_id,
-        approved=params.get("approved", True),
+        user_id=user_id,
         remark=params.get("remark", ""),
     )
     success_count = sum(1 for r in results if r.get("success"))
@@ -394,7 +388,7 @@ async def handle_activate_nodes(
         "success_count": success_count,
         "fail_count": fail_count,
         "results": results,
-        "message": f"批量审批完成：{success_count} 成功，{fail_count} 失败",
+        "message": f"批量签认完成：{success_count} 成功，{fail_count} 失败",
     }
 
 

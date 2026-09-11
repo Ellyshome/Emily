@@ -99,7 +99,7 @@ class AuthHook(Hook):
     - 接入 SessionContext 三维鉴权（扁平化字段）
     - system.execute 检查 level >= 5
     - 有 SOP 绑定时检查 sop_allow 白名单
-    - 密级/企业类型/部门维度校验委托 AuthEngine
+    - 密级/企业类型维度校验委托 AuthEngine
     """
     resource_type: str = ""   # "system" | "project" | "event" | "task" | "file"
     action: str = ""           # "read" | "create" | "update" | "delete" | "execute"

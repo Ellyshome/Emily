@@ -1,7 +1,7 @@
 <!-- SessionAgent 意图识别/路由专用 system prompt —— 仅用于 _recognize_intent()（每条消息只输出路由 JSON，不回复用户） -->
 <!-- P1-1: 移除三书/工具清单/schema/文件/模板目录全量注入，{sop_catalog} 精简为 L1 能力树骨架 -->
 <!-- 模板变量（阶段1 直接 replace）: {sop_catalog} -->
-<!-- 模板变量（阶段2 Session 级，空值替换为"（无）"）: {user_name} {user_company} {user_company_type} {user_department} {user_position} {user_permission_level} {current_node_ids} {project_name} {project_type} {project_status} {user_memory} {rag_info} {project_brief} {rule_brief} {system_brief} -->
+<!-- 模板变量（阶段2 Session 级，空值替换为"（无）"）: {user_name} {user_company} {user_company_type} {user_position} {user_permission_level} {current_node_ids} {project_name} {project_type} {project_status} {user_memory} {rag_info} {project_brief} {rule_brief} {system_brief} -->
 <!-- 加载位置：SessionAgent._recognize_intent() -->
 <!-- 面向用户的回复人格/话术风格见 session_reply.md（SessionAgent._synthesize_final_reply），勿在本文件混入 -->
 
@@ -123,7 +123,6 @@ sop_id 为 null（fallback）时也要输出 output_spec（元认知类 intent="
 ### 用户身份
 - 姓名：{user_name}
 - 职位：{user_position}
-- 部门：{user_department}
 - 企业：{user_company}（{user_company_type}）
 - 权限：{user_permission_level}
 - 授权节点：{current_node_ids}

@@ -14,7 +14,7 @@ if TYPE_CHECKING:
         CreateNodeCommand,
         UpdateNodeCommand,
         DiscardNodeCommand,
-        ActivateNodeCommand,
+        AcknowledgeNodeCommand,
         CreateDeliverableCommand,
         UpdateDeliverableProgressCommand,
         AddDependencyCommand,
@@ -114,20 +114,22 @@ class NodeApplication:
             "error_code": result.error_code,
         }
 
-    async def activate_node(self, cmd: "ActivateNodeCommand") -> dict:
-        """激活节点 —— 部门负责人审批通过/拒绝 NOT_ACTIVATED 节点。"""
+    async def acknowledge_node(self, cmd: "AcknowledgeNodeCommand") -> dict:
+        """签认节点（替代原审批，PRD US-04/US-06）。"""
         try:
-            result = await self._service.activate_node(cmd)
+            from ..services.signoff_service import SignoffService
+            result = await SignoffService().acknowledge(
+                "node", cmd.node_id, cmd.user_id, remark=getattr(cmd, "remark", ""),
+            )
             return {
-                "success": result.success,
-                "node_id": result.node_id,
-                "status": result.status,
-                "reply": result.message,
-                "error_code": result.error_code,
+                "success": result.get("success", False),
+                "node_id": cmd.node_id,
+                "acknowledged": result.get("acknowledged", False),
+                "reply": result.get("message", ""),
             }
         except Exception as e:
-            logger.error("activate_node failed: %s", e)
-            return {"success": False, "node_id": cmd.node_id, "reply": f"节点激活失败：{e}"}
+            logger.error("acknowledge_node failed: %s", e)
+            return {"success": False, "node_id": cmd.node_id, "reply": f"节点签认失败：{e}"}
 
     async def create_deliverable(self, cmd: "CreateDeliverableCommand") -> dict:
         """新增成果。"""

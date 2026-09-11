@@ -16,7 +16,6 @@ class CreateNodeCommand:
     project_id: str
     node_id: str
     node_name: str
-    owner_dept_id: str = "项目总"
     related_company_id: str = ""           # 关联单位中文名/ID（兼容批量种子；为空时从 participant_company_ids 推导）
     deadline: str = ""
     creator_id: str = ""
@@ -33,20 +32,17 @@ class UpdateNodeCommand:
     operator_id: str = ""
     node_name: str | None = None
     deadline: str | None = None
-    owner_dept_id: str | None = None
     remark: str | None = None
 
 
 @dataclass
-class ActivateNodeCommand:
-    """激活节点命令 —— 部门负责人审批通过/拒绝，NOT_ACTIVATED → CONDITIONS_NOT_MET。
+class AcknowledgeNodeCommand:
+    """签认节点命令 —— 替代原"审批"（PRD US-04/US-06）。
 
-    审批通过（approved=True）：节点从未启用流转到条件不足，正式纳入全景图。
-    审批拒绝（approved=False）：节点废弃（is_discarded=True）。
+    签认表达"被谁认可"，不阻断入库；等级不足时明确拒绝。
     """
     node_id: str
-    approver_id: str = ""
-    approved: bool = True
+    user_id: str = ""
     remark: str = ""
 
 
@@ -223,7 +219,6 @@ class CreateTaskNodeCommand:
     responsible_user_id: str = ""       # 为空时取 creator_id
     deadline: str = ""
     parent_node_id: str = ""
-    owner_dept_id: str = "项目总"
     description: str = ""
     creator_id: str = ""
 

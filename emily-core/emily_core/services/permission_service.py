@@ -13,7 +13,7 @@ build_permission_snapshot() 在 SessionFactory._build_context() 中被调用，
   - build_permission_snapshot() 保持 sync（_build_context 是 sync）
   - check/grant/revoke/query 为 async（Application 层调用，内部用 asyncio.to_thread 包裹 sync repo）
   - fail-open：查询失败降级为 L1 访客快照 + 告警（设计文档 §6.4）
-  - sop_allow 细筛（公开 + 树形级别 + deny 绑定 + 企业类型/部门）
+  - sop_allow 细筛（公开 + 树形级别 + deny 绑定 + 企业类型；部门维度已移除）
 """
 from __future__ import annotations
 
@@ -144,11 +144,11 @@ class PermissionService:
         grants = self._grant_repo.get_active_grants(user_id)
 
         # SOP 白名单 + 拒绝列表（优先使用 L2 缓存）
+        # 权限归口仅由「等级 + 单位性质」决定，部门维度已移除（PRD US-01/US-02）
         if self._cache is not None:
             sop_allow, denied_sop_ids = self._cache.get_user_whitelist(
                 user_id, user.level,
                 company.type if company else "",
-                self._all_departments(company),
             )
         else:
             sop_allow, denied_sop_ids = self._compute_sop_allow(user, company)
@@ -168,7 +168,6 @@ class PermissionService:
             "company_id": user.company or "",
             "company_type": company.type if company else "",
             "company_name": company.company_name if company else "",
-            "department": self._all_departments(company),
             "project_ids": self._derive_project_ids(user, company),
             "partner_ids": self._load_json_list(company.partners) if company else [],
             "scopes": self._load_json_list(company.scope) if company else [],
@@ -208,10 +207,9 @@ class PermissionService:
             groups = self._repo.list_permission_groups()
 
             user_company_type = company.type if company else ""
-            user_departments = self._all_departments(company)
             matched_group_ids = {
                 g.id for g in groups
-                if self._group_matches_user(g, user_company_type, user_departments)
+                if self._group_matches_user(g, user_company_type)
             }
 
             sop_allow: list[str] = []
@@ -255,39 +253,19 @@ class PermissionService:
         return [], []
 
     @staticmethod
-    def _group_matches_user(group: PermissionGroup, user_company_type: str,
-                            user_departments: list[str]) -> bool:
-        """权限组是否匹配用户的企业类型 + 部门（交集匹配）。
+    def _group_matches_user(group: PermissionGroup, user_company_type: str) -> bool:
+        """权限组是否匹配用户的企业类型。
 
-        多部门用户只要任一部门命中权限组的部门要求即算匹配，
-        避免因只取首部门导致其他部门的 SOP 误拒。
+        部门维度已移除（PRD R1：权限只由「单位性质 + 等级」决定），
+        group.department 不再参与匹配。
         """
         if group.company_type and group.company_type != user_company_type:
-            return False
-        if group.department and group.department not in user_departments:
             return False
         return True
 
     # ========================================================================
     #  辅助推导
     # ========================================================================
-
-    @staticmethod
-    def _all_departments(company: Optional[CompanyInfo]) -> list[str]:
-        """返回公司的全部部门列表（而非仅首个）。
-
-        多部门用户（如精装设计单位含设计部/深化部/软装部/工程部）需完整部门列表，
-        以便 SOP 鉴权做交集匹配。只取首个会导致其他部门的 SOP 被误拒。
-        """
-        if not company or not company.department:
-            return []
-        return PermissionService._load_json_list(company.department)
-
-    # 向后兼容别名（返回首部门 str）
-    @staticmethod
-    def _primary_department(company: Optional[CompanyInfo]) -> str:
-        depts = PermissionService._all_departments(company)
-        return depts[0] if depts else ""
 
     @staticmethod
     def _derive_info_level(level: int, is_management_unit: bool = False) -> str:
@@ -572,7 +550,6 @@ class PermissionService:
                     "company_id": perm_dict.get("company_id", ""),
                     "company_type": perm_dict.get("company_type", ""),
                     "company_name": perm_dict.get("company_name", ""),
-                    "department": perm_dict.get("department", []),
                     "is_management_unit": perm_dict.get("is_management_unit", False),
                     "info_level": perm_dict.get("info_level", "public"),
                     "sop_allow": perm_dict.get("sop_allow", []),

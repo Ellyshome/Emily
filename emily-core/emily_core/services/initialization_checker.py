@@ -200,9 +200,8 @@ class InitializationChecker:
             expected_types = {"建设单位", "代建单位", "施工单位", "监理单位", "设计单位"}
             t4["T4_all_companies"] = expected_types.issubset(set(company_types))
 
-            # T4-2: 全部节点有责任人
-            active_nodes = [n for n in nodes if n.status not in ("NOT_ACTIVATED",)]
-            t4["T4_all_node_responsible"] = len(active_nodes) > 0 and all(n.responsible_user_id for n in active_nodes)
+            # T4-2: 全部节点有责任人（节点入库即生效，无阻断态）
+            t4["T4_all_node_responsible"] = len(nodes) > 0 and all(n.responsible_user_id for n in nodes)
 
             # T4-3: 节点依赖关系已建立
             wp_nodes = [n for n in nodes if getattr(n, 'node_type', '') == 'WORK_PACKAGE']

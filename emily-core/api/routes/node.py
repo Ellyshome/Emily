@@ -5,7 +5,7 @@
     GET    /api/v1/project-nodes/{node_id}                — 查询节点详情
     PATCH  /api/v1/project-nodes/{node_id}                — 更新节点字段
     DELETE /api/v1/project-nodes/{node_id}                — 废弃节点
-    POST   /api/v1/project-nodes/{node_id}/activate       — 激活节点（审批 NOT_ACTIVATED → CONDITIONS_NOT_MET）
+    POST   /api/v1/project-nodes/{node_id}/acknowledge    — 签认节点（替代原审批；不阻断入库）
     POST   /api/v1/project-nodes/{node_id}/deliverables   — 新增成果
     PATCH  /api/v1/node-deliverables/{deliverable_id}     — 更新成果进度
     POST   /api/v1/project-nodes/{node_id}/dependencies   — 添加依赖
@@ -26,7 +26,7 @@ from fastapi import APIRouter, HTTPException, Query
 from .node_schemas import (
     CreateNodeRequest,
     UpdateNodeRequest,
-    ActivateNodeRequest,
+    AcknowledgeNodeRequest,
     CreateDeliverableRequest,
     UpdateDeliverableProgressRequest,
     AddDependencyRequest,
@@ -89,7 +89,6 @@ async def create_node(body: CreateNodeRequest):
         project_id=body.project_id,
         node_id=body.node_id,
         node_name=body.node_name,
-        owner_dept_id=body.owner_dept_id,
         deadline=body.deadline,
         creator_id=body.creator_id,
         remark=body.remark,
@@ -164,7 +163,6 @@ async def update_node(node_id: str, body: UpdateNodeRequest):
         operator_id=body.operator_id,
         node_name=body.node_name,
         deadline=body.deadline,
-        owner_dept_id=body.owner_dept_id,
         remark=body.remark,
     )
     result = await svc.update_node(cmd)
@@ -287,29 +285,29 @@ async def discard_node(node_id: str, operator_id: str = Query(default="")):
     return ApiResponse(message=result.message)
 
 
-@router.post("/{node_id}/activate")
-async def activate_node(node_id: str, body: ActivateNodeRequest):
-    """激活节点 —— 部门负责人审批 NOT_ACTIVATED 节点。
+@router.post("/{node_id}/acknowledge")
+async def acknowledge_node(node_id: str, body: AcknowledgeNodeRequest):
+    """签认节点（替代原审批，PRD US-04/US-06）。
 
-    审批通过 → 流转到 CONDITIONS_NOT_MET，正式纳入全景图。
-    审批拒绝 → 节点废弃（is_discarded=True）。
+    签认不阻断入库，仅表达"被谁认可"；等级不足时返回 403 明确拒绝。
     """
-    from emily_core.services.node_commands import ActivateNodeCommand
+    from emily_core.services.signoff_service import SignoffService
 
-    svc = _get_service()
-    cmd = ActivateNodeCommand(
-        node_id=node_id,
-        approver_id=body.approver_id,
-        approved=body.approved,
-        remark=body.remark,
+    result = await SignoffService().acknowledge(
+        "node", node_id, body.user_id, remark=body.remark,
     )
-    result = await svc.activate_node(cmd)
-    if not result.success:
-        status_code = 403 if result.error_code == "40302" else 400
-        raise HTTPException(status_code=status_code, detail=result.message)
+    if not result.get("success"):
+        status_code = 403 if "等级不足" in result.get("message", "") else 400
+        raise HTTPException(status_code=status_code, detail=result.get("message", ""))
     return ApiResponse(
-        message=result.message,
-        data={"node_id": result.node_id, "status": result.status},
+        message=result.get("message", ""),
+        data={
+            "node_id": node_id,
+            "acknowledged": result.get("acknowledged", False),
+            "acknowledged_by": result.get("acknowledged_by", ""),
+            "acknowledged_at": result.get("acknowledged_at", ""),
+            "acknowledged_level": result.get("acknowledged_level", 0),
+        },
     )
 
 

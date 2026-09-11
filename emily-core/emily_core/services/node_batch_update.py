@@ -1,8 +1,8 @@
 """全景节点图 V2 批量更新服务 —— CLI 与工具共享的核心逻辑。
 
 职责：
-  - 批量更新节点字段（名称/截止时间/部门/阶段等）
-  - 批量激活节点（审批通过）
+  - 批量更新节点字段（名称/截止时间/阶段等）
+  - 批量签认节点（替代原批量激活/审批）
   - 批量废弃节点
   - 批量更新成果进度
   - 批量管理节点文件关联（共享文件/条件文件/成果文件）
@@ -80,8 +80,7 @@ async def batch_update_nodes(
     Args:
         updates: 更新列表，每项含：
             - node_id: 节点编号（必填）
-            - 可选字段: node_name, deadline, owner_dept_id, related_company_id,
-                        remark
+            - 可选字段: node_name, deadline, related_company_id, remark
         operator_id: 操作人 UUID
         dry_run: 只校验不写入
 
@@ -123,7 +122,6 @@ async def batch_update_nodes(
             operator_id=operator_id,
             node_name=u.get("node_name"),
             deadline=u.get("deadline"),
-            owner_dept_id=u.get("owner_dept_id"),
             related_company_id=u.get("related_company_id"),
             remark=u.get("remark"),
         )
@@ -149,68 +147,56 @@ async def batch_update_nodes(
 
 
 # ══════════════════════════════════════════════════════════════════════════════
-# 批量激活节点（审批通过）
+# 批量签认节点（替代原批量激活/审批）
 # ══════════════════════════════════════════════════════════════════════════════
 
-async def batch_activate_nodes(
+async def batch_acknowledge_nodes(
     node_ids: list[str],
     *,
-    approver_id: str = "",
-    approved: bool = True,
+    user_id: str = "",
     remark: str = "",
     dry_run: bool = False,
 ) -> list[dict]:
-    """批量激活（审批通过/拒绝）节点。
+    """批量签认节点（替代原"激活/审批"，PRD US-04/US-06）。
 
     Args:
         node_ids: 节点编号列表
-        approver_id: 审批人 UUID
-        approved: True=通过，False=拒绝
-        remark: 审批备注
+        user_id: 签认人 UUID
+        remark: 签认备注
         dry_run: 只校验不写入
     """
-    from .node_service import NodeService
-    from .node_commands import ActivateNodeCommand
-    from ..repositories.permission_repo import PermissionRepository
+    from .signoff_service import SignoffService
 
-    svc = NodeService(user_repo=PermissionRepository())
+    svc = SignoffService()
     results: list[dict] = []
 
-    action = "激活" if approved else "拒绝"
-    logger.info("批量%s %d 个节点", action, len(node_ids))
+    logger.info("批量签认 %d 个节点", len(node_ids))
 
     for node_id in node_ids:
         if dry_run:
             results.append({
                 "node_id": node_id,
                 "success": True,
-                "phase": "activate_node",
-                "message": f"[DRY-RUN] 将{action}节点 {node_id}",
+                "phase": "acknowledge_node",
+                "message": f"[DRY-RUN] 将签认节点 {node_id}",
                 "dry_run": True,
             })
             continue
 
-        cmd = ActivateNodeCommand(
-            node_id=node_id,
-            approver_id=approver_id,
-            approved=approved,
-            remark=remark,
-        )
-
         try:
-            r = await svc.activate_node(cmd)
+            r = await svc.acknowledge("node", node_id, user_id, remark=remark)
             results.append({
                 "node_id": node_id,
-                "success": r.success,
-                "phase": "activate_node",
-                "status": r.status,
-                "message": r.message,
+                "success": r.get("success", False),
+                "phase": "acknowledge_node",
+                "message": r.get("message", ""),
+                "acknowledged_level": r.get("acknowledged_level", 0),
             })
         except Exception as e:
             results.append({
                 "node_id": node_id,
                 "success": False,
-                "phase": "activate_node",
+                "phase": "acknowledge_node",
                 "message": str(e),
             })
 

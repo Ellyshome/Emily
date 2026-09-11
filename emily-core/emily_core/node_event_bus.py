@@ -64,7 +64,6 @@ class SubscriptionFilter:
     node_id: str | None = None          # 特定节点（含子节点事件）
     event_types: list[str] | None = None  # 只订阅这些事件类型
     project_id: str | None = None       # 只订阅某项目
-    owner_dept_id: str | None = None    # 只订阅某主责条线
 
 
 # ══════════════════════════════════════════════════════════════════════════════

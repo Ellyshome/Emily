@@ -841,6 +841,27 @@ scripts:
     timeout_seconds: 60
     scheduling_note: "一次性"
 
+  migrate_remove_department:
+    description: "migrate_remove_department.py — 部门维度移除 · 存量迁移：清空部门标识 + 归零阻断状态（幂等）。"
+    category: one_shot
+    source_path: scripts/migrate_remove_department.py
+    invocation: uv run python scripts/migrate_remove_department.py {args}
+    check_arg: --dry-run
+    run_args: []
+    auto_run: null
+    auto_run_args: []
+    writes_db: true
+    aggregation_parent: null
+    status: one_shot
+    entrypoint: null
+    timeout_seconds: 60
+    scheduling_note: "一次性（幂等，可重复执行）"
+    params:
+      - name: dry-run
+        type: flag
+        label: 仅预览
+        help: 只统计将影响的行数，不写库（建议先预览再执行）
+
   migrate_world_book_segments:
     description: "migrate_world_book_segments.py — 为存量世界书补 structure.node_segments（重跑 Builder，幂等：version +1）。"
     category: system_maintenance
