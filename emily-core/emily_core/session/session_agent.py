@@ -82,12 +82,14 @@ class SessionAgent:
         skill_registry=None,
         journal=None,
         archive_writer=None,
+        config=None,
     ):
         self.conversation_id = conversation_id
         self.context = context
         self.state = SessionState.CREATED
         self.focus = FocusLock()
         self.confirm_queue = ConfirmQueue()
+        self._config = config
 
         # 延迟导入避免循环依赖
         from ..workitem import SessionScheduler
@@ -118,6 +120,7 @@ class SessionAgent:
         self._archive_md_path = ""
         self._last_turn_workitems: list = []
         self._turn_counter: int = 0
+        self._compacting: bool = False  # 压缩进行中互斥，避免并发二次压缩
         # ── 多轮续接 ──
         self._paused_workitem = None  # 挂起等待用户补充信息的 WorkItem
         # 意图识别阶段 Prompt 注入信息（_recognize_intent 暂存，归档段读取）
@@ -294,9 +297,8 @@ class SessionAgent:
         reply = await self._handle_impl(message, db_message_id=db_message_id)
         if reply is not None:
             self._record_turn(message, reply.content)
-            # 溢出压缩由 record_turn 内部检测触发
-            if len(self.context.message_history) > 40 and self._llm:
-                asyncio.ensure_future(self.context.compress_overflow(self._llm))
+            # 窗口预算触发压缩（P0：token 预算取代 >40 条阈值）
+            self._maybe_compact()
             # ── 归档：轮次结尾（系统审核标记 + Emily 回复，BUS 之后写入）──
             self._append_archive_turn_end(reply)
             # ── 进化日志：反馈信号检测 ──
@@ -1118,6 +1120,43 @@ class SessionAgent:
         # 每 10 轮检测热更新
         if len(self.context.message_history) % 20 == 0:
             asyncio.ensure_future(self._maybe_refresh_context())
+
+    def _maybe_compact(self) -> None:
+        """按窗口预算判据触发压缩（异步，不阻塞回复）。
+
+        判据：已用 token > 窗口 - reserveTokens。换模型（窗口变化）行为自动适配。
+        """
+        if not self._llm or self._compacting:
+            return
+        model = getattr(self._llm, "model", None)
+        cfg = self._config
+        reserve = getattr(cfg, "llm_compact_reserve_tokens", 16384)
+        window_override = getattr(cfg, "llm_context_window_override", 0)
+        try:
+            should = self.context.should_compact(
+                model, system_prompt=self._session_prompt_base,
+                reserve_tokens=reserve, window_override=window_override,
+            )
+        except Exception as e:
+            logger.debug("Session[%s] should_compact check failed: %s", self.conversation_id, e)
+            return
+        if not should:
+            return
+        report = self.context.context_usage_report(
+            model, system_prompt=self._session_prompt_base, window_override=window_override)
+        logger.info("Session[%s] compacting: %s", self.conversation_id, report)
+        keep = getattr(cfg, "llm_compact_keep_recent_tokens", 20000)
+        # 先占位再调度，避免同一事件循环 tick 内重复触发
+        self._compacting = True
+
+        async def _run():
+            try:
+                await self.context.compress_overflow(
+                    self._llm, keep_recent_tokens=keep, reserve_tokens=reserve)
+            finally:
+                self._compacting = False
+
+        asyncio.ensure_future(_run())
 
     # ── 辅助 ──
 

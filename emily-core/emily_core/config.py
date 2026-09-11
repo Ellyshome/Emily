@@ -45,6 +45,19 @@ class Config:
     llm_agent_loop_max_tokens: int = 8192
     """Agent loop 专用 max_tokens（v4-pro reasoner 需更大余量，按实际用量计费，设大不等于花得多）"""
 
+    # ---- 上下文预算 / 压缩（参照 Pi Agent compaction）----
+    llm_context_window_override: int = 0
+    """模型上下文窗口覆盖值（0 = 用 model_registry 表内值；换私有部署模型时填）"""
+
+    llm_compact_reserve_tokens: int = 16384
+    """压缩触发保留额：已用 > 窗口 - 该值 时触发压缩（同时充当摘要输出预算来源）"""
+
+    llm_compact_keep_recent_tokens: int = 20000
+    """压缩时保留的近期 token 预算（按 token 累计，而非固定条数）"""
+
+    llm_dynamic_output: bool = True
+    """是否按剩余窗口动态压低输出上限（避免长上下文下输入挤爆输出）"""
+
     llm_router_model: str = "deepseek-v4-flash"
     """路由/意图识别用模型（轻量结构化任务，用 flash 而非 pro，快且省）"""
 

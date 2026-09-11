@@ -13,10 +13,31 @@ from typing import Callable, Optional
 
 from openai import AsyncOpenAI
 
+from .errors import ContextOverflowError, is_overflow_error
+
 # 工具调用依赖 agent_loop_model (v4-pro) 标准 function calling，不再使用 DSML 正则解析。
 # text fallback 精准纠错兜底：agent 返回文本时诊断内容特征（DSML/JSON/纯文本）并给出针对性纠正。
 
 logger = logging.getLogger("emily.llm")
+
+
+def _extract_usage(response) -> dict:
+    """从 provider 响应抽取 usage（缺失时返回零值 dict，不抛异常）。
+
+    返回的 prompt_tokens 是"本次请求的净输入量"，即上下文占用的真实锚点，
+    供 SessionContext 做窗口预算判据使用。
+    """
+    usage = getattr(response, "usage", None)
+    if usage is None:
+        return {"prompt_tokens": 0, "completion_tokens": 0, "total_tokens": 0,
+                "prompt_cache_hit_tokens": 0, "prompt_cache_miss_tokens": 0}
+    return {
+        "prompt_tokens": getattr(usage, "prompt_tokens", 0) or 0,
+        "completion_tokens": getattr(usage, "completion_tokens", 0) or 0,
+        "total_tokens": getattr(usage, "total_tokens", 0) or 0,
+        "prompt_cache_hit_tokens": getattr(usage, "prompt_cache_hit_tokens", 0) or 0,
+        "prompt_cache_miss_tokens": getattr(usage, "prompt_cache_miss_tokens", 0) or 0,
+    }
 
 
 class LLMClient:
@@ -139,6 +160,13 @@ class LLMClient:
         try:
             response = await self._client.chat.completions.create(**kwargs)
         except Exception as e:
+            # 上下文超窗：抛出专用异常，交由上层压缩后重试一次（区别于普通失败）
+            if is_overflow_error(e):
+                logger.warning("LLM context overflow (model=%s): %s", effective_model, str(e)[:300])
+                raise ContextOverflowError(
+                    f"context overflow on model {effective_model}",
+                    model=effective_model, provider_message=str(e)[:500],
+                ) from e
             # tools 不被支持时的回退
             if tools and "tools " in str(e).lower() and "tool_calls" not in str(e).lower():
                 logger.warning("Tools not supported, falling back: %s", e)
@@ -146,6 +174,11 @@ class LLMClient:
                 try:
                     response = await self._client.chat.completions.create(**kwargs)
                 except Exception as e2:
+                    if is_overflow_error(e2):
+                        raise ContextOverflowError(
+                            f"context overflow on model {effective_model}",
+                            model=effective_model, provider_message=str(e2)[:500],
+                        ) from e2
                     logger.error("LLM chat_messages fallback failed: %s", e2)
                     raise
             elif json_mode and "response_format" in str(e).lower():
@@ -160,6 +193,7 @@ class LLMClient:
         choice = response.choices[0]
         finish_reason = choice.finish_reason or ""
         reasoning_content = getattr(choice.message, "reasoning_content", None) or ""
+        usage = _extract_usage(response)
         elapsed_ms = int((time.time() - t0) * 1000)
 
         # tool_call 分支
@@ -183,11 +217,7 @@ class LLMClient:
                         "response_full": f"{tc.function.name}({arguments})",
                         "reasoning_content": reasoning_content,
                         "finish_reason": finish_reason,
-                        "prompt_tokens": getattr(response.usage, "prompt_tokens", 0) if response.usage else 0,
-                        "completion_tokens": getattr(response.usage, "completion_tokens", 0) if response.usage else 0,
-                        "total_tokens": getattr(response.usage, "total_tokens", 0) if response.usage else 0,
-                        "prompt_cache_hit_tokens": getattr(response.usage, "prompt_cache_hit_tokens", 0) if response.usage else 0,
-                        "prompt_cache_miss_tokens": getattr(response.usage, "prompt_cache_miss_tokens", 0) if response.usage else 0,
+                        **usage,
                         "latency_ms": elapsed_ms,
                     })
                 except Exception as e:
@@ -200,6 +230,7 @@ class LLMClient:
                 "tool_call_id": tc.id,
                 "finish_reason": finish_reason,
                 "reasoning_content": reasoning_content,
+                "usage": usage,
             }
 
         content = choice.message.content or ""
@@ -226,11 +257,7 @@ class LLMClient:
                     "response_full": content,
                     "reasoning_content": reasoning_content,
                     "finish_reason": finish_reason,
-                    "prompt_tokens": getattr(response.usage, "prompt_tokens", 0) if response.usage else 0,
-                    "completion_tokens": getattr(response.usage, "completion_tokens", 0) if response.usage else 0,
-                    "total_tokens": getattr(response.usage, "total_tokens", 0) if response.usage else 0,
-                    "prompt_cache_hit_tokens": getattr(response.usage, "prompt_cache_hit_tokens", 0) if response.usage else 0,
-                    "prompt_cache_miss_tokens": getattr(response.usage, "prompt_cache_miss_tokens", 0) if response.usage else 0,
+                    **usage,
                     "latency_ms": elapsed_ms,
                 })
             except Exception as e:
@@ -238,9 +265,9 @@ class LLMClient:
 
         if json_mode:
             data = self._parse_json_response(content)
-            return {"type": "json", "data": data, "finish_reason": finish_reason}
+            return {"type": "json", "data": data, "finish_reason": finish_reason, "usage": usage}
 
-        return {"type": "text", "content": content, "finish_reason": finish_reason}
+        return {"type": "text", "content": content, "finish_reason": finish_reason, "usage": usage}
 
     @staticmethod
     def _parse_json_response(raw: str) -> dict:

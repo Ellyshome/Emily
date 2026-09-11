@@ -15,6 +15,7 @@ import time as _time
 from typing import Any
 
 from ....infrastructure.logging.llm_logger import LLMInteractionLogger
+from ....infrastructure.llm.errors import ContextOverflowError
 from ...pipeline.interfaces.execution import StepResult, ToolCallRecord, DbResult
 from .tool_adapter import _session_api_ids
 from .fallback_policy import FallbackPolicy
@@ -52,13 +53,15 @@ async def agent_node(state: dict, *, llm_client, business_tools, resolvers, sop_
     ctx = _get_ctx()
     wi = ctx.work_item
     messages = list(state.get("messages", []))
+    session_ctx = ctx.get_session_context()
+    system_prompt = next(
+        (m.get("content", "") for m in messages if m.get("role") == "system"), "")
 
     # tool_specs 由 created 节点固化到 state，全 loop 只读取用、不重建
     tool_specs = state.get("_tool_specs") or []
 
     # ── 首次进入：构建 system prompt + 初始 messages ──
     if not messages:
-        session_ctx = ctx.get_session_context()
         system_prompt = build_system_prompt(
             sop_text=sop_text,
             tool_specs=tool_specs,
@@ -68,9 +71,13 @@ async def agent_node(state: dict, *, llm_client, business_tools, resolvers, sop_
             additional_input=getattr(wi, "additional_input", "") or "",
         )
         messages = [{"role": "system", "content": system_prompt}]
-        # 追加 session 消息历史（多轮上下文）
+        # 追加 session 消息历史（多轮上下文）：摘要 + 保留区（压缩后重建）
         if session_ctx is not None:
-            messages.extend(getattr(session_ctx, "message_history", []) or [])
+            getter = getattr(session_ctx, "get_llm_history", None)
+            if callable(getter):
+                messages.extend(getter() or [])
+            else:
+                messages.extend(getattr(session_ctx, "message_history", []) or [])
         messages.append({"role": "user", "content": wi.user_input})
 
     # ── iteration cap 检查 ──
@@ -96,8 +103,46 @@ async def agent_node(state: dict, *, llm_client, business_tools, resolvers, sop_
         model = (getattr(llm_client, "agent_loop_model", None)
                  or getattr(llm_client, "router_model", None)
                  or llm_client.model)
-        result = await llm_client.chat_messages(messages, tools=tool_specs, model=model,
-                                                 max_tokens=getattr(config, "llm_agent_loop_max_tokens", 8192))
+        configured_max = getattr(config, "llm_agent_loop_max_tokens", 8192)
+        # 动态压低输出上限：避免长上下文下"输入挤爆输出"
+        max_tokens = configured_max
+        if session_ctx is not None and getattr(config, "llm_dynamic_output", True):
+            try:
+                max_tokens = session_ctx.cap_max_tokens(
+                    configured_max, model,
+                    system_prompt=system_prompt,
+                    tools=tool_specs,
+                    window_override=getattr(config, "llm_context_window_override", 0),
+                )
+            except Exception as e:
+                logger.debug("cap_max_tokens skipped: %s", e)
+        try:
+            result = await llm_client.chat_messages(messages, tools=tool_specs, model=model,
+                                                     max_tokens=max_tokens)
+        except ContextOverflowError as oe:
+            # 溢出闭环：压缩后重试一次（Pi 的 overflow → compact → retry 语义）
+            logger.warning("agent_node context overflow, compacting then retrying once: %s", oe)
+            if session_ctx is not None:
+                await session_ctx.compress_overflow(
+                    llm_client,
+                    keep_recent_tokens=getattr(config, "llm_compact_keep_recent_tokens", 20000),
+                    reserve_tokens=getattr(config, "llm_compact_reserve_tokens", 16384),
+                )
+                rebuilt = [{"role": "system", "content": system_prompt}]
+                getter = getattr(session_ctx, "get_llm_history", None)
+                if callable(getter):
+                    rebuilt.extend(getter() or [])
+                rebuilt.append({"role": "user", "content": wi.user_input})
+                messages = rebuilt
+                result = await llm_client.chat_messages(messages, tools=tool_specs, model=model,
+                                                        max_tokens=max_tokens)
+            else:
+                raise
+        # 记录真实 usage（供窗口预算判据使用）
+        if session_ctx is not None:
+            rec = getattr(session_ctx, "record_usage", None)
+            if callable(rec):
+                rec(result.get("usage"))
     except Exception as e:
         logger.error("agent_node LLM failed: %s", e, exc_info=True)
         # 防止死循环：连续 3 次 LLM 失败则强制 abort

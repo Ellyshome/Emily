@@ -46,11 +46,13 @@ class SessionFactory:
         skill_registry = None
         journal = None
         archive_writer = None
+        config = None
         if self._core is not None:
             llm = getattr(self._core, "_llm_client", None)
             skill_registry = getattr(self._core, "_skill_registry", None)
             journal = getattr(self._core, "_event_journal", None)
             archive_writer = getattr(self._core, "_session_archive_writer", None)
+            config = getattr(self._core, "config", None)
 
         agent = SessionAgent(
             conversation_id=conv_id,
@@ -59,6 +61,7 @@ class SessionFactory:
             skill_registry=skill_registry,
             journal=journal,
             archive_writer=archive_writer,
+            config=config,
         )
         # 将 EmilyCore 注入 scheduler（graph 引擎通过 _core 获取 _workitem_graph）
         agent.scheduler._core = self._core
