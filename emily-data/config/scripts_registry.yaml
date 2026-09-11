@@ -6,6 +6,66 @@ prologue: |
   > **由 `scriptmgr export` 自动生成，请勿手动编辑。**
 
 scripts:
+  # 置顶：消息模拟器是日常最常用的可视化测试入口，固定排在控制台列表第 1 位
+  emytest_chat:
+    description: "emytest_chat.py — 消息模拟器：用真实用户身份向 emily-core 发一条消息并观察回复（模拟 astrbot 插件 HTTP+SSE）。"
+    category: system_maintenance
+    source_path: scripts/emytest_chat.py
+    invocation: uv run python scripts/emytest_chat.py {args}
+    check_arg: --dry-run
+    run_args: []
+    auto_run: null
+    auto_run_args: []
+    writes_db: true
+    aggregation_parent: null
+    status: active
+    entrypoint: null
+    timeout_seconds: 300
+    scheduling_note: "纯手动"
+    params:
+      - name: message
+        type: str
+        label: 消息内容
+        help: 与同一发送者连续执行可完成多轮确认类测试（会话上下文由 Core 按 sender_id 维持）
+        required: true
+      - name: sender
+        type: str
+        label: 发送者
+        help: 取自 users 表的真实用户，以其 UUID 作为 sender_id
+        required: true
+        options_source: users
+      - name: platform
+        type: enum
+        label: 平台
+        choices: [simulator, napcat, wechat, dingtalk, feishu]
+        default: simulator
+        help: 模拟的来源平台标识
+      - name: conversation-type
+        type: enum
+        label: 会话类型
+        choices: [private, group]
+        default: private
+        help: 私聊 conversation_id = 发送者；群聊 = 群号
+      - name: group-id
+        type: str
+        label: 群号
+        help: 仅群聊时生效，留空则回退用发送者 ID
+      - name: at-bot
+        type: flag
+        label: "@机器人"
+        help: 仅群聊时生效；不勾选可验证「不接管」路径
+      - name: timeout
+        type: int
+        label: 等待回复超时
+        min: 10
+        max: 280
+        default: 120
+        help: 单位秒；Agent 多轮推理较慢时需调大
+      - name: dry-run
+        type: flag
+        label: 仅预览
+        help: 只打印将发送的报文与目标地址，不实际发送
+
   build_system_description:
     description: "build_system_description.py — 构建/重建/检测认知书（系统自我描述）。"
     category: system_maintenance

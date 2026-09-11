@@ -33,9 +33,15 @@ allowed-tools:
 ├── emys_tester.py          ← CLI 入口（薄 shim，向后兼容）
 ├── config_loader.py        ← 配置加载（.env / EMILY_* 环境变量 / PG）
 ├── tester.py               ← EmysTester 核心类（构建消息 → HTTP+SSE → 返回回复）
-├── cli.py                  ← CLI 主入口（argparse / demo / REPL）
-└── emy_web/
-    └── app.py              ← Gradio Web UI（直连 emily-core，供人工手动测试）
+└── cli.py                  ← CLI 主入口（argparse / demo / REPL）
+```
+
+「可视化交互」不再是本 skill 内的独立前端（原 Gradio 控制台已移除），而是把同一套
+HTTP+SSE 收发能力封装成一个脚本条目，以「特殊工具」形态融入 emily-core 的脚本控制台：
+
+```
+scripts/emytest_chat.py     ← 消息模拟器（注册于 emily-data/config/scripts_registry.yaml）
+static/scripts_tool/        ← emily-core 脚本控制台前端，挂载在 /console/
 ```
 
 **关键架构决策**：
@@ -61,7 +67,7 @@ emily-core HTTP API 的 `POST /api/v1/message/send` 返回两种结果：
   ├─ 多轮确认（CRUD 流程）    → 连续 `--message`，同 `--sender-id` 保持上下文（服务端管理）
   └─ 群聊多人协作            → 不同 `--sender-id` + 相同 `--cid`
 
-需要可视化交互                → Web 模式（emy_web/app.py，直连 emily-core）
+需要可视化交互                → 脚本控制台（emily-core 的 /console/「消息模拟器」，见下节）
 交互式调试                    → REPL 模式（-i，同一进程内持续对话）
 ```
 
@@ -237,14 +243,50 @@ uv run python .claude/skills/emy-test/cli.py --managed --llm \
 | `--llm` | 启用 LLM 模式（保留向后兼容） |
 | `-i` / `--interactive` | 交互式 REPL 模式 |
 
-### Web UI 对话导出
+### 脚本控制台「消息模拟器」（可视化交互）
 
-Web 控制台左侧边栏「📥 对话记录」区域支持将当前对话导出到本地目录：
+原 Gradio 控制台已移除，同一能力改以**脚本条目**形态融入 emily-core 脚本控制台：
 
-1. 在 **保存目录** 输入框中填写目标路径（默认为系统下载目录）
-2. 选择 **导出格式**：`markdown` / `json` / `txt`
-3. 点击 **📥 下载对话记录** 按钮
-4. 文件以 `emily_conversation_{timestamp}.{ext}` 命名保存
+```text
+http://localhost:18080/console/
+```
+
+左侧列表选 `emytest_chat`（显示为「消息模拟器」），右侧自动渲染表单：
+
+| 表单项 | 说明 |
+|--------|------|
+| 消息内容 | 要发送的文本（必填） |
+| 发送者 | 下拉选择 users 表中的**真实用户**（必填，来自 `options_source: users`） |
+| 平台 | simulator / napcat / wechat / dingtalk / feishu（单选） |
+| 会话类型 | private / group（单选，私聊 conversation_id = 发送者，群聊 = 群号） |
+| 群号 | 仅群聊时生效 |
+| @机器人 | 复选框，仅群聊时生效（不勾选可验证「不接管」路径） |
+| 等待回复超时 | 10~280 秒，默认 120 |
+| 仅预览 | 复选框，只打印将发送的报文与目标地址 |
+
+该条目声明了 `writes_db: true`：点「执行」先弹二次确认框，确认后才真正发送；
+未确认时只跑 `--dry-run` 预览。**同一发送者连续执行即可完成多轮确认类测试**
+（会话上下文由 Core 按 sender_id 维持）。结果面板会回显 HTTP 状态、SSE 前导消息、
+send_file 事件与 Emily 的回复。
+
+CLI 等价用法（在容器内执行，与脚本控制台同一环境）：
+
+```powershell
+docker exec emily-core python /app/scripts/emytest_chat.py \
+  --message "你好" --sender "<users 表 UUID 或用户名>"
+
+# 仅预览，不实际发送
+docker exec emily-core python /app/scripts/emytest_chat.py \
+  --message "你好" --sender "<UUID>" --dry-run
+
+# 群聊（@机器人）
+docker exec emily-core python /app/scripts/emytest_chat.py \
+  --message "帮我创建事件..." --sender "<UUID>" \
+  --conversation-type group --group-id project_x --at-bot
+```
+
+> ⚠️ 该脚本发送前会校验发送者在 `users` 表中存在，避免伪造 sender_id 触发 Core
+> 自动创建 level=1 访客用户、污染生产库。
 
 ## 配置来源
 

@@ -35,13 +35,14 @@ docker exec -i emily-postgres psql -U emily -d emily < emily-core/emily_core/inf
 | 孙师傅 | 参建执行 (2) | 中天建设集团 | 施工员 |
 | 周业务员 | 访客 (1) | 鑫达建材供应商 | 最低权限 |
 
-## 🚀 启动 Web 测试控制台
+## 🚀 打开 Web 测试控制台
+
+原 Gradio 控制台已移除，同一能力改为 emily-core 脚本控制台里的「消息模拟器」脚本条目：
 
 ```bash
-python .claude/skills/emy-test/emy_web/app.py
+# 启动 emily-core 后，浏览器打开脚本控制台，左侧选 emytest_chat
+http://localhost:18080/console/
 ```
-
-默认访问地址：http://localhost:8000
 
 ## 🎯 功能特性
 
@@ -147,14 +148,15 @@ pip install sqlalchemy psycopg2-binary
 
 ```
 .claude/skills/emy-test/
-├── emy_web/
-│   └── app.py              # Web UI（已升级：下拉选择用户）
 ├── config_loader.py        # 配置加载（新增数据库查询函数）
 ├── tester.py               # 核心测试引擎
 ├── emys_tester.py          # 入口文件
 ├── cli.py                  # 命令行接口
 ├── README_权限测试.md       # 本文档
 └── SKILL.md               # 技能元数据
+
+scripts/emytest_chat.py      # 消息模拟器（注册进 emily-core 脚本控制台 /console/）
+```
 
 emily-core/emily_core/infrastructure/database/scripts/
 ├── 001_cleanup_users_table.sql    # 清理无用字段脚本
