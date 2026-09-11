@@ -23,6 +23,23 @@ from typing import Any
 logger = logging.getLogger("emily.session_context")
 
 
+# ══════════════════════════════════════════════════════════════════════════════
+# 上下文预算设置（参照 Pi DEFAULT_COMPACTION_SETTINGS）
+# ══════════════════════════════════════════════════════════════════════════════
+
+# 触发压缩的保留额：`已用 > 窗口 - reserveTokens` 时压缩。
+# reserveTokens 同时充当摘要调用可用的输出预算来源。
+DEFAULT_RESERVE_TOKENS = 16384
+# 保尾 token 预算：压缩时从最新往回累计保留，而非固定条数。
+DEFAULT_KEEP_RECENT_TOKENS = 20000
+# 输出上限动态压低时至少保留的余量（window - used - 余量）。
+MIN_OUTPUT_RESERVE_TOKENS = 4096
+# 无真实 usage 时的字符→token 估算比（与 Pi estimate.ts 的 chars/4 一致）。
+CHARS_PER_TOKEN = 4
+# 摘要条目在 message_history 中的 role（独立于 user/assistant，避免被当作发言）
+SUMMARY_ROLE = "context_summary"
+
+
 @dataclass
 class SessionContext:
     """Session 操作台（聚合根）—— 统一承载数据、消息记录、LLM 拼装、归档持久化。"""
@@ -67,6 +84,15 @@ class SessionContext:
     # ── 多轮对话记忆（📝 运行时自维护）──
     message_history: list[dict] = field(default_factory=list)
 
+    # ── 上下文用量感知（📝 运行时自维护；不落库）──
+    last_usage: dict = field(default_factory=dict)
+    # 最近一次 assistant 调用的真实 usage：{"prompt_tokens": int, ...}
+    # prompt_tokens 即"上下文净输入量"，是窗口预算判据的锚点。
+    context_summary: str = ""
+    # 压缩后的结构化交接摘要（独立 role=context_summary，非普通 user 发言）
+    carried_facts: dict = field(default_factory=dict)
+    # 跨压缩累积的关键成果：{"files": [...], "workitems": [...], "notes": [...]}
+
     # ── SOP 目录摘要 ──
     sop_catalog_summary: str = ""
 
@@ -109,6 +135,112 @@ class SessionContext:
         """合并 long_term_memory + conversation_summary。"""
         parts = [p for p in (self.long_term_memory, self.conversation_summary) if p]
         return "\n".join(parts)
+
+    # ══════════════════════════════════════════════════════════════════════════
+    #  上下文感知 / 预算（P0：token 度量 + 窗口预算判据）
+    # ══════════════════════════════════════════════════════════════════════════
+
+    @staticmethod
+    def estimate_tokens_for_text(text: str) -> int:
+        """字符数 → token 估算（无真实 usage 时的补尾手段）。"""
+        if not text:
+            return 0
+        return max(1, len(text) // CHARS_PER_TOKEN)
+
+    def _estimate_message_tokens(self, messages: list[dict] | None = None) -> int:
+        """估算 messages 的 token 总量（不含 system / tools）。"""
+        msgs = self.message_history if messages is None else messages
+        total = 0
+        for m in msgs or []:
+            content = m.get("content", "")
+            total += self.estimate_tokens_for_text(content if isinstance(content, str) else str(content))
+            total += 4  # 每条消息的角色/分隔开销
+        return total
+
+    def estimate_context_tokens(self, system_prompt: str = "",
+                                tools: list[dict] | None = None) -> int:
+        """估算当前上下文总 token：真实 usage 优先，其后消息按 chars/4 补尾。
+
+        与 Pi estimate.ts 同构：以最后一次有效 assistant 的真实 prompt_tokens
+        为锚点，补上 system prompt 与 tools 定义。
+        """
+        base = self._estimate_message_tokens()
+        total = base + self.estimate_tokens_for_text(system_prompt)
+        if tools:
+            try:
+                import json as _json
+                total += self.estimate_tokens_for_text(
+                    _json.dumps(tools, ensure_ascii=False))
+            except Exception:
+                total += len(tools) * 40
+        return total
+
+    def used_tokens(self, system_prompt: str = "",
+                    tools: list[dict] | None = None) -> int:
+        """当前上下文占用量。
+
+        真实 usage 锚点存在时，以最后一次调用的 prompt_tokens 为准（它已包含
+        当时的 system + tools + history）；仅在无锚点时退回估算。
+        """
+        anchor = int((self.last_usage or {}).get("prompt_tokens") or 0)
+        if anchor > 0:
+            return anchor
+        return self.estimate_context_tokens(system_prompt=system_prompt, tools=tools)
+
+    def record_usage(self, usage: dict | None) -> None:
+        """记录最近一次 LLM 调用的真实 usage（供窗口预算判据使用）。"""
+        if not usage:
+            return
+        prompt_tokens = int(usage.get("prompt_tokens") or 0)
+        if prompt_tokens > 0:
+            self.last_usage = dict(usage)
+
+    @staticmethod
+    def context_window(model: str | None = None, window_override: int = 0) -> int:
+        """查询模型上下文窗口（未知模型回退保守默认值）。"""
+        from ..infrastructure.llm.model_registry import get_context_window
+        return get_context_window(model, window_override=window_override)
+
+    def should_compact(self, model: str | None = None, *,
+                       system_prompt: str = "",
+                       tools: list[dict] | None = None,
+                       reserve_tokens: int = DEFAULT_RESERVE_TOKENS,
+                       window_override: int = 0) -> bool:
+        """窗口预算判据：`已用 > 窗口 - reserveTokens` 时触发压缩。"""
+        window = self.context_window(model, window_override)
+        used = self.used_tokens(system_prompt=system_prompt, tools=tools)
+        return used > (window - reserve_tokens)
+
+    def context_usage_report(self, model: str | None = None, *,
+                             system_prompt: str = "",
+                             tools: list[dict] | None = None,
+                             window_override: int = 0) -> dict:
+        """上下文用量报告（供日志/监控）。"""
+        window = self.context_window(model, window_override)
+        used = self.used_tokens(system_prompt=system_prompt, tools=tools)
+        return {
+            "context_tokens": used,
+            "context_window": window,
+            "percent": round(used / window * 100, 1) if window else 0.0,
+            "anchored": int((self.last_usage or {}).get("prompt_tokens") or 0) > 0,
+        }
+
+    def cap_max_tokens(self, configured: int, model: str | None = None, *,
+                       system_prompt: str = "",
+                       tools: list[dict] | None = None,
+                       window_override: int = 0,
+                       min_reserve: int = MIN_OUTPUT_RESERVE_TOKENS) -> int:
+        """动态压低输出上限：min(configured, 窗口 - 已用 - 余量)。
+
+        长上下文时自动收缩输出，避免"输入挤爆输出"导致请求被拒。
+        """
+        window = self.context_window(model, window_override)
+        used = self.used_tokens(system_prompt=system_prompt, tools=tools)
+        available = window - used - min_reserve
+        if available <= 0:
+            # 已用已逼近窗口：给一个最小可用输出，交由 should_compact 先压缩
+            return max(256, configured // 4)
+        return max(256, min(configured, available))
 
     # ══════════════════════════════════════════════════════════════════════════
     #  工厂方法
@@ -303,9 +435,10 @@ class SessionContext:
 
     def record_turn(self, user_content: str, assistant_content: str,
                     sender_name: str = "") -> None:
-        """记录一轮对话到 message_history 滑动窗口。
+        """记录一轮对话到 message_history。
 
-        窗口 > 40 条时异步触发压缩（D6：record_turn 内部自动检测）。
+        不再在此做条数阈值判断——压缩由 SessionAgent 依窗口预算判据触发
+        （P0：token 预算取代 >40 条拍脑袋阈值）。
         """
         self.message_history.append({
             "role": "user",
@@ -316,12 +449,6 @@ class SessionContext:
             "role": "assistant",
             "content": (assistant_content or "")[:2000],
         })
-
-        if len(self.message_history) > 40:
-            logger.debug("SessionContext message_history overflow (%d), triggering compress",
-                         len(self.message_history))
-            # 需要外部传入 llm_client，此时只记日志
-            # compress_overflow 由 SessionAgent 在 record_turn 后显式调用
 
     def build_llm_messages(self, system_prompt_template: str,
                            current_user_msg: str = "",
@@ -348,7 +475,7 @@ class SessionContext:
             system_prompt = system_prompt.replace(key, replacement)
 
         full_messages: list[dict] = [{"role": "system", "content": system_prompt}]
-        full_messages.extend(self.message_history)
+        full_messages.extend(self.get_llm_history())
 
         # pending 上下文注入
         if pending_context:
@@ -553,41 +680,131 @@ class SessionContext:
         except Exception as e:
             logger.warning("SessionContext summary consolidation failed: %s", e)
 
-    async def compress_overflow(self, llm_client) -> None:
-        """裁剪 message_history：取最旧一批消息，调用 LLM 压缩为摘要。
+    async def compress_overflow(self, llm_client, *,
+                                keep_recent_tokens: int = DEFAULT_KEEP_RECENT_TOKENS,
+                                reserve_tokens: int = DEFAULT_RESERVE_TOKENS) -> bool:
+        """裁剪 message_history：按 token 预算保留近期，压缩较早区间为摘要。
 
-        LLM 不可用时直接丢弃旧消息（fail-open）。
+        与旧实现的关键差异（参照 Pi compaction）：
+          - 保尾按 **token 预算**从最新往回累计，而非固定 20 条；
+          - 切点落在 **user 轮边界**，不拆散一问一答；
+          - 摘要在 **已有摘要基础上迭代更新**，不反复再摘要（避免信息衰减）；
+          - 摘要以独立 role 存放于 `context_summary` 字段，不再伪装成 user 发言；
+          - 关键成果累积到 `carried_facts`，跨压缩不丢业务约束。
+
+        Returns:
+            bool: 是否实际执行了压缩。
         """
+        # 兼容旧数据：把历史上插回 message_history 的摘要迁出为字段
+        self._migrate_legacy_summary()
+
+        if len(self.message_history) < 4:
+            return False
+
+        cut = self._pick_keep_start(keep_recent_tokens)
+        if cut <= 0:
+            return False
+
+        batch = self.message_history[:cut]
+        tail = self.message_history[cut:]
+
         if not llm_client:
-            batch = self.message_history[:20]
-            self.message_history = self.message_history[20:]
-            logger.debug("SessionContext compression skipped (no LLM): %d msgs dropped", len(batch))
-            return
+            # LLM 不可用：丢弃旧区间（fail-open），但保留累积事实
+            self.message_history = tail
+            logger.warning("compress_overflow (no LLM): dropped %d msgs, kept %d, facts=%d",
+                           len(batch), len(tail), len(self.carried_facts.get("files", [])))
+            return True
 
-        batch = self.message_history[:20]
-        self.message_history = self.message_history[20:]
-
-        existing_summary = ""
-        if (self.message_history
-                and self.message_history[0].get("name") == "system"
-                and "[对话历史摘要]" in self.message_history[0].get("content", "")):
-            existing_summary = self.message_history[0]["content"]
-            self.message_history = self.message_history[1:]
-
-        compress_msgs = _build_compress_messages(batch, existing_summary)
+        existing_summary = self.context_summary or ""
+        compress_msgs = _build_compress_messages(
+            batch, existing_summary, facts=self.carried_facts,
+        )
         try:
             result = await llm_client.chat_messages(compress_msgs)
-            summary_content = result.get("content", "") or ""
+            summary_content = (result.get("content", "") or "").strip()
+            # 用摘要调用的（小）usage 覆盖锚点：等价于 Pi "压缩后旧 usage 失效"，
+            # 避免刚压缩完就因旧锚点偏大而立刻二次压缩。
+            self.record_usage(result.get("usage"))
             if summary_content and len(summary_content) > 20:
-                self.message_history.insert(0, {
-                    "role": "user",
-                    "content": f"[对话历史摘要] {summary_content.strip()}",
-                    "name": "system",
-                })
-                logger.info("SessionContext compressed %d msgs → summary (%d chars), history now %d",
-                            len(batch), len(summary_content), len(self.message_history))
+                self.context_summary = summary_content
+                self._extract_carried_facts(summary_content)
+                self.message_history = tail
+                logger.info(
+                    "compress_overflow: %d msgs → summary (%d chars), history %d, "
+                    "facts(files=%d, workitems=%d)",
+                    len(batch), len(summary_content), len(tail),
+                    len(self.carried_facts.get("files", [])),
+                    len(self.carried_facts.get("workitems", [])),
+                )
+                return True
+            logger.warning("compress_overflow: summary too short, dropping %d msgs", len(batch))
+            self.message_history = tail
+            return True
         except Exception as e:
-            logger.warning("SessionContext compression failed (msgs dropped): %s", e)
+            # 压缩失败：至少丢弃旧区间止损（fail-open），下次再试
+            self.message_history = tail
+            logger.warning("compress_overflow failed (msgs dropped, history kept %d): %s",
+                           len(tail), e)
+            return True
+
+    def _migrate_legacy_summary(self) -> None:
+        """把旧版插回 message_history 的摘要条目迁出为 context_summary 字段。"""
+        if not self.message_history:
+            return
+        first = self.message_history[0]
+        if first.get("name") == "system" and "[对话历史摘要]" in (first.get("content") or ""):
+            text = first["content"].replace("[对话历史摘要]", "").strip()
+            if text and not self.context_summary:
+                self.context_summary = text
+            self.message_history = self.message_history[1:]
+
+    def _pick_keep_start(self, keep_recent_tokens: int) -> int:
+        """从最新往回累计 token，返回保留区间的起始下标（落在 user 轮边界）。
+
+        切点只落在 role=="user" 的条目上（或 0），确保不拆散一问一答。
+        """
+        acc = 0
+        cut = len(self.message_history)
+        for i in range(len(self.message_history) - 1, -1, -1):
+            acc += self.estimate_tokens_for_text(self.message_history[i].get("content", "")) + 4
+            if acc > keep_recent_tokens:
+                # 从 i 继续向前找到最近的 user 边界作为切点
+                j = i
+                while j > 0 and self.message_history[j].get("role") != "user":
+                    j -= 1
+                cut = j if self.message_history[j].get("role") == "user" else 0
+                break
+        return cut
+
+    def _extract_carried_facts(self, summary: str) -> None:
+        """从摘要中提取文件/成果线索，累积到 carried_facts（跨压缩不丢）。"""
+        import re as _re
+        files = self.carried_facts.setdefault("files", [])
+        for m in _re.findall(r"[\w\-./\\]+\.(?:md|json|ya?ml|py|ts|tsx|js|xlsx|xls|docx|pdf|csv|txt)",
+                             summary or ""):
+            if m not in files:
+                files.append(m)
+        # 控制累积上限，避免无限增长
+        self.carried_facts["files"] = files[-50:]
+
+    def get_llm_history(self) -> list[dict]:
+        """返回注入 LLM 的历史消息：摘要（独立 system 消息）+ 保留的历史条目。
+
+        摘要存在 `context_summary` 字段中，不混入 message_history，避免被
+        下一轮压缩再次摘要。
+        """
+        msgs: list[dict] = []
+        if self.context_summary:
+            facts_note = ""
+            files = self.carried_facts.get("files") or []
+            if files:
+                facts_note = "\n<carried-files>\n" + "\n".join(files[-20:]) + "\n</carried-files>"
+            msgs.append({
+                "role": "system",
+                "content": f"[历史交接摘要]\n{self.context_summary}{facts_note}",
+            })
+        msgs.extend(self.message_history)
+        return msgs
 
     def refresh(self, data: dict) -> list[str]:
         """从 SessionDataFetcher.fetch() 结果刷新可热更新字段。
@@ -705,19 +922,31 @@ def _format_message_history(message_history: list[dict]) -> str:
     return "\n".join(lines)
 
 
-def _build_compress_messages(history: list[dict], existing_summary: str) -> list[dict]:
-    """构建压缩用的 messages 列表。"""
+def _build_compress_messages(history: list[dict], existing_summary: str,
+                             facts: dict | None = None) -> list[dict]:
+    """构建压缩用的 messages 列表。
+
+    摘要需保留：人物、事件、决策、任务、时间，以及**业务约束**（节点/权限/
+    成果/文件清单）——后者是长会话下最容易丢失的部分。
+    """
     if not history:
         return []
     history_text = _format_message_history(history)
+    facts = facts or {}
+    facts_block = ""
+    files = facts.get("files") or []
+    if files:
+        facts_block = "\n\n## 已累积的关键文件\n" + "\n".join(files[-20:])
     return [
         {"role": "system", "content": (
-            "你是一个对话摘要助手。请将以下对话压缩为简短的要点摘要（中文，不超过 300 字），"
-            "只保留关键事实：人物、事件、决策、任务、时间。不要包含套话。"
+            "你是一个对话摘要助手。请将「已有摘要」与「近期对话」迭代合并为一份新摘要"
+            "（中文，不超过 300 字）。必须保留：人物、事件、决策、任务、时间；"
+            "以及业务约束——涉及的项目/节点、权限范围、已完成的成果与产出文件。"
+            "不要包含套话，不要遗漏已确认的约束。"
         )},
         {"role": "user", "content": (
             f"## 已有摘要\n{existing_summary or '（无）'}\n\n"
-            f"## 近期对话\n{history_text}\n\n"
+            f"## 近期对话\n{history_text}{facts_block}\n\n"
             f"请输出合并后的完整摘要（不超过 300 字）："
         )},
     ]
