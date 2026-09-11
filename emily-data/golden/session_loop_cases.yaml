@@ -1,0 +1,62 @@
+# 会话主循环 golden 语料（计划 M9 / US-10）
+#
+# 四类断言分组：capability_hit / permission_block / suspend_resume / archive_completeness
+# sender_id 必须是 users 表真实 UUID（宪法 Q3）——伪造会新建用户并降级到访客路径。
+#
+# 回放：
+#   uv run python scripts/golden_session_loop.py --corpus emily-data/golden/session_loop_cases.yaml --path new --dry-run
+#   uv run python scripts/golden_session_loop.py --corpus emily-data/golden/session_loop_cases.yaml --path new --report emily-data/golden/report_new.json
+
+cases:
+  # ── 闲聊：零能力、零 LLM（AC-US-01.2 / AC-US-10.1 成本基线）──
+  - id: chitchat-hello
+    group: chitchat
+    message: "你好"
+    sender_id: "021e318f-8cba-4f6c-afba-bb48d7e803b4"
+    sender_name: "李景利"
+    conversation_id: "golden-chitchat-01"
+    expect:
+      reply_contains: ["你好"]
+
+  - id: chitchat-thanks
+    group: chitchat
+    message: "谢谢"
+    sender_id: "021e318f-8cba-4f6c-afba-bb48d7e803b4"
+    sender_name: "李景利"
+    conversation_id: "golden-chitchat-02"
+    expect:
+      reply_contains: ["不客气"]
+
+  # ── 能力命中 + 归档完整性（AC-US-02.1 / AC-US-08.1）──
+  - id: sop-record-event
+    group: business
+    message: "帮我记录事件：科技城5号楼铺装完成了25平米，验收通过。"
+    sender_id: "021e318f-8cba-4f6c-afba-bb48d7e803b4"
+    sender_name: "李景利"
+    conversation_id: "golden-record-event"
+    expect:
+      capability_hit: ["SOP-002-REC"]
+      archive_completeness: true
+
+  # ── 挂起续接（AC-US-06.1）──
+  - id: suspend-record-event
+    group: business
+    message: "帮我记一下事件"
+    sender_id: "021e318f-8cba-4f6c-afba-bb48d7e803b4"
+    sender_name: "李景利"
+    conversation_id: "golden-suspend-record"
+    resume_message: "科技城5号楼铺装完成了25平米，验收通过。"
+    expect:
+      suspend_resume:
+        capability: "SOP-002-REC"
+
+  # ── 权限拦截（AC-US-04.1 / AC-US-04.2）──
+  - id: permission-delete-event
+    group: permission
+    message: "帮我把上一条事件记录删掉。"
+    sender_id: "5750fd64-08b6-4b26-9580-47a392d2c2b0"
+    sender_name: "张正宏"
+    conversation_id: "golden-permission-delete"
+    expect:
+      permission_block: true
+      must_not_call: ["delete_event", "record_event"]

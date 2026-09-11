@@ -31,6 +31,7 @@ class ScriptEntry:
     flow_note: str | None = None        # 每日流程说明（供 doc 生成）
     scheduling_note: str | None = None  # 调度归属注（供 doc 生成）
     params: list = field(default_factory=list)  # 参数 schema（见 ScriptParam），空=仅裸 args
+    subcommands: list = field(default_factory=list)  # 子命令分支（见 ScriptSubcommand）
 
     @property
     def has_check(self) -> bool:
@@ -39,8 +40,21 @@ class ScriptEntry:
 
     @property
     def has_params(self) -> bool:
-        """是否声明了参数 schema（决定 Web 端能否渲染表单）。"""
-        return bool(self.params)
+        """是否可在 Web 端渲染表单（有参数或有子命令任一即可）。"""
+        return bool(self.params) or bool(self.subcommands)
+
+
+@dataclass
+class ScriptSubcommand:
+    """带子命令脚本的动作分支（如 manage_nodes 的 create / update / query）。
+
+    子命令名作为位置参数拼在 argv 首位，各分支的参数集互相独立 ——
+    扁平的 params 表达不了"不同子命令不同参数"，故单列一层。
+    """
+    name: str                           # 子命令名，如 "create"
+    label: str = ""                     # 表单显示名，空则回退 name
+    help: str = ""                      # 表单提示
+    params: list = field(default_factory=list)   # 该子命令的参数 schema
 
 
 @dataclass
@@ -66,6 +80,9 @@ class ScriptParam:
     group: str | None = None            # 互斥组名：同组内只能选一个
     min: int | None = None              # int 下界
     max: int | None = None              # int 上界
+    options_source: str | None = None   # 动态候选源：users / projects / nodes
+                                        # 非空时 Web 端从真实环境取候选值渲染下拉，
+                                        # 避免手抄 UUID（choices 仅用于静态枚举）
 
     @property
     def flag(self) -> str:

@@ -4,9 +4,11 @@
 ——后者对局域网开放且无鉴权，暴露脚本执行等同于开放任意远程执行。
 
 安全约束（三层）：
-  1. 白名单参数：只接受 scripts_registry.yaml 中声明过的参数（见 params.build_cli_args）
+  1. 白名单参数：声明了 params 的脚本，只接受 scripts_registry.yaml 中声明过的参数
+     （见 params.build_cli_args）
   2. 写库两段式：writes_db=true 的脚本，未显式 confirm 时强制降级为 check_arg 预览
-  3. 无 schema 不可调：未声明 params 的脚本一律拒绝，避免裸 args 通道绕过前两层
+  3. 无 schema 不传参：未声明 params 的脚本不接受任何自定义参数，只按注册表 run_args
+     声明的默认参数执行，避免裸 args 通道绕过第 1、2 层
 """
 
 from __future__ import annotations
@@ -46,6 +48,7 @@ class RunRequest(BaseModel):
     """表单执行请求。"""
     values: dict = Field(default_factory=dict, description="{参数名: 值}，须在 schema 内")
     confirm_write: bool = Field(default=False, description="写库脚本的二次确认")
+    subcommand: str | None = Field(default=None, description="带子命令脚本选中的动作名")
 
 
 # ══════════════════════════════════════════════════════════════════════════════
@@ -76,7 +79,11 @@ async def get_schema(name: str):
 
 @router.post("/run/{name}")
 async def run_script(name: str, req: RunRequest):
-    """按 schema 执行脚本。
+    """执行脚本。
+
+    两类通道：
+      - 声明了 params：按 schema 白名单拼 CLI 参数
+      - 未声明 params：不接受自定义参数，按注册表 run_args 默认参数执行
 
     writes_db 且 confirm_write=false 时不会真跑，只回 check_arg 预览结果，
     响应中 forced_preview=true 供前端提示"这只是预览"。
@@ -88,14 +95,57 @@ async def run_script(name: str, req: RunRequest):
     schema = await asyncio.to_thread(sm.form_schema, name)
     if "error" in schema:
         return _err(schema["error"], code=schema.get("code", 2))
-    if not schema.get("params"):
-        return _err(f"脚本 '{name}' 未声明参数 schema，暂不支持 Web 调用")
 
-    logger.info("scripts.run name=%s confirm_write=%s keys=%s",
-                name, req.confirm_write, sorted(req.values.keys()))
-
-    result = await asyncio.to_thread(
-        sm.run_with_params, name, req.values, req.confirm_write
-    )
+    values = req.values or {}
+    if not schema.get("params") and not schema.get("subcommands"):
+        # 无 schema 通道：拒绝任何自定义参数，只按注册表默认参数执行
+        if values:
+            return _err(f"脚本 '{name}' 未声明参数 schema，不接受自定义参数")
+        logger.info("scripts.run name=%s confirm_write=%s (no schema, default args)",
+                    name, req.confirm_write)
+        result = await asyncio.to_thread(
+            sm.run_with_defaults, name, req.confirm_write
+        )
+    else:
+        logger.info("scripts.run name=%s subcommand=%s confirm_write=%s keys=%s",
+                    name, req.subcommand, req.confirm_write, sorted(values.keys()))
+        result = await asyncio.to_thread(
+            sm.run_with_params, name, values, req.confirm_write, req.subcommand
+        )
     # 执行失败也回 code=0——失败详情在 data 里，前端统一渲染 stdout/stderr
     return _ok(result)
+
+
+# ══════════════════════════════════════════════════════════════════════════════
+# 动态候选值 + 环境信息
+# ══════════════════════════════════════════════════════════════════════════════
+
+@router.get("/options/{source}")
+async def list_param_options(source: str, q: str = ""):
+    """某类动态参数的候选值（用户 / 项目 / 节点，取自真实运行环境）。"""
+    from emily_core.scripts.options import list_options
+
+    try:
+        options = await asyncio.to_thread(list_options, source, q)
+    except ValueError as ex:
+        return _err(str(ex))
+    except Exception as ex:
+        logger.warning("scripts.options failed source=%s: %s", source, ex)
+        return _err(f"读取候选值失败：{ex}")
+    return _ok({"source": source, "options": options, "count": len(options)})
+
+
+@router.get("/env")
+async def get_env():
+    """控制台环境信息：容器清单 / 数据库来源 / 实体计数 / Core 状态。"""
+    from emily_core.scripts.env_probe import collect_env
+
+    core = None
+    try:
+        from api.server import get_core
+        core = get_core()
+    except Exception:
+        logger.info("scripts.env: EmilyCore 未就绪，仅返回基础设施信息")
+
+    env = await asyncio.to_thread(collect_env, core)
+    return _ok(env)

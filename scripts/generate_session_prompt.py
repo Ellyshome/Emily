@@ -88,7 +88,7 @@ def generate_session_prompt(user_id: str, *, db_url: str = "", dry_run: bool = F
     return {
         "user_id": user_id,
         "user_name": user.username,
-        "project_id": project_id or "",
+        "project_id": project_ids[0] if project_ids else "",
         "world_book_text": world_book_text,
         "world_book_tokens": world_book_tokens,
         "rule_book_text_length": len(rule_book_text),

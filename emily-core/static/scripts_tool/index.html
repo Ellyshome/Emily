@@ -7,11 +7,14 @@
     <link rel="stylesheet" href="/console/console.css">
 </head>
 <body>
+<header class="topbar">
+    <div class="brand">Emily 脚本控制台</div>
+    <div class="envbar" id="envbar"><span class="env-item">环境探测中…</span></div>
+</header>
 <div class="layout">
     <!-- 左侧：脚本菜单 -->
     <aside class="sidebar">
         <div class="sidebar-head">
-            <h1>脚本控制台</h1>
             <input type="search" id="filter" placeholder="筛选脚本…" autocomplete="off">
         </div>
         <div id="script-list" class="script-list">
@@ -26,7 +29,7 @@
     <main class="main">
         <div id="empty-state" class="empty-state">
             <p>从左侧选择一个脚本</p>
-            <p class="sub">带 <span class="badge badge-form">表单</span> 标记的脚本支持参数化调用</p>
+            <p class="sub">右侧显示功能说明与参数；写库脚本执行前需二次确认</p>
         </div>
 
         <section id="runner" class="runner" hidden>
@@ -38,6 +41,7 @@
                 <div id="script-badges" class="badges"></div>
             </header>
 
+            <div id="subcmd-group" class="param-group" hidden></div>
             <form id="param-form" class="param-form"></form>
 
             <div class="cli-preview">

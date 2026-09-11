@@ -61,6 +61,11 @@ class EmilyCore:
         # Session 池
         self._session_pool = None
 
+        # 会话主循环（新路径，M1/M8）—— 默认开关关闭时不启用
+        self._capability_registry = None
+        self._session_path_router = None
+        self._session_loop_pool = None
+
         # 共享基础设施
 
         # 执行依赖
@@ -246,6 +251,30 @@ class EmilyCore:
             self._script_registry = load_registry()
             self._script_manager = ScriptManager(self._script_registry)
             logger.info("script_manager: ready (%d scripts)", len(self._script_registry))
+
+            # ── SOP 能力注册（M3 / C11：与 tools/registry.py 对称的独立注册通道）──
+            try:
+                from .session.capability_runner import CapabilityRegistry, register_capabilities
+                self._capability_registry = CapabilityRegistry()
+                registered = register_capabilities(self)
+                logger.info("capability_registry: ready (%d capabilities)", registered)
+            except Exception as e:
+                logger.warning("capability registry init failed: %s", e)
+                self._capability_registry = None
+
+        # ── 会话路径分派 + 新会话主循环池（M8；开关默认关，构建轻量不启用）──
+        try:
+            from .session.path_router import build_router
+            from .session.loop import SessionLoopPool
+            from .adapters.session import SessionConfig
+            self._session_path_router = build_router(self.config)
+            session_config = SessionConfig.from_config(self.config)
+            self._session_loop_pool = SessionLoopPool(config=session_config, core=self)
+            logger.info("session_path_router: %s", self._session_path_router.describe())
+        except Exception as e:
+            logger.warning("session loop path init failed: %s", e)
+            self._session_path_router = None
+            self._session_loop_pool = None
 
         # ── 公共 Pipeline BUS ──
         self._build_pipeline_bus()
@@ -1033,8 +1062,17 @@ class EmilyCore:
             )
             return None
 
-        # SessionPool 路由（携带 db_message_id —— 见 M2）
-        reply = await self._session_pool.route(message, user_id=user_id, db_message_id=db_message_id)
+        # ── 路径分派（M8）：开关关闭走旧链路（默认），开启走新会话主循环 ──
+        # 旧分支代码与顺序不变；新路径为并行模块（PRD §4.4-4）。
+        if (self._session_path_router is not None
+                and self._session_path_router.use_loop()
+                and self._session_loop_pool is not None):
+            logger.info("handle_message: session loop path (conv=%s)", message.conversation_id)
+            reply = await self._session_loop_pool.route(
+                message, user_id=user_id, db_message_id=db_message_id)
+        else:
+            # SessionPool 路由（携带 db_message_id —— 见 M2）
+            reply = await self._session_pool.route(message, user_id=user_id, db_message_id=db_message_id)
 
         # 出站
         if reply is not None:

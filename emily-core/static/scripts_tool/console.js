@@ -7,9 +7,12 @@
 const API = '/api/v1/scripts';
 
 let _schema = null;        // 当前脚本的 form_schema
+let _schemaSub = null;     // 当前选中的子命令（带 subcommands 的脚本）
 let _list = [];            // 全部脚本列表
 let _selectedName = null;  // 当前选中
 let _pendingValues = null; // 写库确认前暂存的表单值
+
+const _optionsCache = {};  // 动态候选值缓存：source → [{value,label,note}]
 
 // ── 加载脚本列表 ──
 
@@ -44,19 +47,14 @@ function renderList(scripts) {
         return;
     }
 
-    el.innerHTML = filtered.map(s => {
-        const badges = [];
-        if (s.has_params) badges.push('<span class="badge badge-form">表单</span>');
-        if (s.writes_db) badges.push('<span class="badge badge-db">写库</span>');
-        if (s.has_check) badges.push('<span class="badge badge-check">自检</span>');
+    el.innerHTML = filtered.map((s, i) => {
         const active = s.name === _selectedName ? ' active' : '';
         return `<div class="script-item${active}" data-name="${s.name}">
-            <div class="sname">
-                ${s.name}
-                <span class="badge badge-cat">${s.category}</span>
+            <span class="sidx">${i + 1}</span>
+            <div class="stext">
+                <div class="sfunc">${escapeHtml(shortLabel(s))}</div>
+                <div class="sname">${escapeHtml(s.name)}</div>
             </div>
-            <div class="badges">${badges.join(' ')}</div>
-            <div class="scat">${escapeHtml(trunc(s.description, 50))}</div>
         </div>`;
     }).join('');
 
@@ -71,6 +69,7 @@ function renderList(scripts) {
 async function selectScript(name) {
     _selectedName = name;
     _schema = null;
+    _schemaSub = null;
     _pendingValues = null;
 
     // 高亮
@@ -82,6 +81,7 @@ async function selectScript(name) {
     q('#runner').hidden = false;
     q('#param-form').innerHTML = '<div class="hint" style="padding:20px">加载参数…</div>';
     q('#script-name').textContent = name;
+    setRunEnabled(false);  // schema 未就绪前不允许执行
 
     const resp = await fetch(`${API}/schema/${encodeURIComponent(name)}`);
     const json = await resp.json();
@@ -91,25 +91,73 @@ async function selectScript(name) {
     }
 
     _schema = json.data;
-    q('#script-desc').textContent = _schema.description || '';
+    q('#script-desc').textContent = shortLabel(_schema);
 
     // badges
     const badges = q('#script-badges');
     const parts = [];
+    if ((_schema.params || []).length) parts.push('<span class="badge badge-form">参数表单</span>');
+    else parts.push('<span class="badge badge-default">默认参数</span>');
     if (_schema.writes_db) parts.push('<span class="badge badge-db">写数据库</span>');
     if (_schema.check_arg) parts.push(`<span class="badge badge-check">自检 ${_schema.check_arg}</span>`);
+    parts.push(`<span class="badge badge-cat">${_schema.category}</span>`);
     parts.push(`<span class="badge badge-cat">超时 ${_schema.timeout_seconds}s</span>`);
     badges.innerHTML = parts.join(' ');
 
-    renderParamsForm(_schema.params || []);
+    renderSubcommandBar();
+    renderParamsForm(currentParams());
+}
+
+// ── 子命令 ──
+
+// 当前生效的参数集：带子命令的脚本用所选子命令的参数
+function currentParams() {
+    if (!_schema) return [];
+    if (_schemaSub) return _schemaSub.params || [];
+    return _schema.params || [];
+}
+
+function renderSubcommandBar() {
+    const box = q('#subcmd-group');
+    const subs = (_schema && _schema.subcommands) || [];
+
+    if (!subs.length) {
+        box.hidden = true;
+        box.innerHTML = '';
+        return;
+    }
+
+    _schemaSub = subs[0];
+    box.hidden = false;
+    box.innerHTML = `
+        <label class="param-label">动作<span class="param-required">*</span>
+            <span class="param-help">（先选动作，再填该动作的参数）</span></label>
+        <select id="subcmd-select">
+            ${subs.map(s => `<option value="${escapeAttr(s.name)}">${escapeHtml(s.label)}（${escapeHtml(s.name)}）</option>`).join('')}
+        </select>
+        <div class="param-help" id="subcmd-help" style="display:block;margin-top:6px">${escapeHtml(_schemaSub.help || '')}</div>`;
+
+    q('#subcmd-select').addEventListener('change', ev => {
+        _schemaSub = subs.find(s => s.name === ev.target.value) || subs[0];
+        q('#subcmd-help').textContent = _schemaSub.help || '';
+        renderParamsForm(currentParams());
+    });
 }
 
 // ── 渲染参数表单 ──
 
 function renderParamsForm(params) {
     const el = q('#param-form');
+    setRunEnabled(true);  // schema 已就绪；写库脚本点击时会走二次确认
+
     if (!params.length) {
-        el.innerHTML = '<div class="hint" style="padding:16px">该脚本无参数，直接执行即可。</div>';
+        // 与后端 scripts_runner.run_script 一致：无 schema 的脚本按注册表默认参数执行
+        const hasSubs = ((_schema && _schema.subcommands) || []).length > 0;
+        el.innerHTML = '<div class="hint" style="padding:16px">'
+            + (hasSubs
+                ? '该动作无需参数，直接执行即可。'
+                : '该脚本未声明参数表单，将按注册表默认参数执行。')
+            + '</div>';
         updateCliPreview();
         return;
     }
@@ -140,6 +188,7 @@ function renderParamsForm(params) {
     });
     singles.forEach(p => bindParam(p, el));
     updateCliPreview();
+    loadDynamicOptions(el, params);
 }
 
 function renderMutexGroup(gname, members) {
@@ -162,6 +211,16 @@ function renderMutexGroup(gname, members) {
 function renderParamGroup(p) {
     const reqMark = p.required ? '<span class="param-required">*</span>' : '';
     const helpHtml = p.help ? `<span class="param-help">${escapeHtml(p.help)}</span>` : '';
+
+    // 动态候选（取值来自真实环境）→ 下拉，选项由 loadDynamicOptions 异步填充
+    if (p.options_source) {
+        return `<div class="param-group">
+            <label class="param-label">${escapeHtml(p.label)}${reqMark}${helpHtml}</label>
+            <select id="param-${p.name}" data-source="${escapeAttr(p.options_source)}">
+                <option value="">加载中…</option>
+            </select>
+        </div>`;
+    }
 
     if (p.type === 'flag') {
         return `<div class="param-group inline-flag">
@@ -228,10 +287,51 @@ function bindParam(p, parent) {
     el.addEventListener('input', updateCliPreview);
 }
 
+// ── 动态候选值（取自真实运行环境）──
+
+async function loadDynamicOptions(root, params) {
+    const dynamic = params.filter(p => p.options_source);
+    if (!dynamic.length) return;
+
+    await Promise.all(dynamic.map(async p => {
+        const sel = root.querySelector(`#param-${p.name}`);
+        if (!sel) return;
+
+        // 同一数据源在一次会话内复用，避免反复查库
+        let options = _optionsCache[p.options_source];
+        if (!options) {
+            try {
+                const resp = await fetch(`${API}/options/${encodeURIComponent(p.options_source)}`);
+                const json = await resp.json();
+                if (json.code !== 0 || !json.data) {
+                    throw new Error(json.message || 'unknown');
+                }
+                options = json.data.options || [];
+                _optionsCache[p.options_source] = options;
+            } catch (e) {
+                sel.innerHTML = `<option value="">加载失败：${escapeHtml(e.message)}</option>`;
+                return;
+            }
+        }
+
+        if (!options.length) {
+            sel.innerHTML = '<option value="">（该环境暂无可选项）</option>';
+            return;
+        }
+
+        const placeholder = p.required ? '请选择…' : '（不填）';
+        sel.innerHTML = `<option value="">${placeholder}</option>`
+            + options.map(o => `<option value="${escapeAttr(o.value)}">${escapeHtml(o.label)}`
+                + `${o.note ? ' · ' + escapeHtml(o.note) : ''}</option>`).join('');
+        if (p.default) sel.value = String(p.default);
+        updateCliPreview();
+    }));
+}
+
 // ── 收集表单值 ──
 
 function collectValues() {
-    const params = _schema.params || [];
+    const params = currentParams();
     const values = {};
 
     // 互斥组：读组内选中的 radio，其 value 即参数名
@@ -271,7 +371,24 @@ function collectValues() {
 
 // ── CLI 预览 ──
 
-function buildPreview(params, values) {
+function updateCliPreview() {
+    if (!_schema) {
+        q('#cli-preview').textContent = '—';
+        return;
+    }
+
+    const hasSubs = (_schema.subcommands || []).length > 0;
+    const params = currentParams();
+
+    if (!params.length && !hasSubs) {
+        // 无 schema 脚本：实际执行的是注册表 run_args 声明的默认参数
+        const args = (_schema.run_args || []).join(' ');
+        q('#cli-preview').textContent =
+            (_schema.invocation || '').replace('{args}', args).trim() || '—';
+        return;
+    }
+
+    const values = collectValues();
     const parts = [];
     params.forEach(p => {
         const v = values[p.name];
@@ -280,14 +397,10 @@ function buildPreview(params, values) {
         if (p.type === 'flag') { parts.push('--' + p.name); return; }
         parts.push('--' + p.name, String(v));
     });
-    const name = _schema ? _schema.name : '';
-    return `uv run python scripts/${name}.py ${parts.join(' ')}`;
-}
 
-function updateCliPreview() {
-    const params = _schema ? _schema.params || [] : [];
-    const values = collectValues();
-    q('#cli-preview').textContent = buildPreview(params, values);
+    const sub = (hasSubs && _schemaSub) ? _schemaSub.name + ' ' : '';
+    q('#cli-preview').textContent =
+        `uv run python scripts/${_schema.name}.py ${sub}${parts.join(' ')}`.trim();
 }
 
 // ── 执行 ──
@@ -295,13 +408,12 @@ function updateCliPreview() {
 q('#btn-run').addEventListener('click', async () => {
     if (!_schema) return;
     const values = collectValues();
-    const hasParams = Object.keys(values).length > 0;
 
-    if (_schema.writes_db && hasParams) {
-        // 写库脚本第一次 → 先跑 check_arg 预览，弹出确认
+    if (_schema.writes_db) {
+        // 写库脚本一律先确认，确认后才带 confirm_write=true 真跑
         _pendingValues = values;
         q('#confirm-name').textContent = _schema.name;
-        q('#confirm-cmd').textContent = buildPreview(_schema.params || [], values);
+        q('#confirm-cmd').textContent = q('#cli-preview').textContent;
         q('#confirm-overlay').classList.add('active');
         return;
     }
@@ -343,6 +455,7 @@ async function doRun(values, confirmWrite = false) {
             body: JSON.stringify({
                 values: values,
                 confirm_write: confirmWrite,
+                subcommand: _schemaSub ? _schemaSub.name : null,
             }),
         });
         const json = await resp.json();
@@ -403,6 +516,14 @@ q('#filter').addEventListener('input', () => {
 // ── 工具 ──
 
 function q(sel) { return document.querySelector(sel); }
+
+// "执行"按钮可用性：schema 就绪前（加载中/加载失败）禁用，其余放行；
+// 写库脚本不在按钮上拦，改为点击后统一弹二次确认。
+function setRunEnabled(enabled) {
+    const btn = q('#btn-run');
+    btn.disabled = !enabled;
+    btn.title = enabled ? '' : '脚本信息尚未加载完成';
+}
 function escapeHtml(s) {
     if (s == null) return '';
     const d = document.createElement('div');
@@ -412,15 +533,91 @@ function escapeHtml(s) {
 function escapeAttr(s) {
     return String(s).replace(/"/g, '&quot;');
 }
-function trunc(s, n) {
-    if (!s) return '';
-    return s.length <= n ? s : s.slice(0, n) + '…';
+// 功能名：description 约定为 "<脚本名>.py — 中文功能描述"，
+// 列表与详情标题只展示去掉重复前缀后的纯功能描述。
+function shortLabel(s) {
+    let d = (s && s.description) || '';
+    const prefix = (s && s.name ? s.name : '') + '.py';
+    if (d.startsWith(prefix)) {
+        d = d.slice(prefix.length).replace(/^\s*[—\-–]+\s*/, '');
+    }
+    return d.replace(/。\s*$/, '').trim();
 }
 function showEmpty(show) {
     q('#empty-state').hidden = !show;
     q('#runner').hidden = show;
 }
 
+// ── 环境信息（真实环境 / Docker 部署实况）──
+
+async function loadEnv() {
+    const bar = q('#envbar');
+    try {
+        const resp = await fetch(API + '/env');
+        const json = await resp.json();
+        if (json.code !== 0 || !json.data) {
+            bar.innerHTML = '<span class="env-item">环境信息不可用</span>';
+            return;
+        }
+        renderEnv(json.data);
+    } catch (e) {
+        bar.innerHTML = `<span class="env-item">环境探测失败：${escapeHtml(e.message)}</span>`;
+    }
+}
+
+function renderEnv(env) {
+    const db = env.database || {};
+    const counts = env.counts || {};
+    const runtime = env.runtime || {};
+    const core = env.core || {};
+    const containers = env.containers || [];
+    const parts = [];
+
+    // 有真实用户与项目才判定为真实环境，否则视为空库
+    const hasRealData = (counts.users || 0) > 0 && (counts.projects || 0) > 0;
+    if (!db.connected) {
+        parts.push('<span class="env-badge env-down">数据库未连接</span>');
+    } else if (hasRealData) {
+        parts.push('<span class="env-badge env-prod">真实环境</span>');
+    } else {
+        parts.push('<span class="env-badge env-empty">空库</span>');
+    }
+
+    if (db.host) {
+        parts.push(`<span class="env-item" title="数据库来源（不含账号口令）">`
+            + `${escapeHtml(db.host)}:${db.port || ''}/${escapeHtml(db.database || '')}`
+            + ` · ${db.tables || 0} 表</span>`);
+    }
+
+    if (counts.users != null) {
+        parts.push(`<span class="env-item">用户 ${counts.users} · 项目 ${counts.projects}`
+            + ` · 节点 ${counts.nodes}</span>`);
+    }
+
+    const running = containers.filter(c => c.state === 'running').length;
+    const self = containers.find(c => c.id === runtime.hostname);
+    const title = containers.map(c => `${c.name} ${c.state}`).join(' / ');
+    parts.push(`<span class="env-item" title="${escapeAttr(title)}">容器 ${running}/${containers.length} 运行`
+        + `${self ? ' · ' + escapeHtml(self.name) + ' ' + escapeHtml(self.status) : ''}</span>`);
+
+    if (core.status) {
+        parts.push(`<span class="env-item">Core ${escapeHtml(core.status)}`
+            + ` · 已运行 ${formatUptime(core.uptime_seconds)}</span>`);
+    }
+
+    q('#envbar').innerHTML = parts.join('');
+}
+
+function formatUptime(seconds) {
+    const s = Number(seconds) || 0;
+    if (s < 60) return s + 's';
+    if (s < 3600) return Math.floor(s / 60) + 'm';
+    const hours = Math.floor(s / 3600);
+    const minutes = Math.floor((s % 3600) / 60);
+    return minutes ? `${hours}h${minutes}m` : `${hours}h`;
+}
+
 // ── 启动 ──
 
+loadEnv();
 loadList();

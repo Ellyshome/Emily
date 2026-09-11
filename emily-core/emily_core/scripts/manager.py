@@ -17,7 +17,7 @@ import sys
 from pathlib import Path
 
 from .script_entry import ScriptEntry
-from .params import build_cli_args, param_to_dict, ParamError
+from .params import build_cli_args, param_to_dict, subcommand_to_dict, ParamError
 from .registry import ScriptRegistry
 
 logger = logging.getLogger("emily.scripts.manager")
@@ -36,6 +36,11 @@ def _resolve_project_root() -> Path:
 
 
 _PROJECT_ROOT = _resolve_project_root()
+
+# 子进程 import emily_core 所需的路径：emily_core 包目录的父目录。
+#   开发环境 → <repo>/emily-core（emily_core/ 包在其下）
+#   容器内   → /app（挂载点是 /app/emily_core，自身即包）
+_CORE_PARENT = Path(__file__).resolve().parents[2]
 
 
 class ScriptManager:
@@ -160,7 +165,14 @@ class ScriptManager:
             # encoding/errors 必须显式指定：text=True 默认用 locale 编码，
             # Windows 上是 GBK，脚本一输出中文就 UnicodeDecodeError 打挂读取线程。
             # PYTHONIOENCODING 同步传给子进程，避免子进程侧再按 GBK 编码输出。
+            # PYTHONPATH 注入 emily_core 父目录：子进程 sys.path[0] 是 scripts/ 而非
+            # 仓库根，不注入则脚本 import emily_core 直接失败（宿主机由 uv 环境保证，
+            # 容器内没有该保证）。
             env = {**os.environ, "PYTHONIOENCODING": "utf-8"}
+            existing_path = env.get("PYTHONPATH", "")
+            env["PYTHONPATH"] = str(_CORE_PARENT) + (
+                os.pathsep + existing_path if existing_path else ""
+            )
             proc = subprocess.run(
                 [sys.executable, str(script_path), *args],
                 capture_output=True, text=True, timeout=timeout,
@@ -183,7 +195,7 @@ class ScriptManager:
                     "script": name, "returncode": -1, "code": 1}
 
     def run_with_params(self, name: str, values: dict | None = None,
-                        confirm_write: bool = False) -> dict:
+                        confirm_write: bool = False, subcommand: str | None = None) -> dict:
         """按 params schema 执行脚本（Web 表单通道）。
 
         与 run() 的区别：run() 直传 argv（信任调用方）；本方法只接受 schema 中
@@ -193,6 +205,7 @@ class ScriptManager:
             name: 脚本名。
             values: {参数名: 值}，来自表单。
             confirm_write: writes_db 脚本的二次确认。False 时强制改跑 check_arg 预览。
+            subcommand: 带子命令脚本选中的动作名，拼在 argv 首位。
 
         Returns:
             run() 的返回结构，另加 "cli_args"（实际执行的 argv，供前端回显）
@@ -204,10 +217,47 @@ class ScriptManager:
                     "script": name, "code": 2}
 
         try:
-            args = build_cli_args(e, values or {})
+            args = build_cli_args(e, values or {}, subcommand)
         except ParamError as ex:
             return {"success": False, "error": str(ex), "script": name,
                     "returncode": -1, "code": 1}
+
+        # 写库脚本未确认 → 降级为 check_arg 预览，绝不真跑
+        forced_preview = False
+        if e.writes_db and not confirm_write:
+            if not e.check_arg or e.subcommands:
+                # 子命令脚本没法用单一 check_arg 拼出合法预览命令，只能要求显式确认
+                reason = ("且未定义 check_arg 预览参数" if not e.check_arg
+                          else "且为子命令脚本、无法自动生成预览命令")
+                return {"success": False, "script": name, "code": 1, "returncode": -1,
+                        "error": f"脚本 '{name}' 会写数据库{reason}，拒绝在未确认的情况下执行"}
+            args = [e.check_arg]
+            forced_preview = True
+
+        result = self.run(name, args=args, timeout=e.timeout_seconds)
+        result["cli_args"] = args
+        result["forced_preview"] = forced_preview
+        return result
+
+    def run_with_defaults(self, name: str, confirm_write: bool = False) -> dict:
+        """按注册表声明的默认参数执行脚本（无 params schema 的 Web 通道）。
+
+        未声明 params 的脚本没有可校验的表单 schema，因此不接受调用方传参，
+        只按 run_args 的默认参数执行；写库脚本与 run_with_params 同样强制两段式确认。
+
+        Args:
+            name: 脚本名。
+            confirm_write: writes_db 脚本的二次确认。False 时强制改跑 check_arg 预览。
+
+        Returns:
+            run() 的返回结构，另加 "cli_args" 和 "forced_preview"。
+        """
+        e = self._registry.get(name)
+        if not e:
+            return {"success": False, "error": f"script '{name}' not found",
+                    "script": name, "code": 2}
+
+        args = list(e.run_args or [])
 
         # 写库脚本未确认 → 降级为 check_arg 预览，绝不真跑
         forced_preview = False
@@ -237,7 +287,9 @@ class ScriptManager:
             "check_arg": e.check_arg,
             "timeout_seconds": e.timeout_seconds,
             "invocation": e.invocation,
+            "run_args": e.run_args,
             "params": [param_to_dict(p) for p in e.params],
+            "subcommands": [subcommand_to_dict(s) for s in e.subcommands],
         }
 
     def _run_inprocess(self, entry: ScriptEntry, args: list[str], timeout: int) -> dict:
@@ -349,4 +401,5 @@ class ScriptManager:
             "has_check": e.has_check,
             "has_params": e.has_params,
             "params": [param_to_dict(p) for p in e.params],
+            "subcommands": [subcommand_to_dict(s) for s in e.subcommands],
         }
