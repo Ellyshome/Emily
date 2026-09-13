@@ -120,9 +120,6 @@ class EmilyCore:
         self._skill_registry = None
         self._skill_executor = None
 
-        # 监控模块（Monitor Dashboard）
-        self._monitor_service = None
-
         # Agent 追踪查询服务（trace API）
         self._agent_trace_service = None
 
@@ -195,9 +192,6 @@ class EmilyCore:
         # ── Skill 模块 ──
         self._init_skill_module()
 
-        #  ── 监控模块（Monitor Dashboard）──
-        self._init_monitor_module()
-
         # ── Agent 追踪查询服务（D1：接线，供 trace API 查询）──
         try:
             from .services.agent_trace_service import AgentTraceService
@@ -240,6 +234,15 @@ class EmilyCore:
             from .tools.registry import register_all
             register_all(self)
 
+            # ── MCP 扩展：把外部 MCP Server 工具接入业务流工具表 ──
+            try:
+                from .mcp import load_mcp_tools
+                n_mcp = load_mcp_tools(self)
+                if n_mcp:
+                    logger.info("mcp_tools: ready (%d tools)", n_mcp)
+            except Exception as e:  # noqa: BLE001
+                logger.warning("mcp tools load failed: %s", e)
+
             # ── ToolManager 聚合层 ──
             from .tools.manager import ToolManager
             self._tool_manager = ToolManager(self._business_flow_tools)
@@ -261,6 +264,18 @@ class EmilyCore:
             except Exception as e:
                 logger.warning("capability registry init failed: %s", e)
                 self._capability_registry = None
+
+            # ── 能力契约注册（M2 / C10：缺参数 schema 的能力不进入可见集）──
+            try:
+                from .session.capability_contract import get_contract_registry, register_contracts
+                contract_added = register_contracts(self)
+                contract_registry = get_contract_registry()
+                logger.info(
+                    "capability_contract: ready (%d registered / %d total, missing_schema=%s)",
+                    contract_added, len(contract_registry), contract_registry.missing_schema()[:10],
+                )
+            except Exception as e:
+                logger.warning("capability contract init failed: %s", e)
 
         # ── 会话路径分派 + 新会话主循环池（M8；开关默认关，构建轻量不启用）──
         try:
@@ -366,24 +381,6 @@ class EmilyCore:
         except Exception as e:
             logger.error("SkillRegistry reload failed: %s", e)
             return {"ok": False, "total": 0, "skill_ids": [], "error": str(e)}
-
-    def _init_monitor_module(self) -> None:
-        """初始化监控模块：MonitorService。fail-open。"""
-        try:
-            from .services.monitor_service import MonitorService
-            self._monitor_service = MonitorService(core=self)
-
-            # 注入到 API 路由
-            try:
-                from api.routes.monitor import set_monitor_service
-                set_monitor_service(self._monitor_service)
-            except ImportError:
-                pass  # 非 API 场景
-
-            logger.info("Monitor module initialized")
-        except Exception as e:
-            logger.warning("Monitor module init failed: %s", e)
-            self._monitor_service = None
 
     def _init_meta_cognition(self) -> None:
         """初始化元认知模块：规则书 + 世界书 + 系统描述。fail-open。"""
@@ -1071,8 +1068,10 @@ class EmilyCore:
             reply = await self._session_loop_pool.route(
                 message, user_id=user_id, db_message_id=db_message_id)
         else:
-            # SessionPool 路由（携带 db_message_id —— 见 M2）
-            reply = await self._session_pool.route(message, user_id=user_id, db_message_id=db_message_id)
+            # 退役后：会话池为唯一入站渠道；池未就绪属启动异常，不静默回退旧链路
+            logger.error("handle_message: session loop pool 未就绪，消息未处理（conv=%s）",
+                         message.conversation_id)
+            reply = None
 
         # 出站
         if reply is not None:

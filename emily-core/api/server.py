@@ -90,20 +90,20 @@ from .routes import meta_cognition  # noqa: E402
 
 app.include_router(meta_cognition.router)
 
-# 监控看板 API（D4：补注册漏掉的 route）
-from .routes import monitor  # noqa: E402
-
-app.include_router(monitor.router, prefix="/api/v1")
-
 # Agent 追踪查询 API（D1：trace 闭环）
 from .routes import trace as trace_routes  # noqa: E402
 
 app.include_router(trace_routes.router, prefix="/api/v1")
 
-# 脚本执行控制台（独立前端页面）
+# emy-console — 脚本执行控制台（独立前端页面）
 from .routes import scripts_runner  # noqa: E402
 
 app.include_router(scripts_runner.router, prefix="/api/v1")
+
+# emy-console 资源清单 API（四组资源 + 用户权限过滤）
+from .routes import console_resources  # noqa: E402
+
+app.include_router(console_resources.router, prefix="/api/v1")
 
 # 脚本控制台静态文件（挂 /console/ 前缀，已加入 AuthMiddleware 白名单）
 _console_static = Path(__file__).resolve().parent.parent / "static" / "scripts_tool"

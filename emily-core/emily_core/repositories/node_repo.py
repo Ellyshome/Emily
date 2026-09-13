@@ -688,6 +688,63 @@ class NodeDeliverableRepo:
 
 
 # ══════════════════════════════════════════════════════════════════════════════
+# NodeParticipantRepo
+# ══════════════════════════════════════════════════════════════════════════════
+
+class NodeParticipantRepo:
+    """节点参与人（自然人）中间表 Repository。"""
+
+    @staticmethod
+    def add(node_id: str, user_id: str,
+            participant_role: str = "participant", added_by: str = "") -> NodeParticipant:
+        """添加节点参与人（DB 唯一约束兜底 node_id+user_id）。"""
+        with get_session() as session:
+            np_ = NodeParticipant(
+                node_id=node_id,
+                user_id=user_id,
+                participant_role=participant_role or "participant",
+                added_by=added_by or "",
+            )
+            session.add(np_)
+            session.commit()
+            logger.info("NodeParticipant added: node=%s user=%s role=%s",
+                        node_id, user_id, participant_role)
+            return np_
+
+    @staticmethod
+    def find(node_id: str, user_id: str) -> NodeParticipant | None:
+        """按 node+user 查参与人关联。"""
+        with get_session() as session:
+            return (
+                session.query(NodeParticipant)
+                .filter(
+                    NodeParticipant.node_id == node_id,
+                    NodeParticipant.user_id == user_id,
+                )
+                .first()
+            )
+
+    @staticmethod
+    def remove(node_id: str, user_id: str) -> bool:
+        """移除节点参与人。"""
+        with get_session() as session:
+            np_ = (
+                session.query(NodeParticipant)
+                .filter(
+                    NodeParticipant.node_id == node_id,
+                    NodeParticipant.user_id == user_id,
+                )
+                .first()
+            )
+            if np_ is None:
+                return False
+            session.delete(np_)
+            session.commit()
+            logger.info("NodeParticipant removed: node=%s user=%s", node_id, user_id)
+            return True
+
+
+# ══════════════════════════════════════════════════════════════════════════════
 # NodeAccessibleFileRepo
 # ══════════════════════════════════════════════════════════════════════════════
 
@@ -726,6 +783,19 @@ class NodeAccessibleFileRepo:
                 .filter(NodeAccessibleFile.file_id == file_id)
                 .all()
             )
+
+    @staticmethod
+    def remove_by_file(file_id: str) -> int:
+        """删除某文件的所有节点可见关联（文件删除时清理）。"""
+        with get_session() as session:
+            result = (
+                session.query(NodeAccessibleFile)
+                .filter(NodeAccessibleFile.file_id == file_id)
+                .delete(synchronize_session=False)
+            )
+            session.commit()
+            logger.info("NodeAccessibleFile removed by file=%s count=%s", file_id, result)
+            return int(result or 0)
 
     @staticmethod
     def remove(node_id: str, file_id: str) -> bool:

@@ -22,7 +22,6 @@ services:
     restart: always
     ports:
       - "127.0.0.1:18080:18080"       # HTTP API（仅本地）
-      - "0.0.0.0:18081:18081"         # 监控看板
     environment:
       - TZ=Asia/Shanghai
       - EMILY_DATABASE_URL=postgresql://emily:emily_secret_2026@emily-postgres:5432/emily
@@ -57,6 +56,7 @@ services:
       - ./emily-data/user_memory:/app/user_memory
       - ./emily-data/journal:/app/journal
       - ./emily-data/session_archives:/app/session_archives
+      - ./需求/测试用例:/app/test_cases:ro                # 测试用例库（emy-console 只读展示）
       # 代码热更新
       - ./emily-core/emily_core:/app/emily_core:ro
       - ./emily-core/api:/app/api:ro

@@ -287,6 +287,8 @@ class ScriptManager:
             "check_arg": e.check_arg,
             "timeout_seconds": e.timeout_seconds,
             "invocation": e.invocation,
+            "source_path": e.source_path,
+            "entrypoint": e.entrypoint,
             "run_args": e.run_args,
             "params": [param_to_dict(p) for p in e.params],
             "subcommands": [subcommand_to_dict(s) for s in e.subcommands],

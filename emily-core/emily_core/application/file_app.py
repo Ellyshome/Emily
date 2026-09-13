@@ -72,6 +72,14 @@ class FileApplication:
             data = route_result.data or {}
             filename = data.get("filename", "未命名文件")
 
+            # 密级：上传人可指定，默认内部(1)；非法值回退内部
+            try:
+                confidentiality = int(data.get("confidentiality", 1))
+                if confidentiality not in (0, 1, 2):
+                    confidentiality = 1
+            except (TypeError, ValueError):
+                confidentiality = 1
+
             cmd = FileCommand(
                 project_id=route_result.project_id,
                 project_name=route_result.project_name,
@@ -81,6 +89,7 @@ class FileApplication:
                 source_message_id=message_id,
                 file_category=data.get("file_category", "OTHER"),
                 purpose=data.get("purpose", "RECORD"),
+                confidentiality=confidentiality,
             )
             f = self.file_service.create_file_record(cmd)
 
@@ -261,4 +270,50 @@ class FileApplication:
                 success=False,
                 error_code="file_category_update_failed",
                 reply=f"分类更新失败：{e}",
+            )
+
+    async def handle_update_confidentiality(
+        self,
+        file_no: str,
+        confidentiality: int,
+        user_id: str = "",
+    ) -> HandlerResult:
+        """调整文件密级（仅上传人本人或 L5/L6 管理员）。"""
+        try:
+            f = self.file_service.repo.get_by_file_no(file_no)
+            if f is None:
+                return HandlerResult(
+                    success=False,
+                    error_code="file_not_found",
+                    reply=f"找不到文件编号 {file_no}",
+                )
+
+            result = self.file_service.update_confidentiality(
+                file_id=f.id,
+                confidentiality=confidentiality,
+                operator_id=user_id,
+            )
+
+            if not result.get("success"):
+                return HandlerResult(
+                    success=False,
+                    error_code=result.get("error", "confidentiality_update_failed"),
+                    reply=result.get("reply", "密级更新失败"),
+                )
+
+            return HandlerResult(
+                success=True,
+                reply=result.get("reply", "密级已更新"),
+                data={
+                    "file_no": result.get("file_no", file_no),
+                    "old": result.get("old"),
+                    "new": result.get("new"),
+                },
+            )
+        except Exception as e:
+            logger.error("Update file confidentiality failed: %s", e, exc_info=True)
+            return HandlerResult(
+                success=False,
+                error_code="file_confidentiality_update_failed",
+                reply=f"密级更新失败：{e}",
             )

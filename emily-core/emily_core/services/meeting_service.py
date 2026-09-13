@@ -26,6 +26,22 @@ class MeetingService:
             source_message_id=cmd.source_message_id or None,
             created_by=cmd.creator_id or None,
         )
+
+        # 双写：同步累积到统一项目事件（project_events）
+        try:
+            from ..services.project_event_accumulator import ProjectEventAccumulator
+            ProjectEventAccumulator.record_meeting(
+                title=cmd.title,
+                project_id=cmd.project_id or None,
+                summary=cmd.summary or "",
+                status=1,
+                actor_id=cmd.creator_id or None,
+                attendees=cmd.attendees or [],
+                source_message_id=cmd.source_message_id or None,
+            )
+        except Exception as e:
+            logger.warning("ProjectEvent double-write failed: %s", e)
+
         logger.info("Meeting %s archived: %s", meeting_no, cmd.title)
         return meeting
 

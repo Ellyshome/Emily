@@ -330,6 +330,211 @@ nodes:
                 unit: "份"
                 is_required: true
 
+      # ── 二次结构工程（专业分包）──
+      - node_id: "EMR-SG-01-06"
+        node_name: "二次结构工程"
+        node_type: "WORK_PACKAGE"
+        stage_id: 2
+        owner_dept_id: "项目部"
+        related_company_id: "苏州二次结构工程有限公司"
+        deadline: "2026-06-15"
+        sort_order: 3
+        child_weight: 1.0
+        remark: "已完成——填充墙砌筑、构造柱、圈梁、过梁施工验收通过"
+        dependencies:
+          - deliverable_name: "主体结构分部验收报告"
+            dependency_type: "DELIVERABLE"
+            weight: 1.0
+        deliverables:
+          - deliverable_id: "EMR-SG-01-06-DELV-001"
+            deliverable_name: "二次结构分部验收报告"
+            target_amount: 1
+            current_amount: 1
+            unit: "份"
+            is_required: true
+        children:
+          - node_id: "EMR-SG-01-06-01"
+            node_name: "填充墙砌筑与构造柱"
+            node_type: "TASK"
+            stage_id: 2
+            owner_dept_id: "项目部"
+            related_company_id: "苏州二次结构工程有限公司"
+            deadline: "2026-06-10"
+            sort_order: 1
+            child_weight: 1.0
+            remark: "已完成——加气混凝土砌块填充墙、构造柱、圈梁、过梁全部完成"
+            deliverables:
+              - deliverable_id: "EMR-SG-01-06-01-DELV-001"
+                deliverable_name: "二次结构隐蔽验收记录"
+                target_amount: 1
+                current_amount: 1
+                unit: "份"
+                is_required: true
+
+      # ── 钢结构工程（结构专业分包）──
+      - node_id: "EMR-SG-01-10"
+        node_name: "钢结构工程"
+        node_type: "WORK_PACKAGE"
+        stage_id: 2
+        owner_dept_id: "项目部"
+        related_company_id: "苏州钢结构工程有限公司"
+        deadline: "2026-06-30"
+        sort_order: 4
+        child_weight: 1.0
+        remark: "已完成——钢结构雨棚、金属屋面及结构加固施工验收通过"
+        dependencies:
+          - deliverable_name: "主体结构分部验收报告"
+            dependency_type: "DELIVERABLE"
+            weight: 1.0
+        deliverables:
+          - deliverable_id: "EMR-SG-01-10-DELV-001"
+            deliverable_name: "钢结构分部验收报告"
+            target_amount: 1
+            current_amount: 1
+            unit: "份"
+            is_required: true
+        children:
+          - node_id: "EMR-SG-01-10-01"
+            node_name: "钢结构雨棚与金属屋面"
+            node_type: "TASK"
+            stage_id: 2
+            owner_dept_id: "项目部"
+            related_company_id: "苏州钢结构工程有限公司"
+            deadline: "2026-06-25"
+            sort_order: 1
+            child_weight: 1.0
+            remark: "已完成——钢结构雨棚+坡屋面金属板+结构加固完成"
+            deliverables:
+              - deliverable_id: "EMR-SG-01-10-01-DELV-001"
+                deliverable_name: "钢结构安装验收记录"
+                target_amount: 1
+                current_amount: 1
+                unit: "份"
+                is_required: true
+
+      # ── 幕墙工程（专业分包）──
+      - node_id: "EMR-SG-01-07"
+        node_name: "幕墙工程"
+        node_type: "WORK_PACKAGE"
+        stage_id: 2
+        owner_dept_id: "项目部"
+        related_company_id: "苏州幕墙工程有限公司"
+        deadline: "2026-08-15"
+        sort_order: 5
+        child_weight: 1.0
+        remark: "进行中——幕墙龙骨已安装完成，玻璃/石材面板安装约60%"
+        dependencies:
+          - deliverable_name: "主体结构分部验收报告"
+            dependency_type: "DELIVERABLE"
+            weight: 1.0
+        deliverables:
+          - deliverable_id: "EMR-SG-01-07-DELV-001"
+            deliverable_name: "幕墙分部验收报告"
+            target_amount: 1
+            current_amount: 0
+            unit: "份"
+            is_required: true
+        children:
+          - node_id: "EMR-SG-01-07-01"
+            node_name: "幕墙龙骨与面板安装"
+            node_type: "TASK"
+            stage_id: 2
+            owner_dept_id: "项目部"
+            related_company_id: "苏州幕墙工程有限公司"
+            deadline: "2026-08-10"
+            sort_order: 1
+            child_weight: 1.0
+            remark: "进行中——龙骨完成，面板安装至60%"
+            deliverables:
+              - deliverable_id: "EMR-SG-01-07-01-DELV-001"
+                deliverable_name: "幕墙隐蔽验收记录"
+                target_amount: 1
+                current_amount: 0
+                unit: "份"
+                is_required: true
+
+      # ── 门窗工程（专业分包）──
+      - node_id: "EMR-SG-01-08"
+        node_name: "门窗工程"
+        node_type: "WORK_PACKAGE"
+        stage_id: 2
+        owner_dept_id: "项目部"
+        related_company_id: "苏州门窗工程有限公司"
+        deadline: "2026-08-31"
+        sort_order: 6
+        child_weight: 1.0
+        remark: "进行中——铝合金门窗框安装完成，门扇窗扇安装进行中"
+        dependencies:
+          - deliverable_name: "主体结构分部验收报告"
+            dependency_type: "DELIVERABLE"
+            weight: 1.0
+        deliverables:
+          - deliverable_id: "EMR-SG-01-08-DELV-001"
+            deliverable_name: "门窗分部验收报告"
+            target_amount: 1
+            current_amount: 0
+            unit: "份"
+            is_required: true
+        children:
+          - node_id: "EMR-SG-01-08-01"
+            node_name: "铝合金门窗安装"
+            node_type: "TASK"
+            stage_id: 2
+            owner_dept_id: "项目部"
+            related_company_id: "苏州门窗工程有限公司"
+            deadline: "2026-08-25"
+            sort_order: 1
+            child_weight: 1.0
+            remark: "进行中——铝合金门窗框安装完成，扇安装进行中"
+            deliverables:
+              - deliverable_id: "EMR-SG-01-08-01-DELV-001"
+                deliverable_name: "门窗安装验收记录"
+                target_amount: 1
+                current_amount: 0
+                unit: "份"
+                is_required: true
+
+      # ── 外檐装饰工程（专业分包）──
+      - node_id: "EMR-SG-01-09"
+        node_name: "外檐装饰工程"
+        node_type: "WORK_PACKAGE"
+        stage_id: 2
+        owner_dept_id: "项目部"
+        related_company_id: "苏州外檐装饰工程有限公司"
+        deadline: "2026-09-15"
+        sort_order: 7
+        child_weight: 1.0
+        remark: "进行中——外墙保温完成，真石漆喷涂及檐口线条进行中"
+        dependencies:
+          - deliverable_name: "主体结构分部验收报告"
+            dependency_type: "DELIVERABLE"
+            weight: 1.0
+        deliverables:
+          - deliverable_id: "EMR-SG-01-09-DELV-001"
+            deliverable_name: "外檐装饰验收报告"
+            target_amount: 1
+            current_amount: 0
+            unit: "份"
+            is_required: true
+        children:
+          - node_id: "EMR-SG-01-09-01"
+            node_name: "外墙保温与真石漆"
+            node_type: "TASK"
+            stage_id: 2
+            owner_dept_id: "项目部"
+            related_company_id: "苏州外檐装饰工程有限公司"
+            deadline: "2026-09-10"
+            sort_order: 1
+            child_weight: 1.0
+            remark: "进行中——外墙保温完成，真石漆喷涂进行中"
+            deliverables:
+              - deliverable_id: "EMR-SG-01-09-01-DELV-001"
+                deliverable_name: "外檐装饰验收记录"
+                target_amount: 1
+                current_amount: 0
+                unit: "份"
+                is_required: true
+
       # ── 机电安装工程 ──
       - node_id: "EMR-SG-01-03"
         node_name: "机电安装工程"

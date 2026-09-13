@@ -7,6 +7,7 @@ LLM 流量追踪 addon — 将 emily-core ↔ DeepSeek 的通讯以 jsonl + md �
   - /app/logs/llm_trace.md     — 人类可读，将 jsonl 全量数据原样转换为 markdown 结构，不丢失任何字段
 
 jsonl 记录字段（仅保留开发者观察业务数据所需）：
+  - seq：自增序号（进程内递增，重启后从现有行数续接；供增量轮询定位）
   - timestamp：时间戳
   - request_body：请求原文（messages 全文、model、采样参数）
   - response_body：响应原文（LLM 输出 content、finish_reason、usage）
@@ -30,6 +31,15 @@ class LLMTraceLogger:
 
     def __init__(self):
         self._enabled = os.environ.get("LLM_TRACE_ENABLED", "") == "1"
+        self._seq = self._count_existing_lines()
+
+    def _count_existing_lines(self) -> int:
+        """统计 jsonl 现有行数，作为 seq 起始值（容器重启续接）。"""
+        try:
+            with open(self._output_jsonl, "r", encoding="utf-8") as f:
+                return sum(1 for _ in f)
+        except Exception:
+            return 0
 
     @property
     def _output_base(self) -> str:
@@ -115,7 +125,9 @@ class LLMTraceLogger:
         timestamp = time.strftime("%Y-%m-%dT%H:%M:%S", time.localtime())
 
         # ── jsonl 记录 ──
+        self._seq += 1
         record = {
+            "seq": self._seq,
             "timestamp": timestamp,
             "request_body": req_body,
             "response_body": resp_body,

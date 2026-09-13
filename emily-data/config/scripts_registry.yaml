@@ -907,9 +907,9 @@ scripts:
       - name: confidentiality
         type: int
         label: 密级
-        help: 0=公开 1=内部 2=机密 3=绝密
+        help: 0=公开 1=内部 2=机密
         min: 0
-        max: 3
+        max: 2
       - name: dry-run
         type: flag
         label: 预览分块

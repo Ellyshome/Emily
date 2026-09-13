@@ -91,7 +91,7 @@ class File(Base):
     version = Column(String(50), default="V1.0")
     is_latest = Column(Boolean, default=True)
     parent_file_id = Column(String, nullable=True)
-    confidentiality = Column(Integer, default=0)
+    confidentiality = Column(Integer, default=1)
     creator_id = Column(String, nullable=True)
     updated_at = Column(String)
     is_deleted = Column(Boolean, default=False)
@@ -239,7 +239,7 @@ def insert_file_record(session: Session, *, file_path: Path, scan_root: Path) ->
         version="V1.0",
         is_latest=True,
         parent_file_id=None,
-        confidentiality=0,
+        confidentiality=1,
         creator_id=None,
         updated_at=now_iso,
         is_deleted=False,

@@ -203,7 +203,12 @@ def _check_tool_registry(issues: list[dict]) -> dict:
     """V13a/V13b: tool_registry 表与内存 REGISTERED_TOOLS 一致性。"""
     try:
         from emily_core.repositories.tool_registry_repo import ToolRegistryRepo
-        db_tools = {row["api_id"] for row in ToolRegistryRepo.get_all_active()}
+        # MCP 动态注册工具（handler_module=mcp:*）不属静态 REGISTERED_TOOLS，
+        # 其存在是正常的，排除后 V13b 只针对内置工具做告警
+        db_tools = {
+            row["api_id"] for row in ToolRegistryRepo.get_all_active()
+            if not str(row.get("handler_module") or "").startswith("mcp:")
+        }
     except Exception as e:
         logger.warning("check_tool_registry failed: %s", e)
         return {"error": str(e)}

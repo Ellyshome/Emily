@@ -156,32 +156,19 @@ def _check_management_unit(user_id: str, perm_dict: dict | None) -> bool:
 
 
 async def _get_user_id_from_tool_context() -> str:
-    """从 tool_node 的 BusContext 获取当前 user_id。"""
-    try:
-        from emily_core.workitem.langgraph_engine.state import get_bus_context
-        ctx = get_bus_context()
-        wi = getattr(ctx, "work_item", None)
-        if wi:
-            return getattr(wi, "user_id", "")
-        session_ctx = getattr(ctx, "session_ctx", None)
-        if session_ctx:
-            return getattr(session_ctx, "user_id", "")
-    except RuntimeError:
-        pass
-    return ""
+    """从工具上下文端口获取当前 user_id。
+
+    M2 解耦（AC-US-08.4）：能力层不再直接依赖图内部状态；上下文由内核端口提供，
+    图内显式绑定之前由内核侧过渡桥回退，读取路径与迁移前完全一致。
+    """
+    from emily_core.session.kernel_state import current_tool_user_id
+    return current_tool_user_id()
 
 
 async def _get_perm_dict() -> dict | None:
-    """从 BusContext 获取权限快照。"""
-    try:
-        from emily_core.workitem.langgraph_engine.state import get_bus_context
-        ctx = get_bus_context()
-        session_ctx = getattr(ctx, "session_ctx", None)
-        if session_ctx:
-            return getattr(session_ctx, "perm_dict", None)
-    except RuntimeError:
-        pass
-    return None
+    """从工具上下文端口获取权限快照（M2 解耦，说明同上）。"""
+    from emily_core.session.kernel_state import current_tool_perm_dict
+    return current_tool_perm_dict()
 
 
 # ══════════════════════════════════════════════════════════════════════════════

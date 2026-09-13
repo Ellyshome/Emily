@@ -82,7 +82,7 @@ Emily 的 RAG 子系统解决"**在对话/SOP 执行时，从知识库检索与�
 ### 3.2 `files`（File）
 RAG 相关关键列：
 - `file_no`（唯一）、`project_id`、`filename`、`storage_path`、`uploaded_by`
-- `confidentiality`：0=公开 1=内部 2=机密 3=绝密
+- `confidentiality`：0=公开 1=内部 2=机密（白名单制）
 - `rag_indexed`：是否已入知识库；`rag_collection`：general_reference / project_<id>
 - `is_deleted`、`file_category`、`source_module_type`、`purpose`/`purpose_confirmed`
 
@@ -122,26 +122,26 @@ RAG 相关关键列：
 
 ### 5.1 信息密级推导（[permission_service.py](d:/app/Emily/emily-core/emily_core/services/permission_service.py)）
 ```
-_derive_info_level(level, is_management_unit):
-    level >= 5                 → confidential
-    is_management_unit(公司is_admin) → confidential
+_derive_info_level(level):
+    level >= 6                 → confidential
     level >= 2                 → internal
     else                       → public
 ```
-密级映射：`public:0 / internal:1 / confidential:2 / secret:3`（`_INFO_LEVEL_MAP`）。
-> 结论：推导最高只到 **confidential(2)**；**绝密(3)** 文件除 ①自传 或 ④显式授权 外，永不进入任何用户可见集。
+密级映射：`public:0 / internal:1 / confidential:2`（`_INFO_LEVEL_MAP`，已取消 secret/绝密）。
+> 结论：机密(2) 为白名单制，仅 ①上传者 / ⑥系统管理员(L6) / ④显式授权 可见；节点/项目参与不再自动放行机密文件。
 
 ### 5.2 可见文件集合公式（[visible_file_set_resolver.py](d:/app/Emily/emily-core/emily_core/services/visible_file_set_resolver.py)）
 ```
-可见文件 = ① 上传者自有 ∪ ② 公开文件 ∪ ③ 节点可见∩密级 ∪ ④ 显式授权
+可见文件 = ① 上传者自有 ∪ ② 公开文件 ∪ ③ 节点可见∩密级 ∪ ④ 显式授权 ∪ ⑥ 系统管理员兜底
 ```
 - ① `uploaded_by == user_id`（自传永可见，不受密级）
 - ② `confidentiality == 0`
 - ③ 仅当 company_id 非空：参与节点（`node_participant_companies.company_id`）
   - `specific` → `node_accessible_files` 绑定文件
   - `all_project_files` → 该节点 project 全项目文件
-  - 均需 `confidentiality <= max_conf`
+  - 均需 `confidentiality <= node_conf_cap`（`min(max_conf, 1)`，机密不因节点自动放行）
 - ④ `session_accessible_files.access_type=='explicit'`（显式授权，不受密级）
+- ⑥ 当 `max_conf >= 2`（系统管理员 L6）：放行全部 `confidentiality <= 2` 文件
 返回惰性 SQLAlchemy Select，由 `search_dense` 在**排序前**以 `doc_id IN (子查询)` 过滤。
 
 ### 5.3 调用链
@@ -220,7 +220,7 @@ search(query):
 ## 8. 关键现状事实（易误解点）
 
 1. **无 HNSW/ivfflat 索引**：pgvector 检索是顺序扫描 + cosine_distance 排序（Vector 列注释与实现不符）。
-2. **info_level 推导最高 confidential**：绝密(3) 仅 ①自传 / ④explicit 可见。
+2. **info_level 推导最高 confidential（仅 L6）**：机密(2) 为白名单制，仅 ①上传者 / ⑥L6 / ④explicit 可见，节点/项目参与不自动放行。
 3. **混合检索的 0.3 阈值不生效**（threshold=0.0），0.3 仅用于 hybrid 异常降级纯 dense 的路径。
 4. **rerank 占位**，pgvector 与 LocalFile 均无自有 reranker。
 5. **chunk 无检索计数回写**；命中统计仅落在 rag_retrieval_logs。

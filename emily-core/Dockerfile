@@ -16,6 +16,11 @@ ARG PIP_INDEX=https://mirrors.aliyun.com/pypi/simple/
 COPY requirements.txt .
 RUN pip install --no-cache-dir -i ${PIP_INDEX} -r requirements.txt
 
+# MCP 搜索工具（独立 venv 隔离：duckduckgo-mcp-server 依赖 mcp 2.x，与主环境 1.x 不冲突）
+# --timeout 120：cryptography 等大轮子从阿里云镜像下载易超时，放宽重试窗口
+RUN python -m venv /opt/mcp-search \
+    && /opt/mcp-search/bin/pip install --no-cache-dir --timeout 120 -i ${PIP_INDEX} duckduckgo-mcp-server
+
 # 复制代码（运行时亦可通过卷挂载覆盖以热更新）
 COPY api/ ./api/
 COPY emily_core/ ./emily_core/
@@ -28,7 +33,7 @@ RUN mkdir -p /app/sops /app/prompts /app/config /app/baseknowledge /app/tools \
              /app/notebooks /app/logs /app/attachments /app/user_memory \
              /app/journal /app/db_seeds
 
-EXPOSE 18080 18081
+EXPOSE 18080
 
-# 双服务器启动：18080(业务API) + 18081(监控看板)
+# 启动业务 API 服务（含 emy-console /console/）
 CMD ["python", "-m", "api.run"]

@@ -1,0 +1,40 @@
+{
+  "_comment": "M2 策略表（检索通道治理 P0）。运维可直接改本文件；enabled=false 时回到模型自选（NFR-3）。",
+  "enabled": true,
+  "max_hops": 2,
+  "concurrency_whitelist": [
+    "全面梳理项目资料"
+  ],
+  "dispatch": [
+    {
+      "intent": "制度/规定/办法/流程",
+      "prefer": "知识库检索",
+      "fallback": ["文件台账"]
+    },
+    {
+      "intent": "文档/方案/手册/纪要/图纸的内容",
+      "prefer": "知识库检索",
+      "fallback": ["文件台账"]
+    },
+    {
+      "intent": "文件在哪/有哪些文件/版本/附件",
+      "prefer": "文件台账",
+      "fallback": ["知识库检索"]
+    },
+    {
+      "intent": "节点进度/状态/成果/待办",
+      "prefer": "节点台账",
+      "fallback": ["结构化业务数据"]
+    },
+    {
+      "intent": "事件/任务/会议记录",
+      "prefer": "结构化业务数据",
+      "fallback": ["知识库检索"]
+    },
+    {
+      "intent": "投标/报价/成本/供应商等敏感数值",
+      "prefer": "知识库检索",
+      "fallback": ["文件台账"]
+    }
+  ]
+}

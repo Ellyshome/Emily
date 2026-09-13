@@ -139,7 +139,7 @@ class MessageRepository:
 
     @staticmethod
     def list_by_conversation(conversation_id: str, limit: int = 100) -> List[Message]:
-        """按会话查历史消息。"""
+        """按会话查历史消息（conversation_id 为 conversations.id UUID）。"""
         with get_session() as session:
             return (
                 session.query(Message)
@@ -148,6 +148,35 @@ class MessageRepository:
                 .limit(limit)
                 .all()
             )
+
+    @staticmethod
+    def get_recent_by_business_conversation(
+        business_conv_id: str, limit: int = 5
+    ) -> list[dict]:
+        """按业务 conversation_id（如 QQ 号 / 群号）取最近 N 条消息。
+
+        只读：join Conversation 解析业务号 → UUID，不自动创建会话（区别于
+        _resolve_conversation_id 的写语义），专供观测类接口使用。
+        """
+        with get_session() as session:
+            rows = (
+                session.query(Message)
+                .join(Conversation, Message.conversation_id == Conversation.id)
+                .filter(Conversation.conversation_id == business_conv_id)
+                .order_by(Message.created_at.desc())
+                .limit(limit)
+                .all()
+            )
+            return [
+                {
+                    "id": m.id,
+                    "direction": m.direction or "",
+                    "sender_name": m.sender_name or "",
+                    "content": (m.content or "")[:200],
+                    "created_at": m.created_at or "",
+                }
+                for m in rows
+            ]
 
     @staticmethod
     def update_sender_user_id(message_id: str, user_id: str) -> None:

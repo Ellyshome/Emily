@@ -1,12 +1,9 @@
-"""双服务器启动入口 ——
+"""服务启动入口 —— 单服务器。
 
   - 18080: 业务 API（api.server:app），绑定 0.0.0.0
-  - 18081: 监控 API + 静态页面（api.monitor_app:app），绑定 0.0.0.0
 
-两个 uvicorn 实例共享同一个 Python 进程和 EmilyCore 实例。
-docker-compose 中通过端口映射控制访问范围：
-  - 127.0.0.1:18080 → 仅宿主机
-  - 0.0.0.0:18081  → 局域网
+> 运维看板已于 2026-09-13 退役，原 18081 监控端口（双服务器）一并移除，
+> 统一由 18080 提供业务 API 与 emy-console（/console/）。
 """
 
 from __future__ import annotations
@@ -20,29 +17,18 @@ logger = logging.getLogger("emily.run")
 
 
 async def main():
-    """同时启动业务 API 和监控 API。"""
-    config_main = uvicorn.Config(
+    """启动业务 API 服务。"""
+    config = uvicorn.Config(
         "api.server:app",
         host="0.0.0.0",
         port=18080,
         log_level="info",
     )
-    config_monitor = uvicorn.Config(
-        "api.monitor_app:app",
-        host="0.0.0.0",
-        port=18081,
-        log_level="info",
-    )
+    server = uvicorn.Server(config)
 
-    server_main = uvicorn.Server(config_main)
-    server_monitor = uvicorn.Server(config_monitor)
+    logger.info("Starting server: :18080 (business)")
 
-    logger.info("Starting dual servers: :18080 (business) + :18081 (monitor)")
-
-    await asyncio.gather(
-        server_main.serve(),
-        server_monitor.serve(),
-    )
+    await server.serve()
 
 
 if __name__ == "__main__":

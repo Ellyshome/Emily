@@ -1,0 +1,19 @@
+{
+  "servers": [
+    {
+      "name": "web_search",
+      "description": "DuckDuckGo 网络搜索（免费、无需 API key）",
+      "enabled": true,
+      "transport": "stdio",
+      "command": "/opt/mcp-search/bin/duckduckgo-mcp-server",
+      "args": [],
+      "env": {},
+      "cwd": "",
+      "tool_prefix": "ddg_",
+      "category": "base",
+      "permission_flag": "all",
+      "write_mode": "read",
+      "timeout_seconds": 30
+    }
+  ]
+}

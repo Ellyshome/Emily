@@ -3,30 +3,541 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Emily 脚本控制台</title>
+    <title>emy-console · Emily 脚本控制台</title>
     <link rel="stylesheet" href="/console/console.css">
 </head>
 <body>
 <header class="topbar">
-    <div class="brand">Emily 脚本控制台</div>
+    <div class="brand">emy-console · Emily 脚本控制台</div>
     <div class="envbar" id="envbar"><span class="env-item">环境探测中…</span></div>
 </header>
 <div class="layout">
-    <!-- 左侧：脚本菜单 -->
+    <!-- 左侧：脚本列表 -->
     <aside class="sidebar">
-        <div class="sidebar-head">
-            <input type="search" id="filter" placeholder="筛选脚本…" autocomplete="off">
+        <div class="sidebar-operator">
+            <label for="global-operator-select">操作人</label>
+            <select id="global-operator-select" title="全局锚点：控制所有右侧栏的可见范围与操作日志归属">
+                <option value="">加载中…</option>
+            </select>
         </div>
-        <div id="script-list" class="script-list">
-            <div class="hint">加载中…</div>
+        <div class="sidebar-head">
+            <input type="search" id="filter" placeholder="筛选模块 / 脚本…" autocomplete="off">
+        </div>
+        <div class="sidebar-group" id="group-modules">
+            <div class="sidebar-group-title" data-group="modules" title="点击折叠 / 展开">
+                <span class="arrow">▾</span>模块能力<span class="gcount" id="module-count"></span>
+            </div>
+            <div id="module-list" class="script-list module-list"></div>
+        </div>
+        <div class="group-resizer" id="group-resizer" title="拖拽调整模块栏高度"></div>
+        <div class="sidebar-group sidebar-group-grow" id="group-scripts">
+            <div class="sidebar-group-title" data-group="scripts" title="点击折叠 / 展开">
+                <span class="arrow">▾</span>脚本测试<span class="gcount" id="group-script-count"></span>
+            </div>
+            <div id="script-list" class="script-list script-test-list">
+                <div class="hint">加载中…</div>
+            </div>
         </div>
         <div class="sidebar-foot">
             <span id="script-count"></span>
         </div>
-    </aside>
+        </aside>
+        <div class="sidebar-resizer" id="sidebar-resizer" title="拖拽调整侧栏宽度"></div>
 
-    <!-- 右侧：参数表单 + 结果 -->
+    <!-- 右侧：资源展示 + 参数表单 + 结果 -->
     <main class="main">
+        <!-- 资源展示（点左侧「资源展示」条目后显示） -->
+        <section class="resource-display" hidden>
+            <div class="resource-display-head">
+                <h2>资源展示</h2>
+                <code class="module-cmd"></code>
+            </div>
+            <div class="resource-grid">
+                <div class="resource-group">
+                    <div class="resource-group-head">
+                        <h3>项目文件</h3>
+                        <span class="resource-count" id="count-files"></span>
+                    </div>
+                    <div class="resource-list" id="list-files"><div class="hint">加载中…</div></div>
+                </div>
+                <div class="resource-group">
+                    <div class="resource-group-head">
+                        <h3>全景节点</h3>
+                        <span class="resource-count" id="count-nodes"></span>
+                    </div>
+                    <div class="resource-list" id="list-nodes"><div class="hint">加载中…</div></div>
+                </div>
+                <div class="resource-group">
+                    <div class="resource-group-head">
+                        <h3>SOP</h3>
+                        <span class="resource-count" id="count-sops"></span>
+                    </div>
+                    <div class="resource-list" id="list-sops"><div class="hint">加载中…</div></div>
+                </div>
+                <div class="resource-group">
+                    <div class="resource-group-head">
+                        <h3>RAG文件</h3>
+                        <span class="resource-count" id="count-rag_files"></span>
+                    </div>
+                    <div class="resource-list" id="list-rag_files"><div class="hint">加载中…</div></div>
+                </div>
+            </div>
+        </section>
+
+        <!-- 文件管理（点左侧「文件管理」条目后显示）：上传 / 删除 / 节点与 RAG 进出 -->
+        <section id="upload-panel" class="upload-panel" hidden>
+            <div class="upload-panel-head">
+                <h2>文件管理</h2>
+                <code class="module-cmd"></code>
+                <div class="file-mgr-path" id="file-mgr-path"></div>
+            </div>
+            <div class="upload-body">
+                <!-- 上框：上传工具栏 + 可见文件清单 -->
+                <div class="file-mgr-box">
+                    <div class="file-mgr-toolbar">
+                        <input type="file" id="upload-file-input">
+                        <label for="upload-conf-select" class="muted">密级</label>
+                        <select id="upload-conf-select">
+                            <option value="1" selected>内部</option>
+                            <option value="0">公开</option>
+                            <option value="2">机密</option>
+                        </select>
+                        <button type="button" id="upload-btn" class="btn">上传文件</button>
+                        <span id="upload-status" class="upload-status"></span>
+                    </div>
+                    <div class="file-mgr-table-wrap">
+                        <table class="file-mgr-table">
+                            <thead>
+                                <tr>
+                                    <th class="col-check"><input type="checkbox" id="file-mgr-check-all" title="全选"></th>
+                                    <th class="sortable" data-sort-key="name">文件名<span class="sort-ind"></span></th>
+                                    <th class="sortable" data-sort-key="id">文件ID<span class="sort-ind"></span></th>
+                                    <th class="sortable" data-sort-key="conf">密级<span class="sort-ind"></span></th>
+                                    <th class="sortable" data-sort-key="uploader">上传人<span class="sort-ind"></span></th>
+                                    <th class="sortable" data-sort-key="time">上传时间<span class="sort-ind"></span></th>
+                                    <th class="sortable" data-sort-key="size">容量<span class="sort-ind"></span></th>
+                                    <th>RAG</th>
+                                    <th>可见节点</th>
+                                </tr>
+                            </thead>
+                            <tbody id="file-mgr-tbody"></tbody>
+                        </table>
+                    </div>
+                </div>
+
+                <!-- 下框：选定文件的批量操作 -->
+                <div class="file-mgr-box">
+                    <div class="file-mgr-actions">
+                        <label for="file-mgr-node-select">目标节点</label>
+                        <select id="file-mgr-node-select">
+                            <option value="">请选择目标节点…</option>
+                        </select>
+                        <label>Embedding</label>
+                        <div class="radio-group" id="file-mgr-backend">
+                            <label><input type="radio" name="file-mgr-backend" value="api" checked> 远程 API</label>
+                            <label title="本地 TEI 不可用"><input type="radio" name="file-mgr-backend" value="local" disabled> 本地 TEI</label>
+                        </div>
+                    </div>
+                    <div class="file-mgr-buttons">
+                        <button type="button" id="file-mgr-delete-btn" class="btn danger">删除选中</button>
+                        <button type="button" id="file-mgr-node-add-btn" class="btn">节点进入</button>
+                        <button type="button" id="file-mgr-node-remove-btn" class="btn">节点移除</button>
+                        <span id="file-mgr-status" class="upload-status"></span>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <!-- RAG 模块（点左侧「RAG 模块」条目后显示）：查库 -->
+        <section id="rag-panel" class="upload-panel" hidden>
+            <div class="upload-panel-head">
+                <h2>RAG 模块</h2>
+                <code class="module-cmd"></code>
+            </div>
+            <div class="upload-body">
+                <div class="rag-subblock">
+                    <h3 class="rag-subblock-title">查库</h3>
+                    <div class="upload-row">
+                        <label for="rag-search-input">查询内容</label>
+                        <input type="text" id="rag-search-input" placeholder="输入要检索的信息…">
+                    </div>
+                    <div class="upload-row">
+                        <label>Embedding 路径</label>
+                        <div class="radio-group" id="rag-search-backend">
+                            <label><input type="radio" name="rag-search-backend" value="api" checked> 远程 API</label>
+                            <label title="本地 TEI 不可用"><input type="radio" name="rag-search-backend" value="local" disabled> 本地 TEI</label>
+                        </div>
+                    </div>
+                    <div class="upload-row upload-actions">
+                        <button type="button" id="rag-search-btn" class="btn">检索</button>
+                        <span id="rag-search-status" class="upload-status"></span>
+                    </div>
+                    <div class="rag-search-results" id="rag-search-results" hidden></div>
+                </div>
+            </div>
+        </section>
+
+        <!-- 全景节点表（点左侧「全景节点表」条目后显示） -->
+        <section id="node-table-panel" class="upload-panel" hidden>
+            <div class="upload-panel-head">
+                <h2>全景节点表</h2>
+                <code class="module-cmd"></code>
+                <span id="node-table-status" class="upload-status"></span>
+            </div>
+            <div class="node-table-body">
+                <table class="node-table">
+                    <thead>
+                        <tr>
+                            <th>节点ID</th>
+                            <th>节点名称</th>
+                            <th>类型</th>
+                            <th>状态</th>
+                            <th>参与人</th>
+                            <th>共享文件</th>
+                        </tr>
+                    </thead>
+                    <tbody id="node-table-tbody"></tbody>
+                </table>
+                <div id="node-table-empty" class="resource-empty" hidden>暂无数据</div>
+            </div>
+        </section>
+
+        <!-- 现有 SOP 展示（点左侧「SOP 展示」条目后显示） -->
+        <section id="sop-display-panel" class="upload-panel" hidden>
+            <div class="upload-panel-head">
+                <h2>现有 SOP</h2>
+                <code class="module-cmd"></code>
+                <span id="sop-display-status" class="upload-status"></span>
+            </div>
+            <div class="node-table-body">
+                <table class="node-table">
+                    <thead>
+                        <tr>
+                            <th>SOP ID</th>
+                            <th>名称</th>
+                            <th>文件名</th>
+                            <th>分类</th>
+                            <th>类型</th>
+                            <th>状态</th>
+                            <th>说明</th>
+                        </tr>
+                    </thead>
+                    <tbody id="sop-display-tbody"></tbody>
+                </table>
+                <div id="sop-display-empty" class="resource-empty" hidden>暂无 SOP</div>
+            </div>
+        </section>
+
+        <!-- 参考全景节点展示（点左侧「参考全景节点」条目后显示）：只读，不做增删改 -->
+        <section id="panorama-nodes-panel" class="upload-panel" hidden>
+            <div class="upload-panel-head">
+                <h2>参考全景节点</h2>
+                <code class="module-cmd"></code>
+                <span id="panorama-nodes-status" class="upload-status"></span>
+            </div>
+            <div class="node-table-body">
+                <table class="node-table">
+                    <thead>
+                        <tr>
+                            <th>节点ID</th>
+                            <th>节点名称</th>
+                            <th>类型</th>
+                            <th>状态</th>
+                            <th>项目</th>
+                            <th>参与人</th>
+                            <th>共享文件</th>
+                        </tr>
+                    </thead>
+                    <tbody id="panorama-nodes-tbody"></tbody>
+                </table>
+                <div id="panorama-nodes-empty" class="resource-empty" hidden>暂无节点</div>
+            </div>
+        </section>
+
+        <!-- 项目事件（点左侧「项目事件」条目后显示）：统一事件时间线 -->
+        <section id="project-events-panel" class="upload-panel" hidden>
+            <div class="upload-panel-head">
+                <h2>项目事件</h2>
+                <code class="module-cmd"></code>
+                <select id="project-events-kind-select" class="panel-user-select" title="按事件类型过滤">
+                    <option value="">全部类型</option>
+                </select>
+                <span id="project-events-count" class="upload-status"></span>
+            </div>
+            <div class="node-table-body">
+                <table class="node-table logs-table">
+                    <thead>
+                        <tr>
+                            <th>编号</th>
+                            <th>类型</th>
+                            <th>标题</th>
+                            <th>状态</th>
+                            <th>节点</th>
+                            <th>项目</th>
+                            <th>创建时间</th>
+                        </tr>
+                    </thead>
+                    <tbody id="project-events-tbody"></tbody>
+                </table>
+                <div id="project-events-empty" class="resource-empty" hidden>暂无项目事件</div>
+            </div>
+            <div id="project-event-detail" class="detail-frame" hidden></div>
+        </section>
+
+        <!-- 会话池（点左侧「会话池」条目后显示）：活跃 Session 观测（只读） -->
+        <section id="session-pool-panel" class="upload-panel" hidden>
+            <div class="upload-panel-head">
+                <h2>会话池</h2>
+                <code class="module-cmd"></code>
+                <span id="session-pool-status" class="upload-status"></span>
+            </div>
+            <div class="node-table-body">
+                <table class="node-table">
+                    <thead>
+                        <tr>
+                            <th>会话ID</th>
+                            <th>空闲时长</th>
+                            <th>最后活跃</th>
+                            <th>最近消息</th>
+                        </tr>
+                    </thead>
+                    <tbody id="session-pool-tbody"></tbody>
+                </table>
+                <div id="session-pool-empty" class="resource-empty" hidden>当前无活跃会话</div>
+            </div>
+            <div id="session-pool-messages" class="detail-frame" hidden></div>
+        </section>
+
+        <!-- 会话归档（点左侧「会话归档」条目后显示）：归档索引 + 对话全文（只读） -->
+        <section id="session-archive-panel" class="upload-panel" hidden>
+            <div class="upload-panel-head">
+                <h2>会话归档</h2>
+                <code class="module-cmd"></code>
+                <span id="session-archive-status" class="upload-status"></span>
+            </div>
+            <div class="node-table-body">
+                <table class="node-table">
+                    <thead>
+                        <tr>
+                            <th class="sortable" data-sort-key="archived_at">归档时间<span class="sort-ind"></span></th>
+                            <th class="sortable" data-sort-key="user_name">用户<span class="sort-ind"></span></th>
+                            <th class="sortable" data-sort-key="conversation_id">会话ID<span class="sort-ind"></span></th>
+                            <th class="sortable" data-sort-key="turn_count">轮次<span class="sort-ind"></span></th>
+                            <th>原因</th>
+                            <th>正文文件</th>
+                        </tr>
+                    </thead>
+                    <tbody id="session-archive-tbody"></tbody>
+                </table>
+                <div id="session-archive-empty" class="resource-empty" hidden>暂无归档记录</div>
+            </div>
+            <div id="session-archive-content" class="detail-frame" hidden></div>
+        </section>
+
+        <!-- 测试用例库（点左侧「测试用例库」条目后显示）：回归用例清单 + 单条用例细节（只读） -->
+        <section id="test-cases-panel" class="upload-panel" hidden>
+            <div class="upload-panel-head">
+                <h2>测试用例库</h2>
+                <code class="module-cmd"></code>
+                <span id="test-cases-status" class="upload-status"></span>
+            </div>
+            <div class="node-table-body">
+                <table class="node-table">
+                    <thead>
+                        <tr>
+                            <th>编号</th>
+                            <th>目标特性</th>
+                            <th>所属文件</th>
+                            <th>章节</th>
+                        </tr>
+                    </thead>
+                    <tbody id="test-cases-tbody"></tbody>
+                </table>
+                <div id="test-cases-empty" class="resource-empty" hidden>暂无测试用例</div>
+            </div>
+            <div id="test-case-detail" class="detail-frame" hidden></div>
+        </section>
+
+        <!-- 日志聚合（点左侧「日志聚合」条目后显示） -->
+        <section id="logs-panel" class="upload-panel" hidden>
+            <div class="upload-panel-head">
+                <h2>日志聚合</h2>
+                <code class="module-cmd"></code>
+                <select id="logs-module-select" class="panel-user-select" title="按记录模块过滤">
+                    <option value="">全部模块</option>
+                </select>
+            </div>
+            <div class="node-table-body">
+                <table class="node-table logs-table">
+                    <thead>
+                        <tr>
+                            <th>时间</th>
+                            <th>模块</th>
+                            <th>用户</th>
+                            <th>摘要</th>
+                        </tr>
+                    </thead>
+                    <tbody id="logs-tbody"></tbody>
+                </table>
+                <div id="logs-empty" class="resource-empty" hidden>暂无日志</div>
+            </div>
+
+            <!-- 消息模拟器（并入日志聚合框架） -->
+            <div class="simulator-box">
+                <div class="simulator-head">
+                    <h3>消息模拟器</h3>
+                    <span class="muted">发送者统一使用左侧全局「操作人」</span>
+                </div>
+                <div id="simulator-form" class="param-form"></div>
+                <div class="simulator-actions">
+                    <button type="button" id="simulator-run-btn" class="btn">发送消息</button>
+                    <span id="simulator-status" class="upload-status"></span>
+                </div>
+                <div class="simulator-result">
+                    <div class="result-head">
+                        <h3>执行结果</h3>
+                        <div class="result-meta" id="simulator-meta"></div>
+                    </div>
+                    <pre id="simulator-result" class="result-body">尚未发送。</pre>
+                </div>
+            </div>
+        </section>
+
+        <!-- LLM 流量（点左侧「LLM 流量」条目后显示）：mitmproxy jsonl → 增量轮询 -->
+        <section id="llm-trace-panel" class="upload-panel" hidden>
+            <div class="upload-panel-head">
+                <h2>LLM 流量</h2>
+                <code class="module-cmd"></code>
+                <button type="button" id="llm-trace-refresh-btn" class="btn">立即刷新</button>
+                <button type="button" id="llm-trace-auto-btn" class="btn">自动刷新：开</button>
+                <span id="llm-trace-status" class="upload-status"></span>
+                <span id="llm-trace-count" class="upload-status"></span>
+            </div>
+            <div class="node-table-body">
+                <table class="node-table logs-table llm-table">
+                    <thead>
+                        <tr>
+                            <th>时间</th>
+                            <th>模型</th>
+                            <th>消息数</th>
+                            <th>完成原因</th>
+                            <th>Token</th>
+                        </tr>
+                    </thead>
+                    <tbody id="llm-trace-tbody"></tbody>
+                </table>
+                <div id="llm-trace-empty" class="resource-empty" hidden>尚未产生流量（等待 LLM 调用）</div>
+            </div>
+        </section>
+
+        <!-- 系统自检（点左侧「系统自检」条目后显示） -->
+        <section id="self-check-panel" class="upload-panel" hidden>
+            <div class="upload-panel-head">
+                <h2>系统自检</h2>
+                <code class="module-cmd"></code>
+                <select id="self-check-mode-select" class="panel-user-select" title="检查模式">
+                    <option value="full">全量检查</option>
+                    <option value="quick">快速检查</option>
+                </select>
+                <button type="button" id="self-check-run-btn" class="btn">执行自检</button>
+            </div>
+            <div class="self-check-body">
+                <div id="self-check-result" class="self-check-result">
+                    <div class="hint">选择操作人后点击「执行自检」</div>
+                </div>
+            </div>
+        </section>
+
+        <!-- Prompt 工程（点左侧「Prompt 工程」条目后显示）：模板清单 + 详情 -->
+        <section id="prompt-panel" class="upload-panel" hidden>
+            <div class="upload-panel-head">
+                <h2>Prompt 工程</h2>
+                <code class="module-cmd"></code>
+            </div>
+            <div class="prompt-body">
+                <!-- 左框：提示词模板清单 -->
+                <div class="prompt-list-box">
+                    <div class="prompt-list-head">
+                        <h3>提示词模板</h3>
+                        <span id="prompt-count" class="resource-count"></span>
+                    </div>
+                    <div id="prompt-list" class="prompt-list"><div class="hint">加载中…</div></div>
+                </div>
+                <!-- 右框：模板详情（内容 / 插入点 / 来源描述） -->
+                <div class="prompt-detail-box">
+                    <div class="prompt-detail-head">
+                        <span class="prompt-detail-name" id="prompt-detail-name">请选择左侧模板</span>
+                        <span class="prompt-detail-source" id="prompt-detail-source"></span>
+                    </div>
+                    <div class="prompt-detail-section">
+                        <h4>来源描述</h4>
+                        <pre id="prompt-detail-desc" class="prompt-detail-desc"></pre>
+                    </div>
+                    <div class="prompt-detail-section">
+                        <h4>插入点标记</h4>
+                        <div id="prompt-detail-inserts" class="prompt-detail-inserts"></div>
+                    </div>
+                    <div class="prompt-detail-section prompt-detail-content-wrap">
+                        <h4>提示词内容</h4>
+                        <pre id="prompt-detail-content" class="prompt-detail-content"></pre>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <!-- MCP 配置（点左侧「MCP 配置」条目后显示）：Server 增删改 + 开关 + 在线探测 -->
+        <section id="mcp-panel" class="upload-panel" hidden>
+            <div class="upload-panel-head">
+                <h2>MCP 配置</h2>
+                <code class="module-cmd"></code>
+                <button type="button" id="mcp-add-btn" class="btn">+ 新增 Server</button>
+                <button type="button" id="mcp-refresh-btn" class="btn">刷新</button>
+                <span id="mcp-status" class="upload-status"></span>
+            </div>
+            <div class="mcp-path" id="mcp-config-path"></div>
+
+            <!-- 新增 / 编辑表单（极简：只填核心连接信息，其余走默认） -->
+            <div id="mcp-edit-box" class="mcp-edit-box" hidden>
+                <div class="mcp-edit-head">
+                    <h3 id="mcp-edit-title">新增 MCP Server</h3>
+                </div>
+                <div class="mcp-edit-grid">
+                    <label class="mcp-field">名称 *
+                        <input type="text" id="mcp-f-name" placeholder="如 filesystem">
+                    </label>
+                    <label class="mcp-field mcp-field-wide">介绍（一句话，选填）
+                        <input type="text" id="mcp-f-desc" placeholder="如：本地文件读写工具">
+                    </label>
+                    <label class="mcp-field">连接方式
+                        <select id="mcp-f-transport">
+                            <option value="stdio">stdio（本地命令）</option>
+                            <option value="sse">sse（远程 SSE）</option>
+                            <option value="streamable_http">streamable_http（远程 HTTP）</option>
+                        </select>
+                    </label>
+                    <label class="mcp-field mcp-field-wide" id="mcp-f-command-field">命令
+                        <input type="text" id="mcp-f-command" placeholder="npx / uvx / python">
+                    </label>
+                    <label class="mcp-field mcp-field-wide" id="mcp-f-args-field">参数（空格分隔）
+                        <input type="text" id="mcp-f-args" placeholder="-y @xxx/mcp-server /path">
+                    </label>
+                    <label class="mcp-field mcp-field-wide" id="mcp-f-url-field">URL
+                        <input type="text" id="mcp-f-url" placeholder="https://xxx/mcp">
+                    </label>
+                    <label class="mcp-field mcp-field-wide" id="mcp-f-headers-field">Headers（可选，每行 KEY=VALUE）
+                        <textarea id="mcp-f-headers" rows="2" placeholder="Authorization=Bearer sk-xxx"></textarea>
+                    </label>
+                </div>
+                <div class="mcp-edit-actions">
+                    <button type="button" id="mcp-save-btn" class="btn">保存</button>
+                    <button type="button" id="mcp-cancel-btn" class="btn">取消</button>
+                    <span id="mcp-edit-status" class="upload-status"></span>
+                </div>
+            </div>
+
+            <div id="mcp-server-list" class="mcp-server-list"><div class="hint">加载中…</div></div>
+        </section>
+
         <div id="empty-state" class="empty-state">
             <p>从左侧选择一个脚本</p>
             <p class="sub">右侧显示功能说明与参数；写库脚本执行前需二次确认</p>
@@ -45,8 +556,10 @@
             <form id="param-form" class="param-form"></form>
 
             <div class="cli-preview">
-                <label>等效命令</label>
+                <label>等效命令（外部）</label>
                 <code id="cli-preview">—</code>
+                <label style="margin-top:8px">内部执行脚本（内核文件）</label>
+                <code id="cli-source" style="color:#7ec699">—</code>
             </div>
 
             <div class="actions">

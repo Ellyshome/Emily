@@ -33,11 +33,13 @@ def flatten_nodes(
     nodes: list[dict],
     *,
     project_id: str = "",
+    parent_node_id: str = "",
 ) -> list[dict]:
     """将嵌套的节点树展平为列表。
 
     YAML 中 children 嵌套 → 展平后按层级顺序排列。
     node_id 为空时自动生成：NODE-{hash4}（基于 node_name + project_id）。
+    同时保留 node_type / child_weight / parent_node_id，供后续挂载与类型落库。
     """
     flat: list[dict] = []
 
@@ -55,6 +57,9 @@ def flatten_nodes(
             "deadline": node_def.get("deadline", ""),
             "related_company_id": node_def.get("related_company_id", "建设单位"),
             "remark": node_def.get("remark", ""),
+            "node_type": node_def.get("node_type", "WORK_PACKAGE"),
+            "child_weight": node_def.get("child_weight", 1.0),
+            "parent_node_id": parent_node_id,
             "deliverables": node_def.get("deliverables", []),
             "dependencies": node_def.get("dependencies", []),
         }
@@ -66,6 +71,7 @@ def flatten_nodes(
             child_records = flatten_nodes(
                 children,
                 project_id=project_id,
+                parent_node_id=node_id,
             )
             flat.extend(child_records)
 
@@ -219,6 +225,7 @@ async def create_node_tree(
             related_company_id=fn.get("related_company_id", "建设单位"),
             creator_id=creator_id,
             remark=fn.get("remark", ""),
+            node_type=fn.get("node_type", "WORK_PACKAGE"),
         )
 
         try:
@@ -321,6 +328,7 @@ async def create_node_tree(
         cmd = MountChildCommand(
             parent_node_id=ms["parent_node_id"],
             child_node_id=ms["child_node_id"],
+            child_weight=float(ms.get("child_weight", 1.0)),
             operator_id=creator_id,
         )
 

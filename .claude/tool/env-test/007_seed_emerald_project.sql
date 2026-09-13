@@ -1,5 +1,5 @@
 -- ============================================================
--- 007_seed_emerald_project.sql —— 翠湖庭院项目 EMERALD-01 + 指标 + 18个模拟文件
+-- 007_seed_emerald_project.sql —— 翠湖庭院项目 EMERALD-01 + 指标 + 19个模拟文件
 --
 -- Precondition: 002_seed_test_data.sql must be run first
 --                002_seed_test_data_patch.sql recommended (adds 刘大勇)
@@ -90,7 +90,7 @@ END;
 $$ LANGUAGE plpgsql;
 
 -- ============================================================
--- 5. 插入18个模拟文件
+-- 5. 插入19个模拟文件
 --    files 表字段: id, file_no, project_id, filename, file_type,
 --    bucket, object_key, storage_path, file_size, uploaded_by,
 --    file_ext, file_category, confidentiality, version, is_latest,
@@ -111,7 +111,7 @@ SELECT
     uuid_generate_v4()::text, _seed_file_no(1), p.id, '国有建设用地使用权出让合同.pdf',
     'application/pdf', 'mock-bucket', 'project-emerald/licenses/land_contract.pdf',
     '/mock/project-emerald/licenses/land_contract.pdf',
-    1843200, u1.id, '.pdf', 'PROJECT_LICENSE', 2, 'V1.0', true,
+    1843200, u1.id, '.pdf', 'PROJECT_LICENSE', 1, 'V1.0', true,
     u2.id, NOW()::text, NOW()::text, false,
     'NODE_STARTUP_DOC', 'EMR-LX-01-01'
 FROM _sp p, _su u1, _su u2
@@ -126,7 +126,7 @@ SELECT
     uuid_generate_v4()::text, _seed_file_no(2), p.id, '建设用地规划许可证.pdf',
     'application/pdf', 'mock-bucket', 'project-emerald/licenses/land_use_permit.pdf',
     '/mock/project-emerald/licenses/land_use_permit.pdf',
-    1228800, u1.id, '.pdf', 'PROJECT_LICENSE', 2, 'V1.0', true,
+    1228800, u1.id, '.pdf', 'PROJECT_LICENSE', 1, 'V1.0', true,
     u2.id, NOW()::text, NOW()::text, false,
     NULL, 'EMR-GH-01'
 FROM _sp p, _su u1, _su u2
@@ -141,7 +141,7 @@ SELECT
     uuid_generate_v4()::text, _seed_file_no(3), p.id, '建设工程规划许可证.pdf',
     'application/pdf', 'mock-bucket', 'project-emerald/licenses/construction_planning_permit.pdf',
     '/mock/project-emerald/licenses/construction_planning_permit.pdf',
-    1536000, u1.id, '.pdf', 'PROJECT_LICENSE', 2, 'V1.0', true,
+    1536000, u1.id, '.pdf', 'PROJECT_LICENSE', 1, 'V1.0', true,
     u2.id, NOW()::text, NOW()::text, false,
     NULL, 'EMR-GH-01'
 FROM _sp p, _su u1, _su u2
@@ -171,7 +171,7 @@ SELECT
     uuid_generate_v4()::text, _seed_file_no(5), p.id, '不动产权证（土地证）.pdf',
     'application/pdf', 'mock-bucket', 'project-emerald/licenses/property_right_cert.pdf',
     '/mock/project-emerald/licenses/property_right_cert.pdf',
-    1536000, u1.id, '.pdf', 'PROJECT_LICENSE', 2, 'V1.0', true,
+    1536000, u1.id, '.pdf', 'PROJECT_LICENSE', 1, 'V1.0', true,
     u2.id, NOW()::text, NOW()::text, false,
     NULL, 'EMR-LX-01-02'
 FROM _sp p, _su u1, _su u2
@@ -190,7 +190,7 @@ SELECT
     uuid_generate_v4()::text, _seed_file_no(6), p.id, '建设工程施工总承包合同.pdf',
     'application/pdf', 'mock-bucket', 'project-emerald/contracts/general_contract.pdf',
     '/mock/project-emerald/contracts/general_contract.pdf',
-    4608000, u1.id, '.pdf', 'CONTRACT', 3, 'V1.0', true,
+    4608000, u1.id, '.pdf', 'CONTRACT', 1, 'V1.0', true,
     u1.id, NOW()::text, NOW()::text, false,
     'NODE_WORKLOAD_DOC', 'EMR-SG-01'
 FROM _sp p, _su u1
@@ -205,7 +205,7 @@ SELECT
     uuid_generate_v4()::text, _seed_file_no(7), p.id, '建设工程委托监理合同.pdf',
     'application/pdf', 'mock-bucket', 'project-emerald/contracts/supervision_contract.pdf',
     '/mock/project-emerald/contracts/supervision_contract.pdf',
-    2560000, u1.id, '.pdf', 'CONTRACT', 3, 'V1.0', true,
+    2560000, u1.id, '.pdf', 'CONTRACT', 1, 'V1.0', true,
     u2.id, NOW()::text, NOW()::text, false,
     NULL, 'EMR-SG-01'
 FROM _sp p, _su u1, _su u2
@@ -220,7 +220,7 @@ SELECT
     uuid_generate_v4()::text, _seed_file_no(8), p.id, '建设工程设计合同.pdf',
     'application/pdf', 'mock-bucket', 'project-emerald/contracts/design_contract.pdf',
     '/mock/project-emerald/contracts/design_contract.pdf',
-    3072000, u1.id, '.pdf', 'CONTRACT', 2, 'V1.0', true,
+    3072000, u1.id, '.pdf', 'CONTRACT', 1, 'V1.0', true,
     u2.id, NOW()::text, NOW()::text, false,
     NULL, 'EMR-GH-01-01'
 FROM _sp p, _su u1, _su u2
@@ -254,7 +254,7 @@ SELECT
     uuid_generate_v4()::text, _seed_file_no(10), p.id, '施工图设计文件.pdf',
     'application/pdf', 'mock-bucket', 'project-emerald/deliverables/construction_drawings.pdf',
     '/mock/project-emerald/deliverables/construction_drawings.pdf',
-    25600000, u1.id, '.pdf', 'PHASE_DELIVERABLE', 2, 'V1.0', true,
+    25600000, u1.id, '.pdf', 'PHASE_DELIVERABLE', 1, 'V1.0', true,
     u2.id, NOW()::text, NOW()::text, false,
     NULL, 'EMR-GH-01-01'
 FROM _sp p, _su u1, _su u2
@@ -348,7 +348,7 @@ SELECT
     uuid_generate_v4()::text, _seed_file_no(16), p.id, '设计变更通知单（结构）.pdf',
     'application/pdf', 'mock-bucket', 'project-emerald/process/design_change_notice.pdf',
     '/mock/project-emerald/process/design_change_notice.pdf',
-    819200, u1.id, '.pdf', 'PROCESS_DOC', 2, 'V1.0', true,
+    819200, u1.id, '.pdf', 'PROCESS_DOC', 1, 'V1.0', true,
     u2.id, NOW()::text, NOW()::text, false,
     NULL, 'EMR-SG-01-02'
 FROM _sp p, _su u1, _su u2
@@ -367,7 +367,7 @@ SELECT
     uuid_generate_v4()::text, _seed_file_no(17), p.id, '绿化景观施工图设计文件.pdf',
     'application/pdf', 'mock-bucket', 'project-emerald/deliverables/landscape_design.pdf',
     '/mock/project-emerald/deliverables/landscape_design.pdf',
-    18432000, u1.id, '.pdf', 'PHASE_DELIVERABLE', 2, 'V1.0', true,
+    18432000, u1.id, '.pdf', 'PHASE_DELIVERABLE', 1, 'V1.0', true,
     u2.id, NOW()::text, NOW()::text, false,
     'NODE_DELIVERABLE_DOC', 'EMR-SG-01-05'
 FROM _sp p, _su u1, _su u2
@@ -391,6 +391,28 @@ SELECT
     'NODE_STARTUP_DOC', 'EMR-SG-01'
 FROM _sp p, _su u1, _su u2
 WHERE u1.username = '李景利' AND u2.username = '王建国';
+
+-- -----------------------------------------------------------
+-- 5.7 外宣资料 (PUBLICITY) — 1 file (#19)
+--     模拟业务用：蓝城伟业公司对外宣传资料，密级公开(0)。
+--     蓝城伟业为蓝城集团旗下控股公司，主营理想小镇建设与房产代建，
+--     愿景「美好生活综合服务商」，核心价值观「仁慈普爱，真善至美」。
+-- -----------------------------------------------------------
+
+-- File #19: 蓝城伟业公司外宣资料.pdf
+INSERT INTO files (id, file_no, project_id, filename, file_type, bucket,
+    object_key, storage_path, file_size, uploaded_by, file_ext, file_category,
+    confidentiality, version, is_latest, creator_id, created_at, updated_at,
+    is_deleted, source_module_type, source_module_id)
+SELECT
+    uuid_generate_v4()::text, _seed_file_no(19), p.id, '蓝城伟业公司外宣资料.pdf',
+    'application/pdf', 'mock-bucket', 'project-emerald/publicity/bluecity_weiye_profile.pdf',
+    '/mock/project-emerald/publicity/bluecity_weiye_profile.pdf',
+    512000, u1.id, '.pdf', 'PUBLICITY', 0, 'V1.0', true,
+    u2.id, NOW()::text, NOW()::text, false,
+    NULL, NULL
+FROM _sp p, _su u1, _su u2
+WHERE u1.username = '王建国' AND u2.username = '李景利';
 
 -- ============================================================
 -- 6. 验证查询
@@ -417,7 +439,7 @@ WHERE project_id = (SELECT id FROM _sp LIMIT 1)
 ORDER BY indicator_name;
 
 -- 6.3 文件清单
-SELECT '--- 文件清单（共18个） ---' AS section;
+SELECT '--- 文件清单（共19个） ---' AS section;
 SELECT file_no, filename,
     CASE file_category
         WHEN 'PROJECT_LICENSE' THEN '项目证照'
@@ -425,12 +447,13 @@ SELECT file_no, filename,
         WHEN 'PHASE_DELIVERABLE' THEN '阶段成果'
         WHEN 'PROCESS_DOC' THEN '过程文件'
         WHEN 'MANAGEMENT_SPEC' THEN '管理规程'
+        WHEN 'PUBLICITY' THEN '外宣资料'
         ELSE file_category
     END AS "文件分类",
     CASE confidentiality
-        WHEN 1 THEN '公开'
-        WHEN 2 THEN '内部'
-        WHEN 3 THEN '机密'
+        WHEN 0 THEN '公开'
+        WHEN 1 THEN '内部'
+        WHEN 2 THEN '机密'
         ELSE confidentiality::text
     END AS "保密级别",
     (file_size / 1024) || ' KB' AS "文件大小"

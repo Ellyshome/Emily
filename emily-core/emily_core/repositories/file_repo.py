@@ -51,6 +51,7 @@ class FileRepository:
         file_category: str = "OTHER",
         purpose: str = "RECORD",
         purpose_confirmed: bool = False,
+        confidentiality: int = 1,
     ) -> File:
         with get_session() as session:
             f = File(
@@ -68,6 +69,7 @@ class FileRepository:
                 file_category=file_category,
                 purpose=purpose,
                 purpose_confirmed=purpose_confirmed,
+                confidentiality=confidentiality,
             )
             session.add(f)
             session.flush()
@@ -79,7 +81,7 @@ class FileRepository:
         filename: str,
         *,
         uploaded_by: Optional[str] = None,
-        confidentiality: int = 0,
+        confidentiality: int = 1,
         project_id: Optional[str] = None,
         storage_path: Optional[str] = None,
     ) -> File:
@@ -184,6 +186,52 @@ class FileRepository:
             f.file_category = file_category
             session.commit()
             logger.info("File %s category updated: %s", f.file_no, file_category)
+            return f
+
+    @staticmethod
+    def update_confidentiality(
+        file_id: str, confidentiality: int, operator_id: str = "",
+    ) -> File | None:
+        """更新文件密级（纯 CRUD，权限校验由 Service 层完成）。
+
+        Args:
+            file_id: 文件 UUID
+            confidentiality: 目标密级 0=公开 1=内部 2=机密
+            operator_id: 操作人 ID（写入 change_log 留痕）
+
+        Returns:
+            更新后的 File 对象，未找到返回 None
+        """
+        import json
+        with get_session() as session:
+            f = session.query(File).filter(
+                File.id == file_id, File.is_deleted == False,
+            ).first()
+            if f is None:
+                return None
+
+            old_conf = f.confidentiality or 1
+            try:
+                logs = json.loads(f.change_log or "[]")
+                if not isinstance(logs, list):
+                    logs = []
+            except (json.JSONDecodeError, TypeError):
+                logs = []
+
+            f.confidentiality = confidentiality
+            logs.append({
+                "field": "confidentiality",
+                "old": old_conf,
+                "new": confidentiality,
+                "operator": operator_id or "",
+                "at": datetime.now(timezone.utc).isoformat(),
+            })
+            f.change_log = json.dumps(logs, ensure_ascii=False)
+            session.commit()
+            logger.info(
+                "File %s confidentiality updated: %s -> %s by %s",
+                f.file_no, old_conf, confidentiality, operator_id,
+            )
             return f
 
     @staticmethod

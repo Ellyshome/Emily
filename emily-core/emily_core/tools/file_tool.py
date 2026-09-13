@@ -48,7 +48,7 @@ _FILE_TOOL_SCHEMA = {
                 },
                 "file_category": {
                     "type": "string",
-                    "description": "文件业务分类：PROJECT_LICENSE(项目证照)/CONTRACT(承包合同)/WORK_RECORD(工作记录)/PHASE_DELIVERABLE(阶段成果)/PROCESS_DOC(过程文件)/MANAGEMENT_SPEC(管理规程)/OTHER(其他文件)",
+                    "description": "文件业务分类：PROJECT_LICENSE(项目证照)/CONTRACT(承包合同)/WORK_RECORD(工作记录)/PHASE_DELIVERABLE(阶段成果)/PROCESS_DOC(过程文件)/MANAGEMENT_SPEC(管理规程)/PUBLICITY(外宣资料)/OTHER(其他文件)",
                     "default": "OTHER",
                 },
                 "purpose": {
@@ -272,7 +272,7 @@ _QUERY_FILES_SCHEMA = {
     "properties": {
         "file_category": {
             "type": "string",
-            "description": "按分类过滤：PROJECT_LICENSE/CONTRACT/WORK_RECORD/PHASE_DELIVERABLE/PROCESS_DOC/MANAGEMENT_SPEC/OTHER",
+            "description": "按分类过滤：PROJECT_LICENSE/CONTRACT/WORK_RECORD/PHASE_DELIVERABLE/PROCESS_DOC/MANAGEMENT_SPEC/PUBLICITY/OTHER",
         },
         "keyword": {
             "type": "string",
@@ -345,7 +345,7 @@ _UPDATE_CATEGORY_SCHEMA = {
         },
         "file_category": {
             "type": "string",
-            "description": "目标分类：PROJECT_LICENSE/CONTRACT/WORK_RECORD/PHASE_DELIVERABLE/PROCESS_DOC/MANAGEMENT_SPEC/OTHER",
+            "description": "目标分类：PROJECT_LICENSE/CONTRACT/WORK_RECORD/PHASE_DELIVERABLE/PROCESS_DOC/MANAGEMENT_SPEC/PUBLICITY/OTHER",
         },
     },
     "required": ["file_no", "file_category"],
@@ -602,13 +602,14 @@ async def handle_new_file_version(
     if not file_manager.can_access(user_id, parent.id):
         return {"success": False, "reply": "您无权访问该文件", "error_code": "permission_denied"}
 
-    # 先用 FileService 创建新文件记录
+    # 先用 FileService 创建新文件记录（新版本继承父文件密级）
     from ..adapters.standard.command import FileCommand
     cmd = FileCommand(
         project_id=parent.project_id,
         filename=new_filename,
         file_type=file_type or parent.file_type or "",
         uploaded_by=user_id,
+        confidentiality=(parent.confidentiality or 1),
     )
     new_file = file_app.file_service.create_file_record(cmd)
 

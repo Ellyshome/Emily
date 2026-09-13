@@ -579,7 +579,17 @@ class SessionContext:
         try:
             from ..repositories.session_archive_repo import SessionArchiveRepo
 
+            # 轮次以归档文档为准：统计 md 正文的「## 第 N 轮」标题。
+            # 不能用 len(message_history)//2 —— 新会话主循环（use_loop=true）下
+            # message_history 恒为空，会把轮次统计成 0。
             turn_count = len(self.message_history) // 2
+            if archive_writer is not None and md_file_path:
+                try:
+                    counted = archive_writer.count_turns(md_file_path)
+                    if counted:
+                        turn_count = counted
+                except Exception as e:
+                    logger.warning("SessionArchive count_turns failed: %s", e)
 
             # 薄索引：仅存元数据 + md_file_path
             SessionArchiveRepo.create(

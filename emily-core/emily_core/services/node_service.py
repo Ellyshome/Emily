@@ -59,9 +59,12 @@ from ..repositories.node_repo import (
     NodeDeliverableRepo,
     NodeEventRepo,
     NodeParticipantCompanyRepo,
+    NodeParticipantRepo,
+    NodeAccessibleFileRepo,
     _parse_decimal,
     _to_decimal_str,
 )
+from ..repositories.file_repo import FileRepository
 from ..infrastructure.database.models import _new_id
 
 if TYPE_CHECKING:
@@ -123,6 +126,8 @@ class NodeService:
         deliverable_repo: NodeDeliverableRepo | None = None,
         event_repo: NodeEventRepo | None = None,
         npc_repo: NodeParticipantCompanyRepo | None = None,
+        participant_repo: NodeParticipantRepo | None = None,
+        naf_repo: NodeAccessibleFileRepo | None = None,
         user_repo=None,
         outbound_bus=None,
     ):
@@ -131,6 +136,8 @@ class NodeService:
         self._deliv_repo = deliverable_repo or NodeDeliverableRepo()
         self._event_repo = event_repo or NodeEventRepo()
         self._npc_repo = npc_repo or NodeParticipantCompanyRepo()
+        self._participant_repo = participant_repo or NodeParticipantRepo()
+        self._naf_repo = naf_repo or NodeAccessibleFileRepo()
         self._user_repo = user_repo
         self._outbound_bus = outbound_bus
 
@@ -154,6 +161,21 @@ class NodeService:
                 operator_id=operator_id,
                 remark=remark,
             )
+            # 双写：同步累积到统一项目事件（project_events，NODE_EVENT）
+            try:
+                from ..services.project_event_accumulator import ProjectEventAccumulator
+                ProjectEventAccumulator.record_node_event(
+                    title=remark or event_type,
+                    node_id=node_id,
+                    event_type=event_type,
+                    actor_id=operator_id or None,
+                    occurred_at=self._now_iso(),
+                    old_value=old_value,
+                    new_value=new_value,
+                    remark=remark,
+                )
+            except Exception as e:
+                logger.debug("ProjectEvent double-write failed: %s", e)
         except Exception:
             logger.exception("Failed to record event for node %s", node_id)
 
@@ -792,6 +814,75 @@ class NodeService:
 
         await asyncio.to_thread(self._npc_repo.replace_all, cmd.node_id, cmd.company_ids, cmd.operator_id)
         return NodeOperationResult(success=True, node_id=cmd.node_id, message=f"参与单位已更新（{len(cmd.company_ids)} 个）")
+
+    # ── 节点参与人（自然人）增删 ──
+
+    async def add_node_participant(self, node_id: str, user_id: str,
+                                   operator_id: str, role: str = "participant") -> NodeOperationResult:
+        """添加节点参与人（单个用户）。"""
+        node = await asyncio.to_thread(self._node_repo.get_by_node_id, node_id)
+        if node is None:
+            return NodeOperationResult(success=False, node_id=node_id, message="节点不存在")
+        if self._user_repo:
+            try:
+                user = await asyncio.to_thread(self._user_repo.get_user, user_id)
+                if user is None:
+                    return NodeOperationResult(success=False, node_id=node_id, message="参与人不存在")
+            except Exception:
+                pass
+        existing = await asyncio.to_thread(self._participant_repo.find, node_id, user_id)
+        if existing is not None:
+            return NodeOperationResult(success=False, node_id=node_id, message="该用户已是节点参与人")
+        await asyncio.to_thread(self._participant_repo.add, node_id, user_id,
+                                role or "participant", operator_id)
+        self._record_event(node_id, "participant_added", operator_id=operator_id,
+                           remark=f"添加参与人：{user_id}（{role or 'participant'}）")
+        return NodeOperationResult(success=True, node_id=node_id, message="参与人添加成功")
+
+    async def remove_node_participant(self, node_id: str, user_id: str,
+                                      operator_id: str) -> NodeOperationResult:
+        """移除节点参与人。"""
+        node = await asyncio.to_thread(self._node_repo.get_by_node_id, node_id)
+        if node is None:
+            return NodeOperationResult(success=False, node_id=node_id, message="节点不存在")
+        removed = await asyncio.to_thread(self._participant_repo.remove, node_id, user_id)
+        if not removed:
+            return NodeOperationResult(success=False, node_id=node_id, message="该用户不是节点参与人")
+        self._record_event(node_id, "participant_removed", operator_id=operator_id,
+                           remark=f"移除参与人：{user_id}")
+        return NodeOperationResult(success=True, node_id=node_id, message="参与人移除成功")
+
+    # ── 节点共享文件增删 ──
+
+    async def add_node_file(self, node_id: str, file_id: str,
+                            operator_id: str) -> NodeOperationResult:
+        """添加节点共享文件（可见范围）。"""
+        node = await asyncio.to_thread(self._node_repo.get_by_node_id, node_id)
+        if node is None:
+            return NodeOperationResult(success=False, node_id=node_id, message="节点不存在")
+        file_record = await asyncio.to_thread(FileRepository.get_by_id, file_id)
+        if file_record is None or file_record.is_deleted:
+            return NodeOperationResult(success=False, node_id=node_id, message="文件不存在")
+        if await asyncio.to_thread(self._naf_repo.exists, node_id, file_id):
+            return NodeOperationResult(success=False, node_id=node_id, message="该文件已是节点共享文件")
+        await asyncio.to_thread(self._naf_repo.create,
+                                node_id=node_id, file_id=file_id, added_by=operator_id)
+        self._record_event(node_id, "file_added", operator_id=operator_id,
+                           remark=f"添加共享文件：{file_id}")
+        return NodeOperationResult(success=True, node_id=node_id, message="共享文件添加成功")
+
+    async def remove_node_file(self, node_id: str, file_id: str,
+                               operator_id: str) -> NodeOperationResult:
+        """移除节点共享文件。"""
+        node = await asyncio.to_thread(self._node_repo.get_by_node_id, node_id)
+        if node is None:
+            return NodeOperationResult(success=False, node_id=node_id, message="节点不存在")
+        removed = await asyncio.to_thread(self._naf_repo.remove, node_id, file_id)
+        if not removed:
+            return NodeOperationResult(success=False, node_id=node_id, message="该文件不是节点共享文件")
+        self._record_event(node_id, "file_removed", operator_id=operator_id,
+                           remark=f"移除共享文件：{file_id}")
+        return NodeOperationResult(success=True, node_id=node_id, message="共享文件移除成功")
 
     # ── 成果提交确认工作流 ──
 

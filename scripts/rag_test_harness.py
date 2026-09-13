@@ -15,7 +15,7 @@
    RAG 验收的 18 个测试文件作为当前模拟项目的一部分建库并保留：
      - 主项目 EMERALD-01（公司A=翠湖地产/建设单位 视角）：大部分文件 + N1(specific) + N2(all_project_files)
      - 供应商隔离项目（公司B=鑫达建材供应商 视角）：N3(specific) + #11/#12
-     - 角色映射：U1=罗永强(L5 机密)、U2=周文斌(L1 供应商 公开)、U3=周访客(无公司 L1 访客)
+     - 角色映射：U1=罗永强(L5 内部)、U2=周文斌(L1 供应商 公开)、U3=周访客(无公司 L1 访客)
      - 默认保留数据（重建由 env-test setup_test_env.ps1 触发）
    子开关：
      --setup    仅建库（无 TC），供 env-test 阶段调用
@@ -59,7 +59,7 @@ ENV_MARK = "RAGENV"                    # env 库文件 file_no 前缀，如 RAGE
 ENV_PROJECT_MAIN = "EMERALD-01"        # 主项目（公司A/翠湖地产 视角）
 ENV_PROJECT_ISO = "EMERALD-RAG-B"      # 供应商隔离容器项目（公司B/鑫达 视角）
 ENV_NODES = {"N1": "EMR-RAG-N1", "N2": "EMR-RAG-N2", "N3": "EMR-RAG-N3"}
-ENV_ROLE_U1 = "罗永强"                  # 机密级（公司A / 建设单位 L5）
+ENV_ROLE_U1 = "罗永强"                  # 内部级（公司A / 建设单位 L5）
 ENV_ROLE_U2 = "周文斌"                  # 公开级（公司B / 供应商 L1）
 ENV_ROLE_U3 = "周访客"                  # 无公司 L1 访客（env-test 人员池新增）
 
@@ -88,8 +88,8 @@ _FILE_SPECS = [
      "# 公司考勤管理制度（公开）\n\n[[RAGTEST-01-PUB-NONE]]\n\n本文档为公司全员公开的考勤管理制度，适用于所有在职员工。\n\n1. 工作日上下班时间为 9:00 - 18:00。\n2. 迟到、早退按次记录，每月累计超过 3 次将影响绩效。\n3. 请假需提前 1 个工作日通过 OA 系统提交审批。\n"),
     ("公开流程B.txt", "txt", 0, "U2", "", "", "PB",
      "公司差旅报销流程（公开）\n[[RAGTEST-02-PUB-NONE]]\n\n1. 出差前填写出差申请单并经部门负责人审批。\n2. 保留票据原件，出差结束后 5 个工作日内提交报销。\n3. 住宿标准按职级执行，超支部分自理。\n"),
-    ("绝密图纸C.pdf", "pdf", 3, "U1", "", "", "PA",
-     "主楼结构设计图纸说明（绝密）\n[[RAGTEST-03-SEC-U1OWN]]\n\n本图纸为在建项目核心结构设计，密级为绝密。\n基础采用桩筏基础，主楼抗震设防烈度为 8 度。\n该文件仅上传者本人可见，未经授权严禁外传。\n"),
+    ("机密图纸C.pdf", "pdf", 2, "U1", "", "", "PA",
+     "主楼结构设计图纸说明（机密）\n[[RAGTEST-03-CON-U1OWN]]\n\n本图纸为在建项目核心结构设计，密级为机密。\n基础采用桩筏基础，主楼抗震设防烈度为 8 度。\n该文件仅上传者本人与系统管理员可见，未经授权严禁外传。\n"),
     ("机密方案D.docx", "docx", 2, "U2", "", "", "PB",
      "专项施工方案（机密）\n[[RAGTEST-04-CON-U2OWN]]\n\n本方案为基坑支护专项施工方案，密级为机密。\n采用地下连续墙 + 内支撑体系，开挖深度 12 米。\n"),
     ("节点A公开E.md", "md", 0, "U1", "N1", "", "PA",
@@ -98,9 +98,9 @@ _FILE_SPECS = [
      "# 节点A 技术交底（内部）\n\n[[RAGTEST-06-INT-N1]]\n\n本次交底内容：防水工程施工工艺与验收标准。\n防水层采用两道 SBS 卷材，搭接宽度不小于 100mm。\n"),
     ("节点A机密G.md", "md", 2, "U1", "N1", "", "PA",
      "# 节点A 成本测算数据（机密）\n\n[[RAGTEST-07-CON-N1]]\n\n样板段综合成本测算：人工费 120 万，材料费 340 万。\n目标成本偏差控制在 3% 以内。\n"),
-    ("节点A绝密H.md", "md", 3, "U1", "N1", "", "PA",
-     "# 节点A 投标报价（绝密）\n\n[[RAGTEST-08-SEC-N1]]\n\n本节点最终投标报价为 8,860 万元，密级绝密。\n报价构成与下浮空间属最高机密，仅限密级达标人员查看。\n"),
-    ("全项目文件I.md", "md", 1, "U1", "N2", "", "PA",
+    ("节点A机密H.md", "md", 2, "U1", "N1", "", "PA",
+     "# 节点A 投标报价（机密）\n\n[[RAGTEST-08-CON-N1]]\n\n本节点最终投标报价为 8,860 万元，密级机密。\n报价构成与下浮空间属机密信息，仅上传者/系统管理员/授权人查看。\n"),
+    ("全项目文件I.md", "md", 1, "U2", "", "", "PA",
      "# 项目周报（内部）\n\n[[RAGTEST-09-INT-N2]]\n\n本周完成：样板段砌体完成 80%，机电管线预埋 60%。\n下周计划：完成样板段全部砌体并开始抹灰。\n"),
     ("全项目文件J.md", "md", 2, "U1", "N2", "", "PA",
      "# 项目合同摘要（机密）\n\n[[RAGTEST-10-CON-N2]]\n\n总承包合同金额 2.4 亿元，工期 720 日历天。\n付款节点与质保金比例属机密信息。\n"),
@@ -108,8 +108,8 @@ _FILE_SPECS = [
      "# 节点B 安全须知（公开）\n\n[[RAGTEST-11-PUB-N3]]\n\n进入施工现场必须佩戴安全帽，禁止酒后作业。\n高处作业需系挂安全带。\n"),
     ("节点B机密L.md", "md", 2, "U2", "N3", "", "PB",
      "# 节点B 供应商名单（机密）\n\n[[RAGTEST-12-CON-N3]]\n\n本项目主要供应商：钢筋供应商 3 家、混凝土供应商 2 家。\n供应商报价与结算价格属机密。\n"),
-    ("显式授权M.md", "md", 3, "U1", "", "U2", "PA",
-     "# 专家评审会议纪要（绝密，显式授权）\n\n[[RAGTEST-13-SEC-EXP]]\n\n评审结论：方案总体可行，建议优化地下室防水节点。\n本纪要密级绝密，已单独授权特定人员查看。\n"),
+    ("显式授权M.md", "md", 2, "U1", "", "U2", "PA",
+     "# 专家评审会议纪要（机密，显式授权）\n\n[[RAGTEST-13-CON-EXP]]\n\n评审结论：方案总体可行，建议优化地下室防水节点。\n本纪要密级机密，已单独授权特定人员查看。\n"),
     ("格式测试N.pdf", "pdf", 0, "U1", "", "", "PA",
      "PDF 格式解析测试文档（公开）\n[[RAGTEST-14-PUB-PDF]]\n\n本文件用于验证 PDF 文档解析与向量化入库能力。\n包含一个可检索的锚点词以确认检索命中。\n"),
     ("格式测试O.docx", "docx", 0, "U1", "", "", "PA",
@@ -257,7 +257,7 @@ class Harness:
                 )
 
             n1 = mk_node(f"{MARK}-N1", "节点A", pa.id, "specific")
-            n2 = mk_node(f"{MARK}-N2", "节点全项目", pa.id, "all_project_files")
+            n2 = mk_node(f"{MARK}-N2", "节点全项目", pa.id, "specific")
             n3 = mk_node(f"{MARK}-N3", "节点B", pb.id, "specific")
             s.add_all([n1, n2, n3])
             s.flush()
@@ -487,7 +487,7 @@ class Harness:
             specs = [
                 # (键, 项目键, 名称, 可见模式)
                 ("N1", "PA", "节点A（specific，参与公司A）", "specific"),
-                ("N2", "PA", "节点全项目（all_project_files，参与公司A）", "all_project_files"),
+                ("N2", "PA", "节点全项目（specific，参与公司A）", "specific"),
                 ("N3", "PB", "节点B（specific，参与公司B）", "specific"),
             ]
             for key, proj_key, name, mode in specs:
@@ -788,22 +788,33 @@ class Harness:
         p = self._perm(self.uid["U1"])
         vis = self._visible(self.uid["U1"], p["company_id"], p["info_level"])
         has3 = self.file_ids[3] in vis
-        sr = self._search(self.uid["U1"], "RAGTEST-03-SEC-U1OWN")
+        sr = self._search(self.uid["U1"], "RAGTEST-03-CON-U1OWN")
         hit3 = any(h["doc_id"] == self.file_ids[3] for h in sr["hits"])
         return {"passed": has3 and hit3, "file3_in_visible": has3, "search_hit_file3": hit3,
-                "detail": "U1 可见 #3(密级3自传)"}
+                "detail": "U1 可见 #3(密级2自传)"}
 
-    # TC-03: U3 访客仅密级0
+    # TC-03（固定项）: 访客文件可见范围锚点 —— 固定拿「访客(U3/周访客)」ID 做测试
+    #   断言（双向）：
+    #     a) 能看到「所有」公开文件（confidentiality=0）
+    #     b) 看不到「任何」内部(1)/机密(2)文件
     def _tc03(self):
         p = self._perm(self.uid["U3"])
         vis = self._visible(self.uid["U3"], p["company_id"], p["info_level"])
         from emily_core.infrastructure.database.models import File
         with self._session() as s:
-            confs = {r.id: r.confidentiality for r in
-                     s.query(File).filter(File.id.in_(list(vis))).all()}
-        all_public = all(c == 0 for c in confs.values())
-        return {"passed": all_public and len(vis) > 0, "visible_count": len(vis),
-                "detail": f"U3 可见 {len(vis)} 文件，均为密级0={all_public}"}
+            rows = s.query(File).filter(File.is_deleted == False).all()
+        public_ids = {f.id for f in rows if f.confidentiality == 0}
+        private_ids = {f.id for f in rows if f.confidentiality in (1, 2)}
+        all_public_visible = public_ids <= vis          # 所有公开文件均可见
+        no_private_visible = not (vis & private_ids)     # 无任何内部/机密文件泄露
+        private_leaked = len(vis & private_ids)
+        passed = all_public_visible and no_private_visible and len(public_ids) > 0
+        return {"passed": passed,
+                "visible_count": len(vis),
+                "public_count": len(public_ids),
+                "all_public_visible": all_public_visible,
+                "private_leaked": private_leaked,
+                "detail": f"访客可见 {len(vis)} 文件；公开全见={all_public_visible}；内部/机密泄露 {private_leaked} 条"}
 
     # TC-04: U1 见 #7，U2 不见 #7
     def _tc04(self):
@@ -815,14 +826,14 @@ class Harness:
         return {"passed": passed, "U1_sees_7": u1_see, "U2_sees_7": u2_see,
                 "detail": "U1 见 #7 / U2 不见 #7"}
 
-    # TC-05: 密级上界 —— 计划预期「U1 不见 #8」，但按模型①自传永可见，实际可见
+    # TC-05: 密级上界 —— 机密(2)为白名单制，节点参与不自动放行；U1 为上传者，①自传可见
     def _tc05(self):
         p1 = self._perm(self.uid["U1"]); v1 = self._visible(self.uid["U1"], p1["company_id"], p1["info_level"])
         u1_see_8 = self.file_ids[8] in v1
-        # 按设计模型（①自传不受密级约束），U1 应可见 #8
+        # 按设计模型（①自传不受密级约束），U1 应可见 #8（机密2）
         return {"passed": u1_see_8, "U1_sees_8": u1_see_8,
-                "note": "测试计划预期「U1 不命中 #8」，与模型①自传永可见冲突；实际按模型判真",
-                "detail": f"U1 可见 #8(密级3自传)={u1_see_8}"}
+                "note": "#8 为机密(2)白名单制；U1 以自传身份可见，节点参与不自动放行",
+                "detail": f"U1 可见 #8(密级2自传)={u1_see_8}"}
 
     # TC-06: 企业隔离 —— 计划用 #11(密级0公开)，按模型②公开应可见；改用 #12 验证
     def _tc06(self):
@@ -835,17 +846,19 @@ class Harness:
                 "note": "#11 密级0 属②公开（U1 可见）；企业隔离以 #12(密级2) 为准",
                 "detail": f"U1 见 #11(公开)={u1_see_11}，U1 不见 #12(公司B机密)={not u1_see_12}"}
 
-    # TC-07: U1 见 #9 (all_project_files)
+    # TC-07: all_project_files 已下线 —— #9(密级1，PA项目，U2上传，未挂节点) 不再因全项目模式放行给 U1
     def _tc07(self):
         p1 = self._perm(self.uid["U1"]); v1 = self._visible(self.uid["U1"], p1["company_id"], p1["info_level"])
         see9 = self.file_ids[9] in v1
-        return {"passed": see9, "U1_sees_9": see9, "detail": "U1 可见 #9(all_project_files)"}
+        # all_project_files 已移除：U1 参与 PA 但 #9 非自传、未挂节点，不应可见
+        return {"passed": not see9, "U1_sees_9": see9,
+                "detail": "all_project_files 已下线：U1 不见 #9(非自传/未挂节点)"}
 
     # TC-08: U2 显式授权见 #13
     def _tc08(self):
         p2 = self._perm(self.uid["U2"]); v2 = self._visible(self.uid["U2"], p2["company_id"], p2["info_level"])
         see13 = self.file_ids[13] in v2
-        return {"passed": see13, "U2_sees_13": see13, "detail": "U2 显式授权可见 #13(密级3)"}
+        return {"passed": see13, "U2_sees_13": see13, "detail": "U2 显式授权可见 #13(密级2)"}
 
     # TC-09: 越权封堵 —— 检索命中落在各自可见集内
     def _tc09(self):

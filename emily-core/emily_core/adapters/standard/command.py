@@ -61,6 +61,7 @@ class FileCommand:
     purpose: str = "RECORD"
     uploaded_by: str = ""
     source_message_id: str = ""
+    confidentiality: int = 1  # 0=公开 1=内部(默认) 2=机密
 
 
 # ── M5 查询命令 ──

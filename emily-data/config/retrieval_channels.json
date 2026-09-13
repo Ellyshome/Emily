@@ -1,0 +1,77 @@
+{
+  "_comment": "M1 通道元数据（检索通道治理 P0）。七项字段齐备；enabled 为可运营字段（P2 迁入数据表）。",
+  "channels": [
+    {
+      "name": "知识库检索",
+      "tools": ["knowledge_search"],
+      "domain": "KB",
+      "answers": "文档正文：制度、方案、手册、纪要等",
+      "params": "query（自然语言），可选 stage / role",
+      "permission": "密级 + 归属 + 节点范围 + 企业",
+      "has_text": true,
+      "empty_semantics": "无匹配文档",
+      "upgrade_to": ["文件台账", "节点台账"],
+      "enabled": true
+    },
+    {
+      "name": "文件台账",
+      "tools": ["query_files", "list_attachments", "list_file_versions"],
+      "domain": "FILE",
+      "answers": "文件记录、版本与附件关系（不含正文内容）",
+      "params": "keyword、file_no、node_id",
+      "permission": "节点范围 + 企业",
+      "has_text": false,
+      "empty_semantics": "无文件记录",
+      "upgrade_to": ["知识库检索"],
+      "enabled": true
+    },
+    {
+      "name": "节点台账",
+      "tools": ["query_my_nodes", "query_node"],
+      "domain": "SYS",
+      "answers": "节点状态、进度、成果签认情况（不含文档内容）",
+      "params": "node_id 或 project_id",
+      "permission": "归属 + 节点范围",
+      "has_text": false,
+      "empty_semantics": "无该节点（实体不存在）",
+      "upgrade_to": ["知识库检索", "文件台账"],
+      "enabled": true
+    },
+    {
+      "name": "结构化业务数据",
+      "tools": ["query_data"],
+      "domain": "QRY",
+      "answers": "事件、任务、会议等台账记录",
+      "params": "query_type、project_id、time_range",
+      "permission": "行级（企业）+ 等级",
+      "has_text": false,
+      "empty_semantics": "无记录",
+      "upgrade_to": ["知识库检索"],
+      "enabled": true
+    },
+    {
+      "name": "自我认知",
+      "tools": ["meta_cognition_read"],
+      "domain": "SYS",
+      "answers": "自身能力、权限与状态的自述",
+      "params": "无",
+      "permission": "自述，无需额外授权",
+      "has_text": false,
+      "empty_semantics": "不可用",
+      "upgrade_to": [],
+      "enabled": true
+    },
+    {
+      "name": "专家名册",
+      "tools": ["query_experts"],
+      "domain": "SYS",
+      "answers": "专家名册与状态",
+      "params": "无",
+      "permission": "等级",
+      "has_text": false,
+      "empty_semantics": "未启用（休眠）",
+      "upgrade_to": [],
+      "enabled": false
+    }
+  ]
+}

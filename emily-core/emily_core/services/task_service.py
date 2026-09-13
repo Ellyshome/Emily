@@ -28,5 +28,23 @@ class TaskService:
             created_by=cmd.creator_id or None,
             status="todo",
         )
+
+        # 双写：同步累积到统一项目事件（project_events）
+        try:
+            from ..services.project_event_accumulator import ProjectEventAccumulator
+            ProjectEventAccumulator.record_task(
+                title=cmd.title,
+                project_id=cmd.project_id or None,
+                summary=cmd.description or "",
+                status="todo",
+                actor_id=cmd.creator_id or None,
+                owner_text=cmd.assignee_text or None,
+                due_date=cmd.due_date,
+                due_text=cmd.due_text or None,
+                source_message_id=cmd.source_message_id or None,
+            )
+        except Exception as e:
+            logger.warning("ProjectEvent double-write failed: %s", e)
+
         logger.info("Task %s created: %s", task_no, cmd.title)
         return task

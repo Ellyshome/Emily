@@ -2,16 +2,19 @@
 -- 013_seed_node_participants.sql —— 按专业+层级分配节点参与人
 --
 -- Precondition:
---   - 002 + 002_patch + 003 用户已创建（14人）
---   - 008 节点树已创建（24个节点）
+--   - 002 + 002_patch + 003 + 015 用户已创建（21人）
+--   - 008 节点树已创建（34个节点）
 --   - 012 节点责任人已分配
 --   - node_participants 表已创建（alembic migration a1b2c3d4e5f6）
 --
 -- 原则：
 --   - 全员（除周文斌/访客）均按工作特性分配到相关节点
 --   - 管理层（王建国/李景利/罗永强）覆盖全部节点
---   - 监理（陈建华）覆盖施工阶段全部节点
---   - 专业人员在各自领域节点中参与
+--   - 监理团队分责任覆盖施工节点：
+--       · 陈建华（总监理工程师）覆盖全部施工 + 竣工验收节点
+--       · 钱卫东（土建监理）覆盖地基/主体/二次结构/钢结构/外檐节点
+--       · 何丽娟（安装监理）覆盖机电/幕墙/门窗节点
+--   - 专业分包人员在各自专业节点中参与
 --
 -- Usage: docker exec -i emily-postgres psql -U emily -d emily < 013_seed_node_participants.sql
 -- ============================================================
@@ -37,55 +40,77 @@ CREATE TEMP TABLE _np_mapping (
 
 -- ── 管理层：全部24个节点 ──
 INSERT INTO _np_mapping (username, node_pattern, participant_role) VALUES
-    ('王建国', 'EMR-%', 'observer'),
-    ('李景利', 'EMR-%', 'participant'),
-    ('罗永强', 'EMR-%', 'observer');
+    ('王建国', 'EMR%', 'observer'),
+    ('李景利', 'EMR%', 'participant'),
+    ('罗永强', 'EMR%', 'observer');
 
 -- ── 总包项目经理：施工阶段全部节点 + 竣工验收 ──
 INSERT INTO _np_mapping (username, node_pattern, participant_role) VALUES
-    ('张正宏', 'EMR-SG-%', 'participant'),
+    ('张正宏', 'EMR-SG%', 'participant'),
     ('张正宏', 'EMR-JF-01', 'participant');
 
--- ── 监理工程师：施工阶段全部节点 + 竣工验收 ──
+-- ── 监理团队：分责任覆盖施工节点 + 竣工验收 ──
 INSERT INTO _np_mapping (username, node_pattern, participant_role) VALUES
-    ('陈建华', 'EMR-SG-%', 'observer'),
-    ('陈建华', 'EMR-JF-01', 'observer');
+    -- 总监理工程师：统筹覆盖全部施工 + 竣工验收
+    ('陈建华', 'EMR-SG%', 'observer'),
+    ('陈建华', 'EMR-JF-01', 'observer'),
+    -- 土建专业监理：地基/主体/二次结构/钢结构/外檐
+    ('钱卫东', 'EMR-SG-01', 'observer'),
+    ('钱卫东', 'EMR-SG-01-01%', 'observer'),
+    ('钱卫东', 'EMR-SG-01-02%', 'observer'),
+    ('钱卫东', 'EMR-SG-01-04%', 'observer'),
+    ('钱卫东', 'EMR-SG-01-06%', 'observer'),
+    ('钱卫东', 'EMR-SG-01-10%', 'observer'),
+    ('钱卫东', 'EMR-SG-01-09%', 'observer'),
+    -- 安装专业监理：机电/幕墙/门窗
+    ('何丽娟', 'EMR-SG-01', 'observer'),
+    ('何丽娟', 'EMR-SG-01-03%', 'observer'),
+    ('何丽娟', 'EMR-SG-01-07%', 'observer'),
+    ('何丽娟', 'EMR-SG-01-08%', 'observer');
 
 -- ── 设计领域：立项 + 规划设计 ──
 INSERT INTO _np_mapping (username, node_pattern, participant_role) VALUES
-    ('赵明远', 'EMR-LX-%', 'participant'),
-    ('赵明远', 'EMR-GH-%', 'participant'),
-    ('林建辉', 'EMR-LX-%', 'participant'),
-    ('林建辉', 'EMR-GH-%', 'participant');
+    ('赵明远', 'EMR-LX%', 'participant'),
+    ('赵明远', 'EMR-GH%', 'participant'),
+    ('林建辉', 'EMR-LX%', 'participant'),
+    ('林建辉', 'EMR-GH%', 'participant');
 
 -- ── 土建领域：地基基础 + 主体结构 + 场地平整 + 施工总控 + 竣工验收 ──
 INSERT INTO _np_mapping (username, node_pattern, participant_role) VALUES
     ('周国栋', 'EMR-SG-01', 'participant'),
-    ('周国栋', 'EMR-SG-01-01-%', 'participant'),
-    ('周国栋', 'EMR-SG-01-02-%', 'participant'),
-    ('周国栋', 'EMR-SG-01-04-%', 'participant'),
+    ('周国栋', 'EMR-SG-01-01%', 'participant'),
+    ('周国栋', 'EMR-SG-01-02%', 'participant'),
+    ('周国栋', 'EMR-SG-01-04%', 'participant'),
     ('周国栋', 'EMR-JF-01', 'participant'),
     ('孙建国', 'EMR-SG-01', 'participant'),
-    ('孙建国', 'EMR-SG-01-01-%', 'participant'),
-    ('孙建国', 'EMR-SG-01-02-%', 'participant'),
-    ('孙建国', 'EMR-SG-01-04-%', 'participant'),
+    ('孙建国', 'EMR-SG-01-01%', 'participant'),
+    ('孙建国', 'EMR-SG-01-02%', 'participant'),
+    ('孙建国', 'EMR-SG-01-04%', 'participant'),
     ('刘大勇', 'EMR-SG-01', 'participant'),
-    ('刘大勇', 'EMR-SG-01-01-%', 'participant'),
-    ('刘大勇', 'EMR-SG-01-02-%', 'participant'),
-    ('刘大勇', 'EMR-SG-01-04-%', 'participant');
+    ('刘大勇', 'EMR-SG-01-01%', 'participant'),
+    ('刘大勇', 'EMR-SG-01-02%', 'participant'),
+    ('刘大勇', 'EMR-SG-01-04%', 'participant');
 
 -- ── 机电安装领域 ──
 INSERT INTO _np_mapping (username, node_pattern, participant_role) VALUES
     ('马晓军', 'EMR-SG-01', 'participant'),
-    ('马晓军', 'EMR-SG-01-03-%', 'participant'),
+    ('马晓军', 'EMR-SG-01-03%', 'participant'),
     ('马晓军', 'EMR-JF-01', 'participant');
 
 -- ── 景观领域 ──
 INSERT INTO _np_mapping (username, node_pattern, participant_role) VALUES
     ('陈志远', 'EMR-SG-01', 'participant'),
-    ('陈志远', 'EMR-SG-01-05-%', 'participant'),
+    ('陈志远', 'EMR-SG-01-05%', 'participant'),
     ('陈志远', 'EMR-JF-01', 'participant'),
-    ('黄志强', 'EMR-SG-01-05-%', 'participant');
+    ('黄志强', 'EMR-SG-01-05%', 'participant');
+
+-- ── 专业分包领域 ──
+INSERT INTO _np_mapping (username, node_pattern, participant_role) VALUES
+    ('吴志强', 'EMR-SG-01-07%', 'participant'),  -- 幕墙
+    ('郑海峰', 'EMR-SG-01-08%', 'participant'),  -- 门窗
+    ('高翔',   'EMR-SG-01-10%', 'participant'),  -- 钢结构
+    ('王伟',   'EMR-SG-01-06%', 'participant'),  -- 二次结构
+    ('冯建平', 'EMR-SG-01-09%', 'participant');  -- 外檐
 
 -- ============================================================
 -- 3. 展开 LIKE 匹配 → 实际 node_id，写入 node_participants
@@ -152,8 +177,8 @@ SELECT
 FROM project_nodes pn
 LEFT JOIN node_participants np ON pn.node_id = np.node_id
 WHERE pn.project_id = (SELECT id FROM projects WHERE code = 'EMERALD-01' AND is_deleted = false LIMIT 1)
-GROUP BY pn.node_id, pn.node_name, pn.node_type, pn.sort_order
-ORDER BY pn.sort_order;
+GROUP BY pn.node_id, pn.node_name, pn.node_type
+ORDER BY pn.node_id;
 
 SELECT '--- 未参与任何节点的用户（预期仅周文斌/访客） ---' AS section;
 SELECT u.username, u.level, c.company_name
