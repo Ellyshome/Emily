@@ -1,4 +1,4 @@
-﻿# ============================================================
+# ============================================================
 # setup_test_env.ps1 — Emily 测试环境一键工具
 #
 # 用法（在项目根目录 d:\app\Emily 下执行）:
@@ -108,51 +108,61 @@ function Invoke-ResetDatabase {
 }
 
 # ============================================================
-# 功能二：导入核心种子数据（步骤 [1]-[9]）
+# 功能二：导入核心种子数据（步骤 [1]-[10]）
 # ============================================================
 function Invoke-SeedData {
     Write-Host "[种子] 导入核心种子数据..." -ForegroundColor Yellow
 
     # [1] 公司 + 用户 (002)
-    Write-Host "  [1/9] 公司 + 用户 (002)..." -ForegroundColor DarkGray
+    Write-Host "  [1/11] 公司 + 用户 (002)..." -ForegroundColor DarkGray
     ExecSql "$BASE/002_seed_test_data.sql"
     Write-Host "    [OK] 5家公司 + 7名用户" -ForegroundColor Green
 
     # [2] 补用户 (002_patch)
     $patchPath = "$ENV_TOOL/002_seed_test_data_patch.sql"
     if (Test-Path $patchPath) {
-        Write-Host "  [2/9] 补充用户 (patch)..." -ForegroundColor DarkGray
+        Write-Host "  [2/11] 补充用户 (patch)..." -ForegroundColor DarkGray
         ExecSql $patchPath
         Write-Host "    [OK] 新增3名用户 (L5/L2/L2)" -ForegroundColor Green
     } else {
-        Write-Host "  [2/9] 补充用户 (patch)... 跳过 (文件不存在: $patchPath)" -ForegroundColor DarkGray
+        Write-Host "  [2/11] 补充用户 (patch)... 跳过 (文件不存在: $patchPath)" -ForegroundColor DarkGray
     }
 
     # [3] 建设单位专业人员 (003)
     $usersPath = "$ENV_TOOL/003_seed_users_patch.sql"
     if (Test-Path $usersPath) {
-        Write-Host "  [3/9] 建设单位专业人员 (003)..." -ForegroundColor DarkGray
+        Write-Host "  [3/11] 建设单位专业人员 (003)..." -ForegroundColor DarkGray
         ExecSql $usersPath
         Write-Host "    [OK] 4名专业人员 (建筑/土建/安装/景观精装)" -ForegroundColor Green
     } else {
-        Write-Host "  [3/9] 建设单位专业人员... 跳过 (文件不存在: $usersPath)" -ForegroundColor DarkGray
+        Write-Host "  [3/11] 建设单位专业人员... 跳过 (文件不存在: $usersPath)" -ForegroundColor DarkGray
     }
 
-    # [4] 项目 + 文件元数据 (007)
+    # [4] 分包单位 + 监理/分包人员 (015)
+    $subPath = "$ENV_TOOL/015_seed_subcontract_users.sql"
+    if (Test-Path $subPath) {
+        Write-Host "  [4/11] 分包单位 + 监理/分包人员 (015)..." -ForegroundColor DarkGray
+        ExecSql $subPath
+        Write-Host "    [OK] 5家专业分包 + 2名专业监理 + 5名分包人员" -ForegroundColor Green
+    } else {
+        Write-Host "  [4/11] 分包单位 + 监理/分包人员... 跳过 (文件不存在: $subPath)" -ForegroundColor DarkGray
+    }
+
+    # [5] 项目 + 文件元数据 (007)
     $projPath = "$ENV_TOOL/007_seed_emerald_project.sql"
     if (Test-Path $projPath) {
-        Write-Host "  [4/9] 项目 + 文件元数据 (007)..." -ForegroundColor DarkGray
+        Write-Host "  [5/11] 项目 + 文件元数据 (007)..." -ForegroundColor DarkGray
         ExecSql $projPath
-        Write-Host "    [OK] EMERALD-01 项目 + 5指标 + 18文件" -ForegroundColor Green
+        Write-Host "    [OK] EMERALD-01 项目 + 5指标 + 19文件" -ForegroundColor Green
     } else {
         Write-Host "[ERROR] 找不到 $projPath" -ForegroundColor Red
         exit 1
     }
 
-    # [5] 节点树 (008 YAML -> manage_nodes.py)
+    # [6] 节点树 (008 YAML -> manage_nodes.py)
     $nodesYaml = "$ENV_TOOL/008_seed_emerald_nodes.yaml"
     if (Test-Path $nodesYaml) {
-        Write-Host "  [5/9] 全景节点树 (008 YAML)..." -ForegroundColor DarkGray
+        Write-Host "  [6/11] 全景节点树 (008 YAML)..." -ForegroundColor DarkGray
         $env:PYTHONPATH = "emily-core"
         $nodeResult = uv run python scripts/manage_nodes.py create --file $nodesYaml 2>&1
         if ($LASTEXITCODE -ne 0) {
@@ -166,41 +176,51 @@ function Invoke-SeedData {
         exit 1
     }
 
-    # [6] 节点责任人分配 (012)
+    # [7] 节点责任人分配 (012)
     $respPath = "$ENV_TOOL/012_seed_node_responsible.sql"
     if (Test-Path $respPath) {
-        Write-Host "  [6/9] 节点责任人分配 (012)..." -ForegroundColor DarkGray
+        Write-Host "  [7/11] 节点责任人分配 (012)..." -ForegroundColor DarkGray
         ExecSql $respPath
-        Write-Host "    [OK] 24个节点按专业分配责任人" -ForegroundColor Green
+        Write-Host "    [OK] 34个节点按专业分配责任人" -ForegroundColor Green
     } else {
-        Write-Host "  [6/9] 节点责任人分配... 跳过 (文件不存在: $respPath)" -ForegroundColor DarkGray
+        Write-Host "  [7/11] 节点责任人分配... 跳过 (文件不存在: $respPath)" -ForegroundColor DarkGray
     }
 
-    # [7] 节点参与人分配 (013)
+    # [8] 节点参与人分配 (013)
     $participantsPath = "$ENV_TOOL/013_seed_node_participants.sql"
     if (Test-Path $participantsPath) {
-        Write-Host "  [7/9] 节点参与人分配 (013)..." -ForegroundColor DarkGray
+        Write-Host "  [8/11] 节点参与人分配 (013)..." -ForegroundColor DarkGray
         ExecSql $participantsPath
-        Write-Host "    [OK] 13名用户（除访客外）按专业分配到各节点" -ForegroundColor Green
+        Write-Host "    [OK] 21名用户（除访客外）按专业分配到各节点" -ForegroundColor Green
     } else {
-        Write-Host "  [7/9] 节点参与人分配... 跳过 (文件不存在: $participantsPath)" -ForegroundColor DarkGray
+        Write-Host "  [8/11] 节点参与人分配... 跳过 (文件不存在: $participantsPath)" -ForegroundColor DarkGray
     }
 
-    # [8] 业务数据 (009)
+    # [9] 业务数据 (009)
     $bizPath = "$ENV_TOOL/009_seed_emerald_business.sql"
     if (Test-Path $bizPath) {
-        Write-Host "  [8/9] 业务数据 (009)..." -ForegroundColor DarkGray
+        Write-Host "  [9/11] 业务数据 (009)..." -ForegroundColor DarkGray
         ExecSql $bizPath
-        Write-Host "    [OK] 事件/任务/会议/流转单/指令单/计划/会话/消息" -ForegroundColor Green
+        Write-Host "    [OK] 事件/任务/会议/流转单/指令单/计划/会话/消息 + 材料进场" -ForegroundColor Green
     } else {
         Write-Host "[ERROR] 找不到 $bizPath" -ForegroundColor Red
         exit 1
     }
 
-    # [9] 权限体系 (006)
-    Write-Host "  [9/9] 权限体系 (006)..." -ForegroundColor DarkGray
+    # [10] 权限体系 (006)
+    Write-Host "  [10/11] 权限体系 (006)..." -ForegroundColor DarkGray
     ExecSql "$BASE/006_seed_permission_data.sql"
     Write-Host "    [OK] 权限组 + SOP + 绑定 + 授权" -ForegroundColor Green
+
+    # [11] 统一项目事件回填 (007_migrate_project_events.sql)
+    $peMigratePath = "$BASE/007_migrate_project_events.sql"
+    if (Test-Path $peMigratePath) {
+        Write-Host "  [11/11] 统一项目事件回填 (007)..." -ForegroundColor DarkGray
+        ExecSql $peMigratePath
+        Write-Host "    [OK] project_events 回填 + 临时节点 UNASSIGNED" -ForegroundColor Green
+    } else {
+        Write-Host "  [11/11] 统一项目事件回填... 跳过 (文件不存在: $peMigratePath)" -ForegroundColor DarkGray
+    }
 
     Write-Host ""
 }

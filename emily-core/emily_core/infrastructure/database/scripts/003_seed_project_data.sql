@@ -164,7 +164,7 @@ SELECT
     uuid_generate_v4()::text, _seed_file_no(6), p.id, '建设工程施工总承包合同.pdf',
     'application/pdf', 'mock-bucket', 'project-ecocity/contracts/general_contract.pdf',
     '/mock/project-ecocity/contracts/general_contract.pdf',
-    5120000, u1.id, '.pdf', 'CONTRACT', 3, 'V1.0', true,
+    5120000, u1.id, '.pdf', 'CONTRACT', 2, 'V1.0', true,
     u1.id, NOW()::text, NOW()::text, false,
     'NODE_WORKLOAD_DOC', 'ECOC-SG-01'
 FROM _seed_project p, _seed_users u1
@@ -177,7 +177,7 @@ SELECT
     uuid_generate_v4()::text, _seed_file_no(7), p.id, '建设工程委托监理合同.pdf',
     'application/pdf', 'mock-bucket', 'project-ecocity/contracts/supervision_contract.pdf',
     '/mock/project-ecocity/contracts/supervision_contract.pdf',
-    2048000, u1.id, '.pdf', 'CONTRACT', 3, 'V1.0', true,
+    2048000, u1.id, '.pdf', 'CONTRACT', 2, 'V1.0', true,
     u1.id, NOW()::text, NOW()::text, false,
     'NODE_WORKLOAD_DOC', 'ECOC-SG-01'
 FROM _seed_project p, _seed_users u1

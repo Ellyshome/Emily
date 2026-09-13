@@ -3,6 +3,7 @@
 fastapi>=0.110.0
 uvicorn[standard]>=0.27.0
 pydantic>=2.0.0
+python-multipart>=0.0.9                # FastAPI Form/文件上传（api/routes/console_resources.py 表单端点）
 
 # 业务内核
 sqlalchemy>=2.0.0
@@ -25,8 +26,11 @@ openpyxl>=3.1                          # Excel 表格提取
 pdf2image>=1.17                        # PDF 转图片（OCR 前置）
 
 # ── LangGraph 执行引擎（WorkItem 内部执行引擎替换）──
-langgraph>=0.2.0                       # StateGraph + Checkpoint + interrupt
+langgraph>=1.2,<2.0                    # 唯一执行引擎（StateGraph + Checkpoint + interrupt；上界锁定，升级须跑回归语料）
 langgraph-checkpoint-postgres>=2.0     # 图检查点持久化（AsyncPostgresSaver，复用 emily-postgres）
 psycopg[binary]>=3.1                   # langgraph-checkpoint-postgres 传递依赖，显式声明
 psycopg-pool>=3.1                      # AsyncConnectionPool（checkpoint 连接池）
 tenacity>=8.2.0                        # 细粒度重试（langgraph 传递依赖，显式声明便于直接 import）
+
+# ── MCP 扩展（外部工具接入）──
+mcp>=1.19.0,<2                         # Model Context Protocol 客户端 SDK（stdio / sse / streamable-http）

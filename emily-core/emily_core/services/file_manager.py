@@ -99,6 +99,10 @@ class FileManager:
     def update_category(self, file_id, category, operator_id="") -> Optional[File]:
         return self._file_svc.update_file_category(file_id, category, operator_id)
 
+    def update_confidentiality(self, file_id, confidentiality, operator_id="") -> dict:
+        """调整文件密级（委托 FileService，含权限校验 + 可见性重算）。"""
+        return self._file_svc.update_confidentiality(file_id, confidentiality, operator_id)
+
     def get_by_file_no(self, file_no: str) -> Optional[File]:
         """按文件编号查询（委托 FileRepository）。"""
         return self._file_svc.repo.get_by_file_no(file_no)

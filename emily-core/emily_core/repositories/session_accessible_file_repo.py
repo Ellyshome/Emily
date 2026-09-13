@@ -10,7 +10,7 @@ from datetime import datetime, timezone
 from typing import Optional
 
 from ..infrastructure.database import get_session
-from ..infrastructure.database.models import SessionAccessibleFile, File, ProjectNode, NodeAccessibleFile
+from ..infrastructure.database.models import SessionAccessibleFile, File, NodeAccessibleFile
 from sqlalchemy import or_, and_
 
 logger = logging.getLogger("emily.repo.accessible_file")
@@ -35,93 +35,84 @@ class SessionAccessibleFileRepo:
         （explicit 记录不清除）
         """
         authorized_node_ids = authorized_node_ids or []
-        info_level_map = {"public": 0, "internal": 1, "confidential": 2, "secret": 3}
+        info_level_map = {"public": 0, "internal": 1, "confidential": 2}
         max_conf = info_level_map.get(info_level, 0)
         total = 0
 
         try:
             now = _now_iso()
             with get_session() as session:
-                # 1. 清除旧的 project_scope + node_linked
+                # 1. 清除旧的 project_scope + node_linked（explicit 保留）
                 session.query(SessionAccessibleFile).filter(
                     SessionAccessibleFile.user_id == user_id,
                     SessionAccessibleFile.access_type.in_(["project_scope", "node_linked"]),
                 ).delete(synchronize_session=False)
 
-                # 2. project_scope 批量写入
-                if project_ids:
-                    files = session.query(File).filter(
-                        File.project_id.in_(project_ids),
-                        File.is_deleted == False,
-                        File.confidentiality <= max_conf,
+                # 已占用 file_id 集合：数据库残留（explicit）+ 本函数内已 pending 添加的，
+                # 跨步骤去重，避免 project_scope 与 node_linked 重复插入触发唯一约束。
+                seen_file_ids: set[str] = {
+                    r for (r,) in session.query(SessionAccessibleFile.file_id).filter(
+                        SessionAccessibleFile.user_id == user_id,
                     ).all()
+                }
 
-                    for f in files:
+                # 2. project_scope 批量写入：
+                #    - 公开文件（confidentiality=0）：全员可见，不走项目/节点判定
+                #    - 项目范围文件：project_id ∈ project_ids 且密级 ≤ info_level
+                scope_conds = []
+                if project_ids:
+                    scope_conds.append(File.project_id.in_(project_ids))
+                scope_conds.append(File.confidentiality == 0)  # 公开文件全员可见
+                files = session.query(File).filter(
+                    or_(*scope_conds),
+                    File.is_deleted == False,
+                    File.confidentiality <= max_conf,
+                    ~File.id.in_(seen_file_ids) if seen_file_ids else True,
+                ).all()
+
+                for f in files:
+                    if f.id in seen_file_ids:
+                        continue
+                    seen_file_ids.add(f.id)
+                    saf = SessionAccessibleFile(
+                        user_id=user_id,
+                        file_id=f.id,
+                        access_type="project_scope",
+                        granted_by="system",
+                        granted_at=now,
+                    )
+                    session.add(saf)
+                    total += 1
+
+                # 3. node_linked 处理：节点文件一律经 node_accessible_files 显式绑定
+                if authorized_node_ids:
+                    node_file_links = session.query(
+                        NodeAccessibleFile.file_id,
+                        NodeAccessibleFile.added_by,
+                        NodeAccessibleFile.added_at,
+                    ).filter(
+                        NodeAccessibleFile.node_id.in_(authorized_node_ids),
+                        ~NodeAccessibleFile.file_id.in_(seen_file_ids) if seen_file_ids else True,
+                        ~NodeAccessibleFile.file_id.in_(
+                            session.query(File.id).filter(
+                                File.confidentiality > max_conf,
+                            ).subquery()
+                        ),
+                    ).distinct().all()
+
+                    for file_id, added_by, added_at in node_file_links:
+                        if file_id in seen_file_ids:
+                            continue
+                        seen_file_ids.add(file_id)
                         saf = SessionAccessibleFile(
                             user_id=user_id,
-                            file_id=f.id,
-                            access_type="project_scope",
-                            granted_by="system",
-                            granted_at=now,
+                            file_id=file_id,
+                            access_type="node_linked",
+                            granted_by=added_by or "system",
+                            granted_at=added_at or now,
                         )
                         session.add(saf)
                         total += 1
-
-                # 3. node_linked 处理
-                if authorized_node_ids:
-                    # 3a. 查询这些节点的 visibility_mode
-                    nodes = session.query(ProjectNode).filter(
-                        ProjectNode.node_id.in_(authorized_node_ids)
-                    ).all()
-                    all_project_nodes = [n for n in nodes if n.visibility_mode == "all_project_files"]
-                    specific_nodes = [n for n in nodes if n.visibility_mode != "all_project_files"]
-
-                    # 3b. all_project_files 节点：加载全项目文件（补充 project_scope 未覆盖的文件）
-                    if all_project_nodes:
-                        all_project_project_ids = list({n.project_id for n in all_project_nodes if n.project_id})
-                        if all_project_project_ids:
-                            already_visible = session.query(SessionAccessibleFile.file_id).filter(
-                                SessionAccessibleFile.user_id == user_id,
-                            ).subquery()
-                            extra_files = session.query(File).filter(
-                                File.project_id.in_(all_project_project_ids),
-                                File.is_deleted == False,
-                                ~File.id.in_(already_visible),
-                            ).all()
-                            for f in extra_files:
-                                saf = SessionAccessibleFile(
-                                    user_id=user_id,
-                                    file_id=f.id,
-                                    access_type="node_linked",
-                                    granted_by="system",
-                                    granted_at=now,
-                                )
-                                session.add(saf)
-                                total += 1
-
-                    # 3c. specific 节点：原有逻辑（查 node_accessible_files）
-                    if specific_nodes:
-                        specific_node_ids = [n.node_id for n in specific_nodes]
-                        node_file_links = session.query(NodeAccessibleFile).filter(
-                            NodeAccessibleFile.node_id.in_(specific_node_ids)
-                        ).all()
-
-                        for link in node_file_links:
-                            existing = session.query(SessionAccessibleFile).filter(
-                                SessionAccessibleFile.user_id == user_id,
-                                SessionAccessibleFile.file_id == link.file_id,
-                            ).first()
-
-                            if not existing:
-                                saf = SessionAccessibleFile(
-                                    user_id=user_id,
-                                    file_id=link.file_id,
-                                    access_type="node_linked",
-                                    granted_by=link.added_by or "system",
-                                    granted_at=link.added_at or now,
-                                )
-                                session.add(saf)
-                                total += 1
 
                 session.commit()
                 logger.info("sync_for_user(%s): %d files synced", user_id, total)

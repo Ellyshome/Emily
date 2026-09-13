@@ -174,10 +174,7 @@ class PermissionService:
             "sop_allow": sop_allow,
             "db_perms": self._derive_db_perms(user.level, company.type if company else ""),
             "is_management_unit": bool(company and getattr(company, 'is_admin', False)),
-            "info_level": self._derive_info_level(
-                user.level,
-                is_management_unit=bool(company and getattr(company, 'is_admin', False)),
-            ),
+            "info_level": self._derive_info_level(user.level),
             "supervisor_id": user.supervisor_id or "",
             "authorized_node_ids": self._derive_authorized_nodes(user, company),
             "granted_codes": granted_codes,
@@ -268,15 +265,13 @@ class PermissionService:
     # ========================================================================
 
     @staticmethod
-    def _derive_info_level(level: int, is_management_unit: bool = False) -> str:
-        """level → 可见最大密级（需求 §3.1）。
+    def _derive_info_level(level: int) -> str:
+        """level → 可见最大密级（需求 §3.1，密级已简化为 3 级）。
 
-        管理单位 L4 可见 confidential（与 L5+ 同级），
-        非管理单位 L4 仍走原 internal 密级。
+        机密(confidential) 为白名单制：仅系统管理员(L6) 原生可见；
+        上传人自有与显式授权由 VisibleFileSetResolver 单独放行，不在此推导。
         """
-        if level >= 5:
-            return "confidential"
-        if is_management_unit:
+        if level >= 6:
             return "confidential"
         if level >= 2:
             return "internal"

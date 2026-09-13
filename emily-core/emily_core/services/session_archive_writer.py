@@ -91,6 +91,23 @@ class SessionArchiveWriter:
         if self.enabled and self.archive_dir:
             os.makedirs(self.archive_dir, exist_ok=True)
 
+    # 轮次锚点：「## 第 N 轮 · 时间」——归档正文里唯一的轮次标记（由 render_turn_start 写入）
+    _TURN_HEADER_RE = re.compile(r"^##\s+第\s+\d+\s+轮")
+
+    @classmethod
+    def count_turns(cls, path: str) -> int:
+        """从归档 md 正文统计轮次数（以「## 第 N 轮」为唯一锚点）。
+
+        **文档为准**：不依赖 Session 内存的 message_history —— 新会话主循环
+        （use_loop=true）下该字段恒为空，会让轮次恒为 0。
+        """
+        try:
+            text = Path(path).read_text(encoding="utf-8", errors="replace")
+        except Exception as e:  # noqa: BLE001
+            logger.debug("count_turns read failed: %s — %s", path, e)
+            return 0
+        return sum(1 for line in text.splitlines() if cls._TURN_HEADER_RE.match(line))
+
     def _path_for(self, conversation_id: str, user_name: str, started_at: str = "",
                   group_name: str = "") -> Path:
         """生成归档文件路径。
@@ -948,7 +965,19 @@ class SessionArchiveWriter:
         if not self.enabled or not path:
             return False
         try:
+            # 修复：分段追加前确保文件以换行结尾，避免出现「总轮数: 1## 第 1 轮」粘连
+            need_newline = False
+            try:
+                import os as _os
+                if _os.path.exists(path) and _os.path.getsize(path) > 0:
+                    with open(path, "rb") as fr:
+                        fr.seek(-1, 2)
+                        need_newline = fr.read(1) != b"\n"
+            except OSError:
+                need_newline = False
             with open(path, "a", encoding="utf-8") as f:
+                if need_newline and content and not str(content).startswith("\n"):
+                    f.write("\n")
                 f.write(content)
             return True
         except OSError as e:

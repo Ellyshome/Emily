@@ -223,17 +223,15 @@ class InitializationChecker:
                 logger.debug("T4 file count check failed: %s", e, exc_info=True)
             t4["T4_knowledge_filled"] = file_count >= 5
 
-            # T4-5: 晨报已成功发送至少1次
-            t4["T4_morning_report_sent"] = False
+            # T4-5: 调度能力可用（M9：不再依赖某个具体作业的执行日志）
+            t4["T4_scheduler_ready"] = False
             try:
-                from ..infrastructure.database.models import SchedulerJobLog
-                log = session.query(SchedulerJobLog).filter(
-                    SchedulerJobLog.action_type == "morning_report",
-                    SchedulerJobLog.status == "success",
-                ).first()
-                t4["T4_morning_report_sent"] = log is not None
+                from ..infrastructure.database.models import SchedulerJob
+                active_jobs = session.query(SchedulerJob).filter(
+                    SchedulerJob.status == "ACTIVE").count()
+                t4["T4_scheduler_ready"] = active_jobs >= 1
             except Exception as e:
-                logger.debug("T4 morning report check failed: %s", e, exc_info=True)
+                logger.debug("T4 scheduler readiness check failed: %s", e, exc_info=True)
 
             t4_done = sum(1 for v in t4.values() if v)
             t4_total = len(t4)
@@ -285,7 +283,7 @@ class InitializationChecker:
             "T4_all_node_responsible": "部分节点无责任人",
             "T4_dependency_coverage": "节点依赖关系不足50%",
             "T4_knowledge_filled": "知识库文件不足5个",
-            "T4_morning_report_sent": "晨报从未成功发送",
+            "T4_scheduler_ready": "调度能力未就绪（无 ACTIVE 作业）",
         }
         missing_desc = [missing_descriptions.get(k, k) for k in missing]
 

@@ -63,6 +63,7 @@ TRUNCATE TABLE instruction_orders CASCADE;
 TRUNCATE TABLE business_flow_orders CASCADE;
 
 -- Project business tables
+TRUNCATE TABLE project_events CASCADE;
 TRUNCATE TABLE message_attachments CASCADE;
 TRUNCATE TABLE files CASCADE;
 TRUNCATE TABLE knowledge_chunks CASCADE;

@@ -2,7 +2,7 @@
 
 emily-core 仅监听内网（astrbot_network），当前默认放行。
 真实的请求级鉴权（如插件 ↔ Core 的共享密钥校验）属后续增强。
-监控路由（/api/v1/monitor/）始终放行，不受 EMILY_API_TOKEN 约束。
+健康检查 + emy-console（/console/）路由始终放行，不受 EMILY_API_TOKEN 约束。
 """
 
 from __future__ import annotations
@@ -27,7 +27,12 @@ class AuthMiddleware(BaseHTTPMiddleware):
     #
     # 注意：不要把 "/" 放进来。startswith("/") 对任何路径都为真，会让整个 Token
     # 校验静默失效（历史 bug）。根路径如需放行，用下方 _PUBLIC_EXACT 精确匹配。
-    _PUBLIC_PREFIXES = ("/health", "/api/v1/monitor/", "/assets/", "/console")
+    _PUBLIC_PREFIXES = (
+        "/health",
+        "/console",
+        "/api/v1/console",
+        "/api/v1/scripts",
+    )
 
     # 精确匹配放行（不做前缀展开）
     _PUBLIC_EXACT = ("/", "/docs", "/openapi.json")

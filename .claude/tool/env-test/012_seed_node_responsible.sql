@@ -123,6 +123,61 @@ WHERE node_id IN (
 );
 
 -- ============================================================
+-- 二次结构（2个）→ 王伟（二次结构分包, L2 二次结构施工员）
+-- ============================================================
+UPDATE project_nodes SET responsible_user_id = (
+    SELECT id FROM users WHERE username = '王伟' AND is_deleted = false LIMIT 1
+)
+WHERE node_id IN (
+    'EMR-SG-01-06',    -- 二次结构工程
+    'EMR-SG-01-06-01'  -- 填充墙砌筑与构造柱
+);
+
+-- ============================================================
+-- 钢结构（2个）→ 高翔（钢结构分包, L2 钢结构施工员）
+-- ============================================================
+UPDATE project_nodes SET responsible_user_id = (
+    SELECT id FROM users WHERE username = '高翔' AND is_deleted = false LIMIT 1
+)
+WHERE node_id IN (
+    'EMR-SG-01-10',    -- 钢结构工程
+    'EMR-SG-01-10-01'  -- 钢结构雨棚与金属屋面
+);
+
+-- ============================================================
+-- 幕墙（2个）→ 吴志强（幕墙分包, L3 幕墙项目经理）
+-- ============================================================
+UPDATE project_nodes SET responsible_user_id = (
+    SELECT id FROM users WHERE username = '吴志强' AND is_deleted = false LIMIT 1
+)
+WHERE node_id IN (
+    'EMR-SG-01-07',    -- 幕墙工程
+    'EMR-SG-01-07-01'  -- 幕墙龙骨与面板安装
+);
+
+-- ============================================================
+-- 门窗（2个）→ 郑海峰（门窗分包, L3 门窗项目经理）
+-- ============================================================
+UPDATE project_nodes SET responsible_user_id = (
+    SELECT id FROM users WHERE username = '郑海峰' AND is_deleted = false LIMIT 1
+)
+WHERE node_id IN (
+    'EMR-SG-01-08',    -- 门窗工程
+    'EMR-SG-01-08-01'  -- 铝合金门窗安装
+);
+
+-- ============================================================
+-- 外檐装饰（2个）→ 冯建平（外檐分包, L3 外檐项目经理）
+-- ============================================================
+UPDATE project_nodes SET responsible_user_id = (
+    SELECT id FROM users WHERE username = '冯建平' AND is_deleted = false LIMIT 1
+)
+WHERE node_id IN (
+    'EMR-SG-01-09',    -- 外檐装饰工程
+    'EMR-SG-01-09-01'  -- 外墙保温与真石漆
+);
+
+-- ============================================================
 -- 验证
 -- ============================================================
 SELECT u.username AS "责任人",

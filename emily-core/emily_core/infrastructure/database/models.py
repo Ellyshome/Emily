@@ -298,11 +298,12 @@ class FileCategory:
     PHASE_DELIVERABLE = "PHASE_DELIVERABLE"  # 阶段成果
     PROCESS_DOC = "PROCESS_DOC"              # 过程文件
     MANAGEMENT_SPEC = "MANAGEMENT_SPEC"      # 管理规程
+    PUBLICITY = "PUBLICITY"                  # 外宣资料
     OTHER = "OTHER"                          # 其他文件
 
     ALL = [
         PROJECT_LICENSE, CONTRACT, WORK_RECORD,
-        PHASE_DELIVERABLE, PROCESS_DOC, MANAGEMENT_SPEC, OTHER,
+        PHASE_DELIVERABLE, PROCESS_DOC, MANAGEMENT_SPEC, PUBLICITY, OTHER,
     ]
 
     DISPLAY_NAMES = {
@@ -312,6 +313,7 @@ class FileCategory:
         PHASE_DELIVERABLE: "阶段成果",
         PROCESS_DOC: "过程文件",
         MANAGEMENT_SPEC: "管理规程",
+        PUBLICITY: "外宣资料",
         OTHER: "其他文件",
     }
 
@@ -397,7 +399,7 @@ class File(Base):
     is_latest = Column(Boolean, default=True)                # 是否最新版本
     parent_file_id = Column(String, nullable=True)        # 父文件ID（版本关联）
     change_log = Column(String, default="[]")             # 变更记录（JSON数组）
-    confidentiality = Column(Integer, default=0)          # 密级 0=公开 1=内部 2=机密 3=绝密
+    confidentiality = Column(Integer, default=1)          # 密级 0=公开 1=内部(默认) 2=机密（白名单制）
     creator_id = Column(String, nullable=True)            # 创建人ID
     updated_at = Column(String, default=_utc_now, onupdate=_utc_now)
     is_deleted = Column(Boolean, default=False)
@@ -410,7 +412,7 @@ class File(Base):
     # 全景节点图 V2 —— 文件溯源字段（需求文档 §6.1）
     source_module_id = Column(String(100), default="", comment="来源模块ID（节点ID/其他业务对象ID）")
     source_module_type = Column(String(50), default="", comment="来源模块类型：NODE_STARTUP_DOC/NODE_WORKLOAD_DOC/NODE_DELIVERABLE_DOC/NODE_ATTACHMENT")
-    file_category = Column(String(50), default="OTHER", comment="文件业务分类：PROJECT_LICENSE/CONTRACT/WORK_RECORD/PHASE_DELIVERABLE/PROCESS_DOC/MANAGEMENT_SPEC/OTHER")
+    file_category = Column(String(50), default="OTHER", comment="文件业务分类：PROJECT_LICENSE/CONTRACT/WORK_RECORD/PHASE_DELIVERABLE/PROCESS_DOC/MANAGEMENT_SPEC/PUBLICITY/OTHER")
 
     # ── M5: 三层正交分类新增字段 ──
     purpose = Column(String(50), default="RECORD", comment="业务意图：EVIDENCE/RECORD/DESIGN/REFERENCE（CHAT 不入库）")
@@ -1090,7 +1092,7 @@ class ProjectNode(Base):
     node_type = Column(String(20), nullable=False, default="WORK_PACKAGE", comment="节点类型：MILESTONE / WORK_PACKAGE / TASK")
     visibility_mode = Column(
         String(30), nullable=False, default="specific",
-        comment="文件可见模式：specific（按 node_accessible_files 绑定）/ all_project_files（全项目文件默认可见）"
+        comment="【已废弃，恒为 specific】历史值 all_project_files（全项目文件默认可见）已下线，文件必须经 node_accessible_files 显式绑定到节点"
     )
     # ── 进度与层级（mount_child / _recalc_node_status 使用）──
     progress = Column(String, default="0.00", comment="完成进度百分比（0.00-100.00，存为字符串，由成果完成度汇总）")
@@ -1802,3 +1804,142 @@ class ExpertApproval(Base):
     __table_args__ = (
         Index("idx_expert_approvals_expert_id", "expert_id"),
     )
+
+
+# ══════════════════════════════════════════════════════════════════════════════
+# 统一项目事件基类 —— 单表继承（Single Table Inheritance）
+#
+# 项目管理过程中的各类业务事件（会议 / 事件记录 / 任务 / 文件归档 /
+# 业务流转单 / 节点成果 / 节点事件）统一归一到 project_events 单表，
+# 通过 event_kind 判别列区分类型，统一挂 project_id + node_id，
+# 形成项目维度的统一事件积累（时间线），保证事件有归属、有责任人。
+#
+# 字段分层策略：
+#   · 公共列（所有事件共有）→ 定义在基类
+#   · 高频查询/过滤字段 → 定义在子类（单表继承自动并入同一张表）
+#   · 低频/大字段（附件、参会人、流转记录等）→ 存入 payload JSON
+# ══════════════════════════════════════════════════════════════════════════════
+
+
+# 临时节点：暂不知去向的事件统一挂到这里（后续可改挂到具体节点）
+UNASSIGNED_NODE_ID = "UNASSIGNED"
+UNASSIGNED_NODE_NAME = "待归类事件（临时节点）"
+
+
+class ProjectEventKind:
+    """项目事件判别类型枚举（project_events.event_kind）。"""
+
+    EVENT = "EVENT"                  # 事件记录（原 events）
+    TASK = "TASK"                    # 任务（原 tasks）
+    MEETING = "MEETING"              # 会议（原 meetings）
+    FILE = "FILE"                    # 文件归档（原 files）
+    BUSINESS_FLOW = "BUSINESS_FLOW"  # 业务流转单（原 business_flow_orders）
+    DELIVERABLE = "DELIVERABLE"      # 节点成果（原 node_deliverables）
+    NODE_EVENT = "NODE_EVENT"        # 节点事件（原 node_events）
+
+    ALL = [EVENT, TASK, MEETING, FILE, BUSINESS_FLOW, DELIVERABLE, NODE_EVENT]
+
+    DISPLAY_NAMES = {
+        EVENT: "事件记录",
+        TASK: "任务",
+        MEETING: "会议",
+        FILE: "文件归档",
+        BUSINESS_FLOW: "业务流转单",
+        DELIVERABLE: "节点成果",
+        NODE_EVENT: "节点事件",
+    }
+
+    @classmethod
+    def display(cls, value: str) -> str:
+        return cls.DISPLAY_NAMES.get(value, value)
+
+
+class ProjectEvent(Base):
+    """统一项目事件基类 —— 项目全生命周期事件积累（单表继承）。
+
+    对应原 events / tasks / meetings / files（归档动作）/
+    business_flow_orders / node_deliverables / node_events 七类业务对象。
+    """
+    __tablename__ = "project_events"
+
+    # ── 公共字段（所有事件共有）──
+    id = Column(String, primary_key=True, default=_new_uuid)
+    event_no = Column(String(50), unique=True, nullable=False, comment="统一编号 PE-YYYYMMDD-NNNN")
+    event_kind = Column(String(30), nullable=False, index=True, comment="事件判别类型（ProjectEventKind）")
+    project_id = Column(String, ForeignKey("projects.id"), nullable=True, index=True, comment="归属项目")
+    node_id = Column(String(100), nullable=True, index=True, default=UNASSIGNED_NODE_ID, comment="归属全景节点，空/UNASSIGNED=待归类")
+    event_type = Column(String(100), default="", comment="事件子类型（事件记录/节点事件共用；会议/任务等留空）")
+    title = Column(String(500), nullable=False, comment="标题")
+    summary = Column(Text, default="", comment="统一描述/摘要")
+    status = Column(String(50), default="pending", comment="统一字符串状态")
+    actor_id = Column(String, ForeignKey("users.id"), nullable=True, comment="操作人/创建人")
+    confirmed_by = Column(String, nullable=True, comment="认证人")
+    confirmed_at = Column(String(50), nullable=True, comment="认证时间")
+    occurred_at = Column(String(50), nullable=True, comment="业务发生时间")
+    created_at = Column(String(50), default=_utc_now, comment="记录创建时间")
+    source_message_id = Column(String, ForeignKey("messages.id"), nullable=True, comment="来源消息")
+    payload = Column(Text, default="{}", comment="子类型专属字段 JSON")
+
+    __mapper_args__ = {
+        "polymorphic_on": event_kind,
+        "polymorphic_identity": "project_event",
+    }
+
+    __table_args__ = (
+        Index("idx_pe_project_occurred", "project_id", "occurred_at"),
+        Index("idx_pe_node", "node_id"),
+        Index("idx_pe_kind_created", "event_kind", "created_at"),
+    )
+
+
+class EventRecord(ProjectEvent):
+    """事件记录 —— 原 events 表。"""
+    category = Column(String(100), default="待分类", comment="事件分类")
+    __mapper_args__ = {"polymorphic_identity": ProjectEventKind.EVENT}
+
+
+class TaskRecord(ProjectEvent):
+    """任务 —— 原 tasks 表。"""
+    owner_id = Column(String, ForeignKey("users.id"), nullable=True, comment="负责人")
+    due_date = Column(String, nullable=True, comment="截止时间")
+    __mapper_args__ = {"polymorphic_identity": ProjectEventKind.TASK}
+
+
+class MeetingRecord(ProjectEvent):
+    """会议 —— 原 meetings 表。"""
+    meeting_type = Column(Integer, default=0, comment="会议类型 0=周例会 1=专题会 2=协调会 3=技术交底 4=验收会 5=其他")
+    meeting_date = Column(String, nullable=True, comment="会议时间")
+    location = Column(String(500), default="", comment="会议地点")
+    host_id = Column(String, nullable=True, comment="主持人")
+    conclusion = Column(Text, default="", comment="会议结论")
+    __mapper_args__ = {"polymorphic_identity": ProjectEventKind.MEETING}
+
+
+class FileRecord(ProjectEvent):
+    """文件归档事件 —— files 表仍保留资源明细，本记录承载归档动作。"""
+    file_id = Column(String, nullable=True, comment="引用 files.id")
+    __mapper_args__ = {"polymorphic_identity": ProjectEventKind.FILE}
+
+
+class FlowOrderRecord(ProjectEvent):
+    """业务流转单 —— 原 business_flow_orders 表。"""
+    flow_type = Column(Integer, default=0, comment="流转类型 0=通用 1=设计变更 2=签证 3=材料进场 4=验收申请 5=付款申请")
+    priority = Column(Integer, default=1, comment="优先级 0=低 1=中 2=高 3=紧急")
+    __mapper_args__ = {"polymorphic_identity": ProjectEventKind.BUSINESS_FLOW}
+
+
+class DeliverableRecord(ProjectEvent):
+    """节点成果 —— 原 node_deliverables 表。"""
+    deliverable_id = Column(String(100), nullable=True, comment="成果编号")
+    submission_status = Column(String(20), default="PENDING", comment="提交状态 PENDING/SUBMITTED/CONFIRMED/RETURNED")
+    target_amount = Column(String, default="0.00", comment="目标量")
+    current_amount = Column(String, default="0.00", comment="当前量")
+    unit = Column(String(50), default="", comment="量纲")
+    __mapper_args__ = {"polymorphic_identity": ProjectEventKind.DELIVERABLE}
+
+
+class NodeEventRecord(ProjectEvent):
+    """节点事件 —— 原 node_events 表。"""
+    old_value = Column(Text, default="", comment="变更前值 JSON")
+    new_value = Column(Text, default="", comment="变更后值 JSON")
+    __mapper_args__ = {"polymorphic_identity": ProjectEventKind.NODE_EVENT}

@@ -1,6 +1,6 @@
 """DocumentParser — 多格式解析路由（M5）。
 
-按扩展名路由：md/txt 直读；pdf 走 pymupdf；docx 走 python-docx。
+按扩展名路由：md/txt 直读；pdf 走 pypdfium2；docx 走 python-docx。
 任何格式解析失败时降级为 UTF-8 直读（errors=ignore），不抛异常中断入库。
 """
 
@@ -46,12 +46,19 @@ class DocumentParser:
 
     @staticmethod
     def _parse_pdf(path: Path) -> str:
-        import fitz  # pymupdf
+        import pypdfium2 as pdfium
 
         parts: list[str] = []
-        with fitz.open(str(path)) as doc:
-            for page in doc:
-                parts.append(page.get_text())
+        pdf = pdfium.PdfDocument(str(path))
+        try:
+            for page in pdf:
+                textpage = page.get_textpage()
+                try:
+                    parts.append(textpage.get_text_range())
+                finally:
+                    textpage.close()
+        finally:
+            pdf.close()
         return "\n".join(parts)
 
     @staticmethod

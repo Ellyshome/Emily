@@ -58,7 +58,6 @@ class SessionLoop:
         llm_client=None,
         catalog=None,
         planner=None,
-        suspends=None,
         dialog=None,
         capability_registry=None,
         capability_runner=None,
@@ -74,7 +73,6 @@ class SessionLoop:
         self._llm = llm_client
         self._catalog = catalog
         self._planner = planner
-        self._suspends = suspends
         self._dialog = dialog
         self._capability_registry = capability_registry
         self._capability_runner = capability_runner
@@ -128,193 +126,9 @@ class SessionLoop:
     # 入口
     # ══════════════════════════════════════════════════════════════════════
 
-    async def handle(self, message, db_message_id: str = "", current_user_id: str = "") -> ReplyMessage | None:
-        """处理一条入站消息（与旧 SessionAgent.handle 同签名）。"""
-        content = (message.content or "").strip()
-
-        # ① 快速短路（零 LLM；AC-US-01.2）
-        from .session_agent import SessionAgent
-        fast = SessionAgent._try_fast_reply(content, getattr(message, "sender_name", "") or "")
-        if fast is not None:
-            return self._reply(message, fast)
-
-        # ② 当前操作者快照（群聊多用户权限越界修复）
-        self._last_actor = await self._fetch_actor(current_user_id)
-
-        # ③ 归档：轮次开头
-        self._turn_counter += 1
-        self._append_archive_turn_start(message)
-
-        try:
-            final_reply = await self._handle_impl(message, db_message_id=db_message_id)
-        except Exception as e:  # noqa: BLE001
-            logger.error("SessionLoop[%s] handle crashed: %s", self.conversation_id, e, exc_info=True)
-            final_reply = "抱歉，处理时出现了异常，请稍后重试或换个说法。"
-
-        if final_reply is None:
-            return None
-
-        self._record_turn(message, final_reply)
-        self._maybe_compact()
-        self.append_capability_section(getattr(self, "_last_calls", []) or [])
-        self._append_archive_turn_end(final_reply)
-        return self._reply(message, final_reply)
-
     # ══════════════════════════════════════════════════════════════════════
     # 主流程
     # ══════════════════════════════════════════════════════════════════════
-
-    async def _handle_impl(self, message, db_message_id: str = "") -> str | None:
-        content = message.content or ""
-        actor = self._last_actor or {}
-        # 本轮能力调用清单（供归档内嵌；AC-US-08.1）
-        self._last_calls: list = []
-
-        # ── 挂起续接判定（US-06）──
-        claimed = None
-        if self._suspends is not None and self._suspends.has_pending:
-            actor_uid = actor.get("user_id") or self.context.user_id
-            if await self._suspends.is_continuation(content, actor_uid):
-                pending = self._suspends.match(actor_uid)
-                if pending is not None:
-                    claimed = self._suspends.claim(pending.call_id, actor_uid)
-            else:
-                self._suspends.discard_all()
-                logger.info("SessionLoop[%s] 挂起作废（用户转入新话题）", self.conversation_id)
-
-        allowed_sops = self._path_router.allowed_sops() if self._path_router is not None else None
-        entries = self._catalog.list_capabilities(
-            actor, self.context, allowed_sops=allowed_sops) if self._catalog is not None else []
-        capability_names = {e.name for e in entries if e.name}
-        system_prompt = self._build_system_prompt(entries)
-
-        # ── 续接：直接继续被挂起的能力（不重述原始需求；AC-US-06.1）──
-        if claimed is not None:
-            merged = (claimed.params or {}).get("request", "")
-            merged = f"{merged}\n\n[用户补充] {content}" if merged else content
-            result = await self._run_capability(claimed.capability, merged, message, db_message_id)
-            self._last_calls.append(self._record_call(claimed.capability, merged, result))
-            return self._settle_capability_result(claimed.capability, result, message, db_message_id)
-
-        calls: list = self._last_calls
-        self._turn_capability_names = capability_names
-        messages = [{"role": "system", "content": system_prompt}]
-        messages.extend(self._llm_history())
-        group_extra = await self._group_injections(message, db_message_id)
-        messages.extend(group_extra)
-        messages.append({"role": "user", "content": content})
-
-        pending_injection = self._pending_event_injection()
-        if pending_injection:
-            messages.append(pending_injection)
-
-        tool_specs = self._catalog.build_tool_specs(
-            actor, self.context, allowed_sops=allowed_sops) if self._catalog is not None else []
-
-        # ── 任务级粗排：仅对疑似复合请求（零 LLM 成本前置判定；US-05）──
-        # 边界：粗排只编排 **SOP 能力**。计划步入参以统一键 `request` 传递，只有 SOP 能力的
-        # 入参契约与之匹配；查询/写类工具 schema 各异，塞进粗排会丢参（实测产生"未命名事件"），
-        # 故这些能力交由循环内 ReAct 按各自 schema 处理（D5：粗排只决定调哪些能力与顺序）。
-        plan_names = {e.name for e in entries if e.kind == "sop"}
-        if self._planner is not None and _looks_compound(content) and plan_names:
-            plan = await self._planner.plan(content, plan_names)
-            if plan is not None:
-                return await self._run_plan(plan, messages, message, db_message_id, calls, tool_specs)
-
-        # ── 主循环（ReAct）──
-        reply = await self._run_loop(messages, tool_specs, message, db_message_id, calls, capability_names)
-
-        if self._suspends is not None and self._suspends.has_pending:
-            pending = self._suspends.match(actor.get("user_id") or self.context.user_id)
-            if pending is not None:
-                return pending.question  # 直接提问，不再经 LLM 改写
-        return reply
-
-    async def _run_loop(self, messages: list, tool_specs: list, message, db_message_id: str,
-                        calls: list, capability_names: set) -> str:
-        max_iter = int(getattr(self._config, "agent_loop_max_iterations", _DEFAULT_MAX_ITERATIONS)
-                       or _DEFAULT_MAX_ITERATIONS)
-        last_text = ""
-        for iteration in range(max_iter):
-            result = await self._llm_call(messages, tool_specs)
-            if result is None:
-                return last_text or "抱歉，我暂时无法完成这个请求，请稍后再试。"
-
-            rtype = result.get("type", "")
-            if rtype != "tool_call":
-                text = (result.get("content") or "").strip()
-                if text:
-                    return self._enforce_capability_progress(text, calls)
-                last_text = text
-                # 空文本（reasoner 输出落在 reasoning_content）→ 追问一次
-                messages.append({"role": "user", "content": "[系统] 请直接给用户回复。"})
-                continue
-
-            tool_name = result.get("tool_name", "")
-            arguments = result.get("tool_arguments", {}) or {}
-            tool_call_id = result.get("tool_call_id", "")
-
-            assistant_msg = {
-                "role": "assistant",
-                "content": result.get("content") or "",
-                "tool_calls": [{
-                    "id": tool_call_id, "type": "function",
-                    "function": {"name": tool_name,
-                                 "arguments": json.dumps(arguments, ensure_ascii=False)},
-                }],
-            }
-            if result.get("reasoning_content"):
-                assistant_msg["reasoning_content"] = result["reasoning_content"]
-            messages.append(assistant_msg)
-
-            tool_payload = await self._execute_tool(
-                tool_name, arguments, message, db_message_id, calls, capability_names)
-            messages.append({
-                "role": "tool", "tool_call_id": tool_call_id,
-                "content": json.dumps(tool_payload, ensure_ascii=False, default=str),
-            })
-
-        # 达上限 → 可读收尾（AC-US-01.3）
-        logger.warning("SessionLoop[%s] iteration cap %d reached", self.conversation_id, max_iter)
-        return last_text or "这个请求步骤较多，我先就目前掌握的信息答复；如需继续，请补充一句让我接着做。"
-
-    async def _run_plan(self, plan, messages: list, message, db_message_id: str,
-                        calls: list, tool_specs: list) -> str:
-        """照单逐项执行能力调用计划（执行权留在本循环；D7/R4）。"""
-        from .capability_plan import PlanCursor
-
-        cursor = PlanCursor(plan, max_depth=getattr(plan, "max_depth", 3))
-        self._publish_progress(cursor.progress_text())
-
-        while not cursor.is_complete:
-            layer = cursor.next_runnable()
-            if not layer:
-                break
-            outcomes = await asyncio.gather(*[
-                self._run_plan_step(step, message, db_message_id)
-                for step in layer
-            ], return_exceptions=True)
-            for step, outcome in zip(layer, outcomes):
-                if isinstance(outcome, BaseException):
-                    from .capability_runner import CapabilityResult
-                    outcome = CapabilityResult.failed(f"调用异常：{outcome}")
-                record = self._record_call(step.capability, (step.params or {}).get("request", ""), outcome)
-                calls.append(record)
-                if getattr(outcome, "needs_input", False):
-                    cursor.mark_failed(step.step_id, outcome)
-                elif getattr(outcome, "status", "failed") == "failed":
-                    cursor.mark_failed(step.step_id, outcome)
-                else:
-                    cursor.mark_done(step.step_id, outcome)
-            self._publish_progress(cursor.progress_text())
-
-        # 计划成果回灌 → 由循环据实收口（AC-US-05.2：回复反映实际执行结果）
-        messages.append({"role": "system", "content": self._render_plan_results(calls)})
-        messages.append({"role": "user", "content": "[系统] 以上能力调用已完成，请据此直接回复用户，不要重复调用。"})
-        # 收口循环仍用完整可见工具集（不能只放开计划内的能力，否则 confirm_pending 等控制工具不可用）
-        all_names = {t.get("function", {}).get("name") for t in tool_specs if t.get("function")}
-        all_names.discard(None)
-        return await self._run_loop(messages, tool_specs, message, db_message_id, calls, all_names)
 
     # ══════════════════════════════════════════════════════════════════════
     # 工具执行
@@ -347,8 +161,6 @@ class SessionLoop:
                 request = f"{request}\n\n[用户补充] {additional}"
             result = await self._run_capability(tool_name, request, message, db_message_id)
             calls.append(self._record_call(tool_name, request, result))
-            if getattr(result, "needs_input", False):
-                self._register_suspend(tool_name, request, getattr(result, "question", ""))
             return result.to_tool_dict()
 
         # ── resolver（名称→UUID 解析等）──
@@ -419,38 +231,6 @@ class SessionLoop:
     # 能力调用（M3）+ 超时（AC-US-01.4）
     # ══════════════════════════════════════════════════════════════════════
 
-    async def _run_plan_step(self, step, message, db_message_id: str):
-        """执行计划中的单步 —— **按能力类型分派**（SOP 能力 / 查询 / 写 / 解析）。
-
-        计划步的能力可以是任意可见能力（D5 粗排按能力名产出），因此不能一律走
-        SOP 能力执行器；否则查询类步骤会被误判为"能力未注册"而失败。
-        """
-        from .capability_runner import CapabilityResult
-
-        name = step.capability
-        params = dict(step.params or {})
-        if self._capability_registry is not None and self._capability_registry.has(name):
-            return await self._run_capability(name, params.get("request", ""), message, db_message_id)
-
-        # 非 SOP 能力：复用与主循环一致的工具执行路径（权限 fail-closed + 护栏）
-        payload = await self._execute_tool(
-            name, params, message, db_message_id, [], getattr(self, "_turn_capability_names", set()))
-        payload = payload if isinstance(payload, dict) else {}
-        ok = bool(payload.get("success"))
-        issues = [str(i) for i in (payload.get("issues") or [])]
-        if not ok and not issues:
-            issues = [str(payload.get("reply") or "执行失败")]
-        return CapabilityResult(
-            status="success" if ok else "failed",
-            summary=list(payload.get("summary") or []),
-            data=dict(payload.get("data") or {}),
-            business_object_no=str(payload.get("business_object_no") or ""),
-            issues=issues,
-            readable_text=str(payload.get("reply") or ""),
-            needs_input=bool(payload.get("needs_input")),
-            question=str(payload.get("question") or ""),
-        )
-
     async def _run_capability(self, name: str, request: str, message, db_message_id: str):
         from .capability_runner import CapabilityResult
 
@@ -471,25 +251,6 @@ class SessionLoop:
             logger.warning("SessionLoop[%s] capability %s timed out (%ds)",
                            self.conversation_id, name, timeout)
             return CapabilityResult.failed(f"该操作耗时超过 {timeout} 秒，已中止。")
-
-    def _settle_capability_result(self, name: str, result, message, db_message_id: str) -> str:
-        """续接执行后的收口（挂起则再提问，否则给可读成果）。"""
-        if getattr(result, "needs_input", False):
-            self._register_suspend(name, "", getattr(result, "question", ""))
-            return getattr(result, "question", "") or "请补充信息"
-        return getattr(result, "readable_text", "") or "处理完成。"
-
-    def _register_suspend(self, capability: str, request: str, question: str) -> None:
-        if self._suspends is None:
-            return
-        from .suspend_registry import PendingCall
-
-        self._suspends.register(PendingCall(
-            capability=capability,
-            params={"request": request},
-            question=question or "请补充信息",
-            initiator_user_id=(self._last_actor or {}).get("user_id") or self.context.user_id,
-        ))
 
     def _record_call(self, capability: str, request: str, result) -> CapabilityCallRecord:
         actor_uid = (self._last_actor or {}).get("user_id") or self.context.user_id
@@ -612,32 +373,6 @@ class SessionLoop:
     # 归档 / 进度 / 回复
     # ══════════════════════════════════════════════════════════════════════
 
-    def _render_plan_results(self, calls: list) -> str:
-        if not calls:
-            return "（无能力调用结果）"
-        lines = ["## 能力调用结果"]
-        for i, c in enumerate(calls, 1):
-            lines.append(f"{i}. {c.capability} [{c.result_status}] {c.result_digest or '（无成果）'}")
-        return "\n".join(lines)
-
-    def _enforce_capability_progress(self, text: str, calls: list) -> str:
-        """有失败的能力调用时，确保回复不静默丢失（AC-US-05.4）。"""
-        failed = [c for c in calls if c.result_status == "failed"]
-        if failed and "失败" not in text and "未" not in text:
-            reasons = "；".join((c.result_digest or c.capability) for c in failed[:2])
-            text = f"{text}\n（说明：部分操作未完成 —— {reasons}）"
-        return text
-
-    def _publish_progress(self, text: str) -> None:
-        if not text or self._outbound_bus is None:
-            return
-        try:
-            self._outbound_bus.publish("progress", {
-                "content": text, "conversation_id": self.conversation_id,
-            })
-        except Exception as e:  # noqa: BLE001
-            logger.debug("publish progress failed: %s", e)
-
     def _append_archive_turn_start(self, message) -> None:
         if self._archive_writer is None or not self._archive_md_path:
             return
@@ -731,6 +466,11 @@ class SessionLoop:
 # 会话池（并行模块，与旧 SessionPoolManager 同形）
 # ══════════════════════════════════════════════════════════════════════════════
 
+#: 访客身份（退役后新内核为唯一渠道：发送者未解析为系统用户时仍建会话，
+#: 权限快照为空并按 fail-closed 收窄，避免消息被静默丢弃）
+GUEST_USER_ID = "guest"
+
+
 class SessionLoopPool:
     """新路径会话池：conversation_id → SessionLoop（TTL 复用 + 会话内串行）。"""
 
@@ -744,10 +484,12 @@ class SessionLoopPool:
             self.lock = asyncio.Lock()
 
     def __init__(self, config=None, core=None) -> None:
+        import time
         self._core = core
         self._config = config
         self._sessions: dict = {}
         self._sweeper_task = None
+        self._start_time = time.time()
 
     def _ttl(self) -> int:
         return int(getattr(self._config, "session_ttl_seconds", 600) or 600)
@@ -759,12 +501,15 @@ class SessionLoopPool:
         """路由一条入站消息（与旧 SessionPoolManager.route 同签名）。"""
         conv_id = message.conversation_id
         await self._ensure_sweeper()
+        # 退役后：发送者未解析为系统用户 → 按访客身份建会话（新内核为唯一渠道，不丢消息）
+        effective_user = str(user_id or "").strip() or GUEST_USER_ID
         entry = self._sessions.get(conv_id)
         if entry is None:
             if len(self._sessions) >= self._max_concurrent():
                 self.sweep_expired()
-            loop = self._build_loop(message, user_id)
+            loop = self._build_loop(message, effective_user)
             if loop is None:
+                logger.error("SessionLoopPool: 会话构建失败，消息未处理（conv=%s）", conv_id)
                 return None
             entry = SessionLoopPool._Entry(loop)
             self._sessions[conv_id] = entry
@@ -772,8 +517,11 @@ class SessionLoopPool:
         async with entry.lock:
             import time
             entry.last_active = time.time()
-            return await entry.loop.handle(
-                message, db_message_id=db_message_id, current_user_id=user_id)
+            # 退役后：会话编排图为唯一渠道（旧循环实现已删除）
+            from .graph_wiring import handle_via_graph
+            return await handle_via_graph(
+                entry.loop, message, db_message_id=db_message_id,
+                current_user_id=effective_user)
 
     def _build_loop(self, message, user_id: str):
         core = self._core
@@ -785,7 +533,6 @@ class SessionLoopPool:
             from .capability_catalog import build_catalog
             from .capability_plan import SessionPlanner
             from .capability_runner import build_runner
-            from .suspend_registry import SuspendRegistry
             from .confirm_dialog import ConfirmDialog
 
             context = SessionContext.create(
@@ -800,7 +547,6 @@ class SessionLoopPool:
                 llm_client=llm,
                 catalog=build_catalog(core),
                 planner=SessionPlanner(llm_client=llm, config=getattr(core, "config", None)),
-                suspends=SuspendRegistry(llm_client=llm, config=getattr(core, "config", None)),
                 dialog=ConfirmDialog(journal=getattr(core, "_event_journal", None)),
                 capability_registry=getattr(core, "_capability_registry", None),
                 capability_runner=build_runner(core),
@@ -853,3 +599,31 @@ class SessionLoopPool:
     @property
     def size(self) -> int:
         return len(self._sessions)
+
+    @property
+    def uptime_seconds(self) -> int:
+        import time
+        return int(time.time() - self._start_time)
+
+    def get_status(self) -> dict:
+        """返回会话池状态摘要（供观测接口调用，与 SessionPoolManager.get_status 同形）。
+
+        Returns:
+            {"total": int, "uptime_seconds": int,
+             "sessions": [{"conversation_id", "last_active_ts", "idle_seconds"}, ...]}
+        """
+        import time
+        now = time.time()
+        sessions = [
+            {
+                "conversation_id": cid,
+                "last_active_ts": entry.last_active,
+                "idle_seconds": int(now - entry.last_active),
+            }
+            for cid, entry in self._sessions.items()
+        ]
+        return {
+            "total": len(self._sessions),
+            "uptime_seconds": self.uptime_seconds,
+            "sessions": sessions,
+        }

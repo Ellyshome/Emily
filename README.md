@@ -260,10 +260,10 @@ Emily/
 - ✅ **下拉选择测试用户（7 个权限级别全覆盖）
 - ✅ **模拟真实对话场景**
 - ✅ **观察权限拦截效果**
-- ✅ **Web 可视化界面**（emily-core 脚本控制台 `/console/` 的「消息模拟器」）
+- ✅ **Web 可视化界面**（emily-core 脚本控制台「emy-console」，路径 `/console/` 的「消息模拟器」）
 
 ```bash
-# 启动 emily-core 后，浏览器打开脚本控制台
+# 启动 emily-core 后，浏览器打开脚本控制台（emy-console）
 http://localhost:18080/console/
 ```
 

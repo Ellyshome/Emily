@@ -2,7 +2,7 @@
 
 > **定位**：需求流水线（req-review → req-plan → req-verify）与全部开发的最高约束。任何 skill 的内部约定与本文冲突时，**以本文为准**。
 > **权威来源**：架构铁律源自 [`CLAUDE.md §6 开发约束`](../../../CLAUDE.md)；流水线规则由本文件定义。
-> **版本**：v1.1（2026-09-11）
+> **版本**：v1.2（2026-09-13）
 
 ---
 
@@ -117,6 +117,8 @@
 | C9 | **ToolManager / ScriptManager 边界** | 进程内 LLM 工具 vs subprocess 脚本，共享 service 层但互不调用 |
 | C10 | **工具必须带参数 schema** | 三步缺一不可：源文件 `_XXX_SCHEMA` → 注册 `params=` → 一致性映射 `TOOL_SCHEMA_MAP` |
 | C11 | **功能注册接入（元原则）** | 新功能必须经注册通道接入（tools/scheduler/hook/sop/scripts/provider），禁止裸文件/硬编码接线；出现孤儿代码须**停下提醒用户** |
+| C12 | **Session 主循环冻结（元原则）** | ⚠️ 最高优先级架构纪律：Session 主循环只因对话机制本身而改，**永不因业务功能增长而改**；功能增长一律落能力层（新工具/新 SOP 能力/协作封装为新能力）。**腐化判据：业务功能的 PR diff 到主循环文件即违反本条** |
+| C13 | **Web 控制台 = 观察窗口（不得自造功能）** | emy-console 是观察 Emily 的窗口，不是独立业务系统。其动作/写库能力必须复用 Emily 既有能力（业务工具层 `tools/` 或运维脚本层 `scripts/`，经 ScriptManager/ToolManager/registry），同源同能力；只读展示复用 service/repo 层，不绕过；禁止在路由层复刻既有逻辑或另写业务逻辑。能力缺失时先在工具层/脚本层补齐再接 console |
 
 ---
 

@@ -11,6 +11,7 @@
 
 from __future__ import annotations
 
+from collections.abc import Iterable
 from enum import Enum
 
 from ....permission.level import PermissionLevel
@@ -60,6 +61,18 @@ class FallbackPolicy:
         "record_file",
     })
 
+    # 运行期动态登记的只读工具（如 MCP search/fetch_content）——由注册方在此登记，
+    # 仍以此模块为唯一事实源，不在其他文件另立名单。
+    _DYNAMIC_READ_TOOLS: set[str] = set()
+
+    @staticmethod
+    def register_dynamic_read_tools(names: Iterable[str]) -> None:
+        """登记运行期发现的只读工具（read 语义），使其在兜底档位可见。
+
+        调用方须确保登记的工具确为只读（write_mode=read）；写工具不得经此登记。
+        """
+        FallbackPolicy._DYNAMIC_READ_TOOLS |= {n for n in names if n}
+
     @staticmethod
     def gate(actor: dict | None) -> FallbackTier:
         """判定档位。
@@ -100,8 +113,9 @@ class FallbackPolicy:
         """
         tier = FallbackTier(tier) if not isinstance(tier, FallbackTier) else tier
         if tier == FallbackTier.BASIC:
-            return FallbackPolicy.basic_tools()
+            return frozenset(FallbackPolicy.basic_tools() | FallbackPolicy._DYNAMIC_READ_TOOLS)
         tools = set(FallbackPolicy.advanced_read_tools())
+        tools |= FallbackPolicy._DYNAMIC_READ_TOOLS
         if with_write:
             tools |= set(FallbackPolicy.advanced_append_tools())
         return frozenset(tools)

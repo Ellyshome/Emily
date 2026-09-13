@@ -4,7 +4,7 @@
     GET /api/v1/trace/{message_id}  — 获取一条消息的完整 Agent 执行追踪
                                        （推理 + LLM 调用 + 工具调用）
 
-参照模式：api/routes/monitor.py（lazy _get_service + set_xxx_service 注入）。
+参照模式：lazy _get_service + set_xxx_service 注入。
 """
 
 from __future__ import annotations
@@ -18,7 +18,7 @@ logger = logging.getLogger("emily.api.trace")
 
 router = APIRouter(prefix="/trace", tags=["trace"])
 
-# 延迟初始化（与 monitor 路由同模式）
+# 延迟初始化（lazy _get_service 模式）
 _service = None
 
 

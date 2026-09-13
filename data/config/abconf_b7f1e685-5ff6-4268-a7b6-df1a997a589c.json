@@ -48,7 +48,6 @@
     "enable": false,
     "default_provider_id": "",
     "fallback_chat_models": [],
-    "request_max_retries": 5,
     "default_image_caption_provider_id": "",
     "image_caption_prompt": "Please describe the image using Chinese.",
     "provider_pool": [
@@ -62,7 +61,6 @@
     "websearch_brave_key": [],
     "websearch_baidu_app_builder_key": "",
     "websearch_firecrawl_key": [],
-    "websearch_exa_key": [],
     "web_search_link": false,
     "display_reasoning_text": false,
     "identifier": false,
@@ -158,8 +156,6 @@
     "group_message_max_cnt": 300,
     "image_caption": false,
     "image_caption_provider_id": "",
-    "group_message_history_enable": false,
-    "group_message_history_max_cnt": 700,
     "active_reply": {
       "enable": false,
       "method": "possibility_reply",
@@ -200,8 +196,8 @@
   "dashboard": {
     "enable": true,
     "username": "astrbot",
-    "password": "cb61cb3e5657f7b524cc074889cb872c",
-    "pbkdf2_password": "pbkdf2_sha256$600000$a7f11a01e733b6ecd6002166e2378b75$6b9be17040578264c5083f6f531531a048bb990afd9951ff2d5dd6fb471db6af",
+    "password": "c17bb2746fc549b80f40e549ae3b6efa",
+    "pbkdf2_password": "pbkdf2_sha256$600000$b51a5fce662953fdd02931921830f2e3$d4a3b539100540ac59d566bca9c8c93e867f00b68de5b5a0e58410253e62c1e2",
     "password_storage_upgraded": true,
     "password_change_required": true,
     "jwt_secret": "",

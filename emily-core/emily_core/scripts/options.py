@@ -56,6 +56,7 @@ def _users() -> list[dict]:
             session.query(
                 User.id.label("user_id"),
                 User.username.label("username"),
+                User.level.label("level"),
                 CompanyInfo.company_name.label("company_name"),
             )
             .outerjoin(CompanyInfo, CompanyInfo.id == User.company)
@@ -64,7 +65,7 @@ def _users() -> list[dict]:
             .all()
         )
     return [
-        {"value": r.user_id, "label": r.username, "note": r.company_name or ""}
+        {"value": r.user_id, "label": r.username, "level": int(r.level or 0), "note": r.company_name or ""}
         for r in rows
     ]
 

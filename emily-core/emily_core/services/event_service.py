@@ -64,6 +64,24 @@ class EventService:
             conversation_id=cmd.conversation_id or None,  # BUG-005: 写入会话 ID
         )
 
+        # 双写：同步累积到统一项目事件（project_events）
+        try:
+            from ..services.project_event_accumulator import ProjectEventAccumulator
+            ProjectEventAccumulator.record_event(
+                title=cmd.title,
+                project_id=project_id,
+                summary=cmd.description or "",
+                status="pending",
+                actor_id=cmd.creator_id or None,
+                event_type=cmd.event_type or "general",
+                category=cmd.category or "待分类",
+                occurred_at=cmd.event_date,
+                source_message_id=cmd.source_message_id or None,
+                conversation_id=cmd.conversation_id or None,
+            )
+        except Exception as e:  # 双写失败不阻塞主流程
+            logger.warning("ProjectEvent double-write failed: %s", e)
+
         logger.info(
             "Pending event created: no=%s, title=%s, project=%s",
             event_no, cmd.title, cmd.project_name,

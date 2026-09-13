@@ -25,7 +25,7 @@ SELECT id, file_no, filename, file_category FROM files
 WHERE project_id = (SELECT id FROM _sp LIMIT 1) AND is_deleted = false;
 
 -- ============================================================
--- 1. Events —— project milestones and records (~10 items)
+-- 1. Events —— project milestones and records (~13 items, 含材料进场)
 -- ============================================================
 INSERT INTO events (id, event_no, event_type, category, project_id, user_id, message_id,
     title, description, event_date, attachments, remarks, payload, status, created_at, confirmed_at)
@@ -136,6 +136,39 @@ SELECT uuid_generate_v4()::text, 'EVT-20260712-0001', '检查', '工程施工',
     '{"check_type":"safety_tech_briefing"}',
     'pending', '2026-07-12T10:00:00', NULL
 FROM _sp p, _su u WHERE u.username = '李景利';
+
+INSERT INTO events (id, event_no, event_type, category, project_id, user_id, message_id,
+    title, description, event_date, attachments, remarks, payload, status, created_at, confirmed_at)
+SELECT uuid_generate_v4()::text, 'EVT-20260301-0001', '材料进场', '工程施工',
+    p.id, u.id, NULL,
+    '主体结构钢筋进场复验合格',
+    'HRB400E钢筋约180吨进场，质量证明书与力学性能复验报告齐全，监理复验合格，同意用于主体结构施工。',
+    '2026-03-04', '[]', '钢筋牌号、规格、炉批号与报验单一致。',
+    '{"event_category":"material_arrival","node_id":"EMR-SG-01-02"}',
+    'confirmed', '2026-03-04T15:00:00', '2026-03-04T15:00:00'
+FROM _sp p, _su u WHERE u.username = '钱卫东';
+
+INSERT INTO events (id, event_no, event_type, category, project_id, user_id, message_id,
+    title, description, event_date, attachments, remarks, payload, status, created_at, confirmed_at)
+SELECT uuid_generate_v4()::text, 'EVT-20260620-0001', '材料进场', '工程施工',
+    p.id, u.id, NULL,
+    '幕墙铝型材与中空玻璃进场',
+    '幕墙工程铝合金型材约12吨、6+12A+6中空玻璃约3800㎡进场，型材膜厚检测与玻璃3C认证报告齐全，监理验收通过。',
+    '2026-06-21', '[]', '材料分批进场，已指定堆场存放。',
+    '{"event_category":"material_arrival","node_id":"EMR-SG-01-07"}',
+    'confirmed', '2026-06-21T16:00:00', '2026-06-21T16:00:00'
+FROM _sp p, _su u WHERE u.username = '吴志强';
+
+INSERT INTO events (id, event_no, event_type, category, project_id, user_id, message_id,
+    title, description, event_date, attachments, remarks, payload, status, created_at, confirmed_at)
+SELECT uuid_generate_v4()::text, 'EVT-20260705-0001', '材料进场', '工程施工',
+    p.id, u.id, NULL,
+    '外墙保温板与真石漆进场',
+    '外檐装饰工程EPS保温板约4500㎡、真石漆约12吨进场，燃烧性能与耐候性检测报告齐全，监理验收通过。',
+    '2026-07-07', '[]', '保温板已覆盖防雨存放，真石漆按色号分区存放。',
+    '{"event_category":"material_arrival","node_id":"EMR-SG-01-09"}',
+    'confirmed', '2026-07-07T14:00:00', '2026-07-07T14:00:00'
+FROM _sp p, _su u WHERE u.username = '冯建平';
 
 -- ============================================================
 -- 2. Tasks —— work assignments (~10 items)
@@ -304,7 +337,7 @@ SELECT uuid_generate_v4()::text, 'MTG-20260712-0001', p.id,
 FROM _sp p, _su u WHERE u.username = '李景利';
 
 -- ============================================================
--- 4. Business Flow Orders (~4 items)
+-- 4. Business Flow Orders (~11 items, 含7条材料进场报验)
 -- ============================================================
 INSERT INTO business_flow_orders (id, flow_no, project_id, title, flow_type, metrics,
     planned_finish_time, actual_finish_time, current_node, current_handler_id,
@@ -338,12 +371,90 @@ INSERT INTO business_flow_orders (id, flow_no, project_id, title, flow_type, met
     creator_id, created_at, updated_at, is_deleted)
 SELECT uuid_generate_v4()::text, 'BFO-20260701-01', p.id,
     '材料进场报验——首批绿化苗木', 3,
-    '{"material": "绿化苗木", "items": "桂花15株/香樟8株/红叶石楠200株/金叶女贞150株"}',
+    '{"material": "绿化苗木", "items": "桂花15株/香樟8株/红叶石楠200株/金叶女贞150株", "node_id": "EMR-SG-01-05"}',
     '2026-07-05', '2026-07-03', '完成', NULL,
     '[{"node": "班组报验", "handler": "黄工", "time": "2026-07-01T14:00:00", "action": "提交首批苗木进场报验单，附苗木检疫证明"}, {"node": "监理验收", "handler": "陈监理", "time": "2026-07-03T10:00:00", "action": "苗木品种规格数量核对无误，检疫证明有效，验收通过"}]',
     '[]', '[]', 2, 2,
     u.id, '2026-07-01T14:00:00', '2026-07-03T10:00:00', false
 FROM _sp p, _su u WHERE u.username = '黄志强';
+
+INSERT INTO business_flow_orders (id, flow_no, project_id, title, flow_type, metrics,
+    planned_finish_time, actual_finish_time, current_node, current_handler_id,
+    flow_records, related_file_ids, related_meeting_ids, status, priority,
+    creator_id, created_at, updated_at, is_deleted)
+SELECT uuid_generate_v4()::text, 'BFO-20260301-01', p.id,
+    '材料进场报验——主体结构钢筋', 3,
+    '{"material": "钢筋", "items": "HRB400E φ8-φ25 约180吨", "node_id": "EMR-SG-01-02"}',
+    '2026-03-05', '2026-03-04', '完成', NULL,
+    '[{"node": "班组报验", "handler": "孙工", "time": "2026-03-01T09:00:00", "action": "提交钢筋进场报验单，附质量证明书与复验报告"}, {"node": "监理验收", "handler": "钱监理", "time": "2026-03-04T15:00:00", "action": "钢筋牌号、规格、炉批号核对无误，复验合格，验收通过"}]',
+    '[]', '[]', 2, 2,
+    u.id, '2026-03-01T09:00:00', '2026-03-04T15:00:00', false
+FROM _sp p, _su u WHERE u.username = '孙建国';
+
+INSERT INTO business_flow_orders (id, flow_no, project_id, title, flow_type, metrics,
+    planned_finish_time, actual_finish_time, current_node, current_handler_id,
+    flow_records, related_file_ids, related_meeting_ids, status, priority,
+    creator_id, created_at, updated_at, is_deleted)
+SELECT uuid_generate_v4()::text, 'BFO-20260410-01', p.id,
+    '材料进场报验——加气混凝土砌块', 3,
+    '{"material": "加气混凝土砌块", "items": "A3.5 B06 600×240×200 约8500块", "node_id": "EMR-SG-01-06"}',
+    '2026-04-12', '2026-04-11', '完成', NULL,
+    '[{"node": "班组报验", "handler": "王工", "time": "2026-04-10T10:00:00", "action": "提交砌块进场报验单，附出厂合格证与强度报告"}, {"node": "监理验收", "handler": "钱监理", "time": "2026-04-11T11:00:00", "action": "砌块规格、强度等级、观感质量符合要求，验收通过"}]',
+    '[]', '[]', 2, 2,
+    u.id, '2026-04-10T10:00:00', '2026-04-11T11:00:00', false
+FROM _sp p, _su u WHERE u.username = '王伟';
+
+INSERT INTO business_flow_orders (id, flow_no, project_id, title, flow_type, metrics,
+    planned_finish_time, actual_finish_time, current_node, current_handler_id,
+    flow_records, related_file_ids, related_meeting_ids, status, priority,
+    creator_id, created_at, updated_at, is_deleted)
+SELECT uuid_generate_v4()::text, 'BFO-20260415-01', p.id,
+    '材料进场报验——钢结构钢材', 3,
+    '{"material": "钢结构钢材", "items": "Q355B钢板与型钢约45吨", "node_id": "EMR-SG-01-10"}',
+    '2026-04-18', '2026-04-17', '完成', NULL,
+    '[{"node": "班组报验", "handler": "高工", "time": "2026-04-15T09:00:00", "action": "提交钢结构钢材进场报验单，附材质单与探伤报告"}, {"node": "监理验收", "handler": "钱监理", "time": "2026-04-17T14:00:00", "action": "钢板牌号、厚度、焊缝质量复验合格，验收通过"}]',
+    '[]', '[]', 2, 2,
+    u.id, '2026-04-15T09:00:00', '2026-04-17T14:00:00', false
+FROM _sp p, _su u WHERE u.username = '高翔';
+
+INSERT INTO business_flow_orders (id, flow_no, project_id, title, flow_type, metrics,
+    planned_finish_time, actual_finish_time, current_node, current_handler_id,
+    flow_records, related_file_ids, related_meeting_ids, status, priority,
+    creator_id, created_at, updated_at, is_deleted)
+SELECT uuid_generate_v4()::text, 'BFO-20260620-01', p.id,
+    '材料进场报验——幕墙铝型材与玻璃', 3,
+    '{"material": "幕墙铝型材与中空玻璃", "items": "铝合金型材约12吨/6+12A+6中空玻璃约3800㎡", "node_id": "EMR-SG-01-07"}',
+    '2026-06-22', '2026-06-21', '完成', NULL,
+    '[{"node": "班组报验", "handler": "吴经理", "time": "2026-06-20T08:30:00", "action": "提交幕墙铝型材与玻璃进场报验单，附型材膜厚与玻璃3C认证报告"}, {"node": "监理验收", "handler": "何监理", "time": "2026-06-21T16:00:00", "action": "型材壁厚、玻璃规格与3C标志核对无误，验收通过"}]',
+    '[]', '[]', 2, 2,
+    u.id, '2026-06-20T08:30:00', '2026-06-21T16:00:00', false
+FROM _sp p, _su u WHERE u.username = '吴志强';
+
+INSERT INTO business_flow_orders (id, flow_no, project_id, title, flow_type, metrics,
+    planned_finish_time, actual_finish_time, current_node, current_handler_id,
+    flow_records, related_file_ids, related_meeting_ids, status, priority,
+    creator_id, created_at, updated_at, is_deleted)
+SELECT uuid_generate_v4()::text, 'BFO-20260625-01', p.id,
+    '材料进场报验——铝合金门窗', 3,
+    '{"material": "铝合金门窗", "items": "断桥铝合金门窗约980樘", "node_id": "EMR-SG-01-08"}',
+    '2026-06-28', '2026-06-27', '完成', NULL,
+    '[{"node": "班组报验", "handler": "郑经理", "time": "2026-06-25T09:00:00", "action": "提交铝合金门窗进场报验单，附型材及五金件合格证"}, {"node": "监理验收", "handler": "何监理", "time": "2026-06-27T15:00:00", "action": "门窗规格、开启方向、五金件品牌核对无误，验收通过"}]',
+    '[]', '[]', 2, 2,
+    u.id, '2026-06-25T09:00:00', '2026-06-27T15:00:00', false
+FROM _sp p, _su u WHERE u.username = '郑海峰';
+
+INSERT INTO business_flow_orders (id, flow_no, project_id, title, flow_type, metrics,
+    planned_finish_time, actual_finish_time, current_node, current_handler_id,
+    flow_records, related_file_ids, related_meeting_ids, status, priority,
+    creator_id, created_at, updated_at, is_deleted)
+SELECT uuid_generate_v4()::text, 'BFO-20260705-01', p.id,
+    '材料进场报验——外墙保温板与真石漆', 3,
+    '{"material": "外墙保温板与真石漆", "items": "EPS保温板约4500㎡/真石漆约12吨", "node_id": "EMR-SG-01-09"}',
+    '2026-07-08', '2026-07-07', '完成', NULL,
+    '[{"node": "班组报验", "handler": "冯经理", "time": "2026-07-05T10:00:00", "action": "提交保温板与真石漆进场报验单，附燃烧性能与耐候性检测报告"}, {"node": "监理验收", "handler": "钱监理", "time": "2026-07-07T14:00:00", "action": "保温板厚度、密度及真石漆色号核对无误，验收通过"}]',
+    '[]', '[]', 2, 2,
+    u.id, '2026-07-05T10:00:00', '2026-07-07T14:00:00', false
+FROM _sp p, _su u WHERE u.username = '冯建平';
 
 INSERT INTO business_flow_orders (id, flow_no, project_id, title, flow_type, metrics,
     planned_finish_time, actual_finish_time, current_node, current_handler_id,

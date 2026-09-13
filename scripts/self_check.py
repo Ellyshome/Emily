@@ -52,8 +52,13 @@ def _init_db(db_url: str = "") -> None:
                     pg_password=os.environ.get("EMILY_PG_PASSWORD", "emily_secret_2026"))
 
 
-def self_check(*, db_url: str = "", dry_run: bool = False) -> dict:
-    """系统级自检。"""
+def self_check(*, db_url: str = "", dry_run: bool = False,
+               mode: str = "quick", check_tool_registry: bool = False) -> dict:
+    """系统级自检。
+
+    mode: quick=快速一致性检查（check_quick），full=全量一致性检查（check_all）。
+    check_tool_registry: 仅 full 模式生效，是否连库检查 tool_registry 表。
+    """
     _init_db(db_url)
 
     from emily_core.infrastructure.database.session import get_session
@@ -104,10 +109,13 @@ def self_check(*, db_url: str = "", dry_run: bool = False) -> dict:
             pass
         result["knowledge"] = {"sop_count": sop_count}
 
-    # 工具一致性快速检查（方案 B：复用 self_check 启动链路）
+    # 工具一致性检查（复用 self_check 启动链路；full 模式走 check_all）
     try:
-        from emily_core.infrastructure.tools_consistency import check_quick
-        result["tools_consistency"] = check_quick()
+        from emily_core.infrastructure.tools_consistency import check_quick, check_all
+        if mode == "full":
+            result["tools_consistency"] = check_all(check_tool_registry=check_tool_registry)
+        else:
+            result["tools_consistency"] = check_quick()
     except Exception as e:
         result["tools_consistency"] = {"ok": False, "error": str(e)}
 

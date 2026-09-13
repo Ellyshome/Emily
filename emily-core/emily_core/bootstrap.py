@@ -76,8 +76,8 @@ def _config_from_env(config_data: dict | None) -> dict:
     }
     # 布尔字段：环境变量为字符串，需显式转换
     bool_fields = {
-        "llm_console_trace_enabled", "kb_enabled", "expert_review_enabled",
-        "session_loop_enabled",
+            "llm_console_trace_enabled", "kb_enabled", "expert_review_enabled",
+            "session_loop_enabled",
     }
     # 整数字段：环境变量为字符串，需显式转换
     int_fields = {

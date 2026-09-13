@@ -334,12 +334,13 @@ class SystemDescriptionBuilder:
             else:
                 key_fields = []
 
-            # 文件访问规则（基于 confidentiality 字段）
+            # 文件访问规则（基于 confidentiality 字段，密级简化为 3 级）
             access_rules = [
                 "confidentiality=0 公开文件所有用户可见",
-                "confidentiality\u22651 内部/机密/绝密文件按权限级别控制",
+                "confidentiality=1 内部文件按权限级别（L2 及以上）控制",
+                "confidentiality=2 机密文件白名单制：仅上传人、系统管理员(L6)、显式授权可见",
                 "上传人始终可查看自己上传的文件",
-                "L5+ 管理员可查看所有文件",
+                "系统管理员(L6) 可查看全部文件",
             ]
 
             return {

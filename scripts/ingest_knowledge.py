@@ -278,7 +278,7 @@ def main():
     parser.add_argument("--model", default=os.environ.get("EMILY_EMBEDDING_MODEL", "BAAI/bge-m3"))
     parser.add_argument("--uploaded-by", default="", help="上传者 user_id（files.uploaded_by，M1 doc_id 锚定）")
     parser.add_argument("--confidentiality", type=int, default=1,
-                        help="密级 0=公开 1=内部 2=机密 3=绝密（默认 1）")
+                        help="密级 0=公开 1=内部 2=机密（默认 1）")
     parser.add_argument("--dry-run", action="store_true", help="预览分块，不写库")
     args = parser.parse_args()
 

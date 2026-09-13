@@ -33,10 +33,11 @@ services:
       dockerfile: Dockerfile
     image: emily-core:latest
     container_name: emily-core
+    # 显式入口：与 Dockerfile 的 CMD 一致；避免镜像层入口配置漂移导致容器空转
+    entrypoint: ["python", "-m", "api.run"]
     restart: always
     ports:
       - "127.0.0.1:18080:18080"          # HTTP API（仅宿主机访问）
-      - "0.0.0.0:18081:18081"            # 监控看板（局域网可访问）
     environment:
       - TZ=Asia/Shanghai
       - EMILY_DATABASE_URL=postgresql://emily:emily_secret_2026@emily-postgres:5432/emily
@@ -45,12 +46,12 @@ services:
       - EMILY_LLM_MODEL=${EMILY_LLM_MODEL:-deepseek-v4-flash}
       # ── RAG (pgvector + 本地 TEI Embedding) ──
       - EMILY_KB_ENABLED=true
-      # ── 远程 SiliconFlow Embedding（key 失效，临时停用；修好 key 后恢复这三行并注释 EMILY_TEI_URL）──
-      # EMILY_EMBEDDING_API_URL=${EMILY_EMBEDDING_API_URL:-https://api.siliconflow.cn/v1/embeddings}
-      # EMILY_EMBEDDING_API_KEY=${SILICONFLOW_API_KEY:-}
-      # EMILY_EMBEDDING_MODEL=${EMILY_EMBEDDING_MODEL:-BAAI/bge-m3}
-      # ── 本地 TEI 容器（已启用，替代失效的远程 API）──
-      - EMILY_TEI_URL=http://emily-embed:80
+      # ── 远程 SiliconFlow Embedding（已启用）──
+      - EMILY_EMBEDDING_API_URL=${EMILY_EMBEDDING_API_URL:-https://api.siliconflow.cn/v1/embeddings}
+      - EMILY_EMBEDDING_API_KEY=${SILICONFLOW_API_KEY:-}
+      - EMILY_EMBEDDING_MODEL=${EMILY_EMBEDDING_MODEL:-BAAI/bge-m3}
+      # ── 本地 TEI 容器（临时停用，改用远程 SiliconFlow）──
+      # EMILY_TEI_URL=http://emily-embed:80
       # ── VLM OCR（共用 SiliconFlow Key）──
       - EMILY_VLM_API_URL=${EMILY_VLM_API_URL:-https://api.siliconflow.cn/v1/chat/completions}
       - EMILY_VLM_API_KEY=${SILICONFLOW_API_KEY:-}
@@ -58,6 +59,8 @@ services:
       - EMILY_STORAGE_ROOT=/app/attachments
       - EMILY_HOOK_CONFIG_PATH=/app/config/hook_config.json
       - EMILY_API_TOKEN=${EMILY_API_TOKEN:-}
+      # ── 会话路径灰度开关（默认关闭 = 走旧派发链路）──
+      - EMILY_SESSION_LOOP_ENABLED=${EMILY_SESSION_LOOP_ENABLED:-false}     # 新会话主循环
       # NAPCAT_WEBUI_TOKEN 现已动态从 NapCat 容器读取（docker/client.py _fetch_napcat_webui_token），
       # 不再依赖环境变量硬编码。保留此行仅当 Docker API 不可用时回退使用：
       - NAPCAT_WEBUI_TOKEN=${NAPCAT_WEBUI_TOKEN:-}
@@ -83,6 +86,7 @@ services:
       - ./emily-data/user_memory:/app/user_memory
       - ./emily-data/journal:/app/journal
       - ./emily-data/session_archives:/app/session_archives
+      - ./需求/测试用例:/app/test_cases:ro                # 测试用例库（emy-console 只读展示）
       # ── 代码（只读，开发阶段可热更新）──
       - ./emily-core/emily_core:/app/emily_core:ro
       - ./emily-core/api:/app/api:ro
@@ -93,29 +97,32 @@ services:
       - emily_network
     depends_on:
       - emily-postgres
-      - emily-embed
 
-  # ── 本地 TEI Embedding 服务（BGE-m3，官方 TEI CPU 镜像）──
-  # 模型走本地挂载离线加载（HF_HUB_OFFLINE=1），权重在 emily-data/hf_cache/bge-m3-tei
+  # ── 本地 TEI Embedding 服务（已停用，改用远程 SiliconFlow Embedding）──
+  # 原因：emily-core 当前通过 EMILY_EMBEDDING_API_URL 走远程 SiliconFlow，本地 TEI 已停用；
+  # 且 emily-data/hf_cache 中只有 HF 原始缓存（hub/models--BAAI--bge-m3），
+  # 缺少 TEI 所需的扁平模型目录 /data/bge-m3-tei，导致容器反复以 exit 1 重启。
+  # 如需恢复本地嵌入：先将 BGE-m3 转为 TEI safetensors 格式并放到 emily-data/hf_cache/bge-m3-tei，
+  # 再取消注释下方服务定义，并把 emily-core 的 EMILY_TEI_URL 打开、远程 Embedding 注释掉。
   # 历史：cpu-1.5 曾因 HF 下载 bug 弃用 → 自写 transformers server（后随 docling-slim
   # 瘦身丢失 torch 崩溃）→ 2026-09 回归官方 TEI。注意必须 pin cpu-1.6：cpu-1.7 的
   # Candle 后端加载 BGE-m3 时段错误（exit 139），1.6 正常（batch 被限为 4）
-  emily-embed:
-    image: ghcr.io/huggingface/text-embeddings-inference:cpu-1.6
-    container_name: emily-embed
-    ports:
-      - "127.0.0.1:8082:80"
-    command:
-      - --model-id
-      - /data/bge-m3-tei
-    environment:
-      - HF_HUB_OFFLINE=1
-      - HUGGINGFACE_HUB_OFFLINE=1
-    volumes:
-      - ./emily-data/hf_cache:/data:ro
-    networks:
-      - emily_network
-    restart: always
+  # emily-embed:
+  #   image: ghcr.io/huggingface/text-embeddings-inference:cpu-1.6
+  #   container_name: emily-embed
+  #   ports:
+  #     - "127.0.0.1:8082:80"
+  #   command:
+  #     - --model-id
+  #     - /data/bge-m3-tei
+  #   environment:
+  #     - HF_HUB_OFFLINE=1
+  #     - HUGGINGFACE_HUB_OFFLINE=1
+  #   volumes:
+  #     - ./emily-data/hf_cache:/data:ro
+  #   networks:
+  #     - emily_network
+  #   restart: always
 
   # ── MaxKB 已关闭（RAG 基座已替换为 pgvector + TEI）──
 
