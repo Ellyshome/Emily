@@ -1673,7 +1673,7 @@ def get_session_archive_content(archive_id: str):
 
 
 # ══════════════════════════════════════════════════════════════════════════════
-#  测试用例库（只读）：需求/测试用例/*.md 清单 + 单条用例细节
+#  测试用例库（只读）：Issues/测试用例/*.md 清单 + 单条用例细节
 #  用例以 md 表格承载（表头含「目标特性」/「用例 ID」），本模块解析该表逐条索引。
 # ══════════════════════════════════════════════════════════════════════════════
 
@@ -1688,7 +1688,7 @@ def _test_cases_dir():
     container = Path("/app/test_cases")
     if container.exists():
         return container
-    return Path(__file__).resolve().parents[3] / "需求" / "测试用例"
+    return Path(__file__).resolve().parents[3] / "Issues" / "测试用例"
 
 
 def _md_row_cells(line: str) -> list[str]:
@@ -1873,7 +1873,7 @@ def _test_case_detail(case_id: str) -> dict:
 
 @router.get("/test-cases")
 def get_test_cases():
-    """测试用例库清单（只读）：需求/测试用例/*.md 的用例表逐条索引。"""
+    """测试用例库清单（只读）：Issues/测试用例/*.md 的用例表逐条索引。"""
     try:
         return _ok(_list_test_cases())
     except Exception as e:  # noqa: BLE001
@@ -2029,3 +2029,83 @@ def probe_mcp_server(name: str = Query(..., description="要探测的 server 名
             result = probe_server(s)
             return _ok({"name": s.name, **result})
     return _err(f"MCP server '{name}' 不存在")
+
+
+# ══════════════════════════════════════════════════════════════════════════════
+#  LangGraph 工具 —— 展示执行引擎注册的 BaseTool 与 tool_node
+# ══════════════════════════════════════════════════════════════════════════════
+
+# tool_node 是 graph.py 注册的图节点（执行体在 agent/loop.py），此处展示其静态元信息。
+_TOOL_NODE_META = {
+    "name": "tool_node",
+    "graph_source": "emily-core/emily_core/workitem/langgraph_engine/graph.py",
+    "loop_source": "emily-core/emily_core/workitem/langgraph_engine/agent/loop.py",
+    "description": (
+        "执行 agent_node 暂存的 pending tool_call：调 handler 后将结果追加为 "
+        "tool_result message + StepResult；ask_user 走 interrupt 挂起（WAITING_FOR_INPUT）。"
+    ),
+    "interrupt_tools": ["ask_user"],
+    "routes": [
+        {"condition": "complete_work 已调用（wi_state=summarizing）", "target": "summarizing"},
+        {"condition": "其余情况", "target": "agent_node（继续 ReAct 循环）"},
+    ],
+}
+
+
+@router.get("/langgraph-tools")
+async def get_langgraph_tools():
+    """展示 LangGraph 执行引擎中注册的 BaseTool（BusinessFlowTool 注册表）与 tool_node 节点。"""
+    try:
+        from api.server import get_core
+        core = get_core()
+    except Exception as ex:  # noqa: BLE001
+        return _err(f"获取内核失败：{ex}")
+
+    # ── BaseTool 注册表（BusinessFlowTool：base / business / project 三类）──
+    tools: list[dict] = []
+    categories: dict[str, int] = {}
+    reg = getattr(core, "_business_flow_tools", None)
+    if reg is not None:
+        for t in reg._tools.values():
+            cat = getattr(t, "category", "") or "base"
+            categories[cat] = categories.get(cat, 0) + 1
+            params = t.parameters if isinstance(t.parameters, dict) else {}
+            props = params.get("properties", {}) or {}
+            tools.append({
+                "name": t.name,
+                "description": t.description,
+                "category": cat,
+                "permission": getattr(t, "permission_flag", "all"),
+                "write_mode": getattr(t, "write_mode", "read"),
+                "has_schema": bool(props),
+                "param_count": len(props),
+            })
+    tools.sort(key=lambda x: (x["category"], x["name"]))
+
+    # ── 参数解析器（作为 function-calling tool 暴露，第二层权限）──
+    resolvers: list[dict] = []
+    rreg = getattr(core, "_resolvers", None)
+    if rreg is not None:
+        for r in rreg.list_all():
+            spec = r.spec.get("function", {}) if isinstance(r.spec, dict) else {}
+            resolvers.append({"name": r.name, "description": spec.get("description", "")})
+
+    # ── 控制工具（complete_work / ask_user，绕过权限过滤直接追加给 LLM）──
+    from emily_core.workitem.langgraph_engine.agent.control_tools import CONTROL_TOOL_SPECS
+    control_tools = [
+        {"name": s["function"]["name"], "description": s["function"].get("description", "")}
+        for s in CONTROL_TOOL_SPECS
+    ]
+
+    return _ok({
+        "tool_node": _TOOL_NODE_META,
+        "tools": tools,
+        "categories": categories,
+        "resolvers": resolvers,
+        "control_tools": control_tools,
+        "counts": {
+            "tools": len(tools),
+            "resolvers": len(resolvers),
+            "control": len(control_tools),
+        },
+    })
