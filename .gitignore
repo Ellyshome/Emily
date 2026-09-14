@@ -29,7 +29,8 @@ attachments/
 user_memory/
 journal/
 emily-data/napcat_qq/
-emily-data/postgres_data/
+# PostgreSQL 数据目录（含重命名备份，如 postgres_data_broken_20260914）
+emily-data/postgres_data*/
 
 # SQLite WAL/SHM
 data/*.db-shm
