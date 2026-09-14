@@ -1,0 +1,7 @@
+{
+  "$schema": "https://langgra.ph/schema.json",
+  "dependencies": ["./emily-core"],
+  "graphs": {
+    "session-stub": "./studio_entry.py:make_session_graph"
+  }
+}

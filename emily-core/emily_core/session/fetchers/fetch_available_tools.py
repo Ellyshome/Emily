@@ -1,4 +1,4 @@
-﻿"""fetch_available_tools —— 获取用户可用的 API 工具列表。
+"""fetch_available_tools —— 获取用户可用的 API 工具列表。
 
 被 SessionDataFetcher._sub_fetch_available_tools() 调用。
 也可独立运行：python -m emily_core.session.fetchers.fetch_available_tools --user-id <UUID>
@@ -7,6 +7,7 @@
   - category=base → 全部可用
   - category=business → 检查 sop_allow 或 level >= 3
   - category=project → level >= 5
+  - 访客（L1）→ 不开放 MCP 接入工具
 """
 
 from __future__ import annotations
@@ -23,6 +24,9 @@ DB_URL_DEFAULT = os.getenv(
     "postgresql://emily:emily_secret_2026@localhost:25432/emily"
 )
 
+# MCP 工具在 tool_registry 中的来源标记前缀（见 mcp/manager._sync_to_registry）
+MCP_HANDLER_PREFIX = "mcp:"
+
 
 def fetch(perms: dict) -> list[dict]:
     """获取用户可用的 API 工具列表。
@@ -35,12 +39,26 @@ def fetch(perms: dict) -> list[dict]:
     """
     try:
         from ...repositories.tool_registry_repo import ToolRegistryRepo
+        from ...permission.level import PermissionLevel
+
         level = perms.get("level", 1)
         sop_allow = perms.get("sop_allow", [])
-        return ToolRegistryRepo.get_available(
+        tools = ToolRegistryRepo.get_available(
             level=level,
             sop_allow=sop_allow,
         )
+
+        # 访客（L1）不开放 MCP 接入工具：外部检索/抓取类能力不对访客开放
+        try:
+            if int(level or 1) <= PermissionLevel.GUEST.value:
+                tools = [
+                    t for t in tools
+                    if not str(t.get("handler_module", "")).startswith(MCP_HANDLER_PREFIX)
+                ]
+        except (TypeError, ValueError):
+            pass
+
+        return tools
     except Exception as e:
         logger.error("fetch_available_tools failed: %s", e)
         return []

@@ -49,6 +49,13 @@ class SessionContext:
     user_id: str = ""
     user_name: str = ""
 
+    # ── 通道身份（🔒 冻结；访客同样留痕：通道 + 通道内用户 ID + 显示名）──
+    platform: str = ""
+    im_user_id: str = ""
+    is_guest: bool = False
+    _identity_resolved: bool = field(default=False, repr=False)
+    _db_user_id: str = field(default="", repr=False)   # 可落库的 users.id；空串=访客
+
     # ── 用户属性 ──
     user_position: str = ""           # 🔒 冻结
     created_at: str = ""              # 🔒 冻结
@@ -248,24 +255,28 @@ class SessionContext:
 
     @classmethod
     def create(cls, user_id: str, conversation_id: str,
-               sender_name: str, core) -> "SessionContext":
+               sender_name: str, core,
+               platform: str = "", im_user_id: str = "") -> "SessionContext":
         """一次性全量灌注创建。
 
         流程：
-        1. 构造基础 SessionContext（标识 + 时间）
+        1. 构造基础 SessionContext（标识 + 通道 + 时间）
         2. 调 SessionDataFetcher.fetch() 获取数据
         3. 从 snapshot dict 灌注所有字段
         4. 从 runtime dict 灌注 recent_turns → message_history
         5. SOP 目录摘要
         6. available_skills 初始化自 sop_allow
+        7. 解析身份是否为访客（归档落库时决定 user_id 写 NULL）
         """
-        from .session_data_fetcher import SessionDataFetcher
+        from .session_data_fetcher import SessionDataFetcher, is_sentinel
 
         now = datetime.now(timezone.utc).isoformat()
         ctx = cls(
             conversation_id=conversation_id,
             user_id=user_id,
             user_name=sender_name,
+            platform=platform or "",
+            im_user_id=im_user_id or "",
             current_datetime=now,
             created_at=now,
         )
@@ -280,7 +291,7 @@ class SessionContext:
         # 优先用 DB 解析的显示名（IM 绑定 display_name → username），回退构造时的 sender_name。
         # 由 SessionDataFetcher._resolve_user_name() 解析；sentinel 时计入 errors，此时保留 sender_name。
         resolved_name = snapshot.get("user_name", "")
-        if resolved_name and "user_name" not in errors:
+        if resolved_name and not is_sentinel(resolved_name) and "user_name" not in errors:
             ctx.user_name = resolved_name
         ctx.user_position = snapshot.get("user_position", "")
 
@@ -382,7 +393,65 @@ class SessionContext:
             logger.warning("SessionContext.create: %d data fetch errors for user=%s",
                            len(errors), user_id)
 
+        # 身份解析：users 表查不到 → 访客（归档落库 user_id 写 NULL，避免外键违约）
+        ctx.resolve_identity()
+
         return ctx
+
+    # ══════════════════════════════════════════════════════════════════════════
+    #  通道身份与归档索引（实时建档）
+    # ══════════════════════════════════════════════════════════════════════════
+
+    def resolve_identity(self) -> str:
+        """解析可落库的 users.id：访客（users 表无此人）返回空串。
+
+        `session_archives.user_id` 有指向 users 的外键约束，访客必须写 NULL；
+        否则整条归档索引被外键拒绝，导致该会话在 emy-console「会话归档」中不可见。
+        结果缓存，一次会话只查一次。
+        """
+        if self._identity_resolved:
+            return self._db_user_id
+        self._identity_resolved = True
+        if self.user_id:
+            try:
+                from ..repositories.user_repo import UserRepository
+                if UserRepository.get_by_id(self.user_id):
+                    self._db_user_id = self.user_id
+            except Exception as e:  # noqa: BLE001
+                logger.warning("resolve_identity failed for %s: %s", self.user_id, e)
+        self.is_guest = not self._db_user_id
+        return self._db_user_id
+
+    def register_live_index(self, md_file_path: str = "") -> bool:
+        """实时建档：会话建立即写归档索引（不依赖超时归档触发）。
+
+        Args:
+            md_file_path: 归档正文 md 路径。
+
+        Returns:
+            bool: 是否成功写入索引。
+        """
+        from ..repositories.session_archive_repo import SessionArchiveRepo
+
+        self.resolve_identity()
+        row_id = SessionArchiveRepo.upsert_live(
+            conversation_id=self.conversation_id,
+            user_id=self._db_user_id or None,
+            user_name=self.user_name,
+            platform=self.platform,
+            im_user_id=self.im_user_id,
+            is_guest=self.is_guest,
+            md_file_path=md_file_path,
+            started_at=self.created_at or None,
+        )
+        return bool(row_id)
+
+    def touch_live_index(self, turn_count: int) -> bool:
+        """每轮收口刷新归档索引（轮次 + 最后活跃时间）。"""
+        from ..repositories.session_archive_repo import SessionArchiveRepo
+
+        return SessionArchiveRepo.touch(
+            conversation_id=self.conversation_id, turn_count=turn_count)
 
     # ══════════════════════════════════════════════════════════════════════════
     #  原子化能力格式化辅助方法
@@ -561,26 +630,33 @@ class SessionContext:
             "{project_brief}": _brief_world(self.world_books_json, authorized_node_ids,
                                             include_events=bool(is_mgmt)),
             "{rule_brief}": _brief_rule(self.rule_book_sections, level),
+            # 规则书正文（按等级过滤）：等级化规则（访客接待规范、L5 称呼口径等）
+            # 以规则书为唯一事实源，随用户等级组合载入
+            "{rule_directives}": _rule_directives(self.rule_book_sections, level),
             "{system_brief}": _brief_system(self.system_description_json,
                                             {"level": level, "db_perms": db_perms}),
         }
 
-    async def persist_and_consolidate(self, llm_client=None, md_file_path: str = "", archive_writer=None) -> None:
-        """持久化归档 + 整合 conversation_summary。
+    async def persist_and_consolidate(self, llm_client=None, md_file_path: str = "",
+                                     archive_writer=None, archive_reason: str = "expired") -> None:
+        """归档截断 + 整合 conversation_summary。
 
-        从 SessionAgent._persist_archive() + _consolidate_conversation_summary() 迁入。
+        归档索引已在会话建立时实时落库（`register_live_index`），此处只做
+        「截断」收口：标记 status=truncated + 写 footer，超时不再是归档触发点。
         """
-        await self._persist_archive(md_file_path=md_file_path, archive_writer=archive_writer)
+        await self._persist_archive(md_file_path=md_file_path, archive_writer=archive_writer,
+                                    archive_reason=archive_reason)
         if self.user_id and llm_client:
             await self._consolidate_conversation_summary(llm_client)
 
-    async def _persist_archive(self, md_file_path: str = "", archive_writer=None) -> None:
-        """将 Session 关键数据持久化到 session_archives 表（薄索引模式）。"""
+    async def _persist_archive(self, md_file_path: str = "", archive_writer=None,
+                               archive_reason: str = "expired") -> None:
+        """会话截断：标记归档索引为已截断 + 追加 md footer（薄索引模式）。"""
         try:
             from ..repositories.session_archive_repo import SessionArchiveRepo
 
             # 轮次以归档文档为准：统计 md 正文的「## 第 N 轮」标题。
-            # 不能用 len(message_history)//2 —— 新会话主循环（use_loop=true）下
+            # 不能用 len(message_history)//2 —— 会话主循环下
             # message_history 恒为空，会把轮次统计成 0。
             turn_count = len(self.message_history) // 2
             if archive_writer is not None and md_file_path:
@@ -591,27 +667,22 @@ class SessionContext:
                 except Exception as e:
                     logger.warning("SessionArchive count_turns failed: %s", e)
 
-            # 薄索引：仅存元数据 + md_file_path
-            SessionArchiveRepo.create(
+            SessionArchiveRepo.truncate(
                 conversation_id=self.conversation_id,
-                user_id=self.user_id or None,
-                user_name=self.user_name,
+                archive_reason=archive_reason,
                 turn_count=turn_count,
-                md_file_path=md_file_path,
-                started_at=self.created_at or None,
-                archive_reason="expired",
             )
 
             # 归档时追加 footer 到 md 文件
             if archive_writer is not None and md_file_path:
                 try:
-                    archive_writer.append_footer(md_file_path, turn_count, "expired")
+                    archive_writer.append_footer(md_file_path, turn_count, archive_reason)
                 except Exception as e:
                     logger.warning("SessionArchive append_footer failed: %s", e)
 
             logger.info(
-                "SessionContext archive persisted: conv=%s turns=%d md=%s",
-                self.conversation_id, turn_count, md_file_path or "(none)",
+                "SessionContext truncated: conv=%s turns=%d reason=%s md=%s",
+                self.conversation_id, turn_count, archive_reason, md_file_path or "(none)",
             )
         except Exception as e:
             logger.warning("SessionContext archive persist failed: %s", e)
@@ -992,6 +1063,25 @@ def _brief_world(books_json: str, authorized_node_ids: list[str],
         return "\n\n".join(briefs)
     except Exception as e:
         logger.warning("project_brief render failed: %s", e)
+        return ""
+
+
+def _rule_directives(sections: list[dict], level) -> str:
+    """规则书正文（按 level 过滤后注入 prompt）。
+
+    等级化规则（访客接待规范、L5 称呼口径等）以 `emily-data/rules/规则书.md` 章节
+    frontmatter 的 `applicable_levels` 为唯一事实源，此处只做"按当前等级取正文"，
+    不在代码里硬编码任何规则文案。
+    """
+    if not sections:
+        return ""
+    try:
+        from ..services.rule_book_loader import render_directives
+        return render_directives(sections, int(level or 1))
+    except (TypeError, ValueError):
+        return render_directives(sections, 1)
+    except Exception as e:
+        logger.warning("rule_directives render failed: %s", e)
         return ""
 
 

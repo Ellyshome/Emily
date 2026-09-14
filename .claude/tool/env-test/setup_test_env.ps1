@@ -1,14 +1,25 @@
-# ============================================================
+﻿﻿# ============================================================
 # setup_test_env.ps1 — Emily 测试环境一键工具
 #
 # 用法（在项目根目录 d:\app\Emily 下执行）:
 #   powershell -File .claude\tool\env-test\setup_test_env.ps1                  完整重置+种子+文件+权限+RAG库
-#   powershell -File .claude\tool\env-test\setup_test_env.ps1 -ResetOnly       仅空库重置
+#   powershell -File .claude\tool\env-test\setup_test_env.ps1 -Recreate       删库重建（结构层重置）+ 种子等全流程
+#   powershell -File .claude\tool\env-test\setup_test_env.ps1 -ResetOnly       仅空库重置（TRUNCATE，数据层）
 #   powershell -File .claude\tool\env-test\setup_test_env.ps1 -SeedOnly        仅种子（库已空）
 #   powershell -File .claude\tool\env-test\setup_test_env.ps1 -SkipAdvanced    跳过010高级数据
 #   powershell -File .claude\tool\env-test\setup_test_env.ps1 -SkipMockFiles   跳过磁盘空文件
 #   powershell -File .claude\tool\env-test\setup_test_env.ps1 -SkipFileMgmtTests  跳过文件管理测试数据
 #   powershell -File .claude\tool\env-test\setup_test_env.ps1 -SkipRAG         跳过 RAG 知识库阶段
+#
+# 重置层级（两个正交概念，勿混淆）:
+#   数据层重置 : 默认流程 / -ResetOnly —— 跑 000_reset_all.sql 做 TRUNCATE。
+#                前提是「表结构已存在且健康」；只清数据，不动结构。
+#   结构层重建 : -Recreate —— DROP DATABASE + CREATE DATABASE，交给 emily-core
+#                启动时 create_all 从零建表。用于结构缺失/损坏，或需要回归验证
+#                「从零建表」链路的场景。
+#   ⚠️ 以上两者都不重做 initdb。若 PG 存储层已损坏（WAL / 系统目录不一致），
+#      需停容器 → 删除/改名 emily-data/postgres_data → 重启 emily-postgres
+#      重新 initdb，之后再用本脚本灌种子。
 #
 # 依赖:
 #   - Docker Desktop 运行中（emily-postgres + emily-core + emily-embed 容器）
@@ -16,6 +27,7 @@
 #   - PowerShell 5.1+
 # ============================================================
 param(
+    [switch]$Recreate,
     [switch]$ResetOnly,
     [switch]$SeedOnly,
     [switch]$SkipAdvanced,
@@ -61,6 +73,71 @@ function ExecSql {
         Write-Host $output -ForegroundColor Red
         exit 1
     }
+}
+
+# ============================================================
+# 功能零：结构层重建（DROP DATABASE → CREATE DATABASE → 等自动建表）
+#   与 Invoke-ResetDatabase（TRUNCATE 数据层重置）正交：
+#   用于「结构缺失/损坏」，或需要回归验证「从零建表」链路的场景。
+#   ⚠️ 不重做 initdb：仍沿用现有 postgres 数据目录；存储层已损坏时
+#      需先删除/改名 emily-data/postgres_data 再重启 emily-postgres。
+# ============================================================
+function Invoke-RecreateDatabase {
+    Write-Host "[重建] 结构层重建：DROP + CREATE DATABASE，由 emily-core 从零建表..." -ForegroundColor Yellow
+
+    # 确保 postgres 容器在运行
+    $pgRunning = docker inspect -f '{{.State.Running}}' emily-postgres 2>$null
+    if ($pgRunning -ne 'true') {
+        Write-Host "  [等待] 启动 emily-postgres 容器..." -ForegroundColor DarkGray
+        docker compose -f $COMPOSE_FILE up -d emily-postgres 2>$null | Out-Null
+        Start-Sleep -Seconds 3
+    }
+
+    # 先停 emily-core：释放连接池，否则 DROP DATABASE 会被活动连接阻塞
+    $coreRunning = docker inspect -f '{{.State.Running}}' emily-core 2>$null
+    if ($coreRunning -eq 'true') {
+        docker compose -f $COMPOSE_FILE stop emily-core 2>$null | Out-Null
+    }
+    # 兜底：踢掉残留连接
+    docker exec emily-postgres psql -U emily -d postgres -c "SELECT pg_terminate_backend(pid) FROM pg_stat_activity WHERE datname = 'emily' AND pid <> pg_backend_pid();" 2>$null | Out-Null
+
+    Write-Host "  [执行] DROP DATABASE emily → CREATE DATABASE emily..." -ForegroundColor DarkGray
+    docker exec emily-postgres psql -U emily -d postgres -c "DROP DATABASE IF EXISTS emily;" 2>$null | Out-Null
+    docker exec emily-postgres psql -U emily -d postgres -c "CREATE DATABASE emily OWNER emily;" 2>$null | Out-Null
+    if ($LASTEXITCODE -ne 0) {
+        Write-Host "[ERROR] 重建数据库失败，请检查 emily-postgres 容器状态" -ForegroundColor Red
+        exit 1
+    }
+
+    # 启动 emily-core，等待 bootstrap 自动建表（create_all）
+    Write-Host "  [启动] emily-core 并等待自动建表..." -ForegroundColor DarkGray
+    docker compose -f $COMPOSE_FILE up -d emily-core 2>$null | Out-Null
+
+    $tableCount = 0
+    for ($i = 1; $i -le 30; $i++) {
+        Start-Sleep -Seconds 2
+        # docker exec 可能返回多行（含空行）；取首个非空纯数字行，避免数组转 int 失败
+        $raw = docker exec emily-postgres psql -U emily -d emily -t -A -c "SELECT count(*) FROM information_schema.tables WHERE table_schema='public';" 2>$null
+        $txt = ($raw | Where-Object { $_ -and "$_".Trim() -ne "" } | Select-Object -First 1)
+        if ($txt -and "$txt".Trim() -match '^\d+$') {
+            $tableCount = [int]"$txt".Trim()
+            if ($tableCount -gt 40) { break }
+        }
+    }
+    if ($tableCount -le 40) {
+        Write-Host "  [WARN] 建表未达预期（当前 $tableCount 张），emily-core 最近错误:" -ForegroundColor Yellow
+        docker logs --tail 30 emily-core 2>&1 | Select-String -Pattern "Database init failed|ERROR" | Select-Object -Last 5
+    } else {
+        Write-Host "  [OK] 数据库已重建并自动建表: $tableCount 张" -ForegroundColor Green
+    }
+
+    # 清附件 mock 目录（与 ResetDatabase 口径一致）
+    if (Test-Path "$ATTACHMENTS_ROOT/mock") {
+        Remove-Item "$ATTACHMENTS_ROOT/mock" -Recurse -Force -ErrorAction SilentlyContinue
+        Write-Host "  [OK] mock 附件目录已清空" -ForegroundColor Green
+    }
+
+    Write-Host ""
 }
 
 # ============================================================
@@ -489,13 +566,23 @@ if (-not (Test-Path $COMPOSE_FILE)) {
     exit 1
 }
 
+# -Recreate 会重建空库；-SeedOnly 假定「库空但结构已建」。语义冲突，禁止同时使用。
+if ($Recreate -and $SeedOnly) {
+    Write-Host "[ERROR] -Recreate 与 -SeedOnly 互斥，请二选一" -ForegroundColor Red
+    exit 1
+}
+
 Write-Host "========================================" -ForegroundColor Cyan
 Write-Host "  Emily 测试环境搭建工具" -ForegroundColor Cyan
 Write-Host "  项目: $Project" -ForegroundColor Cyan
 Write-Host "========================================" -ForegroundColor Cyan
 Write-Host ""
 
-if (-not $SeedOnly) {
+if ($Recreate) {
+    # 结构层重建：DROP + CREATE DATABASE，由 emily-core 从零建表。
+    # 重建后库必为空，无需再跑 TRUNCATE，故跳过 Invoke-ResetDatabase。
+    Invoke-RecreateDatabase
+} elseif (-not $SeedOnly) {
     Invoke-ResetDatabase
 }
 

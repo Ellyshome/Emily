@@ -21,7 +21,7 @@ import asyncio
 import logging
 
 from fastapi import APIRouter, File, Form, Query, UploadFile
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 from sqlalchemy import func
 
 logger = logging.getLogger("emily.api.console")
@@ -643,8 +643,42 @@ async def upload_file(
 #  文件管理 —— 库内全量文件清单 + 删除（节点/RAG 进出复用下方既有接口）
 # ══════════════════════════════════════════════════════════════════════════════
 
+def _beijing_ymd(value) -> str:
+    """created_at（UTC，形如 '2026-09-14 02:54:26.652742+00'）→ 北京时间 YYYY-MM-DD。
+
+    使用 UTC 日期直接截取会让凌晨 0-8 点上传的文件显示成前一天，故按北京时间换算。
+    """
+    from datetime import datetime, timezone
+
+    from emily_core.infrastructure.database.models import BEIJING_TZ
+
+    if not value:
+        return ""
+    dt = value
+    if isinstance(dt, str):
+        s = dt.strip().replace(" ", "T", 1)
+        if s.endswith("+00"):
+            s += ":00"  # '+00' → '+00:00'，补齐 ISO 偏移格式
+        try:
+            dt = datetime.fromisoformat(s)
+        except ValueError:
+            return dt[:10]
+    if getattr(dt, "tzinfo", None) is None:
+        dt = dt.replace(tzinfo=timezone.utc)
+    return dt.astimezone(BEIJING_TZ).strftime("%Y-%m-%d")
+
+
+def _container_abspath(storage_path: str, root: str) -> str:
+    """相对存储根的路径 → 容器内绝对路径（如 /app/attachments/mock/...）。"""
+    if not storage_path:
+        return ""
+    base = (root or "").rstrip("/\\")
+    rel = str(storage_path).replace("\\", "/").lstrip("/")
+    return f"{base}/{rel}" if base else rel
+
+
 def _list_files_managed() -> list[dict]:
-    """文件管理清单：文件名/ID/密级/上传人/时间/容量/是否入 RAG/可见节点列表。"""
+    """文件管理清单：文件名/ID/密级/上传人/上传日期/容量/是否入 RAG/可见节点/存放路径。"""
     from emily_core.infrastructure.database.models import (
         File, KnowledgeChunk, NodeAccessibleFile, ProjectNode, User,
     )
@@ -660,6 +694,7 @@ def _list_files_managed() -> list[dict]:
                 File.uploaded_by.label("uploaded_by"),
                 File.created_at.label("created_at"),
                 File.file_size.label("file_size"),
+                File.storage_path.label("storage_path"),
             )
             .filter(File.is_deleted.isnot(True))
             .order_by(File.created_at.desc())
@@ -709,6 +744,11 @@ def _list_files_managed() -> list[dict]:
                     "name": r.node_name or r.node_id,
                 })
 
+    try:
+        _root = str(_get_storage_service()._storage_root)
+    except Exception:  # 存储服务未就绪时不阻断清单
+        _root = ""
+
     return [
         {
             "id": f.id,
@@ -718,9 +758,11 @@ def _list_files_managed() -> list[dict]:
             "uploaded_by": f.uploaded_by or "",
             "uploaded_by_name": (user_map.get(f.uploaded_by, "") if f.uploaded_by else ""),
             "created_at": f.created_at or "",
+            "created_ymd": _beijing_ymd(f.created_at),
             "file_size": int(f.file_size or 0),
             "in_rag": f.id in rag_doc_ids,
             "visible_nodes": nodes_map.get(f.id, []),
+            "storage_abspath": _container_abspath(f.storage_path, _root),
         }
         for f in files
     ]
@@ -963,7 +1005,7 @@ async def prompt_detail(name: str = Query("")):
 class RagIndexRequest(BaseModel):
     file_id: str
     user_id: str = ""
-    backend: str = "api"   # api=远程 Embedding API，local=本地 TEI
+    backend: str = "auto"   # auto=本地优先+API兜底，local=仅本地，api=仅远程 API
 
 
 class RagDeleteRequest(BaseModel):
@@ -974,7 +1016,7 @@ class RagDeleteRequest(BaseModel):
 class RagSearchRequest(BaseModel):
     query: str
     top_k: int = 5
-    backend: str = "api"
+    backend: str = "auto"
     user_id: str = ""
 
 
@@ -994,23 +1036,27 @@ def _get_embedding_config() -> dict:
 def _build_embedding_client(backend: str):
     """按 backend 构造 embedding client，返回 (client, error)。
 
-    client 为 TeiClient（本地）或 RemoteEmbeddingClient（远程 API），
-    二者均暴露 embed(texts) -> list[list[float]]，供入库/查库复用。
+    backend 取值：auto（默认，本地优先 + 远程 API 兜底）/ local（仅本地）/ api（仅远程）。
+    选型规则统一复用 emily_core.infrastructure.embedding.factory，不在此复刻第二份逻辑。
     """
-    cfg = _get_embedding_config()
-    if backend == "local":
-        if not cfg["tei_url"]:
-            return None, "本地 TEI 地址未配置"
-        from emily_core.infrastructure.embedding.tei_client import TeiClient
-        return TeiClient(cfg["tei_url"]), None
-    if backend == "api":
-        if not (cfg["api_url"] and cfg["api_key"] and cfg["api_model"]):
-            return None, "远程 Embedding API 未配置完整（url/key/model）"
-        from emily_core.infrastructure.embedding.remote_client import RemoteEmbeddingClient
-        return RemoteEmbeddingClient(
-            api_url=cfg["api_url"], api_key=cfg["api_key"], model=cfg["api_model"],
-        ), None
-    return None, f"未知 embedding 后端：{backend}"
+    from api.server import get_core
+    from emily_core.infrastructure.embedding.factory import (
+        MODE_LOCAL,
+        MODE_REMOTE,
+        create_embedding_client,
+        normalize_mode,
+    )
+
+    mode = normalize_mode(backend)
+    client = create_embedding_client(get_core().config, mode=mode)
+    if client is not None:
+        return client, None
+
+    if mode == MODE_LOCAL:
+        return None, "本地 TEI 地址未配置"
+    if mode == MODE_REMOTE:
+        return None, "远程 Embedding API 未配置完整（url/key/model）"
+    return None, "本地 TEI 与远程 Embedding API 均不可用"
 
 
 def _prepare_file_chunks(file_id: str) -> dict:
@@ -1124,6 +1170,10 @@ async def rag_backends():
             local_reason = "本地 TEI 地址未配置"
 
         return _ok({
+            "auto": {
+                "available": api_available or local_available,
+                "label": "自动（本地优先，API 兜底）",
+            },
             "api": {
                 "available": api_available,
                 "label": "远程 API（SiliconFlow）",
@@ -1517,18 +1567,16 @@ async def get_llm_trace(
 # ══════════════════════════════════════════════════════════════════════════════
 
 def _get_session_pool():
-    """取当前生效的会话池：新路径 SessionLoopPool 优先（与路径开关一致），回退旧池。
+    """取当前生效的会话池：会话池 SessionLoopPool 为唯一入站渠道，优先返回。
 
-    注：`use_loop=True` 时消息走 SessionLoopPool，旧的 SessionPoolManager 恒为空，
-    必须按开关取池，否则观测到的永远是 0。
+    注：消息一律走 SessionLoopPool，旧的 SessionPoolManager 恒为空，
+    仅在会话池缺席时兜底（旧池仍为 terminate/统计的依赖）。
     """
     from api.server import get_core
     core = get_core()
-    router = getattr(core, "_session_path_router", None)
-    if router is not None and router.use_loop():
-        pool = getattr(core, "_session_loop_pool", None)
-        if pool is not None:
-            return pool
+    pool = getattr(core, "_session_loop_pool", None)
+    if pool is not None:
+        return pool
     return getattr(core, "_session_pool", None)
 
 
@@ -1603,8 +1651,10 @@ def _resolve_archive_file(stored_path: str, archive_dir) -> "object | None":
 
 @router.get("/session-archives")
 def get_session_archives(limit: int = Query(default=200, ge=1, le=1000)):
-    """列出全部会话归档记录（按归档时间倒序），附带正文文件大小。
+    """列出全部会话归档记录（按最后活跃时间倒序），附带正文文件大小。
 
+    索引在会话建立时即实时落库，故进行中的会话同样在列（status=active）；
+    超时只做截断（status=truncated），不再作为归档触发点。
     轮次（turn_count）**以归档正文为准**：从 md 的「## 第 N 轮」标题实时统计，
     避免历史记录中 DB 里恒为 0 的口径偏差。
     """
@@ -1664,6 +1714,11 @@ def get_session_archive_content(archive_id: str):
         "id": archive_id,
         "conversation_id": row.get("conversation_id", ""),
         "user_name": row.get("user_name", ""),
+        "platform": row.get("platform", ""),
+        "im_user_id": row.get("im_user_id", ""),
+        "is_guest": row.get("is_guest", False),
+        "status": row.get("status", ""),
+        "last_active_at": row.get("last_active_at", ""),
         "archived_at": row.get("archived_at", ""),
         "archive_reason": row.get("archive_reason", ""),
         "turn_count": turn_count,
@@ -2109,3 +2164,352 @@ async def get_langgraph_tools():
             "control": len(control_tools),
         },
     })
+
+
+@router.get("/channels")
+async def get_channels():
+    """接入渠道连通性（QQ / 企业微信 / 微信小程序 / 邮箱）—— emy-console「模块能力」只读展示。
+
+    渠道判定口径（实现见 emily_core/services/channel_status_service.py）：
+      - QQ        NapCat 容器 running 且日志中解析出已登录 QQ 号
+      - 企业微信  AstrBot 容器 running 且 wecom 适配器 enable 且日志无凭证错误
+      - 微信小程序 EMILY_WXMP_DOMAIN 已配置且 <域名>/health 可达
+      - 邮箱      IMAP 登录成功 且 收到自发的「系统启动完成」报告邮件
+
+    每个渠道附带 details（详情键值对）与 qrcode（QQ 未登录时的扫码二维码）。
+    """
+    try:
+        from emily_core.services.channel_status_service import get_access_channels
+        channels = await get_access_channels()
+    except Exception as ex:  # noqa: BLE001
+        return _err(f"读取渠道连通性失败：{ex}")
+    return _ok({"channels": channels})
+
+
+@router.get("/channels/qq-qrcode")
+async def get_qq_qrcode():
+    """重新搜索 NapCat 容器内时间最近的 QQ 登录二维码（前端点击二维码时调用）。
+
+    每次调用都会在容器内按文件生成时间重新搜索，返回最新一张二维码（data URL）。
+    """
+    try:
+        from emily_core.services.channel_status_service import get_qq_qrcode as _get_qq_qrcode
+        data = await _get_qq_qrcode()
+    except Exception as ex:  # noqa: BLE001
+        return _err(f"获取 QQ 登录二维码失败：{ex}")
+    return _ok(data)
+
+
+class ChannelParamsUpdate(BaseModel):
+    """渠道参数更新请求体（控制台「点击参数值 → 弹窗替换」的统一提交格式）。
+
+    - ``params``：要替换的字段值；密文字段不回显，留空/不传＝保持原值
+    - ``clear``：要清空的字段名（仅 clearable 字段，如小程序关联域名、企微客服账号）
+    """
+    params: dict[str, str] = {}
+    clear: list[str] = []
+
+
+@router.post("/channels/wxmp-domain")
+async def set_wxmp_domain(req: ChannelParamsUpdate):
+    """录入 / 清除微信小程序渠道的关联域名。
+
+    写入控制台覆盖配置（emily-data/runtime/channel_overrides.json，容器内 /app/runtime），
+    优先于环境变量 EMILY_WXMP_DOMAIN；清空该字段即清除覆盖、回落到环境变量。
+    """
+    cleared = "domain" in req.clear
+    domain = "" if cleared else req.params.get("domain", "")
+    try:
+        from emily_core.services.channel_status_service import set_wxmp_domain as _set_wxmp_domain
+        channel = await _set_wxmp_domain(domain)
+    except ValueError as ex:
+        return _err(str(ex))
+    except Exception as ex:  # noqa: BLE001
+        return _err(f"保存关联域名失败：{ex}")
+    message = "已清除覆盖（回落到环境变量）" if cleared else "已保存并生效"
+    return _ok({"channel": channel, "message": message})
+
+
+@router.post("/channels/wecom-params")
+async def set_wecom_params(req: ChannelParamsUpdate):
+    """录入 / 清空企业微信关键参数（企业 ID / Secret / 回调 Token / 加密密钥 / 客服账号）。
+
+    写入 AstrBot 配置（容器内 /AstrBot/data/cmd_config.json 的 wecom 适配器，写前备份
+    为 cmd_config.json.bak），随后重启 AstrBot 容器使其生效；密文字段留空表示保持原值。
+    返回 saved / cleared（实际改动的字段）与 message，不返回渠道快照
+    —— 重启后适配器状态需数秒才稳定，前端据此延时刷新。
+    """
+    try:
+        from emily_core.services.channel_status_service import set_wecom_params as _set_wecom_params
+        data = await _set_wecom_params(req.params, req.clear)
+    except ValueError as ex:
+        return _err(str(ex))
+    except Exception as ex:  # noqa: BLE001
+        return _err(f"保存企业微信参数失败：{ex}")
+    return _ok(data)
+
+
+# ══════════════════════════════════════════════════════════════════════════════
+#  与 Emily 对话 —— 模拟接入渠道（QQ / 微信客服 / 微信小程序）的直接对话通道
+#
+#  入站消息不走上层薄插件，直接进程内投递给 EmilyCore.handle_message：
+#    · 短路同步回复   → 直接以 reply 事件流式返回
+#    · 异步处理（204）→ 订阅 outbound_bus，把本次会话的 progress / reply /
+#                       file_send 事件按 SSE 帧持续推给控制台
+#  发送者统一取控制台左侧全局「操作人」，会话按「渠道:用户」隔离。
+# ══════════════════════════════════════════════════════════════════════════════
+
+# 聊天附件暂存目录（容器 /app/runtime/chat_uploads，开发态 emily-data/runtime/chat_uploads）
+_CHAT_UPLOAD_SUBDIR = ("/app/runtime/chat_uploads", "emily-data/runtime/chat_uploads")
+
+# 等待异步回复的上限（秒）：Agent 多轮推理耗时较长，与插件侧口径一致
+_CHAT_REPLY_TIMEOUT = 180.0
+
+# 支持模拟接入的渠道（platform 取值与各渠道薄插件一致）
+CHAT_PLATFORMS = {"napcat": "QQ", "wecom": "微信客服", "wxmp": "微信小程序"}
+
+
+def _chat_upload_dir():
+    """聊天附件暂存目录（按三级探测解析，父目录按需创建）。"""
+    from pathlib import Path
+
+    from emily_core.infrastructure.paths import resolve_data_path
+
+    path = Path(resolve_data_path("", _CHAT_UPLOAD_SUBDIR[0], _CHAT_UPLOAD_SUBDIR[1]))
+    path.mkdir(parents=True, exist_ok=True)
+    return path
+
+
+def _chat_loopback_base() -> str:
+    """Core 自取附件的回环地址（本地 HTTP，绕过外部代理直连自身）。"""
+    import os
+
+    base = os.environ.get("EMILY_CHAT_LOOPBACK", "").strip()
+    return (base or "http://127.0.0.1:18080").rstrip("/")
+
+
+def _chat_attachment_type(filename: str) -> int:
+    """按扩展名推断附件类型：2=图片 3=文件 4=语音 5=视频。"""
+    from pathlib import Path
+
+    ext = Path(filename).suffix.lower()
+    if ext in (".png", ".jpg", ".jpeg", ".gif", ".bmp", ".webp"):
+        return 2
+    if ext in (".mp3", ".wav", ".ogg", ".aac", ".m4a"):
+        return 4
+    if ext in (".mp4", ".avi", ".mov", ".mkv", ".webm"):
+        return 5
+    return 3
+
+
+def _sse_frame(event: str, data: dict) -> str:
+    """构造一个 SSE 帧。"""
+    import json
+
+    return f"event: {event}\ndata: {json.dumps(data, ensure_ascii=False)}\n\n"
+
+
+@router.post("/chat/upload")
+async def chat_upload_file(
+    user_id: str = Form(""),
+    file: UploadFile = File(...),
+):
+    """暂存对话附件并返回可被 Core 拉取的地址（模拟 IM 文件消息的 URL）。"""
+    import uuid
+    from pathlib import Path
+
+    if not user_id:
+        return _err("请先选择操作人")
+    data = await file.read()
+    if not data:
+        return _err("文件内容为空")
+
+    token = uuid.uuid4().hex
+    filename = file.filename or "file"
+    local_path = _chat_upload_dir() / f"{token}_{Path(filename).name}"
+    try:
+        await asyncio.to_thread(local_path.write_bytes, data)
+    except Exception as ex:  # noqa: BLE001
+        logger.exception("console.chat_upload failed user_id=%s", user_id)
+        return _err(f"暂存附件失败：{ex}")
+
+    return _ok({
+        "token": token,
+        "url": f"{_chat_loopback_base()}/api/v1/console/chat/attachment/{token}",
+        "file_name": filename,
+        "type": _chat_attachment_type(filename),
+        "size": len(data),
+    })
+
+
+@router.get("/chat/attachment/{token}")
+async def chat_attachment(token: str):
+    """向 Core 提供暂存附件（token 为 32 位十六进制，杜绝路径穿越）。"""
+    import re
+
+    from fastapi.responses import FileResponse
+
+    if not re.fullmatch(r"[0-9a-f]{32}", token or ""):
+        return _err("非法附件标识")
+    matches = list(_chat_upload_dir().glob(f"{token}_*"))
+    if not matches:
+        return _err("附件不存在或已过期")
+    return FileResponse(str(matches[0]), filename=matches[0].name)
+
+
+class ChatSendRequest(BaseModel):
+    """对话发送请求体。"""
+
+    message: str = ""
+    user_id: str = ""
+    platform: str = "napcat"
+    conversation_id: str = ""
+    attachments: list[dict] = Field(default_factory=list)
+
+
+def _chat_event_matches(event_type: str, data: dict, cid: str, msg_id: str) -> bool:
+    """判断出站事件是否属于本次对话（避免多路并发串台）。"""
+    dcid = str(data.get("conversation_id") or "")
+    if event_type == "reply":
+        return dcid == cid or data.get("reply_to_message_id") == msg_id
+    if event_type == "file_send":
+        return dcid == cid
+    if event_type == "progress":
+        # 部分前导消息未携带会话号，控制台为单人使用，按空会话号容忍
+        return (not dcid) or dcid == cid
+    return False
+
+
+@router.post("/chat/send")
+async def chat_send(req: ChatSendRequest):
+    """向 Emily 发送一条消息，并以 SSE 帧流式返回前导消息 / 回复 / 发送文件。"""
+    import uuid
+
+    from fastapi.responses import StreamingResponse
+
+    if not req.user_id:
+        return _err("请先选择操作人")
+    if not (req.message.strip() or req.attachments):
+        return _err("请输入消息或添加附件")
+    if req.platform not in CHAT_PLATFORMS:
+        return _err(f"不支持的接入渠道：{req.platform}")
+
+    from api.server import get_core
+
+    try:
+        core = get_core()
+    except Exception as ex:  # noqa: BLE001
+        return _err(f"Emily 内核未就绪：{ex}")
+
+    from emily_core.adapters.standard.message import StandardMessage
+
+    cid = req.conversation_id or f"{req.platform}:{req.user_id}"
+    msg_id = f"console_chat_{uuid.uuid4().hex[:12]}"
+    event_id = f"console_chat_{uuid.uuid4().hex[:12]}"
+
+    sender_name = req.user_id
+    try:
+        from emily_core.repositories.user_repo import UserRepository
+
+        user = UserRepository.get_by_id(req.user_id)
+        if user and user.username:
+            sender_name = user.username
+    except Exception as ex:  # noqa: BLE001
+        logger.debug("chat_send: load user failed: %s", ex)
+
+    attachments = [a for a in req.attachments if isinstance(a, dict)]
+    msg_type = 1
+    if attachments:
+        first = attachments[0].get("type", 3)
+        msg_type = first if first in (2, 3, 4, 5) else 3
+
+    message = StandardMessage(
+        message_id=msg_id,
+        platform=req.platform,
+        conversation_type="private",
+        conversation_id=cid,
+        sender_id=req.user_id,
+        sender_name=sender_name,
+        content=req.message,
+        is_at_bot=False,
+        msg_type=msg_type,
+        attachments=attachments,
+        event_id=event_id,
+    )
+
+    bus = core.outbound_bus
+    queue = bus.subscribe()
+
+    async def event_stream():
+        import asyncio as _asyncio
+        import time as _time
+
+        try:
+            yield _sse_frame("start", {
+                "conversation_id": cid,
+                "platform": req.platform,
+                "platform_label": CHAT_PLATFORMS[req.platform],
+                "sender_name": sender_name,
+            })
+
+            task = _asyncio.ensure_future(core.handle_message(message, event_id=event_id))
+            waiter = task
+            deadline = _time.monotonic() + _CHAT_REPLY_TIMEOUT
+            last_beat = _time.monotonic()
+            got_reply = False
+
+            while not got_reply:
+                remaining = deadline - _time.monotonic()
+                if remaining <= 0:
+                    yield _sse_frame("timeout", {"conversation_id": cid})
+                    break
+
+                # 保活：长时间无事件时每 15s 送一个 SSE 注释帧，避免链路静默超时
+                now = _time.monotonic()
+                if now - last_beat >= 15.0:
+                    last_beat = now
+                    yield ": keep-alive\n\n"
+
+                getter = _asyncio.ensure_future(queue.get())
+                watchers = {getter} if waiter is None else {getter, waiter}
+                done, _pending = await _asyncio.wait(
+                    watchers, timeout=min(remaining, 1.0), return_when=_asyncio.FIRST_COMPLETED,
+                )
+                if getter not in done:
+                    getter.cancel()
+
+                if waiter is not None and waiter in done:
+                    waiter = None
+                    try:
+                        reply = task.result()
+                    except Exception as ex:  # noqa: BLE001
+                        logger.exception("console.chat_send handle_message failed")
+                        yield _sse_frame("error", {"message": f"处理失败：{ex}"})
+                        break
+                    if reply is not None:
+                        yield _sse_frame("reply", {
+                            "conversation_id": reply.conversation_id,
+                            "content": reply.content,
+                        })
+                        got_reply = True
+                        break
+
+                if getter in done:
+                    event = getter.result()
+                    etype = event.get("type", "message")
+                    data = event.get("data") or {}
+                    if _chat_event_matches(etype, data, cid, msg_id):
+                        yield _sse_frame(etype, data)
+                        if etype == "reply":
+                            got_reply = True
+                            break
+
+            yield _sse_frame("done", {"conversation_id": cid})
+        finally:
+            bus.unsubscribe(queue)
+
+    return StreamingResponse(
+        event_stream(),
+        media_type="text/event-stream",
+        headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
+    )

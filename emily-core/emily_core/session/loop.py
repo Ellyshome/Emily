@@ -90,7 +90,7 @@ class SessionLoop:
         self._last_calls: list = []
         self._turn_capability_names: set = set()
 
-        # 归档：写文件头（fail-open）
+        # 归档：写文件头（fail-open）+ 实时建档（索引在会话建立即落库，不等超时归档）
         if self._archive_writer is not None:
             try:
                 self._archive_md_path = self._archive_writer.ensure_header(
@@ -101,6 +101,10 @@ class SessionLoop:
                 )
             except Exception as e:  # noqa: BLE001
                 logger.warning("SessionLoop archive header failed: %s", e)
+        try:
+            context.register_live_index(md_file_path=self._archive_md_path)
+        except Exception as e:  # noqa: BLE001
+            logger.warning("SessionLoop live archive index failed: %s", e)
 
     def _header_context(self) -> dict:
         c = self.context
@@ -120,6 +124,10 @@ class SessionLoop:
             "rag_available": getattr(c, "rag_available", False),
             "visible_files_count": getattr(c, "visible_files_count", 0),
             "prompt_name": "session_loop.md",
+            # 通道身份：访客（未登记用户）同样留痕
+            "platform": getattr(c, "platform", ""),
+            "im_user_id": getattr(c, "im_user_id", ""),
+            "is_guest": getattr(c, "is_guest", False),
         }
 
     # ══════════════════════════════════════════════════════════════════════
@@ -415,6 +423,16 @@ class SessionLoop:
         except Exception as e:  # noqa: BLE001
             logger.warning("record_turn failed: %s", e)
 
+    async def touch_archive_index(self) -> None:
+        """每轮收口实时刷新归档索引（轮次 + 最后活跃时间）。
+
+        DB I/O 走线程池，不阻塞会话主循环；失败只告警（归档非主流程）。
+        """
+        try:
+            await asyncio.to_thread(self.context.touch_live_index, self._turn_counter)
+        except Exception as e:  # noqa: BLE001
+            logger.warning("SessionArchive live index touch failed: %s", e)
+
     def _maybe_compact(self) -> None:
         if self._llm is None or self._compacting:
             return
@@ -451,12 +469,16 @@ class SessionLoop:
             reply_to_message_id=msg_id,
         )
 
-    async def archive(self) -> None:
-        """会话注销归档（复用 SessionContext.persist_and_consolidate）。"""
+    async def archive(self, archive_reason: str = "expired") -> None:
+        """会话截断（TTL 超时 / 手动终止）。
+
+        归档索引在会话建立时已实时落库，此处只做截断收口：
+        追加 md footer + 标记 status=truncated + 整合个人摘要。
+        """
         try:
             await self.context.persist_and_consolidate(
                 llm_client=self._llm, md_file_path=self._archive_md_path,
-                archive_writer=self._archive_writer,
+                archive_writer=self._archive_writer, archive_reason=archive_reason,
             )
         except Exception as e:  # noqa: BLE001
             logger.warning("SessionLoop archive warning: %s", e)
@@ -538,6 +560,8 @@ class SessionLoopPool:
             context = SessionContext.create(
                 user_id=user_id, conversation_id=message.conversation_id,
                 sender_name=getattr(message, "sender_name", "") or "", core=core,
+                platform=getattr(message, "platform", "") or "",
+                im_user_id=getattr(message, "sender_id", "") or "",
             )
             llm = getattr(core, "_llm_client", None)
             path_router = getattr(core, "_session_path_router", None)
@@ -580,7 +604,11 @@ class SessionLoopPool:
                 logger.warning("SessionLoopPool sweeper error: %s", e)
 
     def sweep_expired(self) -> int:
-        """按 TTL 归档并移除过期会话（memory-only 池，无 WorkItem 任务段判定）。"""
+        """按 TTL 截断并移除过期会话（memory-only 池，无 WorkItem 任务段判定）。
+
+        超时只做「截断」（写 footer + 标记 status=truncated），归档索引早在
+        会话建立时已实时落库，故此处不再承担归档触发职责。
+        """
         import time
         now = time.time()
         ttl = self._ttl()
@@ -589,12 +617,32 @@ class SessionLoopPool:
             entry = self._sessions.pop(cid, None)
             if entry is not None:
                 try:
-                    asyncio.ensure_future(entry.loop.archive())
+                    asyncio.ensure_future(entry.loop.archive(archive_reason="expired"))
                 except Exception as e:  # noqa: BLE001
                     logger.warning("SessionLoopPool sweep archive failed for %s: %s", cid, e)
         if expired:
             logger.info("SessionLoopPool swept %d expired session(s)", len(expired))
         return len(expired)
+
+    async def terminate(self, conversation_id: str, archive_reason: str = "terminated") -> bool:
+        """强制终止指定会话：截断归档后从池中移除。
+
+        Args:
+            conversation_id: 会话 ID。
+            archive_reason: 截断原因（terminated=手动终止）。
+
+        Returns:
+            bool: 池中是否存在该会话（存在即已终止）。
+        """
+        entry = self._sessions.pop(conversation_id, None)
+        if entry is None:
+            return False
+        try:
+            await entry.loop.archive(archive_reason=archive_reason)
+        except Exception as e:  # noqa: BLE001
+            logger.warning("SessionLoopPool terminate archive failed: %s", e)
+        logger.info("SessionLoopPool terminated: conv=%s", conversation_id)
+        return True
 
     @property
     def size(self) -> int:

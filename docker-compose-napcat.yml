@@ -44,14 +44,17 @@ services:
       - EMILY_LLM_API_KEY=${EMILY_LLM_API_KEY:-}
       - EMILY_LLM_BASE_URL=${EMILY_LLM_BASE_URL:-https://api.deepseek.com}
       - EMILY_LLM_MODEL=${EMILY_LLM_MODEL:-deepseek-v4-flash}
-      # ── RAG (pgvector + 本地 TEI Embedding) ──
+      # ── RAG (pgvector + Embedding 后端) ──
       - EMILY_KB_ENABLED=true
-      # ── 远程 SiliconFlow Embedding（已启用）──
+      # 后端选择：auto（默认）= 本地 TEI 优先、不可用时回落远程 API；
+      # local / remote 为显式指定（不兜底）。选型见 emily_core/infrastructure/embedding/factory.py
+      - EMILY_EMBEDDING_MODE=${EMILY_EMBEDDING_MODE:-auto}
+      # 本地 TEI 地址默认即 http://emily-embed:80（Config.tei_url），如需覆盖取消下行注释
+      # EMILY_TEI_URL=http://emily-embed:80
+      # ── 远程 SiliconFlow Embedding（auto 模式下作为本地不可用时的兜底）──
       - EMILY_EMBEDDING_API_URL=${EMILY_EMBEDDING_API_URL:-https://api.siliconflow.cn/v1/embeddings}
       - EMILY_EMBEDDING_API_KEY=${SILICONFLOW_API_KEY:-}
       - EMILY_EMBEDDING_MODEL=${EMILY_EMBEDDING_MODEL:-BAAI/bge-m3}
-      # ── 本地 TEI 容器（临时停用，改用远程 SiliconFlow）──
-      # EMILY_TEI_URL=http://emily-embed:80
       # ── VLM OCR（共用 SiliconFlow Key）──
       - EMILY_VLM_API_URL=${EMILY_VLM_API_URL:-https://api.siliconflow.cn/v1/chat/completions}
       - EMILY_VLM_API_KEY=${SILICONFLOW_API_KEY:-}
@@ -59,8 +62,12 @@ services:
       - EMILY_STORAGE_ROOT=/app/attachments
       - EMILY_HOOK_CONFIG_PATH=/app/config/hook_config.json
       - EMILY_API_TOKEN=${EMILY_API_TOKEN:-}
-      # ── 会话路径灰度开关（默认关闭 = 走旧派发链路）──
-      - EMILY_SESSION_LOOP_ENABLED=${EMILY_SESSION_LOOP_ENABLED:-false}     # 新会话主循环
+      # 微信小程序渠道依赖的对外域名（已备案 HTTPS 域名，指向 wechat-gateway），
+      # 供 emy-console「渠道连通性」探测 /health；不填则显示未配置
+      - EMILY_WXMP_DOMAIN=${EMILY_WXMP_DOMAIN:-}
+      # 邮箱渠道：SMTP 发信（启动报告自发）+ IMAP 收信（渠道连通性校验）
+      - EMILY_EMAIL_IDKEY=${EMILY_EMAIL_IDKEY:-}
+      - EMILY_EMAIL_PASSWORD=${EMILY_EMAIL_PASSWORD:-}
       # NAPCAT_WEBUI_TOKEN 现已动态从 NapCat 容器读取（docker/client.py _fetch_napcat_webui_token），
       # 不再依赖环境变量硬编码。保留此行仅当 Docker API 不可用时回退使用：
       - NAPCAT_WEBUI_TOKEN=${NAPCAT_WEBUI_TOKEN:-}
@@ -87,6 +94,8 @@ services:
       - ./emily-data/journal:/app/journal
       - ./emily-data/session_archives:/app/session_archives
       - ./Issues/测试用例:/app/test_cases:ro                # 测试用例库（emy-console 只读展示）
+      # 控制台运行期可改配置（渠道覆盖等）：/app/config 为只读，故单独读写挂载
+      - ./emily-data/runtime:/app/runtime
       # ── 代码（只读，开发阶段可热更新）──
       - ./emily-core/emily_core:/app/emily_core:ro
       - ./emily-core/api:/app/api:ro

@@ -1,7 +1,7 @@
 # 13 MCP 工具与外部接入
 
 > **本类目标**：验证外部 MCP（Model Context Protocol）工具从**接入 → 发现 → 注册 → 可见 → 对话触发**全链路可用，并覆盖可见范围、档位门禁与配置变更边界。
-> **用例数**：9　|　**编号前缀**：`MCP-*`
+> **用例数**：10　|　**编号前缀**：`MCP-*`
 > **执行通道**：A（对话模拟）+ B（HTTP 接口）+ E（库/日志核对）
 > **来源**：2026-09-13 `web_search`（DuckDuckGo）接入联调实录 + 代码锚点（见 §五）
 > **建立日期**：2026-09-13
@@ -31,12 +31,13 @@
 
 ---
 
-## 二、注册与可见（`MCP-03`~`04`）
+## 二、注册与可见（`MCP-03`~`04`、`MCP-10`）
 
 | 编号 | 目标特性 | 操作 | 预期（判定标准） | 断言 | 来源 |
 |------|---------|------|----------------|------|------|
 | MCP-03 | **工具写入可见集（双写）** | `SELECT id, category, permission_flag, is_active, handler_module FROM tool_registry WHERE handler_module LIKE 'mcp:%'` | 3 行 `is_active=t`；`category`/`permission_flag` 与 server 配置一致（`base`/`all`）；`handler_module=mcp:web_search` | db_effect | 2026-09-13 联调（**回归重点**） |
 | MCP-04 | **LLM 装配可见** | 发一条普通消息，核对装配日志与 `llm_trace.jsonl` | 启动日志 `load_mcp_tools: 3 个 MCP 工具已注册`；装配日志 `build_tool_specs: 43 business tools + 1 resolvers + 2 control = 46 specs`（= 40 内置 + 3 MCP）；trace 的 `tools` 列表含 `ddg_search` | log_contains | 2026-09-13 联调（**回归重点**） |
+| MCP-10 | **访客（L1）不可见 MCP 工具**（装配断言） | `docker exec emily-core python -c "from emily_core.session.fetchers.fetch_available_tools import fetch; print([t['api_id'] for t in fetch({'level':1})])"`，并与 `level=3` / `level=5` 对照 | `level=1` 结果**不含** `ddg_search` / `ddg_fetch_content` / `ddg_expand_link`；`level=3` / `level=5` **仍含**三者（不误伤内部档位）。实现口径：`tool_registry.handler_module LIKE 'mcp:%'` 标记 + `level <= L1` 过滤 | db_effect | 2026-09-14 修复（访客无 MCP 调用权限；与 05 类 FR-G10 同源） |
 
 ---
 
@@ -45,8 +46,8 @@
 | 编号 | 目标特性 | 用户 | 提问 | 预期（判定标准） | 断言 | 来源 |
 |------|---------|------|------|----------------|------|------|
 | MCP-05 | 普通对话触发联网检索（管理档） | 王建国(L6) | 帮我上网搜索一下：2026年建筑业有哪些新政策？ | 回复为**联网检索结论**（含具体政策/文件名等网上信息）；`llm_trace` 出现 `ddg_search` 的 tool_call；**不得**回复"我这边没有联网搜索的能力" | reply_contains, log_contains | 2026-09-13 联调 |
-| MCP-06 | 普惠只读档位触发（低权限） | 周文斌(L1) | 帮我上网搜索一下：装配式建筑最新的国家标准有哪些？ | 同 MCP-05：L1 档位也能触发 `ddg_search`（因 `category=base` + `write_mode=read` 登记兜底白名单）；**无**"档位不可用"拒绝 | reply_contains | 2026-09-13 联调 |
-| MCP-07 | 只读 MCP 工具过档位门禁 | 任意档位 | 同 MCP-05，检索 `ddg_*` 调用日志 | 工具执行**不被** `FallbackPolicy` 拦截；回复中**不出现**"该操作在当前档位不可用" | permission_block（反向） | 2026-09-13 联调 |
+| MCP-06 | **口径变更：访客（L1）无 MCP 权限** | 周文斌(L1) / 未登记访客 | 帮我上网搜索一下：装配式建筑最新的国家标准有哪些？ | **不再触发** `ddg_search`：访客可见能力中**不含**任何 `handler_module=mcp:*` 的工具（见 MCP-10）；回复为礼貌的"暂不便提供/无法联网检索"，**不出现**联网检索结论与外部 URL。另见 05 类 FR-G11（访客话术，≤100 字） | permission_block | 2026-09-14 口径变更（原预期为"L1 也能触发"，已被"访客无 MCP 调用权限"取代） |
+| MCP-07 | 只读 MCP 工具过档位门禁 | L2 及以上（持有 MCP 工具的档位；L1 访客已不可见，见 MCP-06/10） | 同 MCP-05，检索 `ddg_*` 调用日志 | 工具执行**不被** `FallbackPolicy` 拦截；回复中**不出现**"该操作在当前档位不可用" | permission_block（反向） | 2026-09-13 联调 |
 
 > **MCP-07 反向用例**：当 `write_mode != read`（写语义 MCP 工具）时，普通对话直调**应被拒**（"该操作在当前档位不可用，请走对应标准流程或联系管理员"），须走 SOP 专属流程。当前现网无写语义 MCP server，本项属**实现推导**，构造写 server 后补测。
 
@@ -69,6 +70,7 @@
 | 内存注册 + 双写 | `emily_core/mcp/manager.py` `load_mcp_tools` / `_sync_to_registry` | 注册进 `_business_flow_tools` 同时 upsert `tool_registry`；`handler_module=mcp:<server>` |
 | 可见性过滤 | `emily_core/workitem/langgraph_engine/agent/tool_adapter.py` `build_tool_specs` | fail-closed：仅"内存有 **且** 在 `session_api_ids`（来自 DB）"才暴露 |
 | 可见范围规则 | `emily_core/repositories/tool_registry_repo.py` `get_available` | base→全员；business→all/write(L3+)/admin(L5+)；project→仅 L5-L6 |
+| 访客排除 MCP | `emily_core/session/fetchers/fetch_available_tools.py` `fetch` | `level <= L1` 时剔除 `handler_module LIKE 'mcp:%'` 的工具（FR-G10 / MCP-10 的实现口径） |
 | 档位门禁 | `emily_core/workitem/langgraph_engine/agent/fallback_policy.py` `resolve` / `register_dynamic_read_tools` | 只读 MCP 工具登记进兜底白名单；写类受 `assert_write_allowed` 约束 |
 | 一致性检查 | `emily_core/infrastructure/tools_consistency.py` `_check_tool_registry` | V13 排除 `handler_module=mcp:*`，避免动态工具误报 |
 
@@ -98,9 +100,12 @@ docker exec emily-postgres psql -U emily -d emily -c "SELECT id, category, permi
 docker logs emily-core --since 3m 2>&1 | Select-String "load_mcp_tools|build_tool_specs: 43"
 docker exec mitmproxy sh -c "grep -c ddg_search /app/logs/llm_trace.jsonl"
 
-# MCP-05/06 对话触发（通道 A）
+# MCP-05/06 对话触发（通道 A）—— MCP-06 自 2026-09-14 起为反向断言（访客无 MCP 权限）
 uv run python .claude/skills/emy-test/cli.py --managed --llm --message "帮我上网搜索一下：2026年建筑业有哪些新政策？" --sender "王建国"
 uv run python .claude/skills/emy-test/cli.py --managed --llm --message "帮我上网搜索一下：装配式建筑最新的国家标准有哪些？" --sender "周文斌"
+
+# MCP-10 访客不可见 MCP 工具（通道 E：装配断言，对照 L1 / L3 / L5）
+docker exec emily-core python -c "from emily_core.session.fetchers.fetch_available_tools import fetch; print('L1', [t['api_id'] for t in fetch({'level':1})]); print('L3', [t['api_id'] for t in fetch({'level':3}) if t['api_id'].startswith('ddg_')])"
 
 # MCP-09 一致性检查
 docker exec -e PYTHONPATH=/app -e EMILY_DATABASE_URL=postgresql://emily:emily_secret_2026@emily-postgres:5432/emily emily-core python /app/scripts/check_tools_consistency.py
@@ -109,3 +114,10 @@ docker exec -e PYTHONPATH=/app -e EMILY_DATABASE_URL=postgresql://emily:emily_se
 docker exec emily-core find /app/emily_core -name '__pycache__' -type d -exec rm -rf {} +
 docker compose -f docker-compose-napcat.yml restart emily-core
 ```
+
+## 八、口径变更记录
+
+| 日期 | 用例 | 变更 | 原因 |
+|------|------|------|------|
+| 2026-09-14 | `MCP-06` | 预期反转：L1 访客**不再**可触发 `ddg_search` | 业务口径变更——**访客用户不应有 MCP 调用权限**；实现见 `fetch_available_tools.fetch` 的 L1 过滤，新增装配断言 `MCP-10` 与 05 类 `FR-G10` |
+| 2026-09-14 | `MCP-07` | 适用面由「任意档位」收窄为「L2 及以上」 | 同上：L1 已不持有 MCP 工具，该用例不再覆盖 L1 |

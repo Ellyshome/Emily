@@ -286,12 +286,15 @@ tasks:
       - echo "✅ 已清理所有未使用的 Docker 资源"
 
   clean:
-    desc: 停止服务并清理数据卷（危险，会删除数据库）
+    desc: 停止服务并移除容器（⚠️ 不会删除数据库：库在 host bind mount）
     vars:
       PROFILE: '{{.PROFILE | default "minimal"}}'
     cmds:
       - |
-        echo "⚠️  此操作将删除容器和数据卷（数据库数据将丢失！）"
+        echo "⚠️  此操作将停止服务并移除容器（docker compose down -v）"
+        echo "    注意：数据库位于 host bind mount ./emily-data/postgres_data，"
+        echo "    down -v 只清理 Docker 管理的卷，不会删除它 —— 库结构与数据保留。"
+        echo "    如需真正重建数据库：.claude/tool/env-test/setup_test_env.ps1 -Recreate"
         echo "按 Ctrl+C 取消，或等待 5 秒继续..."
         sleep 5
         case "{{.PROFILE}}" in
@@ -300,7 +303,7 @@ tasks:
           all)     docker compose -f {{.COMPOSE_NAPCAT}} down -v ;;
           *)       echo "未知配置: {{.PROFILE}}" ; exit 1 ;;
         esac
-        echo "✅ 已停止服务并清理数据卷"
+        echo "✅ 已停止服务并移除容器（数据库保留）"
 
   shell:
     desc: 进入 emily-core 容器 shell
@@ -350,7 +353,7 @@ tasks:
         echo "    task health             全面健康检查"
         echo "    task cold-start         冷启动检查"
         echo "    task shell              进入 core 容器"
-        echo "    task clean PROFILE=minimal   停止并清理所有数据"
+        echo "    task clean PROFILE=minimal   停止并移除容器（不删数据库）"
         echo "    task prune              清理 Docker 系统资源"
         echo "    task env:check          环境检查"
         echo ""

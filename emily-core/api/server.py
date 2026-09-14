@@ -39,6 +39,15 @@ async def lifespan(app: FastAPI):
 
     logger.info("Emily Core API starting — bootstrapping EmilyCore...")
     _core = bootstrap.init()
+
+    # Embedding 后端启动探测（auto 模式：本地优先、远程 API 兜底）。
+    # 提前解析可让启动日志明确当前生效后端，并避免首次检索才付探测成本。
+    _embedding_client = getattr(_core, "_tei_client", None)
+    if _embedding_client is not None and hasattr(_embedding_client, "resolve"):
+        try:
+            logger.info("Embedding backend resolved: %s", await _embedding_client.resolve())
+        except Exception as e:
+            logger.warning("Embedding backend resolve failed: %s", e)
     # 图检查点启动恢复：验证 Postgres 可达 + 幂等建表 + 清扫超期残留
     try:
         # 注：图是懒构建的（首次 handle_message 才建），须先触发初始化，

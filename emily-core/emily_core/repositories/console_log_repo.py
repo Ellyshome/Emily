@@ -50,8 +50,9 @@ LOG_MODULES = [
          id_field="id", time="created_at", user="user_id",
          summary="CONCAT_WS(' | ', event_type, '消息数' || message_count)"),
     dict(key="session_archives", label="会话归档", table="session_archives",
-         id_field="id", time="archived_at", user="user_id",
-         summary="CONCAT_WS(' | ', archive_reason, '轮次' || turn_count, user_name)"),
+         id_field="id", time="last_active_at", user="user_id",
+         summary="CONCAT_WS(' | ', NULLIF(archive_reason, ''), '轮次' || turn_count, "
+                 "user_name, CASE WHEN is_guest THEN '访客' ELSE '' END)"),
     dict(key="scheduler_job_logs", label="调度器作业", table="scheduler_job_logs",
          id_field="id", time="created_at", user=None,
          summary="CONCAT_WS(' | ', action_type, CASE WHEN success THEN '成功' ELSE '失败' END, summary)"),

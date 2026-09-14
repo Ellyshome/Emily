@@ -1,4 +1,4 @@
-﻿{
+{
   "config_version": 2,
   "platform_settings": {
     "unique_session": false,
@@ -48,6 +48,7 @@
     "enable": false,
     "default_provider_id": "",
     "fallback_chat_models": [],
+    "request_max_retries": 5,
     "default_image_caption_provider_id": "",
     "image_caption_prompt": "Please describe the image using Chinese.",
     "provider_pool": [
@@ -61,6 +62,7 @@
     "websearch_brave_key": [],
     "websearch_baidu_app_builder_key": "",
     "websearch_firecrawl_key": [],
+    "websearch_exa_key": [],
     "web_search_link": false,
     "display_reasoning_text": false,
     "identifier": false,
@@ -156,6 +158,8 @@
     "group_message_max_cnt": 300,
     "image_caption": false,
     "image_caption_provider_id": "",
+    "group_message_history_enable": false,
+    "group_message_history_max_cnt": 700,
     "active_reply": {
       "enable": false,
       "method": "possibility_reply",
@@ -227,11 +231,11 @@
       "id": "Emily",
       "type": "wecom",
       "enable": true,
-      "corpid": " ww1994648105a74a7c",
-      "secret": "111",
+      "corpid": "ww1994648105a74a7c",
+      "secret": "ZArCXPajsradIITDqVUykYMVvgC1Bzaiu18zMxQxNws",
       "token": "dS8tnYG7xFgGCDBJqR9BgPjNp8O",
       "encoding_aes_key": "1shr2l2ky5xDK8KCIgSvFltmfYDp6DgqpciQj78FsGc",
-      "kf_name": "emily",
+      "kf_name": "",
       "api_base_url": "https://qyapi.weixin.qq.com/cgi-bin/",
       "unified_webhook_mode": true,
       "webhook_uuid": "c416608290f44816",

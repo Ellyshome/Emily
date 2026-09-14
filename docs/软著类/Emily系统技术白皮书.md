@@ -1808,7 +1808,8 @@ graph TD
 ### 9.4 卸载步骤
 
 1. **容器化部署卸载**：
-   - 执行 `docker compose down -v` 停止并移除所有容器、网络和数据卷
+   - 执行 `docker compose down -v` 停止并移除所有容器、网络和 Docker 管理的卷
+   - ⚠️ 数据库存放于宿主机目录（bind mount `./emily-data/postgres_data`），`down -v` **不会**删除它；如需彻底清理，须手动删除该目录
    - 删除部署目录及相关配置文件
 2. **单机部署卸载**：
    - 停止服务进程

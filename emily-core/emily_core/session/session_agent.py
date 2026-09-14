@@ -315,7 +315,7 @@ class SessionAgent:
         self._last_turn_workitems = []
 
         # ① 短路指令
-        fast = self._try_fast_reply(content, message.sender_name)
+        fast = self._try_fast_reply(content)
         if fast is not None:
             return self._reply(message, fast)
 
@@ -1171,13 +1171,18 @@ class SessionAgent:
         )
 
     @staticmethod
-    def _try_fast_reply(content: str, sender_name: str = "") -> str | None:
+    def _try_fast_reply(content: str) -> str | None:
+        """确定性短路直答（零 LLM）。
+
+        问候语不带称呼：本路径没有提示词，读不到规则书里的等级化称呼口径
+        （如 L5「姓氏+总」），故一律用无称呼的固定文案；带称呼的回复统一由
+        主循环按规则书生成。
+        """
         text = content.strip().lower().replace(" ", "")
         if not text:
             return None
         if text in _SIMPLE_GREETINGS:
-            greeting = f"你好呀，{sender_name}！" if sender_name else "你好呀！"
-            return f"{greeting} 有什么需要帮忙的吗？"
+            return "你好呀！ 有什么需要帮忙的吗？"
         if text in _SIMPLE_THANKS or any(k in text for k in ["谢谢", "感谢", "thank"]):
             return "不客气！随时为你效劳。"
         if text in _SIMPLE_FAREWELLS:

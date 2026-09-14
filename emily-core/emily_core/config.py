@@ -107,13 +107,18 @@ class Config:
     kb_enabled: bool = False
     """是否启用知识库 RAG 功能"""
 
-    tei_url: str = "http://tei:80"
-    """TEI embedding 服务地址"""
+    tei_url: str = "http://emily-embed:80"
+    """本地 TEI embedding 服务地址（本地优先路径）。
+    容器内为 compose 服务名 emily-embed；宿主机脚本可经 EMILY_TEI_URL 覆盖。"""
 
-    # ---- 远程 Embedding API（替代本地 TEI）----
+    embedding_mode: str = "auto"
+    """Embedding 后端选择：auto（默认，本地优先 + 远程 API 兜底）/ local（仅本地，不兜底）
+    / remote（仅远程 API，不兜底）。选型实现见 infrastructure/embedding/factory.py。"""
+
+    # ---- 远程 Embedding API（本地不可用时的兜底）----
     embedding_api_url: str = ""
     """远程 Embedding API 地址（OpenAI 兼容 /v1/embeddings）。
-    设置后优先使用远程 API，不使用本地 TEI 容器。"""
+    auto 模式下仅当本地 TEI 不可用时使用；embedding_mode=remote 时才强制使用。"""
     embedding_api_key: str = ""
     """远程 Embedding API 密钥"""
     embedding_model: str = ""
@@ -204,17 +209,12 @@ class Config:
     orchestrator_max_dynamic_wis: int = 2
     """单轮动态追加 WI 上限（跨域检索编排；达到上限后 on_wi_done 返回空）"""
 
-    # ── 会话主循环（新路径，M8 灰度开关）──
-    session_loop_enabled: bool = False
-    """新会话主循环总开关（默认 False = 走旧派发路径）。
-    True 时 EmilyCore.handle_message 分派到 SessionLoopPool（并行模块，旧链路原样保留）。
-    可通过环境变量 EMILY_SESSION_LOOP_ENABLED 覆盖。"""
-
     session_loop_sop_allowlist: str = ""
     """新循环的 SOP 能力准入清单（逗号分隔短形编号，如 "SOP-002-REC,SOP-005-QRY"）。
     空 = 全部放开。未列入的 SOP 能力不进入新循环的能力目录（灰度逐 SOP 放开）。"""
 
-    # 会话编排图开关已于退役中移除：编排图（session/ 编排内核）为唯一入站渠道，
+    # 会话主循环开关（session_loop_enabled）与会话编排图开关（session_graph_enabled）
+    # 均已于退役中移除：会话池（session/ 编排内核）为唯一入站渠道，
     # 关闭即回退的旧链路与开关一并作废（见 需求/LangGraph编排内核化/..._退役记录_V1.md）
 
     capability_call_timeout_seconds: int = 120
