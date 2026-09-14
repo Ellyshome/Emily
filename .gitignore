@@ -28,7 +28,8 @@ notebooks/
 attachments/
 user_memory/
 journal/
-emily-data/napcat_qq/nt_qq/global/nt_data/Log/
+emily-data/napcat_qq/
+emily-data/postgres_data/
 
 # SQLite WAL/SHM
 data/*.db-shm
