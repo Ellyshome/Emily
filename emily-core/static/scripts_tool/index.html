@@ -46,6 +46,33 @@
 
     <!-- 右侧：资源展示 + 参数表单 + 结果 -->
     <main class="main">
+        <!-- 与 Emily 对话（点左侧「与 Emily 对话」条目后显示）：模拟接入渠道直连对话 -->
+        <section id="chat-panel" class="upload-panel" hidden>
+            <div class="upload-panel-head">
+                <h2>与 Emily 对话</h2>
+                <div class="chat-channel-bar">
+                    <label for="chat-channel-select">接入渠道</label>
+                    <select id="chat-channel-select" title="选择模拟接入的渠道">
+                        <option value="napcat">QQ</option>
+                        <option value="wecom">微信客服</option>
+                        <option value="wxmp">微信小程序</option>
+                    </select>
+                    <span id="chat-status" class="upload-status"></span>
+                </div>
+                <code class="module-cmd"></code>
+            </div>
+            <div class="chat-body">
+                <div class="chat-messages" id="chat-messages"></div>
+                <div class="chat-pending" id="chat-pending" hidden></div>
+                <div class="chat-input-row">
+                    <input type="file" id="chat-file-input" multiple hidden>
+                    <button type="button" id="chat-attach-btn" class="chat-attach-btn" title="发送文件">附件</button>
+                    <textarea id="chat-input" rows="1" placeholder="输入消息，Enter 发送（Shift+Enter 换行）"></textarea>
+                    <button type="button" id="chat-send-btn" class="chat-send-btn">发送</button>
+                </div>
+            </div>
+        </section>
+
         <!-- 资源展示（点左侧「资源展示」条目后显示） -->
         <section class="resource-display" hidden>
             <div class="resource-display-head">
@@ -118,6 +145,7 @@
                                     <th class="sortable" data-sort-key="size">容量<span class="sort-ind"></span></th>
                                     <th>RAG</th>
                                     <th>可见节点</th>
+                                    <th>存放路径</th>
                                 </tr>
                             </thead>
                             <tbody id="file-mgr-tbody"></tbody>
@@ -284,7 +312,7 @@
             <div id="project-event-detail" class="detail-frame" hidden></div>
         </section>
 
-        <!-- 会话池（点左侧「会话池」条目后显示）：活跃 Session 观测（只读） -->
+        <!-- 会话池（上框）：「会话池 / 归档」条目选中时显示，活跃 Session 观测（只读） -->
         <section id="session-pool-panel" class="upload-panel" hidden>
             <div class="upload-panel-head">
                 <h2>会话池</h2>
@@ -308,22 +336,22 @@
             <div id="session-pool-messages" class="detail-frame" hidden></div>
         </section>
 
-        <!-- 会话归档（点左侧「会话归档」条目后显示）：归档索引 + 对话全文（只读） -->
+        <!-- 会话归档（下框）：归档索引；点某行时在其下方追加详情 frame 承载对话全文（只读） -->
         <section id="session-archive-panel" class="upload-panel" hidden>
             <div class="upload-panel-head">
                 <h2>会话归档</h2>
-                <code class="module-cmd"></code>
                 <span id="session-archive-status" class="upload-status"></span>
             </div>
             <div class="node-table-body">
                 <table class="node-table">
                     <thead>
                         <tr>
-                            <th class="sortable" data-sort-key="archived_at">归档时间<span class="sort-ind"></span></th>
+                            <th class="sortable" data-sort-key="last_active_at">最近活跃<span class="sort-ind"></span></th>
                             <th class="sortable" data-sort-key="user_name">用户<span class="sort-ind"></span></th>
+                            <th>通道</th>
                             <th class="sortable" data-sort-key="conversation_id">会话ID<span class="sort-ind"></span></th>
                             <th class="sortable" data-sort-key="turn_count">轮次<span class="sort-ind"></span></th>
-                            <th>原因</th>
+                            <th>状态</th>
                             <th>正文文件</th>
                         </tr>
                     </thead>
@@ -538,6 +566,44 @@
             <div id="mcp-server-list" class="mcp-server-list"><div class="hint">加载中…</div></div>
         </section>
 
+        <!-- LangGraph 工具（点左侧「LangGraph 工具」条目后显示）：tool_node + 已注册 BaseTool（只读） -->
+        <section id="langgraph-tools-panel" class="upload-panel" hidden>
+            <div class="upload-panel-head">
+                <h2>LangGraph 工具</h2>
+                <code class="module-cmd"></code>
+                <span id="langgraph-tools-status" class="upload-status"></span>
+            </div>
+            <div id="langgraph-tools-body" class="lg-body">
+                <div class="hint">加载中…</div>
+            </div>
+        </section>
+
+        <!-- 渠道连通性（点左侧「渠道连通性」条目后显示）：QQ / 企业微信 / 微信小程序（只读） -->
+        <section id="channels-panel" class="upload-panel" hidden>
+            <div class="upload-panel-head">
+                <h2>渠道连通性</h2>
+                <code class="module-cmd"></code>
+                <button type="button" id="channels-refresh-btn" class="btn">刷新</button>
+                <span id="channels-status" class="upload-status"></span>
+            </div>
+            <div class="node-table-body">
+                <table class="node-table">
+                    <thead>
+                        <tr>
+                            <th>状态</th>
+                            <th>接入渠道</th>
+                            <th>实现账号</th>
+                            <th>说明</th>
+                        </tr>
+                    </thead>
+                    <tbody id="channels-tbody"></tbody>
+                </table>
+                <div id="channels-empty" class="resource-empty" hidden>暂无渠道数据</div>
+            </div>
+            <!-- 点「接入渠道」名称后展示的渠道细节框架 -->
+            <div id="channels-detail" class="detail-frame" hidden></div>
+        </section>
+
         <div id="empty-state" class="empty-state">
             <p>从左侧选择一个脚本</p>
             <p class="sub">右侧显示功能说明与参数；写库脚本执行前需二次确认</p>
@@ -595,6 +661,25 @@
         <div class="modal-actions">
             <button type="button" id="confirm-cancel" class="btn-ghost">取消</button>
             <button type="button" id="confirm-ok" class="btn-danger">确认执行写入</button>
+        </div>
+    </div>
+</div>
+
+<!-- 渠道参数编辑对话框（点击渠道详情里的参数值弹出，输入新值替换 / 清空） -->
+<div class="modal-overlay" id="ch-edit-overlay">
+    <div class="modal ch-edit-modal">
+        <div class="modal-header">
+            <h3 id="ch-edit-title">修改参数</h3>
+        </div>
+        <div class="modal-body">
+            <input type="text" id="ch-edit-input" class="ch-edit-input" autocomplete="new-password">
+            <p class="muted" id="ch-edit-hint"></p>
+            <div class="upload-status" id="ch-edit-status"></div>
+        </div>
+        <div class="modal-actions">
+            <button type="button" id="ch-edit-cancel" class="btn-ghost">取消</button>
+            <button type="button" id="ch-edit-clear" class="btn-ghost" hidden>清空该字段</button>
+            <button type="button" id="ch-edit-ok" class="btn">确定替换</button>
         </div>
     </div>
 </div>

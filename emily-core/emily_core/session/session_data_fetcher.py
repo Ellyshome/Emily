@@ -31,6 +31,15 @@ def _beijing_now_str() -> str:
     return (datetime.now(timezone.utc) + timedelta(hours=8)).strftime("%Y-%m-%d %H:%M:%S")
 
 
+def is_sentinel(value) -> bool:
+    """是否为未登记占位值（_SENTINEL）。
+
+    访客快照的 user_name 等字段填占位值，调用方需识别并回退到通道提供的显示名，
+    避免归档/列表里把访客显示成 "XXXXXXXXXX"。
+    """
+    return isinstance(value, str) and value == _SENTINEL
+
+
 # ══════════════════════════════════════════════════════════════════════════════
 # 工具函数（从 collect_session_data.py 迁入，不改逻辑）
 # ══════════════════════════════════════════════════════════════════════════════
@@ -200,7 +209,7 @@ class SessionDataFetcher:
         from ..repositories.user_repo import UserRepository
         user = UserRepository.get_by_id(user_id)
         if user is None:
-            return _empty_result(conversation_id, user_id, ["用户不存在"])
+            return _guest_result(conversation_id, user_id, ["用户不存在"], core)
 
         # 优先取 IM 绑定的显示名（如"陈哲"），回退到 username（如"chen_zhe"）
         user_name = _resolve_user_name(user)
@@ -403,6 +412,43 @@ def _format_visible_files_summary(visible_files: dict) -> str:
     """格式化可见文件摘要为文本。委托给 fetchers 子模块。"""
     from .fetchers.fetch_visible_files import format_summary
     return format_summary(visible_files)
+
+
+def _guest_result(conversation_id: str, user_id: str, errors: list[str], core=None) -> dict:
+    """未登记用户（guest）快照：业务能力仍 fail-closed，但保留「普惠只读」能力。
+
+    未登记用户没有 users 记录，sop_allow / authorized_node_ids 等业务权限保持为空
+    （fail-closed）；但知识检索等普惠只读能力应对所有使用者开放——按 FallbackPolicy
+    的 BASIC 档白名单（knowledge_search / chat_archive / meta_cognition_read）装配
+    available_tools，并把 RAG 可用性如实回填，避免"提示词说知识库可用、工具集里却没有
+    检索工具"的不一致。可见内容仍受可见集 ①∪②（自有 ∪ 密级公开）收窄。
+
+    白名单取 basic_tools()（不含运行期登记的 MCP 等动态只读工具）：访客不开放 MCP
+    调用权限，故此处不用 resolve("basic")。
+    """
+    result = _empty_result(conversation_id, user_id, errors)
+    snapshot = result["session_snapshot"]
+
+    try:
+        from ..workitem.langgraph_engine.agent.fallback_policy import FallbackPolicy
+
+        allowed = FallbackPolicy.basic_tools()
+        registered = _sub_fetch_available_tools({"level": 1, "sop_allow": []})
+        snapshot["available_tools"] = [
+            tool for tool in registered if tool.get("api_id") in allowed
+        ]
+    except Exception as e:
+        logger.warning("_guest_result basic tools assembly failed: %s", e)
+
+    rag_info = _sub_fetch_rag_info(core)
+    snapshot["rag_available"] = bool(rag_info.get("available"))
+    snapshot["rag_collections"] = list(rag_info.get("collections") or [])
+
+    # 规则书是系统级行为规范（非用户私有数据），按等级过滤后应对访客同样载入——
+    # 否则「十、访客接待规范」等按等级组合的规则对未登记用户永远不生效。
+    snapshot["rule_book_sections"] = _sub_fetch_rule_book_sections()
+
+    return result
 
 
 def _empty_result(conversation_id: str, user_id: str, errors: list[str]) -> dict:

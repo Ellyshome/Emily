@@ -68,16 +68,15 @@ def _config_from_env(config_data: dict | None) -> dict:
         "EMILY_EMBEDDING_API_URL": "embedding_api_url",
         "EMILY_EMBEDDING_API_KEY": "embedding_api_key",
         "EMILY_EMBEDDING_MODEL": "embedding_model",
+        "EMILY_EMBEDDING_MODE": "embedding_mode",
         "EMILY_EXPERT_REVIEW_ENABLED": "expert_review_enabled",
         "EMILY_LANGGRAPH_CHECKPOINTER": "langgraph_checkpointer",
-        "EMILY_SESSION_LOOP_ENABLED": "session_loop_enabled",
         "EMILY_SESSION_LOOP_SOP_ALLOWLIST": "session_loop_sop_allowlist",
         "EMILY_CAPABILITY_CALL_TIMEOUT_SECONDS": "capability_call_timeout_seconds",
     }
     # 布尔字段：环境变量为字符串，需显式转换
     bool_fields = {
             "llm_console_trace_enabled", "kb_enabled", "expert_review_enabled",
-            "session_loop_enabled",
     }
     # 整数字段：环境变量为字符串，需显式转换
     int_fields = {
@@ -139,6 +138,17 @@ def init(config_data: dict | None = None, rag_provider=None) -> "EmilyCore":
         except Exception as e:
             _logger.warning("tool_registry auto-seed failed: %s", e)
 
+    # 会话归档索引自愈：会话池为内存态，重启后池内会话全部丢失、不会再走截断，
+    # 启动时把残留的「进行中」索引统一按截断收口，避免归档列表出现幽灵会话。
+    if db_ready:
+        try:
+            from .repositories.session_archive_repo import SessionArchiveRepo
+            _stale = SessionArchiveRepo.truncate_all_active(archive_reason="restart")
+            if _stale:
+                _logger.info("SessionArchive startup recovery: %d 条进行中索引按截断收口", _stale)
+        except Exception as e:
+            _logger.warning("SessionArchive startup recovery failed: %s", e)
+
     # 启动自检：存在"未登记参与单位"的节点 → 告警
     # 归属口径（docs/Spec/项目归属与可见范围_Spec.md）：可见范围由「企业参与节点」推导，
     # 未登记 ⇒ 该节点对非管理单位用户不可见；整项目未登记 ⇒ 所有人都看不到态势，且不报错。
@@ -194,40 +204,30 @@ def init(config_data: dict | None = None, rag_provider=None) -> "EmilyCore":
         _logger.warning("bootstrap auto-run scripts skipped: %s", e)
 
     # 初始化 RAG Provider（pgvector + 嵌入服务）
-    # 优先级：远程 Embedding API > 本地 TEI 容器
-    tei_client = None
+    # 嵌入后端选型统一走 factory：auto（默认）= 本地优先、远程 API 兜底；
+    # local / remote 为显式指定（不兜底）。详见 infrastructure/embedding/factory.py。
+    embedding_client = None
     kc_repo = None
     if rag_provider is None and config.kb_enabled:
         try:
             from .repositories.knowledge_chunk_repo import KnowledgeChunkRepo
             from .providers.rag.pgvector_provider import PgVectorRagProvider
+            from .infrastructure.embedding.factory import create_embedding_client, describe_mode
 
             kc_repo = KnowledgeChunkRepo()
+            embedding_client = create_embedding_client(config)
 
-            # 优先使用远程 Embedding API
-            if config.embedding_api_url and config.embedding_api_key and config.embedding_model:
-                from .infrastructure.embedding.remote_client import RemoteEmbeddingClient
-                tei_client = RemoteEmbeddingClient(
-                    api_url=config.embedding_api_url,
-                    api_key=config.embedding_api_key,
-                    model=config.embedding_model,
-                )
-                _logger.info(
-                    "Remote embedding client created: %s (model=%s)",
-                    config.embedding_api_url, config.embedding_model,
-                )
-            elif config.tei_url:
-                from .infrastructure.embedding.tei_client import TeiClient
-                tei_client = TeiClient(config.tei_url)
-                _logger.info("Local TEI client created: %s", config.tei_url)
-
-            if tei_client is not None:
+            if embedding_client is not None:
                 rag_provider = PgVectorRagProvider(
-                    tei=tei_client, repo=kc_repo,
+                    tei=embedding_client, repo=kc_repo,
                     similarity=config.rag_similarity_threshold,
                 )
-                _logger.info("PgVector RAG provider created (embedding: %s)",
-                             "remote" if config.embedding_api_url else "local TEI")
+                _logger.info("PgVector RAG provider created — %s", describe_mode(config))
+            else:
+                _logger.warning(
+                    "No embedding backend available — %s，pgvector RAG 跳过",
+                    describe_mode(config),
+                )
         except Exception as e:
             _logger.warning("PgVector RAG provider init failed: %s", e)
 
@@ -275,7 +275,9 @@ def init(config_data: dict | None = None, rag_provider=None) -> "EmilyCore":
 
     # 注入基础设施到 core（供 registry + ToolManager 使用）
     core._vlm_client = vlm_client
-    core._tei_client = tei_client
+    # 注：属性名为历史遗留（早期只有本地 TEI），实际存放 factory 选出的 embedding 客户端，
+    # 可能是 TeiClient / RemoteEmbeddingClient / AutoEmbeddingClient 三者之一。
+    core._tei_client = embedding_client
     core._knowledge_chunk_repo = kc_repo
 
     # ── 组装启动报告 ──

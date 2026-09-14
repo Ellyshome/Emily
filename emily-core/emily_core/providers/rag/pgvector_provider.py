@@ -1,6 +1,7 @@
 """PgVectorRagProvider —— pgvector 向量检索，替换 MaxKBRagProvider。
 
-通过 TEI 生成 query embedding，在 emily-postgres 的 knowledge_chunks 表做相似度查询。
+通过 embedding 后端（本地 TEI / 远程 API，选型见 infrastructure/embedding/factory.py）
+生成 query embedding，在 emily-postgres 的 knowledge_chunks 表做相似度查询。
 支持密集检索（HNSW）+ 阶段/岗位 metadata 过滤。
 """
 
@@ -12,21 +13,21 @@ from typing import TYPE_CHECKING
 from .base import RagProvider, SearchResult, RagSearchResponse
 
 if TYPE_CHECKING:
-    from ..infrastructure.embedding.tei_client import TeiClient
+    from ..infrastructure.embedding.base import EmbeddingClient
     from ..repositories.knowledge_chunk_repo import KnowledgeChunkRepo
 
 logger = logging.getLogger("emily.rag.pgvector")
 
 
 class PgVectorRagProvider(RagProvider):
-    """pgvector + TEI 实现的 RAG 检索提供者。
+    """pgvector + embedding 后端实现的 RAG 检索提供者。
 
     替代 MaxKBRagProvider，直接在 PostgreSQL 中做向量相似度检索。
     """
 
     def __init__(
         self,
-        tei: "TeiClient",
+        tei: "EmbeddingClient",
         repo: "KnowledgeChunkRepo",
         similarity: float = 0.3,
         top_k: int = 5,

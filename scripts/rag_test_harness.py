@@ -49,7 +49,58 @@ DB_URL = os.environ.get(
     "EMILY_DATABASE_URL",
     "postgresql://emily:emily_secret_2026@localhost:25432/emily",
 )
-TEI_URL = os.environ.get("EMILY_TEI_URL", "http://localhost:8082")
+
+
+def _load_env() -> None:
+    """宿主机脚本补齐环境变量（不经 docker compose，需自行加载）。
+
+    - 仓库根 ``.env`` → ``os.environ``（已存在的键不覆盖）
+    - 别名与默认值与 docker-compose-napcat.yml 中 emily-core 的 embedding 段保持一致：
+      ``SILICONFLOW_API_KEY`` → ``EMILY_EMBEDDING_API_KEY``，
+      url/model 缺省为 SiliconFlow / BAAI/bge-m3。
+    这样宿主机上 auto 模式也能在本地 TEI 不可用时报落到远程 API。
+    """
+    env_file = Path(__file__).resolve().parent.parent / ".env"
+    if env_file.exists():
+        try:
+            from dotenv import dotenv_values
+
+            for key, val in (dotenv_values(env_file) or {}).items():
+                if val is not None and key not in os.environ:
+                    os.environ[key] = val
+        except Exception:  # dotenv 缺失/解析失败不阻断
+            pass
+
+    if not os.environ.get("EMILY_EMBEDDING_API_KEY"):
+        sf_key = os.environ.get("SILICONFLOW_API_KEY") or ""
+        if sf_key:
+            os.environ["EMILY_EMBEDDING_API_KEY"] = sf_key
+    os.environ.setdefault(
+        "EMILY_EMBEDDING_API_URL", "https://api.siliconflow.cn/v1/embeddings"
+    )
+    os.environ.setdefault("EMILY_EMBEDDING_MODEL", "BAAI/bge-m3")
+    # 宿主机视角：本地 TEI 默认在 localhost:8082（容器内才是 emily-embed:80）
+    os.environ.setdefault("EMILY_TEI_URL", "http://localhost:8082")
+
+
+_load_env()
+
+
+def _embedding_client():
+    """构造 embedding 客户端 —— 与内核共用同一套工厂选型，不再硬编码本地实现。
+
+    auto（默认）：本地 TEI 可用则用本地，不可用则用远程 API 兜底；
+    也可用 EMILY_EMBEDDING_MODE=local|remote 显式指定（显式指定不兜底）。
+    """
+    from emily_core.infrastructure.embedding.factory import create_embedding_client_from_env
+
+    client = create_embedding_client_from_env()
+    if client is None:
+        raise RuntimeError(
+            "无可用 embedding 后端：请配置 EMILY_TEI_URL（本地 TEI）"
+            "或 EMILY_EMBEDDING_API_URL / EMILY_EMBEDDING_API_KEY / EMILY_EMBEDDING_MODEL（远程 API）"
+        )
+    return client
 
 # 测试数据唯一标记（用于清理与识别）
 MARK = "RAGTEST"
@@ -299,12 +350,11 @@ class Harness:
         from emily_core.services.document_parser import DocumentParser
         from emily_core.services.structural_chunker import StructuralChunker
         from emily_core.services.dedup_checker import DedupChecker
-        from emily_core.infrastructure.embedding.tei_client import TeiClient
 
         parser = DocumentParser()
         chunker = StructuralChunker()
         repo = KnowledgeChunkRepo()
-        tei = TeiClient(TEI_URL)
+        tei = _embedding_client()
 
         # 1) 建 files 记录（doc_id 锚点）
         with self._session() as s:
@@ -445,7 +495,7 @@ class Harness:
                 self.log(f"[env] 访客用户 {ENV_ROLE_U3} 不存在，兜底创建（无公司 L1）")
                 u3 = User(
                     username=ENV_ROLE_U3, creator_id=u1.id,
-                    level=1, company=None, project_id=None, status="active",
+                    level=1, company=None, status="active",
                     is_deleted=False,
                 )
                 s.add(u3)
@@ -610,12 +660,11 @@ class Harness:
         from emily_core.services.document_parser import DocumentParser
         from emily_core.services.structural_chunker import StructuralChunker
         from emily_core.services.dedup_checker import DedupChecker
-        from emily_core.infrastructure.embedding.tei_client import TeiClient
 
         parser = DocumentParser()
         chunker = StructuralChunker()
         repo = KnowledgeChunkRepo()
-        tei = TeiClient(TEI_URL)
+        tei = _embedding_client()
 
         # 1) files 记录（doc_id 锚点）
         #    storage_path 用容器相对路径（emily-data/attachments 为根），与 env-test mock 约定一致
@@ -725,7 +774,6 @@ class Harness:
         from emily_core.services.permission_service import PermissionService
         from emily_core.services.visible_file_set_resolver import VisibleFileSetResolver
         from emily_core.repositories.knowledge_chunk_repo import KnowledgeChunkRepo
-        from emily_core.infrastructure.embedding.tei_client import TeiClient
         from emily_core.providers.rag.pgvector_provider import PgVectorRagProvider
 
         perm = PermissionService().build_permission_dict(user_id)
@@ -733,7 +781,7 @@ class Harness:
         info_level = perm.get("info_level", "public")
         resolver = VisibleFileSetResolver()
         scoped = resolver.resolve_visible_file_ids(user_id, company_id=company_id, info_level=info_level)
-        provider = PgVectorRagProvider(tei=TeiClient(TEI_URL), repo=KnowledgeChunkRepo(),
+        provider = PgVectorRagProvider(tei=_embedding_client(), repo=KnowledgeChunkRepo(),
                                        similarity=0.3)
 
         async def _do():

@@ -19,6 +19,7 @@ tem/
 
 # 运行时数据
 pgdata/
+emily-data/runtime/
 emily-data/db_seeds/
 emily-data/hf_cache/
 emily-data/tmp_*.json

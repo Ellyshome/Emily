@@ -1,13 +1,13 @@
-"""会话路径分派（M8）—— 双轨灰度开关 + SOP 准入清单。
+"""会话路径分派（M8）—— SOP 准入清单。
 
 定位（计划 M8 / PRD US-09、D6）：
-  - 全局开关（`session_loop_enabled`，默认 **关**）决定入口走新会话主循环还是旧链路；
-  - 按 SOP 准入清单（`session_loop_sop_allowlist`）控制哪些 SOP 能力对新循环可见
+  - 按 SOP 准入清单（`session_loop_sop_allowlist`）控制哪些 SOP 能力对会话主循环可见
     （灰度迁移顺序：查询能力 → 写类 SOP 逐个放开）；
   - 由于 R2/D6 禁止回合开始的显式分类，消息入口**无法**按 SOP 分流，故清单实现为
-    "能力目录准入清单"（放开 = 该 SOP 能力对新循环可见）。见计划 M8「灰度语义」。
+    "能力目录准入清单"（放开 = 该 SOP 能力对主循环可见）。见计划 M8「灰度语义」。
 
-开关关闭时，新模块不被实例化或不被调用，旧链路行为完全不变。
+原全局开关（`session_loop_enabled` / `use_loop()`）已于退役中移除：会话池为唯一入站
+渠道，"关闭即回退旧链路"的语义不复存在（见 需求/LangGraph编排内核化/..._退役记录_V1.md）。
 """
 from __future__ import annotations
 
@@ -21,10 +21,6 @@ class SessionPathRouter:
 
     def __init__(self, config=None) -> None:
         self._config = config
-
-    def use_loop(self) -> bool:
-        """是否启用新会话主循环（默认 False）。"""
-        return bool(getattr(self._config, "session_loop_enabled", False))
 
     def allowed_sops(self) -> set | None:
         """SOP 能力准入清单；None = 全部放开。"""
@@ -43,7 +39,6 @@ class SessionPathRouter:
         """分派状态摘要（供日志/运维核对）。"""
         allowed = self.allowed_sops()
         return {
-            "use_loop": self.use_loop(),
             "allowed_sops": "all" if allowed is None else sorted(allowed),
         }
 

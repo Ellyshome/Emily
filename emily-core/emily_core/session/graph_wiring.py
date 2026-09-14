@@ -18,7 +18,6 @@
 from __future__ import annotations
 
 import logging
-from contextvars import ContextVar
 from dataclasses import dataclass, field
 from typing import Any, Callable
 
@@ -50,17 +49,6 @@ def _shared_saver(config):
             logger.error("build_checkpointer failed: %s", e)
             _SAVER_CACHE[key] = False
     return _SAVER_CACHE[key]
-
-#: 当前消息的发送者名（快速短路判定需要，逐条消息变化，故走 ContextVar）
-_sender_name: ContextVar = ContextVar("emily_graph_sender_name", default="")
-
-
-def set_sender_name(name: str) -> None:
-    _sender_name.set(str(name or ""))
-
-
-def clear_sender_name() -> None:
-    _sender_name.set("")
 
 
 @dataclass
@@ -101,7 +89,7 @@ def build_bundle(*, loop, allowed_sops: "set | None" = None) -> GraphBundle:
             logger.warning("fast responder unavailable: %s", e)
             return None
         try:
-            return SessionAgent._try_fast_reply(str(text or ""), _sender_name.get() or "")
+            return SessionAgent._try_fast_reply(str(text or ""))
         except Exception as e:  # noqa: BLE001
             logger.warning("fast responder failed: %s", e)
             return None
@@ -323,7 +311,6 @@ async def handle_via_graph(loop, message, db_message_id: str = "", current_user_
     graph, bundle = build_wired_graph(loop=loop)
     bundle.runtime["message"] = message
     bundle.runtime["db_message_id"] = db_message_id
-    set_sender_name(getattr(message, "sender_name", "") or "")
 
     actor = dict(getattr(loop, "_last_actor", None) or {})
     actor_ref = {
@@ -375,8 +362,6 @@ async def handle_via_graph(loop, message, db_message_id: str = "", current_user_
     except Exception as e:  # noqa: BLE001
         logger.error("handle_via_graph failed: %s", e, exc_info=True)
         final_reply = "抱歉，处理时出现了异常，请稍后重试或换个说法。"
-    finally:
-        clear_sender_name()
 
     if final_reply is None:
         return None
@@ -392,4 +377,5 @@ async def handle_via_graph(loop, message, db_message_id: str = "", current_user_
     loop._last_calls = list(bundle.records)
     loop.append_capability_section(list(bundle.records))
     loop._append_archive_turn_end(final_reply)
+    await loop.touch_archive_index()
     return loop._reply(message, final_reply)

@@ -98,8 +98,8 @@ class SessionArchiveWriter:
     def count_turns(cls, path: str) -> int:
         """从归档 md 正文统计轮次数（以「## 第 N 轮」为唯一锚点）。
 
-        **文档为准**：不依赖 Session 内存的 message_history —— 新会话主循环
-        （use_loop=true）下该字段恒为空，会让轮次恒为 0。
+        **文档为准**：不依赖 Session 内存的 message_history —— 会话主循环
+        下该字段恒为空，会让轮次恒为 0。
         """
         try:
             text = Path(path).read_text(encoding="utf-8", errors="replace")
@@ -203,6 +203,14 @@ class SessionArchiveWriter:
         user_id = ctx.get("user_id", "")
         if user_id:
             identity.append(f"- user_id: {user_id}")
+        # 通道身份：哪个通道进来、通道内哪个 ID、是否已登记
+        platform = ctx.get("platform", "")
+        im_user_id = ctx.get("im_user_id", "")
+        if platform or im_user_id:
+            identity.append(
+                f"- 通道: {platform or '(未知)'} · 通道用户ID: {im_user_id or '(未知)'}")
+        if ctx.get("is_guest", False):
+            identity.append("- 身份: 访客（未登记，权限按 L1 收窄）")
         pos = ctx.get("user_position", "")
         if pos:
             identity.append(f"- 职位: {pos}")
@@ -350,6 +358,18 @@ class SessionArchiveWriter:
             f"> 会话ID: {conversation_id}  ·  开始: {start_display} (UTC+8)",
             f"> 人员: {persona}",
         ]
+
+        # 通道身份：访客（未登记用户）同样留痕——通道 + 通道内用户 ID + 登记状态
+        platform = ctx.get("platform", "")
+        im_user_id = ctx.get("im_user_id", "")
+        is_guest = ctx.get("is_guest", False)
+        if platform or im_user_id or is_guest:
+            channel_parts = [p for p in (
+                platform or "(未知通道)",
+                f"通道用户ID: {im_user_id}" if im_user_id else "",
+                "访客（未登记）" if is_guest else "已登记用户",
+            ) if p]
+            lines.append(f"> 通道: {'  ·  '.join(channel_parts)}")
 
         # prompt 元信息（模板原文字符数；渲染后变量值见下方快照区）
         prompt_name = ctx.get("prompt_name", "")
@@ -506,6 +526,7 @@ class SessionArchiveWriter:
             "expired": "expired (TTL 无活动)",
             "terminated": "手动终止",
             "manual": "手动归档",
+            "restart": "restart (进程重启收口)",
         }
         reason_display = reason_map.get(archive_reason, archive_reason)
 

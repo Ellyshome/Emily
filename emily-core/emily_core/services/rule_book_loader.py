@@ -131,6 +131,20 @@ def render_brief(sections: list[dict], level: int, max_chars: int = 200) -> str:
     return _truncate(text, max_chars)
 
 
+def render_directives(sections: list[dict], level: int, max_chars: int = 2000) -> str:
+    """按 level 过滤后输出可见章节正文，供 prompt 常驻注入（`{rule_directives}`）。
+
+    与 render_brief（只给章节标题列表）的区别：这里给**正文**，使按等级载入的规则
+    （如 L1 的访客接待规范、L5 的称呼口径）真正进入提示词并生效。超限时按章节边界
+    截断，不切碎条文。
+    """
+    text = render_full(sections, level)
+    if max_chars <= 0 or len(text) <= max_chars:
+        return text
+    cut = text.rfind("\n## ", 0, max_chars)
+    return (text[:cut] if cut > 0 else _truncate(text, max_chars)).strip()
+
+
 class RuleBookLoader:
     """规则书加载器。"""
 

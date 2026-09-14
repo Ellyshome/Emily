@@ -67,6 +67,12 @@ def _ensure_columns(engine) -> list[dict]:
         ],
         "session_archives": [
             ("md_file_path", "VARCHAR(500)", "''"),
+            ("platform", "VARCHAR(50)", "''"),
+            ("im_user_id", "VARCHAR(100)", "''"),
+            ("is_guest", "BOOLEAN", "FALSE"),
+            ("last_active_at", "VARCHAR(50)", "''"),
+            # 历史行都是「归档时才建档」，故补列默认按已截断处理
+            ("status", "VARCHAR(20)", "'truncated'"),
         ],
         "evolution_llm_interaction_logs": [
             ("response_full", "TEXT", "''"),
@@ -250,11 +256,13 @@ def init_db(
         expire_on_commit=False,  # 避免 detached instance 后访问属性报错
     )
 
+    # pgvector 扩展（幂等）
+    # 必须先于 create_all：knowledge_chunks 等表含 Vector 列，
+    # 扩展未安装时 create_all 会报 type "vector" does not exist，导致全库建表失败。
+    _ensure_pgvector_extension(_engine)
+
     # 建表（幂等，已存在的表不会重建）
     Base.metadata.create_all(bind=_engine)
-
-    # pgvector 扩展（幂等）
-    _ensure_pgvector_extension(_engine)
 
     # 补齐已有表的新增列（create_all 不 ALTER 已有表）
     migrations = _ensure_columns(_engine)

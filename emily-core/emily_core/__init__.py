@@ -1059,19 +1059,17 @@ class EmilyCore:
             )
             return None
 
-        # ── 路径分派（M8）：开关关闭走旧链路（默认），开启走新会话主循环 ──
-        # 旧分支代码与顺序不变；新路径为并行模块（PRD §4.4-4）。
-        if (self._session_path_router is not None
-                and self._session_path_router.use_loop()
-                and self._session_loop_pool is not None):
-            logger.info("handle_message: session loop path (conv=%s)", message.conversation_id)
-            reply = await self._session_loop_pool.route(
-                message, user_id=user_id, db_message_id=db_message_id)
-        else:
-            # 退役后：会话池为唯一入站渠道；池未就绪属启动异常，不静默回退旧链路
+        # ── 入站分派：会话池（SessionLoopPool）为唯一渠道 ──
+        # 旧链路与灰度开关已于退役中移除，故不再按开关择路（见 需求/LangGraph编排内核化/
+        # ..._退役记录_V1.md）；池未就绪属启动异常，报错不静默、不回退。
+        if self._session_loop_pool is None:
             logger.error("handle_message: session loop pool 未就绪，消息未处理（conv=%s）",
                          message.conversation_id)
             reply = None
+        else:
+            logger.info("handle_message: session loop path (conv=%s)", message.conversation_id)
+            reply = await self._session_loop_pool.route(
+                message, user_id=user_id, db_message_id=db_message_id)
 
         # 出站
         if reply is not None:
@@ -1098,16 +1096,20 @@ class EmilyCore:
         return reply
 
     async def terminate_session(self, conversation_id: str) -> bool:
-        """强制终止指定 Session。"""
+        """强制终止指定 Session（截断归档后从池中移除）。"""
         self._ensure_initialized()
-        ok = await self._session_pool.terminate(conversation_id)
+        # 会话池（SessionLoopPool）是唯一入站渠道，旧池已无消息流入，优先走新池
+        pool = self._session_loop_pool or self._session_pool
+        if pool is None:
+            return False
+        ok = await pool.terminate(conversation_id)
         if ok:
             self.outbound_bus.publish("session_closed", {"conversation_id": conversation_id})
         return ok
 
     def health(self) -> dict:
         """健康状态。"""
-        pool = self._session_pool
+        pool = self._session_loop_pool or self._session_pool
         result = {
             "status": "ok",
             "initialized": self._initialized,

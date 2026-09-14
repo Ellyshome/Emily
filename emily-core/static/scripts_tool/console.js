@@ -120,12 +120,16 @@ function bindListClicks(el) {
                 selectPanoramaNodes();
             } else if (item.dataset.name === PROJECT_EVENTS_ENTRY_NAME) {
                 selectProjectEvents();
-            } else if (item.dataset.name === SESSION_POOL_ENTRY_NAME) {
-                selectSessionPool();
-            } else if (item.dataset.name === SESSION_ARCHIVE_ENTRY_NAME) {
-                selectSessionArchive();
+            } else if (item.dataset.name === SESSION_OBSERVATORY_ENTRY_NAME) {
+                selectSessionObservatory();
             } else if (item.dataset.name === TEST_CASES_ENTRY_NAME) {
                 selectTestCases();
+            } else if (item.dataset.name === LANGGRAPH_TOOLS_ENTRY_NAME) {
+                selectLangGraphTools();
+            } else if (item.dataset.name === CHANNEL_ENTRY_NAME) {
+                selectChannels();
+            } else if (item.dataset.name === CHAT_ENTRY_NAME) {
+                selectChat();
             } else {
                 selectScript(item.dataset.name);
             }
@@ -141,6 +145,8 @@ function setActiveEntry(name) {
         });
     });
     renderModuleCmd(name);
+    // 统一切换面板：先隐藏全部模块面板，各 selectXxx 随后只显示自己的面板
+    hideModulePanels();
 }
 
 // 将当前模块能力项对应的命令展示到右侧面板头部（脚本项无对应则清空）
@@ -826,9 +832,30 @@ const MCP_ENTRY_NAME = '__mcp__';                    // 左侧脚本列表里的
 const SOP_DISPLAY_ENTRY_NAME = '__sop_display__';    // 左侧脚本列表里的「现有 SOP 展示」条目
 const PANORAMA_NODES_ENTRY_NAME = '__panorama_nodes__'; // 左侧脚本列表里的「参考全景节点」条目
 const PROJECT_EVENTS_ENTRY_NAME = '__project_events__';   // 左侧脚本列表里的「项目事件」条目
-const SESSION_POOL_ENTRY_NAME = '__session_pool__';       // 左侧脚本列表里的「会话池」条目
-const SESSION_ARCHIVE_ENTRY_NAME = '__session_archive__'; // 左侧脚本列表里的「会话归档」条目
+// 左侧「会话池 / 归档」合并条目：右侧上框=会话池，下框=会话归档
+const SESSION_OBSERVATORY_ENTRY_NAME = '__session_observatory__';
 const TEST_CASES_ENTRY_NAME = '__test_cases__';           // 左侧脚本列表里的「测试用例库」条目
+const LANGGRAPH_TOOLS_ENTRY_NAME = '__langgraph_tools__'; // 左侧脚本列表里的「LangGraph 工具」条目
+const CHANNEL_ENTRY_NAME = '__channels__';                // 左侧脚本列表里的「渠道连通性」条目
+const CHAT_ENTRY_NAME = '__chat__';                       // 左侧脚本列表里的「与 Emily 对话」条目
+
+// 右侧所有「模块能力」面板：切换条目时先全部隐藏，再显示目标面板。
+// 新增模块面板需同时登记到此处，避免切换时残留旧面板。
+const MODULE_PANEL_SELECTORS = [
+    '#chat-panel',
+    '.resource-display', '#upload-panel', '#rag-panel', '#node-table-panel',
+    '#logs-panel', '#self-check-panel', '#prompt-panel', '#llm-trace-panel',
+    '#mcp-panel', '#sop-display-panel', '#panorama-nodes-panel',
+    '#project-events-panel', '#test-cases-panel', '#session-pool-panel',
+    '#session-archive-panel', '#langgraph-tools-panel', '#channels-panel',
+];
+
+function hideModulePanels() {
+    MODULE_PANEL_SELECTORS.forEach(sel => {
+        const el = q(sel);
+        if (el) el.hidden = true;
+    });
+}
 
 // ── 全局操作人（左侧栏顶部）：所有右侧栏模块的统一锚点 ──
 // 作用：① 控制各模块的可见范围（文件 / 节点 / RAG / 日志）；② 写操作日志归属。
@@ -905,14 +932,23 @@ function reloadActiveModule() {
         case PROJECT_EVENTS_ENTRY_NAME:
             loadProjectEvents();
             break;
-        case SESSION_POOL_ENTRY_NAME:
+        case SESSION_OBSERVATORY_ENTRY_NAME:
             loadSessionPool();
-            break;
-        case SESSION_ARCHIVE_ENTRY_NAME:
             loadSessionArchive();
             break;
         case TEST_CASES_ENTRY_NAME:
             loadTestCases();
+            break;
+        case LANGGRAPH_TOOLS_ENTRY_NAME:
+            loadLangGraphTools();
+            break;
+        case CHANNEL_ENTRY_NAME:
+            loadChannels();
+            break;
+        case CHAT_ENTRY_NAME:
+            _chatFiles = [];
+            renderChatPending();
+            renderChat();
             break;
         case LOG_ENTRY_NAME:
             loadLogs(q('#logs-module-select').value, getGlobalOperator());
@@ -929,6 +965,8 @@ q('#global-operator-select').addEventListener('change', () => {
 
 // 左侧「模块能力」分组（序号 1-7）
 const MODULE_ITEMS = [
+    { name: CHAT_ENTRY_NAME, cls: 'chat-entry', func: '与 Emily 对话', sub: 'QQ · 微信客服 · 微信小程序',
+      cmd: 'POST /api/v1/console/chat/upload\nPOST /api/v1/console/chat/send\nGET  /api/v1/console/chat/attachment/{token}\n# emily-core/api/routes/console_resources.py' },
     { name: RESOURCE_ENTRY_NAME, cls: 'resource-entry', func: '资源展示', sub: '四组资源清单',
       cmd: 'GET  /api/v1/console/resources\n# emily-core/api/routes/console_resources.py::get_resources' },
     { name: UPLOAD_ENTRY_NAME, cls: 'upload-entry', func: '文件管理', sub: '上传 · 删除 · 节点/RAG 进出',
@@ -953,12 +991,14 @@ const MODULE_ITEMS = [
       cmd: 'GET  /api/v1/console/node-table\n# emily-core/api/routes/console_resources.py::get_node_table' },
     { name: PROJECT_EVENTS_ENTRY_NAME, cls: 'project-events-entry', func: '项目事件', sub: '会议 · 任务 · 文件 · 流转 · 成果 · 节点事件',
       cmd: 'GET  /api/v1/console/project-events\n# emily-core/api/routes/console_resources.py::get_project_events' },
-    { name: SESSION_POOL_ENTRY_NAME, cls: 'session-pool-entry', func: '会话池', sub: '活跃 Session · 空闲时长 · 最近消息',
-      cmd: 'GET  /api/v1/console/session-pool\nGET  /api/v1/console/session-pool/{conversation_id}/messages\n# emily-core/api/routes/console_resources.py' },
-    { name: SESSION_ARCHIVE_ENTRY_NAME, cls: 'session-archive-entry', func: '会话归档', sub: '已归档会话 · 点会话ID看对话全文',
-      cmd: 'GET  /api/v1/console/session-archives\nGET  /api/v1/console/session-archives/{id}/content\n# emily-core/api/routes/console_resources.py' },
+    { name: SESSION_OBSERVATORY_ENTRY_NAME, cls: 'session-observatory-entry', func: '会话池 / 归档', sub: '活跃 Session · 已归档会话全文',
+      cmd: 'GET  /api/v1/console/session-pool\nGET  /api/v1/console/session-pool/{conversation_id}/messages\nGET  /api/v1/console/session-archives\nGET  /api/v1/console/session-archives/{id}/content\n# emily-core/api/routes/console_resources.py' },
     { name: TEST_CASES_ENTRY_NAME, cls: 'test-cases-entry', func: '测试用例库', sub: '回归用例清单 · 点编号看用例细节',
       cmd: 'GET  /api/v1/console/test-cases\nGET  /api/v1/console/test-cases/{case_id}\n# emily-core/api/routes/console_resources.py' },
+    { name: LANGGRAPH_TOOLS_ENTRY_NAME, cls: 'langgraph-tools-entry', func: 'LangGraph 工具', sub: 'tool_node · 已注册 BaseTool',
+      cmd: 'GET  /api/v1/console/langgraph-tools\n# emily-core/api/routes/console_resources.py::get_langgraph_tools' },
+    { name: CHANNEL_ENTRY_NAME, cls: 'channel-entry', func: '渠道连通性', sub: 'QQ · 企业微信 · 微信小程序',
+      cmd: 'GET  /api/v1/console/channels\n# emily-core/api/routes/console_resources.py::get_channels' },
 ];
 
 const RESOURCE_GROUPS = ['files', 'nodes', 'sops', 'rag_files'];
@@ -1196,7 +1236,7 @@ function renderFileMgrTable(rows) {
     updateFileMgrSortIndicators();
 
     if (!list.length) {
-        tbody.innerHTML = '<tr><td colspan="9" class="muted">暂无文件</td></tr>';
+        tbody.innerHTML = '<tr><td colspan="10" class="muted">暂无文件</td></tr>';
         return;
     }
 
@@ -1210,12 +1250,13 @@ function renderFileMgrTable(rows) {
             <td class="mono" title="${escapeAttr(r.id)}">${escapeHtml(r.file_no || r.id)}</td>
             <td>${canEditConfidentiality(r) ? confidentialitySelect(r) : escapeHtml(confidentialityLabel(r.confidentiality))}</td>
             <td>${escapeHtml(r.uploaded_by_name || r.uploaded_by || '')}</td>
-            <td class="mono">${escapeHtml(r.created_at)}</td>
+            <td class="mono">${escapeHtml(r.created_ymd || '')}</td>
             <td class="mono">${formatSize(r.file_size)}</td>
             <td class="col-rag">
                 <input type="checkbox" class="file-mgr-rag-check" value="${escapeAttr(r.id)}"${r.in_rag ? ' checked' : ''} title="勾选=入库，取消=出库">
             </td>
             <td>${nodes}</td>
+            <td class="mono col-path" title="${escapeAttr(r.storage_abspath || '')}">${escapeHtml(r.storage_abspath || '—')}</td>
         </tr>`;
     }).join('');
 }
@@ -1837,14 +1878,14 @@ function renderPanoramaNodes(rows) {
     }).join('');
 }
 
-// ── 会话池（只读观测：活跃 Session + 最近消息）──
+// ── 会话池 / 归档（只读观测：上框 = 活跃 Session + 最近消息；下框 = 已归档会话 + 对话全文）──
 
-function selectSessionPool() {
-    _selectedName = SESSION_POOL_ENTRY_NAME;
+function selectSessionObservatory() {
+    _selectedName = SESSION_OBSERVATORY_ENTRY_NAME;
     _schema = null;
     _pendingValues = null;
 
-    setActiveEntry(SESSION_POOL_ENTRY_NAME);
+    setActiveEntry(SESSION_OBSERVATORY_ENTRY_NAME);
 
     q('#empty-state').hidden = true;
     q('#runner').hidden = true;
@@ -1861,10 +1902,12 @@ function selectSessionPool() {
     q('#panorama-nodes-panel').hidden = true;
     q('#project-events-panel').hidden = true;
     q('#test-cases-panel').hidden = true;
-    q('#session-archive-panel').hidden = true;
+    // 上框 + 下框同时显示
     q('#session-pool-panel').hidden = false;
+    q('#session-archive-panel').hidden = false;
 
     loadSessionPool();
+    loadSessionArchive();
 }
 
 function _fmtIdle(sec) {
@@ -1958,7 +2001,8 @@ async function showSessionMessages(convId) {
 
 // ── 会话归档（只读观测：归档索引 + 点姓名看对话全文）──
 
-const ARCHIVE_REASON_LABEL = { expired: 'TTL 超时', terminated: '手动终止', manual: '手动归档' };
+const ARCHIVE_REASON_LABEL = { expired: 'TTL 截断', terminated: '手动终止', manual: '手动归档', restart: '重启收口' };
+const ARCHIVE_STATUS_LABEL = { active: '进行中', truncated: '已截断' };
 
 function _fmtBytes(n) {
     const b = Number(n) || 0;
@@ -1967,32 +2011,13 @@ function _fmtBytes(n) {
     return `${(b / 1024 / 1024).toFixed(1)} MB`;
 }
 
-function selectSessionArchive() {
-    _selectedName = SESSION_ARCHIVE_ENTRY_NAME;
-    _schema = null;
-    _pendingValues = null;
-
-    setActiveEntry(SESSION_ARCHIVE_ENTRY_NAME);
-
-    q('#empty-state').hidden = true;
-    q('#runner').hidden = true;
-    q('.resource-display').hidden = true;
-    q('#upload-panel').hidden = true;
-    q('#rag-panel').hidden = true;
-    q('#node-table-panel').hidden = true;
-    q('#logs-panel').hidden = true;
-    q('#self-check-panel').hidden = true;
-    q('#prompt-panel').hidden = true;
-    q('#llm-trace-panel').hidden = true;
-    q('#mcp-panel').hidden = true;
-    q('#sop-display-panel').hidden = true;
-    q('#panorama-nodes-panel').hidden = true;
-    q('#project-events-panel').hidden = true;
-    q('#test-cases-panel').hidden = true;
-    q('#session-pool-panel').hidden = true;
-    q('#session-archive-panel').hidden = false;
-
-    loadSessionArchive();
+// 归档索引时间存 UTC ISO，展示统一转北京时间（与归档正文的 UTC+8 口径一致）
+function fmtArchiveTime(v) {
+    const s = String(v || '');
+    if (!s) return '';
+    const ts = Date.parse(s.includes('T') ? s : s.replace(' ', 'T'));
+    if (!Number.isFinite(ts)) return s.replace('T', ' ').slice(0, 19);
+    return new Date(ts + 8 * 3600 * 1000).toISOString().replace('T', ' ').slice(0, 19);
 }
 
 async function loadSessionArchive() {
@@ -2000,32 +2025,33 @@ async function loadSessionArchive() {
     const empty = q('#session-archive-empty');
     const status = q('#session-archive-status');
     const box = q('#session-archive-content');
-    tbody.innerHTML = '<tr><td colspan="6" class="hint">加载中…</td></tr>';
+    tbody.innerHTML = '<tr><td colspan="7" class="hint">加载中…</td></tr>';
     empty.hidden = true;
     box.hidden = true;
     try {
         const resp = await fetch(`${API_CONSOLE}/session-archives`);
         const json = await resp.json();
         if (json.code !== 0 || !json.data) {
-            tbody.innerHTML = `<tr><td colspan="6" class="hint">加载失败：${escapeHtml(json.message || 'unknown')}</td></tr>`;
+            tbody.innerHTML = `<tr><td colspan="7" class="hint">加载失败：${escapeHtml(json.message || 'unknown')}</td></tr>`;
             status.textContent = '';
             return;
         }
         const rows = json.data.rows || [];
-        status.textContent = `共 ${rows.length} 条归档`;
+        status.textContent = `共 ${rows.length} 条会话（含进行中）`;
         renderSessionArchive(rows);
     } catch (e) {
-        tbody.innerHTML = `<tr><td colspan="6" class="hint">网络错误：${escapeHtml(e.message)}</td></tr>`;
+        tbody.innerHTML = `<tr><td colspan="7" class="hint">网络错误：${escapeHtml(e.message)}</td></tr>`;
     }
 }
 
-let _archiveSort = { key: 'archived_at', dir: -1 }; // 默认归档时间倒序
+let _archiveSort = { key: 'last_active_at', dir: -1 }; // 默认最后活跃倒序
 let _archiveRows = [];
 
 function archiveSortValue(row, key) {
     switch (key) {
+        case 'last_active_at':
         case 'archived_at': {
-            const ts = Date.parse((row.archived_at || '').replace(' ', 'T'));
+            const ts = Date.parse(((row[key] || row.archived_at || '')).replace(' ', 'T'));
             return Number.isFinite(ts) ? ts : 0;
         }
         case 'turn_count':
@@ -2081,19 +2107,29 @@ function renderSessionArchive(rows) {
     tbody.innerHTML = list.map(r => {
         const id = escapeAttr(r.id);
         const name = escapeHtml(r.user_name || '(未知)');
+        const idTag = r.is_guest
+            ? ' <span class="muted">访客</span>'
+            : '';
         const convId = escapeHtml(r.conversation_id || '');
         const convHtml = r.has_content
             ? `<span class="cell-link" data-archive="${id}">${convId}</span>`
             : `${convId} <span class="muted">(无正文)</span>`;
-        const reason = ARCHIVE_REASON_LABEL[r.archive_reason] || escapeHtml(r.archive_reason || '');
+        const statusLabel = ARCHIVE_STATUS_LABEL[r.status] || escapeHtml(r.status || '');
+        const reason = r.archive_reason
+            ? ` <span class="muted">${ARCHIVE_REASON_LABEL[r.archive_reason] || escapeHtml(r.archive_reason)}</span>`
+            : '';
+        const channel = [r.platform || '', r.im_user_id || '']
+            .filter(Boolean).map(escapeHtml).join(' · ') || '—';
         const fname = String(r.md_file_path || '').split('/').pop();
         const size = r.has_content ? _fmtBytes(r.file_size) : '—';
+        const active = (r.status || 'active') === 'active';
         return `<tr>
-            <td>${escapeHtml(String(r.archived_at || '').replace('T', ' ').slice(0, 19))}</td>
-            <td>${name}</td>
+            <td>${escapeHtml(fmtArchiveTime(r.last_active_at || r.archived_at))}</td>
+            <td>${name}${idTag}</td>
+            <td>${channel}</td>
             <td>${convHtml}</td>
             <td>${r.turn_count || 0}</td>
-            <td>${reason}</td>
+            <td>${active ? '🟢 ' : ''}${statusLabel}${reason}</td>
             <td>${escapeHtml(fname)} <span class="muted">${size}</span></td>
         </tr>`;
     }).join('');
@@ -2115,7 +2151,10 @@ async function showSessionArchiveContent(archiveId) {
         }
         const d = json.data;
         const head = `会话 ${escapeHtml(d.conversation_id || '')} · ${escapeHtml(d.user_name || '')}`
-            + ` · ${escapeHtml(String(d.archived_at || '').replace('T', ' ').slice(0, 19))}`
+            + (d.is_guest ? ' （访客）' : '')
+            + (d.platform ? ` · ${escapeHtml(d.platform)} ${escapeHtml(d.im_user_id || '')}` : '')
+            + ` · ${ARCHIVE_STATUS_LABEL[d.status] || escapeHtml(d.status || '')}`
+            + ` · 最近活跃 ${escapeHtml(fmtArchiveTime(d.last_active_at || d.archived_at))}`
             + ` · ${d.turn_count || 0} 轮 · ${escapeHtml(d.file_name || '')}`;
         box.innerHTML = `<div class="session-archive-head">${head}</div>`
             + `<pre class="session-archive-pre">${escapeHtml(d.content || '')}</pre>`;
@@ -3543,3 +3582,721 @@ q('#mcp-server-list').addEventListener('change', (ev) => {
         toggleMcpServer(ev.target.dataset.name, ev.target.checked);
     }
 });
+
+
+// ── LangGraph 工具（只读：tool_node 节点 + 已注册 BaseTool / Resolver / 控制工具）──
+
+function selectLangGraphTools() {
+    _selectedName = LANGGRAPH_TOOLS_ENTRY_NAME;
+    _schema = null;
+    _pendingValues = null;
+
+    setActiveEntry(LANGGRAPH_TOOLS_ENTRY_NAME);
+
+    q('#empty-state').hidden = true;
+    q('#runner').hidden = true;
+    q('#langgraph-tools-panel').hidden = false;
+
+    loadLangGraphTools();
+}
+
+async function loadLangGraphTools() {
+    const statusEl = q('#langgraph-tools-status');
+    const bodyEl = q('#langgraph-tools-body');
+    if (statusEl) statusEl.textContent = '加载中…';
+    if (bodyEl) bodyEl.innerHTML = '<div class="hint">加载中…</div>';
+    try {
+        const resp = await fetch(API_CONSOLE + '/langgraph-tools');
+        const json = await resp.json();
+        if (json.code !== 0 || !json.data) {
+            if (bodyEl) bodyEl.innerHTML = `<div class="hint">加载失败：${escapeHtml(json.message || 'unknown')}</div>`;
+            return;
+        }
+        renderLangGraphTools(json.data);
+        if (statusEl) statusEl.textContent = '';
+    } catch (e) {
+        if (bodyEl) bodyEl.innerHTML = `<div class="hint">网络错误：${escapeHtml(e.message)}</div>`;
+    }
+}
+
+function renderLangGraphTools(data) {
+    const node = data.tool_node || {};
+    const counts = data.counts || {};
+    const cats = data.categories || {};
+    const tools = data.tools || [];
+    const resolvers = data.resolvers || [];
+    const controls = data.control_tools || [];
+
+    // ① tool_node 图节点：源文件 + 条件边路由
+    const routes = (node.routes || []).map(r =>
+        `<li>${escapeHtml(r.condition)} → <code>${escapeHtml(r.target)}</code></li>`).join('');
+    const nodeHtml = `
+        <div class="lg-node-box">
+            <div class="lg-node-title">${escapeHtml(node.name || 'tool_node')}<span class="lg-tag">图节点</span></div>
+            <div class="sc-note">${escapeHtml(node.description || '')}</div>
+            <div class="lg-node-meta">
+                <div>图定义：<code>${escapeHtml(node.graph_source || '')}</code></div>
+                <div>执行体：<code>${escapeHtml(node.loop_source || '')}</code></div>
+                <div>interrupt：<code>${escapeHtml((node.interrupt_tools || []).join(', ') || '—')}</code></div>
+            </div>
+            <div class="sc-section-title">条件边路由</div>
+            <ul class="lg-route-list">${routes || '<li class="muted">—</li>'}</ul>
+        </div>`;
+
+    // ② BaseTool 注册表（base / business / project）
+    const catLine = Object.keys(cats).sort()
+        .map(k => `${escapeHtml(k)} ${cats[k]}`).join(' · ');
+    const toolRows = tools.map(t => `<tr>
+        <td><code>${escapeHtml(t.name)}</code></td>
+        <td>${escapeHtml(t.category)}</td>
+        <td>${escapeHtml(t.permission)}</td>
+        <td>${escapeHtml(t.write_mode)}</td>
+        <td>${t.has_schema ? escapeHtml(t.param_count + ' 个') : '<span class="muted">无 schema</span>'}</td>
+        <td class="lg-desc">${escapeHtml(t.description || '')}</td>
+    </tr>`).join('');
+    const toolsHtml = `
+        <div class="sc-section-title">BaseTool 注册表（${counts.tools || 0}）</div>
+        <div class="sc-note">${catLine || '—'}</div>
+        <div class="node-table-body lg-table-wrap">
+            <table class="node-table lg-tools-table">
+                <thead><tr><th>工具名</th><th>分类</th><th>权限</th><th>写语义</th><th>参数</th><th>说明</th></tr></thead>
+                <tbody>${toolRows || '<tr><td colspan="6" class="resource-empty">未注册工具</td></tr>'}</tbody>
+            </table>
+        </div>`;
+
+    // ③ 参数解析器 + 控制工具（都作为 function-calling tool 暴露给 LLM）
+    const auxRows = [
+        ...resolvers.map(r => ({ kind: '参数解析器', name: r.name, desc: r.description })),
+        ...controls.map(c => ({ kind: '控制工具', name: c.name, desc: c.description })),
+    ].map(a => `<tr>
+        <td>${escapeHtml(a.kind)}</td>
+        <td><code>${escapeHtml(a.name)}</code></td>
+        <td class="lg-desc">${escapeHtml(a.desc || '')}</td>
+    </tr>`).join('');
+    const auxHtml = `
+        <div class="sc-section-title">参数解析器 / 控制工具（${(counts.resolvers || 0) + (counts.control || 0)}）</div>
+        <div class="node-table-body lg-table-wrap">
+            <table class="node-table lg-tools-table">
+                <thead><tr><th>类型</th><th>名称</th><th>说明</th></tr></thead>
+                <tbody>${auxRows || '<tr><td colspan="3" class="resource-empty">—</td></tr>'}</tbody>
+            </table>
+        </div>`;
+
+    q('#langgraph-tools-body').innerHTML = nodeHtml + toolsHtml + auxHtml;
+}
+
+
+// ── 渠道连通性（只读：QQ / 企业微信 / 微信小程序 / 邮箱 的接入状态与实现账号）──
+
+let _channelsData = [];      // 最近一次拉取的渠道数据（含 details / qrcode）
+let _channelSelected = null; // 当前展开细节的渠道 key
+let _chPending = {};         // 待保存的字段改动：{ 渠道: { 字段: 新值 | null(=清空) } }
+
+function selectChannels() {
+    _selectedName = CHANNEL_ENTRY_NAME;
+    _schema = null;
+    _pendingValues = null;
+
+    setActiveEntry(CHANNEL_ENTRY_NAME);
+
+    q('#empty-state').hidden = true;
+    q('#runner').hidden = true;
+    q('#channels-panel').hidden = false;
+
+    loadChannels();
+}
+
+async function loadChannels() {
+    const statusEl = q('#channels-status');
+    const tbody = q('#channels-tbody');
+    const emptyEl = q('#channels-empty');
+    if (statusEl) statusEl.textContent = '加载中…';
+    if (emptyEl) emptyEl.hidden = true;
+    try {
+        const resp = await fetch(API_CONSOLE + '/channels');
+        const json = await resp.json();
+        if (json.code !== 0 || !json.data) {
+            if (tbody) tbody.innerHTML = '';
+            if (emptyEl) {
+                emptyEl.hidden = false;
+                emptyEl.textContent = `加载失败：${json.message || 'unknown'}`;
+            }
+            return;
+        }
+        renderChannels(json.data.channels || []);
+        if (statusEl) statusEl.textContent = '';
+    } catch (e) {
+        if (tbody) tbody.innerHTML = '';
+        if (emptyEl) {
+            emptyEl.hidden = false;
+            emptyEl.textContent = `网络错误：${e.message}`;
+        }
+    }
+}
+
+function renderChannels(channels) {
+    _channelsData = channels;
+    const tbody = q('#channels-tbody');
+    const emptyEl = q('#channels-empty');
+    if (emptyEl) {
+        emptyEl.hidden = channels.length > 0;
+        if (!channels.length) emptyEl.textContent = '暂无渠道数据';
+    }
+
+    tbody.innerHTML = channels.map(c => {
+        const on = !!c.connected;
+        const stateText = on ? '已联通' : '未联通';
+        const active = _channelSelected === c.channel ? ' active' : '';
+        return `<tr class="ch-row${active}" data-channel="${escapeAttr(c.channel)}">
+            <td class="ch-state">
+                <span class="ch-dot ${on ? 'on' : 'off'}" title="${stateText}"></span>
+                <span class="${on ? 'ch-ok' : 'ch-off'}">${stateText}</span>
+            </td>
+            <td class="ch-name-cell" title="点击查看渠道细节"><span class="cell-link ch-name">${escapeHtml(c.label || c.channel || '')}</span></td>
+            <td>
+                <span class="ch-account-label">${escapeHtml(c.account_label || '')}</span>
+                <code class="ch-account">${escapeHtml(c.account || '—')}</code>
+            </td>
+            <td class="muted">${escapeHtml(c.note || '')}</td>
+        </tr>`;
+    }).join('');
+
+    renderChannelDetail();
+}
+
+// 渠道细节框架：点击「接入渠道」名称后在下部展开（含 QQ 扫码二维码）
+function renderChannelDetail() {
+    const box = q('#channels-detail');
+    if (!box) return;
+    const c = _channelsData.find(x => x.channel === _channelSelected);
+    if (!c) {
+        box.hidden = true;
+        box.innerHTML = '';
+        return;
+    }
+
+    const rows = (c.details || []).map(d =>
+        `<tr><th>${escapeHtml(d.label)}</th><td>${escapeHtml(d.value)}</td></tr>`).join('');
+
+    let qrHtml = '';
+    const qr = c.qrcode;
+    if (qr && qr.available && qr.data_url) {
+        qrHtml = `<div class="ch-qr-box">
+            <div class="ch-qr-title">扫码登录二维码<span class="ch-qr-hint">点击图片可刷新为生成时间最近的一张</span></div>
+            <img class="ch-qr-img ch-qr-clickable" id="ch-qr-img" src="${escapeAttr(qr.data_url)}"
+                 alt="登录二维码" title="点击刷新为生成时间最近的二维码">
+            <div class="ch-qr-url" id="ch-qr-url">${qr.decode_url ? `解码 URL：<a href="${escapeAttr(qr.decode_url)}" target="_blank" rel="noreferrer">${escapeHtml(qr.decode_url)}</a>` : ''}</div>
+            <div class="muted" id="ch-qr-time">二维码生成时间：${escapeHtml(qr.saved_at || '—')}${qr.path ? ' · ' + escapeHtml(qr.path) : ''}</div>
+            <div class="upload-status" id="ch-qr-status"></div>
+        </div>`;
+    } else if (qr && !qr.available) {
+        qrHtml = `<div class="ch-qr-box">
+            <div class="ch-qr-title">扫码登录二维码<span class="ch-qr-hint">点击可重新搜索</span></div>
+            <div class="muted ch-qr-clickable" id="ch-qr-status">暂未搜索到二维码（NapCat 可能尚未生成），点击重试</div>
+        </div>`;
+    }
+
+    // 可编辑参数（字段与提交目标由后端 editable 提供）：
+    // 值以文字展示（空值显示「空」），点击文字弹窗替换，不在详情区平铺 input
+    let formHtml = '';
+    const ed = c.editable;
+    if (ed && Array.isArray(ed.fields) && ed.fields.length) {
+        const pendingMap = _chPending[c.channel] || {};
+        const fieldRows = ed.fields.map(f => {
+            const changed = pendingMap[f.name] !== undefined;
+            const pending = pendingMap[f.name];
+            const text = changed
+                ? (pending === null ? '空' : pending)
+                : (f.display || f.value || '空');
+            return `<div class="ch-edit-row">
+                <span class="ch-edit-label">${escapeHtml(f.label || f.name)}</span>
+                <span class="ch-edit-value${changed ? ' changed' : ''}"
+                      data-field="${escapeAttr(f.name)}"
+                      title="点击输入新值替换">${escapeHtml(text)}</span>
+                ${changed ? '<span class="ch-edit-pending">待保存</span>' : ''}
+            </div>`;
+        }).join('');
+        formHtml = `<div class="ch-form">
+            <div class="ch-edit-title">可编辑参数<span class="ch-edit-hint-inline">点击右侧值即可替换</span></div>
+            ${fieldRows}
+            <div class="ch-form-actions">
+                <button type="button" id="ch-form-submit" class="btn">${escapeHtml(ed.submit_label || '保存')}</button>
+                <span id="ch-form-status" class="upload-status"></span>
+            </div>
+            ${ed.hint ? `<div class="ch-form-hint">${escapeHtml(ed.hint)}</div>` : ''}
+        </div>`;
+    }
+
+    box.innerHTML = `
+        <div class="ch-detail-head">
+            <h3>${escapeHtml(c.label || '')} · 渠道细节</h3>
+            <span class="upload-status">${escapeHtml(c.connected ? '已联通' : '未联通')}${c.note ? ' · ' + escapeHtml(c.note) : ''}</span>
+        </div>
+        <table class="ch-detail-table"><tbody>${rows || '<tr><td class="muted">无细节</td></tr>'}</tbody></table>
+        ${formHtml}
+        ${qrHtml}`;
+    box.hidden = false;
+}
+
+// 点「接入渠道」字段（整格）→ 展开 / 收起该渠道的细节框架
+q('#channels-tbody').addEventListener('click', (ev) => {
+    const nameCell = ev.target.closest('.ch-name-cell');
+    if (!nameCell) return;
+    const row = nameCell.closest('.ch-row');
+    if (!row) return;
+    _channelSelected = _channelSelected === row.dataset.channel ? null : row.dataset.channel;
+    renderChannels(_channelsData);
+});
+
+// 渠道接口在 emily-core 重启窗口内可能瞬时不可达（浏览器报 Failed to fetch）：
+// 失败后短暂等待并重试一次，避免把"服务正在重启"直接抛给用户
+async function fetchJsonWithRetry(url, retries = 1) {
+    for (let i = 0; ; i++) {
+        try {
+            const resp = await fetch(url);
+            return await resp.json();
+        } catch (e) {
+            if (i >= retries) throw e;
+            await new Promise(resolve => setTimeout(resolve, 1500));
+        }
+    }
+}
+
+// 点二维码（或「点击重试」）→ 重新搜索 NapCat 内生成时间最近的二维码并更新展示
+async function refreshQqQrcode() {
+    const statusEl = q('#ch-qr-status');
+    if (statusEl) statusEl.textContent = '正在按生成时间搜索最新二维码…';
+    try {
+        const json = await fetchJsonWithRetry(API_CONSOLE + '/channels/qq-qrcode');
+        if (json.code !== 0 || !json.data) {
+            if (statusEl) statusEl.textContent = `刷新失败：${json.message || 'unknown'}`;
+            return;
+        }
+        const qr = json.data;
+        if (!qr.available || !qr.data_url) {
+            if (statusEl) statusEl.textContent = `未搜索到二维码：${qr.reason || '—'}`;
+            return;
+        }
+        const img = q('#ch-qr-img');
+        if (img) img.src = qr.data_url;
+        const urlEl = q('#ch-qr-url');
+        if (urlEl) {
+            urlEl.innerHTML = qr.decode_url
+                ? `解码 URL：<a href="${escapeAttr(qr.decode_url)}" target="_blank" rel="noreferrer">${escapeHtml(qr.decode_url)}</a>`
+                : '';
+        }
+        const timeEl = q('#ch-qr-time');
+        if (timeEl) {
+            timeEl.textContent = `二维码生成时间：${qr.saved_at || '—'}${qr.path ? ' · ' + qr.path : ''}`;
+        }
+        if (statusEl) statusEl.textContent = '已更新为生成时间最近的二维码';
+    } catch (e) {
+        if (statusEl) statusEl.textContent = `请求失败（服务可能正在重启，请稍后重试）：${e.message}`;
+    }
+}
+
+// ── 渠道参数编辑弹窗（点击参数值弹出替换，不在详情区放 input）──
+
+let _chEditing = null;       // 弹窗当前编辑对象：{ channel, field }
+
+function setChannelFormStatus(text) {
+    const el = q('#ch-form-status');
+    if (el) el.textContent = text;
+}
+
+function openChannelFieldDialog(channelKey, fieldName) {
+    const channel = _channelsData.find(x => x.channel === channelKey);
+    const fields = (channel && channel.editable && channel.editable.fields) || [];
+    const field = fields.find(f => f.name === fieldName);
+    if (!channel || !field) return;
+
+    _chEditing = { channel: channelKey, field };
+    q('#ch-edit-title').textContent = `${channel.label || channelKey} · ${field.label || field.name}`;
+    q('#ch-edit-hint').textContent = field.placeholder || '';
+    // 预填当前值，便于就地改写
+    q('#ch-edit-input').value = field.value || '';
+    q('#ch-edit-clear').hidden = !field.clearable;
+    q('#ch-edit-clear').textContent = `清空${field.label || field.name}`;
+    q('#ch-edit-status').textContent = '';
+    q('#ch-edit-overlay').classList.add('active');
+    q('#ch-edit-input').focus();
+}
+
+function closeChannelFieldDialog() {
+    q('#ch-edit-overlay').classList.remove('active');
+    _chEditing = null;
+}
+
+// 采纳弹窗内容：clear=true 表示清空该字段（暂存为 null），否则用输入值替换
+function applyChannelFieldDialog(clear) {
+    if (!_chEditing) return;
+    const { channel, field } = _chEditing;
+    const statusEl = q('#ch-edit-status');
+    const text = clear ? '' : q('#ch-edit-input').value.trim();
+
+    if (!clear && !text && !field.clearable) {
+        if (statusEl) statusEl.textContent = '请输入新值';
+        return;
+    }
+    if (text && text === (field.value || '')) {
+        closeChannelFieldDialog();
+        setChannelFormStatus('值未变化，未做修改');
+        return;
+    }
+
+    if (!_chPending[channel]) _chPending[channel] = {};
+    // 空值＝清空（仅 clearable 字段走得到这里），否则为新值
+    _chPending[channel][field.name] = text || null;
+    closeChannelFieldDialog();
+    renderChannels(_channelsData);
+}
+
+q('#channels-detail').addEventListener('click', (ev) => {
+    const valueEl = ev.target.closest('.ch-edit-value');
+    if (valueEl) {
+        openChannelFieldDialog(_channelSelected, valueEl.dataset.field);
+        return;
+    }
+    if (ev.target.closest('.ch-qr-clickable')) refreshQqQrcode();
+    else if (ev.target.closest('#ch-form-submit')) saveChannelEditable();
+});
+
+q('#ch-edit-ok').addEventListener('click', () => applyChannelFieldDialog(false));
+q('#ch-edit-clear').addEventListener('click', () => applyChannelFieldDialog(true));
+q('#ch-edit-cancel').addEventListener('click', closeChannelFieldDialog);
+q('#ch-edit-overlay').addEventListener('click', (ev) => {
+    if (ev.target === q('#ch-edit-overlay')) closeChannelFieldDialog();
+});
+q('#ch-edit-input').addEventListener('keydown', (ev) => {
+    if (ev.key === 'Enter') applyChannelFieldDialog(false);
+    else if (ev.key === 'Escape') closeChannelFieldDialog();
+});
+
+// 提交渠道可编辑参数：把暂存的「替换 / 清空」发给后端的 editable.endpoint
+async function saveChannelEditable() {
+    const channel = _channelsData.find(x => x.channel === _channelSelected);
+    const ed = channel && channel.editable;
+    if (!channel || !ed || !Array.isArray(ed.fields)) return;
+
+    const pending = _chPending[channel.channel] || {};
+    const params = {};
+    const clear = [];
+    Object.keys(pending).forEach(name => {
+        if (pending[name] === null) clear.push(name);
+        else params[name] = pending[name];
+    });
+    if (!Object.keys(params).length && !clear.length) {
+        setChannelFormStatus('没有需要保存的修改：点击参数值即可替换');
+        return;
+    }
+
+    setChannelFormStatus('保存中…');
+    try {
+        const resp = await fetch(`${API_CONSOLE}/channels/${encodeURIComponent(ed.endpoint)}`, {
+            method: 'POST',
+            headers: { 'content-type': 'application/json' },
+            body: JSON.stringify({ params, clear }),
+        });
+        const json = await resp.json();
+        if (json.code !== 0 || !json.data) {
+            setChannelFormStatus(`保存失败：${json.message || 'unknown'}`);
+            return;
+        }
+        const data = json.data;
+        delete _chPending[channel.channel];
+        // 即时生效的渠道（小程序域名）会回带新渠道数据 → 就地替换并重绘
+        if (data.channel) {
+            const idx = _channelsData.findIndex(x => x.channel === data.channel.channel);
+            if (idx >= 0) _channelsData[idx] = data.channel;
+            else _channelsData.push(data.channel);
+            renderChannels(_channelsData);
+        }
+        setChannelFormStatus(data.message || '已保存');
+        // 需重启才生效的渠道（企业微信）不回带快照 → 延时自动刷新连通状态
+        if (!data.channel) setTimeout(loadChannels, 10000);
+    } catch (e) {
+        setChannelFormStatus(`请求失败（服务可能正在重启，请稍后重试）：${e.message}`);
+    }
+}
+
+q('#channels-refresh-btn').addEventListener('click', () => loadChannels());
+
+
+// ══════════════════════════════════════════════════════════════════════════════
+//  与 Emily 对话（模拟接入渠道直连）
+//
+//  发送者取左侧全局「操作人」；会话按「渠道:操作人」隔离，切换渠道即切换会话。
+//  入站消息经 /console/chat/send 投递给 Core，回复以前导消息 / 回复 / 发送文件
+//  三类 SSE 帧流式回填到微信式对话框。
+// ══════════════════════════════════════════════════════════════════════════════
+
+const API_CHAT = API_CONSOLE + '/chat';
+
+const CHAT_PLATFORMS = { napcat: 'QQ', wecom: '微信客服', wxmp: '微信小程序' };
+
+const _chatHistories = {};  // key = `${platform}:${user_id}` → 消息列表
+let _chatFiles = [];        // 待发送附件（已暂存，含 token/url/file_name/type/size）
+let _chatSending = false;   // 单条消息串行发送
+
+function chatChannel() { return q('#chat-channel-select').value; }
+
+function chatHistory() {
+    const key = `${chatChannel()}:${getGlobalOperator() || ''}`;
+    if (!_chatHistories[key]) _chatHistories[key] = [];
+    return _chatHistories[key];
+}
+
+function chatTime() {
+    const d = new Date();
+    const p = n => String(n).padStart(2, '0');
+    return `${p(d.getHours())}:${p(d.getMinutes())}`;
+}
+
+function chatSetStatus(text) {
+    const el = q('#chat-status');
+    if (el) el.textContent = text || '';
+}
+
+function selectChat() {
+    _selectedName = CHAT_ENTRY_NAME;
+    _schema = null;
+    _pendingValues = null;
+
+    setActiveEntry(CHAT_ENTRY_NAME);
+
+    q('#empty-state').hidden = true;
+    q('#runner').hidden = true;
+    q('#chat-panel').hidden = false;
+
+    renderChat();
+    renderChatPending();
+    const input = q('#chat-input');
+    if (input) input.focus();
+}
+
+function renderChat() {
+    const box = q('#chat-messages');
+    if (!box) return;
+    const list = chatHistory();
+    if (!list.length) {
+        box.innerHTML = `<div class="chat-empty">通过「${escapeHtml(CHAT_PLATFORMS[chatChannel()] || chatChannel())}」渠道与 Emily 直接对话；发送者统一取左侧「操作人」</div>`;
+        return;
+    }
+    box.innerHTML = list.map(renderChatMessage).join('');
+    box.scrollTop = box.scrollHeight;
+}
+
+function renderChatMessage(m) {
+    const isUser = m.role === 'user';
+    let body = '';
+    if (m.content) body += `<div class="chat-text">${escapeHtml(m.content)}</div>`;
+    if (m.files && m.files.length) {
+        body += '<div class="chat-files">' + m.files.map(f =>
+            `<span class="chat-file-chip">${escapeHtml(f.name || '')}</span>`).join('') + '</div>';
+    }
+    if (m.progress && m.progress.length) {
+        body += '<div class="chat-progress">' + m.progress.map(t =>
+            `<div class="chat-progress-line">${escapeHtml(t)}</div>`).join('') + '</div>';
+    }
+    if (m.pending && !m.content && !(m.progress && m.progress.length)) {
+        body += '<div class="chat-progress-line">正在处理…</div>';
+    }
+    const errCls = m.error ? ' chat-bubble-error' : '';
+    return `<div class="chat-row ${isUser ? 'chat-row-user' : 'chat-row-assistant'}">
+        <div class="chat-avatar">${isUser ? '我' : 'Emily'}</div>
+        <div class="chat-bubble-wrap">
+            <div class="chat-bubble ${isUser ? 'chat-bubble-user' : 'chat-bubble-assistant'}${errCls}">${body}</div>
+            <div class="chat-time">${escapeHtml(m.time || '')}</div>
+        </div>
+    </div>`;
+}
+
+function renderChatPending() {
+    const box = q('#chat-pending');
+    if (!box) return;
+    box.hidden = _chatFiles.length === 0;
+    box.innerHTML = _chatFiles.map((f, i) =>
+        `<span class="chat-file-chip chat-file-pending">${escapeHtml(f.file_name || '')}` +
+        `<button type="button" class="chat-file-remove" data-idx="${i}" title="移除">×</button></span>`).join('');
+}
+
+// 附件上传（选择即暂存，返回 Core 可拉取的 URL）
+q('#chat-attach-btn').addEventListener('click', () => q('#chat-file-input').click());
+
+q('#chat-file-input').addEventListener('change', async (ev) => {
+    const picked = Array.from(ev.target.files || []);
+    ev.target.value = '';
+    if (!picked.length) return;
+
+    const operator = getGlobalOperator();
+    if (!operator) { chatSetStatus('请先选择操作人'); return; }
+
+    chatSetStatus(`正在暂存 ${picked.length} 个附件…`);
+    for (const file of picked) {
+        try {
+            const fd = new FormData();
+            fd.append('user_id', operator);
+            fd.append('file', file);
+            const resp = await fetch(API_CHAT + '/upload', { method: 'POST', body: fd });
+            const json = await resp.json();
+            if (json.code === 0 && json.data) _chatFiles.push(json.data);
+            else chatSetStatus(`附件暂存失败：${json.message || 'unknown'}`);
+        } catch (e) {
+            chatSetStatus(`附件暂存失败：${e.message}`);
+        }
+    }
+    renderChatPending();
+    chatSetStatus('');
+});
+
+q('#chat-pending').addEventListener('click', (ev) => {
+    const btn = ev.target.closest('.chat-file-remove');
+    if (!btn) return;
+    _chatFiles.splice(Number(btn.dataset.idx), 1);
+    renderChatPending();
+});
+
+q('#chat-channel-select').addEventListener('change', () => {
+    renderChat();
+    renderChatPending();
+});
+
+q('#chat-input').addEventListener('keydown', (ev) => {
+    if (ev.key === 'Enter' && !ev.shiftKey) {
+        ev.preventDefault();
+        chatSend();
+    }
+});
+
+q('#chat-send-btn').addEventListener('click', () => chatSend());
+
+async function chatSend() {
+    if (_chatSending) return;
+
+    const input = q('#chat-input');
+    const text = (input.value || '').trim();
+    const files = _chatFiles.slice();
+    if (!text && !files.length) return;
+
+    const operator = getGlobalOperator();
+    if (!operator) { chatSetStatus('请先选择操作人'); return; }
+
+    const channel = chatChannel();
+    const list = chatHistory();
+    list.push({
+        role: 'user',
+        content: text,
+        files: files.map(f => ({ name: f.file_name || '' })),
+        time: chatTime(),
+    });
+    const bot = { role: 'assistant', content: '', files: [], progress: [], pending: true, time: chatTime() };
+    list.push(bot);
+
+    input.value = '';
+    _chatFiles = [];
+    renderChatPending();
+    renderChat();
+
+    _chatSending = true;
+    q('#chat-send-btn').disabled = true;
+    chatSetStatus('发送中…');
+
+    const payload = {
+        message: text,
+        user_id: operator,
+        platform: channel,
+        conversation_id: `${channel}:${operator}`,
+        attachments: files.map(f => ({
+            type: f.type, url: f.url, file_name: f.file_name, file_size: f.size,
+        })),
+    };
+
+    try {
+        const resp = await fetch(API_CHAT + '/send', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(payload),
+        });
+        const ctype = resp.headers.get('content-type') || '';
+        if (!resp.ok || ctype.indexOf('text/event-stream') < 0) {
+            let msg = `HTTP ${resp.status}`;
+            try {
+                const json = await resp.json();
+                if (json && json.message) msg = json.message;
+            } catch (e) { /* 非 JSON 响应，保留 HTTP 状态 */ }
+            bot.error = true;
+            bot.content = msg;
+        } else {
+            await chatReadStream(resp, bot);
+        }
+    } catch (e) {
+        bot.error = true;
+        bot.content = `请求失败：${e.message}`;
+    } finally {
+        bot.pending = false;
+        _chatSending = false;
+        q('#chat-send-btn').disabled = false;
+        chatSetStatus('');
+        renderChat();
+    }
+}
+
+// 读取 SSE 流：逐帧解析 event/data，回填到当前回复气泡
+async function chatReadStream(resp, bot) {
+    const reader = resp.body.getReader();
+    const decoder = new TextDecoder();
+    let buf = '';
+    for (;;) {
+        const { value, done } = await reader.read();
+        if (done) break;
+        buf += decoder.decode(value, { stream: true });
+        let idx;
+        while ((idx = buf.indexOf('\n\n')) >= 0) {
+            const frame = buf.slice(0, idx);
+            buf = buf.slice(idx + 2);
+            applyChatFrame(frame, bot);
+        }
+    }
+    if (buf.trim()) applyChatFrame(buf, bot);
+}
+
+function applyChatFrame(frame, bot) {
+    let event = 'message';
+    const dataLines = [];
+    frame.split('\n').forEach(line => {
+        if (line.startsWith('event:')) event = line.slice(6).trim();
+        else if (line.startsWith('data:')) dataLines.push(line.slice(5).trim());
+    });
+    if (!dataLines.length) return;
+
+    let data = {};
+    try { data = JSON.parse(dataLines.join('\n')); } catch (e) { return; }
+
+    if (event === 'progress') {
+        if (data.content) {
+            bot.progress.push(data.content);
+            renderChat();
+        }
+    } else if (event === 'reply') {
+        // 最终回复到达：前导消息（「收到，正在为你处理…」）使命已尽，不再随回复展示
+        bot.progress = [];
+        bot.pending = false;
+        bot.content = data.content || '';
+        renderChat();
+    } else if (event === 'file_send') {
+        (data.file_paths || []).forEach(fp => {
+            const path = (fp && fp.path) || '';
+            const name = (fp && fp.name) || path.split(/[\\/]/).pop() || '文件';
+            bot.files.push({ name, path });
+        });
+        renderChat();
+    } else if (event === 'timeout') {
+        bot.error = true;
+        bot.content = bot.content || '（等待超时：Emily 尚未返回，可稍后在「会话池 / 归档」查看处理结果）';
+        renderChat();
+    } else if (event === 'error') {
+        bot.error = true;
+        bot.content = data.message || '处理失败';
+        renderChat();
+    }
+}

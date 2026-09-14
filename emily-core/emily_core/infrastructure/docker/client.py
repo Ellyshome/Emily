@@ -1,6 +1,8 @@
 """Docker Engine API 客户端（通过 Unix Socket 查询容器状态）。"""
 
 import asyncio
+import base64
+import json
 import logging
 import os
 import re
@@ -110,8 +112,8 @@ def _fallback_status() -> list[dict]:
     ]
 
 
-async def _get_napcat_container_id() -> str | None:
-    """获取 napcat 容器的 Docker ID。"""
+async def get_container_id(name: str) -> str | None:
+    """获取指定容器名的 Docker ID。"""
     if not _docker_socket_available():
         return None
     try:
@@ -124,14 +126,120 @@ async def _get_napcat_container_id() -> str | None:
                     return None
                 containers = await resp.json()
                 for c in containers:
-                    names = c.get("Names", [])
-                    for n in names:
-                        if n.lstrip("/") == "napcat":
+                    for n in c.get("Names", []):
+                        if n.lstrip("/") == name:
                             return c.get("Id", "")
     except Exception as e:
-        logger.debug("fetch napcat container id failed: %s", e, exc_info=True)
+        logger.debug("fetch container id failed (%s): %s", name, e, exc_info=True)
         return None
     return None
+
+
+def _decode_docker_stream(raw: bytes) -> str:
+    """解析 Docker 多路复用流（8 字节头 + payload）为文本。"""
+    return "\n".join(
+        part.decode("utf-8", errors="replace") for part in _split_docker_stream(raw)
+    )
+
+
+def _decode_docker_stream_bytes(raw: bytes) -> bytes:
+    """解析 Docker 多路复用流（8 字节头 + payload）为原始字节（用于二进制文件）。"""
+    return b"".join(_split_docker_stream(raw))
+
+
+def _split_docker_stream(raw: bytes) -> list[bytes]:
+    """按 Docker 多路复用格式拆出各帧 payload。"""
+    frames: list[bytes] = []
+    pos = 0
+    while pos + 8 <= len(raw):
+        size = struct.unpack(">I", raw[pos + 4 : pos + 8])[0]
+        pos += 8
+        if pos + size > len(raw):
+            break
+        frames.append(raw[pos : pos + size])
+        pos += size
+    return frames
+
+
+async def read_container_file(container_id: str, path: str) -> str:
+    """通过 Docker API exec `cat <path>` 读取容器内文本文件，失败返回空串。"""
+    return _decode_docker_stream(await _exec_container_raw(container_id, ["cat", path]))
+
+
+async def read_container_file_bytes(container_id: str, path: str) -> bytes:
+    """通过 Docker API exec `cat <path>` 读取容器内二进制文件，失败返回 b""。"""
+    return _decode_docker_stream_bytes(await _exec_container_raw(container_id, ["cat", path]))
+
+
+async def exec_container_shell(container_id: str, script: str) -> str:
+    """通过 Docker API 在容器内执行 shell 脚本（sh -c），返回合并文本输出。"""
+    return _decode_docker_stream(
+        await _exec_container_raw(container_id, ["sh", "-c", script])
+    )
+
+
+async def write_container_file(container_id: str, path: str, data: bytes) -> bool:
+    """通过 Docker API 将字节写入容器内文件（base64 中转，规避 shell 转义），成功返回 True。
+
+    供控制台改运行期配置（如 AstrBot 的 cmd_config.json）使用：容器内文件由
+    exec 以容器 root 身份写，宿主机侧只读/只写的挂载差异不影响。
+    """
+    b64 = base64.b64encode(data).decode("ascii")
+    out = await exec_container_shell(
+        container_id, f"printf %s '{b64}' | base64 -d > {path} && echo __emily_write_ok__"
+    )
+    return "__emily_write_ok__" in out
+
+
+async def restart_container(name: str, timeout: int = 10) -> bool:
+    """通过 Docker API 重启指定容器（供控制台改配置后生效），成功返回 True。"""
+    container_id = await get_container_id(name)
+    if not container_id:
+        return False
+    try:
+        connector = aiohttp.UnixConnector("/var/run/docker.sock")
+        async with aiohttp.ClientSession(connector=connector) as client:
+            async with client.post(
+                f"http://localhost/containers/{container_id}/restart",
+                params={"t": str(timeout)},
+            ) as resp:
+                if resp.status not in (200, 204):
+                    logger.debug("restart container %s returned %s", name, resp.status)
+                    return False
+                return True
+    except Exception as e:
+        logger.debug("restart container failed (%s): %s", name, e)
+        return False
+
+
+async def _exec_container_raw(container_id: str, cmd: list[str]) -> bytes:
+    """通过 Docker API 在容器内执行命令，返回原始字节输出（多路复用未拆帧）。"""
+    try:
+        connector = aiohttp.UnixConnector("/var/run/docker.sock")
+        async with aiohttp.ClientSession(connector=connector) as client:
+            # 创建 exec 实例
+            async with client.post(
+                f"http://localhost/containers/{container_id}/exec",
+                json={
+                    "Cmd": cmd,
+                    "AttachStdout": True,
+                    "AttachStderr": True,
+                },
+            ) as resp:
+                if resp.status not in (200, 201):
+                    return b""
+                exec_id = (await resp.json())["Id"]
+            # 启动 exec
+            async with client.post(
+                f"http://localhost/exec/{exec_id}/start",
+                json={"Detach": False, "Tty": False},
+            ) as resp:
+                if resp.status != 200:
+                    return b""
+                return await resp.read()
+    except Exception as e:
+        logger.debug("exec container command failed (%s): %s", cmd, e)
+        return b""
 
 
 async def _fetch_napcat_webui_token() -> str | None:
@@ -143,51 +251,20 @@ async def _fetch_napcat_webui_token() -> str | None:
     if not _docker_socket_available():
         return None
     try:
-        container_id = await _get_napcat_container_id()
+        container_id = await get_container_id("napcat")
         if not container_id:
             return None
-        connector = aiohttp.UnixConnector("/var/run/docker.sock")
-        async with aiohttp.ClientSession(connector=connector) as client:
-            # 创建 exec 实例
-            async with client.post(
-                f"http://localhost/containers/{container_id}/exec",
-                json={
-                    "Cmd": ["cat", "/app/napcat/config/webui.json"],
-                    "AttachStdout": True,
-                    "AttachStderr": True,
-                },
-            ) as resp:
-                if resp.status not in (200, 201):
-                    return None
-                exec_id = (await resp.json())["Id"]
-            # 启动 exec
-            async with client.post(
-                f"http://localhost/exec/{exec_id}/start",
-                json={"Detach": False, "Tty": False},
-            ) as resp:
-                if resp.status != 200:
-                    return None
-                raw = await resp.read()
-                # Docker multiplex 格式: 8字节头 + payload
-                text = ""
-                pos = 0
-                while pos + 8 <= len(raw):
-                    size = struct.unpack(">I", raw[pos + 4 : pos + 8])[0]
-                    pos += 8
-                    if pos + size > len(raw):
-                        break
-                    text += raw[pos : pos + size].decode("utf-8", errors="replace")
-                    pos += size
-                import json as _json
-                data = _json.loads(text)
-                return data.get("token")
+        text = await read_container_file(container_id, "/app/napcat/config/webui.json")
+        if not text.strip():
+            return None
+        return json.loads(text).get("token")
     except Exception as e:
         logger.debug("Failed to fetch napcat webui token: %s", e)
         return None
 
 
-async def _fetch_napcat_logs(container_id: str, tail: int = 200) -> str:
-    """通过 Docker Engine API 获取 napcat 容器日志。"""
+async def fetch_container_logs(container_id: str, tail: int = 200) -> str:
+    """通过 Docker Engine API 获取容器日志。"""
     try:
         connector = aiohttp.UnixConnector("/var/run/docker.sock")
         async with aiohttp.ClientSession(connector=connector) as client:
@@ -195,22 +272,11 @@ async def _fetch_napcat_logs(container_id: str, tail: int = 200) -> str:
             async with client.get(url) as resp:
                 if resp.status != 200:
                     return ""
-                raw = await resp.read()
                 # Docker 日志格式: 8字节头 + payload
                 # header: [stream(1)][0x00][0x00][0x00][size_big_endian(4)]
-                text_parts = []
-                pos = 0
-                while pos + 8 <= len(raw):
-                    # stream_type = raw[pos]  # 1=stdout, 2=stderr
-                    size = struct.unpack(">I", raw[pos + 4 : pos + 8])[0]
-                    pos += 8
-                    if pos + size > len(raw):
-                        break
-                    text_parts.append(raw[pos : pos + size].decode("utf-8", errors="replace"))
-                    pos += size
-                return "\n".join(text_parts)
+                return _decode_docker_stream(await resp.read())
     except Exception as e:
-        logger.debug("Failed to fetch napcat logs: %s", e)
+        logger.debug("Failed to fetch container logs: %s", e)
         return ""
 
 
@@ -218,7 +284,7 @@ async def _fetch_napcat_logs(container_id: str, tail: int = 200) -> str:
 _QQ_INFO_RE = re.compile(r"\[(\w+)\((\d{5,15})\)\]")
 
 
-def _parse_qq_info_from_logs(logs: str) -> dict:
+def parse_qq_info_from_logs(logs: str) -> dict:
     """从 NapCat 日志中解析 QQ 登录信息。
 
     Returns:
@@ -290,10 +356,10 @@ async def get_im_accounts() -> list[dict]:
     qq_nickname = ""
     is_recent = False
     if napcat_running:
-        container_id = await _get_napcat_container_id()
+        container_id = await get_container_id("napcat")
         if container_id:
-            logs = await _fetch_napcat_logs(container_id, tail=200)
-            qq_info = _parse_qq_info_from_logs(logs)
+            logs = await fetch_container_logs(container_id, tail=200)
+            qq_info = parse_qq_info_from_logs(logs)
             qq_logged_in = qq_info["logged_in"]
             qq_number = qq_info["qq_number"]
             qq_nickname = qq_info["qq_nickname"]
@@ -321,3 +387,4 @@ async def get_im_accounts() -> list[dict]:
             entry["qq_nickname"] = ""
         accounts.append(entry)
     return accounts
+

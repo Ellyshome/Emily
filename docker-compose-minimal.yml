@@ -29,6 +29,9 @@ services:
       - EMILY_HOOK_CONFIG_PATH=/app/config/hook_config.json
       - EMILY_API_TOKEN=${EMILY_API_TOKEN:-}
       - NAPCAT_WEBUI_TOKEN=${NAPCAT_WEBUI_TOKEN:-}
+      - EMILY_WXMP_DOMAIN=${EMILY_WXMP_DOMAIN:-}
+      - EMILY_EMAIL_IDKEY=${EMILY_EMAIL_IDKEY:-}
+      - EMILY_EMAIL_PASSWORD=${EMILY_EMAIL_PASSWORD:-}
     volumes:
       # ── 人类编辑（只读）──
       - ./emily-data/sops:/app/sops
@@ -46,6 +49,8 @@ services:
       - ./emily-data/journal:/app/journal
       - ./emily-data/session_archives:/app/session_archives
       - ./Issues/测试用例:/app/test_cases:ro                # 测试用例库（emy-console 只读展示）
+      # 控制台运行期可改配置（渠道覆盖等）：/app/config 为只读，故单独读写挂载
+      - ./emily-data/runtime:/app/runtime
       # ── 代码（只读）──
       - ./emily-core/emily_core:/app/emily_core:ro
       - ./emily-core/api:/app/api:ro

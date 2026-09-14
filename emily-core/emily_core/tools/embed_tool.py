@@ -1,6 +1,7 @@
 """embed_and_index 工具 —— 文本批量 embedding + 入 pgvector。
 
-输入 chunks[]，调 TEI 生成向量，写入 knowledge_chunks 表。
+输入 chunks[]，调当前 embedding 后端（本地 TEI / 远程 API，选型见
+infrastructure/embedding/factory.py）生成向量，写入 knowledge_chunks 表。
 """
 
 from __future__ import annotations
@@ -9,7 +10,7 @@ import time
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
-    from ..infrastructure.embedding.tei_client import TeiClient
+    from ..infrastructure.embedding.base import EmbeddingClient
     from ..repositories.knowledge_chunk_repo import KnowledgeChunkRepo
 
 logger = logging.getLogger("emily.tool.embed")
@@ -38,14 +39,14 @@ _EMBED_DESCRIPTION = (
 
 async def handle_embed_and_index(
     params: dict,
-    tei: "TeiClient",
+    tei: "EmbeddingClient",
     repo: "KnowledgeChunkRepo",
 ) -> dict:
     """M14 handler：embedding + 入 pgvector。
 
     Args:
         params: {chunks[{text, index?}], doc_metadata?}
-        tei: TeiClient 实例。
+        tei: EmbeddingClient 实例（本地 TEI / 远程 API / auto 组合）。
         repo: KnowledgeChunkRepo 实例。
     Returns:
         {success, indexed_ids[], count, doc_id, elapsed_ms}

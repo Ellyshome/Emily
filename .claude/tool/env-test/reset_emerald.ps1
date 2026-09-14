@@ -6,7 +6,7 @@
 #   pwsh -File .claude\tool\env-test\reset_emerald.ps1
 #
 # 说明:
-#   1. 停服并清除 PostgreSQL 数据卷
+#   1. 停服（⚠️ down -v 不清除 host bind mount，数据库数据保留）
 #   2. 重启 Docker 服务
 #   3. 等待 emily-core 启动完成并自动建表
 #   4. 按顺序导入全部种子数据
@@ -14,7 +14,7 @@
 #
 # 参数:
 #   -SkipAdvanced  跳过高级数据导入（阶段三: WorldBook/进化/日志等）
-#   -SkipData      仅重置基础 schema，跳过所有种子数据（空库启动）
+#   -SkipData      跳过所有种子数据导入（⚠️ 不会清空数据库，见阶段一说明）
 # ============================================================
 param(
     [switch]$SkipAdvanced,
@@ -33,9 +33,12 @@ Write-Host ""
 # ============================================================
 # 阶段一: 重置数据库
 # ============================================================
-Write-Host "[1/6] 停服并清除数据卷..." -ForegroundColor Yellow
+Write-Host "[1/6] 停服..." -ForegroundColor Yellow
 docker compose -f docker-compose-napcat.yml down -v 2>&1 | Out-Null
-Write-Host "  [OK] 服务已停止，数据卷已清除" -ForegroundColor Green
+# ⚠️ down -v 只清理 Docker 管理的卷，不影响 host bind mount
+#    ./emily-data/postgres_data（数据库实际存放于此）→ 数据库结构与数据均保留。
+#    需要真正重建数据库时，用 setup_test_env.ps1 -Recreate。
+Write-Host "  [OK] 服务已停止（数据库目录为 host bind mount，未被清除）" -ForegroundColor Green
 
 Write-Host "[2/6] 启动 Docker 服务..." -ForegroundColor Yellow
 docker compose -f docker-compose-napcat.yml up -d 2>&1 | Out-Null
@@ -43,7 +46,7 @@ Write-Host "  [OK] 服务已启动" -ForegroundColor Green
 
 if ($SkipData) {
     Write-Host ""
-    Write-Host "已跳过种子数据导入（仅空库 + schema）" -ForegroundColor Yellow
+    Write-Host "已跳过种子数据导入（⚠️ 本脚本未清空数据库，现有数据仍在）" -ForegroundColor Yellow
     Write-Host ""
     Write-Host "验证:" -ForegroundColor Cyan
     docker exec emily-postgres psql -U emily -d emily -c "SELECT count(*) AS tables_count FROM information_schema.tables WHERE table_schema='public';"

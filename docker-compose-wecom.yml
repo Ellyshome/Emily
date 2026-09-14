@@ -28,8 +28,9 @@ services:
       - EMILY_LLM_API_KEY=${EMILY_LLM_API_KEY:-}
       - EMILY_LLM_BASE_URL=${EMILY_LLM_BASE_URL:-https://api.deepseek.com}
       - EMILY_LLM_MODEL=${EMILY_LLM_MODEL:-deepseek-v4-flash}
-      # RAG (SiliconFlow Embedding API)
+      # RAG (Embedding 后端：auto=本地优先+API兜底；local/remote 为显式指定)
       - EMILY_KB_ENABLED=true
+      - EMILY_EMBEDDING_MODE=${EMILY_EMBEDDING_MODE:-auto}
       - EMILY_EMBEDDING_API_URL=${EMILY_EMBEDDING_API_URL:-https://api.siliconflow.cn/v1/embeddings}
       - EMILY_EMBEDDING_API_KEY=${SILICONFLOW_API_KEY:-}
       - EMILY_EMBEDDING_MODEL=${EMILY_EMBEDDING_MODEL:-BAAI/bge-m3}
@@ -40,6 +41,11 @@ services:
       - EMILY_STORAGE_ROOT=/app/attachments
       - EMILY_HOOK_CONFIG_PATH=/app/config/hook_config.json
       - EMILY_API_TOKEN=${EMILY_API_TOKEN:-}
+      # 微信小程序渠道依赖的对外域名（已备案 HTTPS 域名，指向 wechat-gateway）
+      - EMILY_WXMP_DOMAIN=${EMILY_WXMP_DOMAIN:-}
+      # 邮箱渠道：SMTP 发信（启动报告自发）+ IMAP 收信（渠道连通性校验）
+      - EMILY_EMAIL_IDKEY=${EMILY_EMAIL_IDKEY:-}
+      - EMILY_EMAIL_PASSWORD=${EMILY_EMAIL_PASSWORD:-}
     volumes:
       # 人类编辑（只读）
       - ./emily-data/sops:/app/sops
@@ -57,6 +63,8 @@ services:
       - ./emily-data/journal:/app/journal
       - ./emily-data/session_archives:/app/session_archives
       - ./Issues/测试用例:/app/test_cases:ro                # 测试用例库（emy-console 只读展示）
+      # 控制台运行期可改配置（渠道覆盖等）：/app/config 为只读，故单独读写挂载
+      - ./emily-data/runtime:/app/runtime
       # 代码热更新
       - ./emily-core/emily_core:/app/emily_core:ro
       - ./emily-core/api:/app/api:ro

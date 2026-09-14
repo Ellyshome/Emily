@@ -218,20 +218,29 @@ class Event(Base):
 
 
 class SessionArchive(Base):
-    """会话归档表 —— Session 注销时持久化关键数据（BUG-004）。
+    """会话归档表 —— 会话**建立即建档**，每轮实时刷新（薄索引 + 实时正文）。
 
     薄索引模式：DB 存元数据 + md_file_path，对话内容实时追加到 md 文件供人工复查。
+    会话超时只做「截断」（status=truncated + footer），不再作为归档触发点，
+    避免会话未被截断（如进程重启）时整段对话在归档列表中不可见。
     """
     __tablename__ = "session_archives"
     id = Column(String, primary_key=True, default=_new_uuid)
     conversation_id = Column(String(200), nullable=False, index=True)
+    # 访客（未登记用户）在 users 表无记录，此处必须存 NULL，否则外键违约导致整条归档丢失
     user_id = Column(String, ForeignKey("users.id"), nullable=True)
     user_name = Column(String(200), default="")
+    # ── 通道身份（访客同样留痕：哪个通道、通道内哪个 ID、显示名）──
+    platform = Column(String(50), default="")               # napcat / aiocqhttp / wecom ...
+    im_user_id = Column(String(100), default="")            # 通道内用户 ID（如 QQ 号）
+    is_guest = Column(Boolean, default=False)               # 是否访客（users 表无此人）
     turn_count = Column(Integer, default=0)
     md_file_path = Column(String(500), default="")          # 归档 md 文件路径
     started_at = Column(String, nullable=True)
-    archived_at = Column(String, default=_utc_now)
-    archive_reason = Column(String(50), default="expired")  # expired | terminated | manual
+    last_active_at = Column(String(50), default="")         # 最近一轮时间（每轮实时刷新）
+    archived_at = Column(String, default="")                # 截断时间（进行中为空）
+    archive_reason = Column(String(50), default="")         # expired | terminated | manual
+    status = Column(String(20), default="active")           # active（进行中）| truncated（已截断）
 
 
 class Task(Base):
