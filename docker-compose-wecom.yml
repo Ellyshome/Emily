@@ -4,8 +4,8 @@ services:
     image: soulter/astrbot:latest
     container_name: astrbot
     ports:
-      - "6185:6185"    # Dashboard
-      - "6199:6199"    # 统一 Webhook 端口
+      - "6185:6185"              # Dashboard + 企微/微信客服统一 Webhook 回调（须公网可达）
+      - "127.0.0.1:6199:6199"    # 独立 Webhook（备用）
     volumes:
       - ./data:/AstrBot/data          # emily_agent 插件 + AstrBot 配置 + 数据
     networks:

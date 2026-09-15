@@ -1,6 +1,9 @@
 # 环境变量 / 密钥
 .env
 
+# TLS 私钥与证书链（严禁入库）
+ssl/
+
 # Python
 __pycache__/
 *.py[cod]
