@@ -61,6 +61,27 @@ services:
     depends_on:
       - emily-postgres
 
+  # ── 微信小程序网关（对外入口由宿主机 nginx 终止 TLS 后反代）──
+  wechat-gateway:
+    build:
+      context: ./wechat-gateway
+      dockerfile: Dockerfile
+    image: wechat-gateway:latest
+    container_name: wechat-gateway
+    restart: always
+    ports:
+      - "127.0.0.1:18090:18090"          # 仅供宿主机 nginx 反代
+    environment:
+      - TZ=Asia/Shanghai
+      - WXMP_CORE_URL=http://emily-core:18080
+      - WXMP_REPLY_TIMEOUT=55
+    volumes:
+      - ./.env:/app/.env:ro              # core_client 从 /app/.env 读取 EMILY_API_TOKEN
+    networks:
+      - emily_network
+    depends_on:
+      - emily-core
+
   # ── 业务数据库（pgvector 扩展）──
   emily-postgres:
     image: pgvector/pgvector:pg16

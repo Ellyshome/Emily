@@ -310,6 +310,83 @@ tasks:
     cmds:
       - docker exec -it emily-core /bin/bash
 
+# ───────────────────── 反向代理（宿主机 nginx）─────────────────────
+
+  proxy:render:
+    desc: 渲染 nginx 配置并同步证书到 /etc/nginx（需 sudo）
+    vars:
+      SSL_DIR: /etc/nginx/ssl/emily
+      TMPL: deploy/nginx/emily.conf.tmpl
+    cmds:
+      - |
+        # 读取 .env 中指定键的值：去掉行尾注释、空白与 CRLF
+        getenv() {
+          grep -E "^$1=" .env | tail -1 | cut -d= -f2- | tr -d '\r' | sed 's/#.*//' | tr -d ' \t'
+        }
+        getenv_or() {
+          VAL=$(getenv "$1")
+          [ -n "$VAL" ] && echo "$VAL" || echo "$2"
+        }
+
+        if [ ! -f .env ]; then
+          echo "❌ 缺少 .env 文件，请从 .env.example 复制并配置"
+          exit 1
+        fi
+
+        EMILY_DOMAIN=$(getenv EMILY_DOMAIN)
+        if [ -z "$EMILY_DOMAIN" ]; then
+          echo "❌ .env 中 EMILY_DOMAIN 未配置"; exit 1
+        fi
+
+        SSL_CERT=$(getenv_or EMILY_SSL_CERT ssl/ellym.asia.pem)
+        SSL_KEY=$(getenv_or EMILY_SSL_KEY  ssl/ellym.asia.key)
+        for f in "$SSL_CERT" "$SSL_KEY"; do
+          [ -f "$f" ] || { echo "❌ 证书文件不存在: $f"; exit 1; }
+        done
+
+        sudo mkdir -p {{.SSL_DIR}} /var/www/certbot
+        sudo cp "$SSL_CERT" {{.SSL_DIR}}/fullchain.pem
+        sudo cp "$SSL_KEY"  {{.SSL_DIR}}/emily.key
+        sudo chmod 644 {{.SSL_DIR}}/fullchain.pem
+        sudo chmod 600 {{.SSL_DIR}}/emily.key
+
+        export EMILY_DOMAIN
+        export SSL_DIR={{.SSL_DIR}}
+        envsubst '${EMILY_DOMAIN} ${SSL_DIR}' \
+          < {{.TMPL}} | sudo tee /etc/nginx/conf.d/emily.conf >/dev/null
+
+        echo "✅ 已渲染 /etc/nginx/conf.d/emily.conf（域名: $EMILY_DOMAIN）"
+        echo "   证书: $SSL_CERT → {{.SSL_DIR}}/fullchain.pem"
+        echo "   下一步: task proxy:test && task proxy:reload"
+
+  proxy:test:
+    desc: 校验 nginx 配置语法
+    cmds:
+      - sudo nginx -t
+
+  proxy:reload:
+    desc: 重载 nginx 使配置生效
+    deps: [proxy:test]
+    cmds:
+      - sudo nginx -s reload
+      - echo "✅ nginx 已重载"
+
+  proxy:htpasswd:
+    desc: 新增/更新 /console 控制台 Basic Auth 账号（交互式输入密码）
+    vars:
+      ACCOUNT: '{{.ACCOUNT | default "emily"}}'
+    cmds:
+      - |
+        # 该账号仅用于 nginx 层 Basic Auth，与 Emily 自身用户体系无关
+        if [ -f /etc/nginx/.emily_htpasswd ]; then
+          sudo htpasswd /etc/nginx/.emily_htpasswd {{.ACCOUNT}}
+        else
+          sudo htpasswd -c /etc/nginx/.emily_htpasswd {{.ACCOUNT}}
+        fi
+        echo "✅ 账号 {{.ACCOUNT}} 已写入 /etc/nginx/.emily_htpasswd"
+        echo "   现有账号: sudo cut -d: -f1 /etc/nginx/.emily_htpasswd"
+        echo "   生效: task proxy:reload"
+
 # ───────────────────── 快捷别名 ─────────────────────
 
   default:
@@ -356,6 +433,12 @@ tasks:
         echo "    task clean PROFILE=minimal   停止并移除容器（不删数据库）"
         echo "    task prune              清理 Docker 系统资源"
         echo "    task env:check          环境检查"
+        echo ""
+        echo "  反向代理（宿主机 nginx）："
+        echo "    task proxy:render       渲染 nginx 配置 + 同步证书（需 sudo）"
+        echo "    task proxy:test         校验 nginx 配置语法"
+        echo "    task proxy:reload       重载 nginx"
+        echo "    task proxy:htpasswd ACCOUNT=emily   新增 /console 账号"
         echo ""
         echo "  帮助："
         echo "    task help               显示此帮助"

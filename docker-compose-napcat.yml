@@ -3,8 +3,8 @@ services:
     image: mlikiowa/napcat-docker:latest
     container_name: napcat
     ports:
-      - "6098:6098"
-      - "6099:6099"
+      - "127.0.0.1:6098:6098"
+      - "127.0.0.1:6099:6099"
     volumes:
       - ./emily-data/napcat_config:/app/napcat/config   # OneBot11/账号配置（可持久化）
       - ./emily-data/napcat_qq:/app/.config/QQ          # QQ 登录态与数据（重建容器不丢登录）
@@ -16,8 +16,8 @@ services:
     image: soulter/astrbot:latest
     container_name: astrbot
     ports:
-      - "6185:6185"
-      - "6199:6199"
+      - "6185:6185"              # Dashboard + 企微/微信客服统一 Webhook 回调（须公网可达）
+      - "127.0.0.1:6199:6199"    # 独立 Webhook（备用，未启用统一模式时才需要）
     volumes:
       - ./data:/AstrBot/data   # emily_agent 薄插件代码挂载
     networks:
@@ -175,13 +175,34 @@ services:
       - view_filter=~d api.deepseek.com
     ports:
       - "127.0.0.1:8081:8081"   # mitmweb UI（仅宿主机访问，含明文 API key）
-      - "8888:8888"             # 代理端口（容器间访问）
+      - "127.0.0.1:8888:8888"   # 代理端口（容器间经 emily_network 访问）
     volumes:
       - ./emily-data/mitmproxy:/root/.mitmproxy
       - ./emily-data/logs:/app/logs       # jsonl 落盘目录（与 emily-core 共享）
     networks:
       - emily_network
     restart: always
+
+  # ── 微信小程序网关（对外入口由宿主机 nginx 终止 TLS 后反代）──
+  wechat-gateway:
+    build:
+      context: ./wechat-gateway
+      dockerfile: Dockerfile
+    image: wechat-gateway:latest
+    container_name: wechat-gateway
+    restart: always
+    ports:
+      - "127.0.0.1:18090:18090"          # 仅供宿主机 nginx 反代
+    environment:
+      - TZ=Asia/Shanghai
+      - WXMP_CORE_URL=http://emily-core:18080
+      - WXMP_REPLY_TIMEOUT=55
+    volumes:
+      - ./.env:/app/.env:ro              # core_client 从 /app/.env 读取 EMILY_API_TOKEN
+    networks:
+      - emily_network
+    depends_on:
+      - emily-core
 
 networks:
   emily_network:

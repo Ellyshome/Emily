@@ -1,0 +1,101 @@
+# Emily 反向代理配置模板（宿主机 nginx）
+#
+# 渲染（由 task proxy:render 自动完成，勿手工编辑生成结果）：
+#   envsubst '${EMILY_DOMAIN} ${SSL_DIR}' \
+#       < deploy/nginx/emily.conf.tmpl > /etc/nginx/conf.d/emily.conf
+#
+# 结构：单域名 + 路径分流（证书需覆盖 ${EMILY_DOMAIN} 与 www.${EMILY_DOMAIN}）
+#   /wxmp/*    → 127.0.0.1:18090  wechat-gateway（微信小程序）
+#   /console   → 127.0.0.1:18080  emily-core 控制台（Basic Auth）
+#   /api/*     → 127.0.0.1:18080  emily-core API（含 SSE 出站流）
+#
+# 不反代：AstrBot 企微/微信客服回调，按现有结论继续走
+#   http://<公网IP>:6185/api/platform/webhook/<uuid>（无需域名与备案）
+#
+# 前提：后端端口在 compose 中均只绑定 127.0.0.1，公网无法直连。
+
+# ── HTTP：ACME 校验 + 跳转 HTTPS ──
+server {
+    listen 80;
+    server_name ${EMILY_DOMAIN} www.${EMILY_DOMAIN};
+
+    # 若后续改用 ACME 自动签发，校验目录需可写；用自备证书时留空即可
+    location /.well-known/acme-challenge/ {
+        root /var/www/certbot;
+    }
+
+    location / {
+        return 301 https://${EMILY_DOMAIN}$request_uri;
+    }
+}
+
+# ── HTTPS：路径分流 ──
+server {
+    listen 443 ssl;
+    server_name ${EMILY_DOMAIN} www.${EMILY_DOMAIN};
+
+    ssl_certificate     ${SSL_DIR}/fullchain.pem;
+    ssl_certificate_key ${SSL_DIR}/emily.key;
+    ssl_protocols       TLSv1.2 TLSv1.3;
+    ssl_session_cache   shared:SSL:10m;
+
+    # 附件上传链路需要放宽默认 1m 限制
+    client_max_body_size 200m;
+
+    # ── 微信小程序网关 ──
+    # 小程序 API_BASE = https://${EMILY_DOMAIN}/wxmp，故 /wxmp/chat、/wxmp/health
+    # 需去掉前缀后转给网关；/chat 为长轮询（最长 55s），必须关缓冲
+    location /wxmp/ {
+        rewrite ^/wxmp/(.*)$ /$1 break;
+        proxy_pass http://127.0.0.1:18090;
+
+        proxy_buffering off;
+        proxy_read_timeout 120s;
+        proxy_send_timeout 120s;
+        proxy_http_version 1.1;
+
+        proxy_set_header Host              $host;
+        proxy_set_header X-Real-IP         $remote_addr;
+        proxy_set_header X-Forwarded-For   $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+        proxy_set_header Connection        "";
+    }
+
+    location = /wxmp {
+        return 301 /wxmp/;
+    }
+
+    # ── 控制台：面向内部，务必保留 Basic Auth（task proxy:htpasswd 生成账号）──
+    location /console {
+        auth_basic           "Emily Console";
+        auth_basic_user_file /etc/nginx/.emily_htpasswd;
+
+        proxy_pass http://127.0.0.1:18080;
+
+        proxy_set_header Host              $host;
+        proxy_set_header X-Real-IP         $remote_addr;
+        proxy_set_header X-Forwarded-For   $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+    }
+
+    # ── emily-core API：含 SSE 出站流（/api/v1/events/*），必须关缓冲并放宽超时 ──
+    location /api/ {
+        proxy_pass http://127.0.0.1:18080;
+
+        proxy_buffering off;
+        proxy_cache off;
+        proxy_read_timeout 3600s;
+        proxy_send_timeout 3600s;
+        proxy_http_version 1.1;
+
+        proxy_set_header Host              $host;
+        proxy_set_header X-Real-IP         $remote_addr;
+        proxy_set_header X-Forwarded-For   $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+        proxy_set_header Connection        "";
+    }
+
+    location / {
+        return 404;
+    }
+}
