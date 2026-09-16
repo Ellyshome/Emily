@@ -199,6 +199,24 @@ class Config:
     """Agent loop 最大迭代次数（agent_node↔tool_node 循环上限，防 runaway）。
     超限升级外层 error_analysis 兜底。"""
 
+    # ── 节点级策略（M3 / US-02）──
+    node_retry_max_attempts: int = 2
+    """瞬时故障的节点级重试次数上限（含首次尝试）。重试由框架承担，节点内不再自持重试循环。
+    仅对"只调用模型、无业务副作用"的节点生效；执行工具/写库的节点不挂重试，避免重复副作用。"""
+
+    node_retry_initial_interval: float = 0.5
+    """节点级重试首次退避（秒），随后按 backoff_factor 指数增长。"""
+
+    node_retry_backoff_factor: float = 2.0
+    """节点级重试退避倍数。"""
+
+    node_timeout_seconds: int = 300
+    """单节点执行超时（秒）。超时后该节点中断，由调用方给出可读收尾（不出现无响应）。
+    ≤0 表示不启用超时。挂起（interrupt）节点永远不设超时。"""
+
+    node_timeout_overrides: dict = field(default_factory=dict)
+    """按节点名覆盖超时秒数，如 {"tool_node": 180}。未列出的节点取 node_timeout_seconds。"""
+
     # ── 会话编排（M7/M8）──
     orchestrator_enabled: bool = True
     """会话编排总开关。关闭时 SessionAgent 走原 flat 拆分 + run_all_with_message"""

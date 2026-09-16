@@ -19,6 +19,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
+from pathlib import Path
 
 from fastapi import APIRouter, File, Form, Query, UploadFile
 from pydantic import BaseModel, Field
@@ -1566,53 +1567,21 @@ async def get_llm_trace(
 #  数据源：会话池内存态（SessionLoopPool / SessionPoolManager）+ messages 表（最近消息）
 # ══════════════════════════════════════════════════════════════════════════════
 
-def _get_session_pool():
-    """取当前生效的会话池：会话池 SessionLoopPool 为唯一入站渠道，优先返回。
-
-    注：消息一律走 SessionLoopPool，旧的 SessionPoolManager 恒为空，
-    仅在会话池缺席时兜底（旧池仍为 terminate/统计的依赖）。
-    """
-    from api.server import get_core
-    core = get_core()
-    pool = getattr(core, "_session_loop_pool", None)
-    if pool is not None:
-        return pool
-    return getattr(core, "_session_pool", None)
-
-
-@router.get("/session-pool")
-def get_session_pool():
-    """活跃 Session 池快照：总数 / 池运行时长 / 各会话空闲时长。"""
-    pool = _get_session_pool()
-    if pool is None:
-        return _err("session pool 未就绪")
-    try:
-        return _ok(pool.get_status())
-    except Exception as e:  # noqa: BLE001
-        logger.exception("console.session_pool failed")
-        return _err(f"会话池读取失败：{e}")
-
-
-@router.get("/session-pool/{conversation_id}/messages")
-def get_session_pool_messages(
-    conversation_id: str,
-    limit: int = Query(default=5, ge=1, le=50, description="返回最近消息条数"),
-):
-    """指定会话（业务 conversation_id）的最近消息，供会话池逐条查看。"""
-    from emily_core.repositories.message_repo import MessageRepository
-    try:
-        rows = MessageRepository.get_recent_by_business_conversation(
-            conversation_id, limit=limit)
-    except Exception as e:  # noqa: BLE001
-        logger.exception("console.session_pool.messages failed")
-        return _err(f"会话消息读取失败：{e}")
-    return _ok({"conversation_id": conversation_id, "messages": rows})
-
-
 # ══════════════════════════════════════════════════════════════════════════════
-#  会话归档（只读观测）：归档索引（DB）+ 对话全文（md 文件）
+#  会话日志（只读观测）：会话索引（DB）+ 对话全文（md 文件）
 #  归档由 SessionContext._persist_archive 写入：DB 存薄索引，正文落在 md 文件
+#  注：原「会话池」观测端点（/session-pool 与 /session-pool/{id}/messages）已于
+#      2026-09-15 退役——进行中会话已包含在下方索引（status=active）中，无需两套只读视图。
+#  展示口径：列表**按 conversation 合并**（一个会话一行）；全文跨段合并读取。
 # ══════════════════════════════════════════════════════════════════════════════
+
+#: 截断原因中文文案（与前端 ARCHIVE_REASON_LABEL 保持一致；后端用于合并段落的分隔标题）
+ARCHIVE_REASON_TEXT = {
+    "expired": "TTL 截断",
+    "terminated": "手动终止",
+    "manual": "手动归档",
+    "restart": "重启收口",
+}
 
 def _archive_dir():
     """归档 md 目录：优先复用 core 已实例化的 writer.archive_dir，否则三级回退。"""
@@ -1651,39 +1620,62 @@ def _resolve_archive_file(stored_path: str, archive_dir) -> "object | None":
 
 @router.get("/session-archives")
 def get_session_archives(limit: int = Query(default=200, ge=1, le=1000)):
-    """列出全部会话归档记录（按最后活跃时间倒序），附带正文文件大小。
+    """列出**按会话合并**的会话日志（一个 conversation 一行），附带正文文件数与总大小。
 
-    索引在会话建立时即实时落库，故进行中的会话同样在列（status=active）；
-    超时只做截断（status=truncated），不再作为归档触发点。
-    轮次（turn_count）**以归档正文为准**：从 md 的「## 第 N 轮」标题实时统计，
-    避免历史记录中 DB 里恒为 0 的口径偏差。
+    合并口径见 `SessionArchiveRepo.list_grouped_by_conversation`：索引在会话建立时即
+    实时落库（进行中会话以 `status=active` 在列），同一 conversation 在截断/重启后再来
+    消息会开启新段。
+
+    轮次（turn_count）与正文大小**按去重后的归档文件**聚合：
+      - 同一 conversation 同天重启会复用同一个 md 文件（`_path_for` 按"开始日期 + 姓名 + conv 前缀"
+        命名），若按"段"累加会重复计数；
+      - 跨天分段则各自成文件，轮次累加为全会话总轮次。
     """
     from emily_core.repositories.session_archive_repo import SessionArchiveRepo
     from emily_core.services.session_archive_writer import SessionArchiveWriter
     try:
-        rows = SessionArchiveRepo.list_all(limit=limit)
+        groups = SessionArchiveRepo.list_grouped_by_conversation(limit=limit)
     except Exception as e:  # noqa: BLE001
         logger.exception("console.session_archives failed")
-        return _err(f"会话归档读取失败：{e}")
+        return _err(f"会话日志读取失败：{e}")
     adir = _archive_dir()
-    for r in rows:
-        p = _resolve_archive_file(r.get("md_file_path") or "", adir)
-        r["file_size"] = p.stat().st_size if p is not None else 0
-        r["has_content"] = p is not None
-        if p is not None:
+    for g in groups:
+        files: list[str] = []
+        turns = 0
+        size = 0
+        latest_file = None
+        for seg in sorted(g.get("segments") or [],
+                          key=lambda s: (str(s.get("started_at") or ""),
+                                         str(s.get("last_active_at") or ""))):
+            p = _resolve_archive_file(seg.get("md_file_path") or "", adir)
+            if p is None or str(p) in files:
+                continue
+            files.append(str(p))
+            latest_file = p
+            size += p.stat().st_size
             try:
-                counted = SessionArchiveWriter.count_turns(str(p))
-                if counted:
-                    r["turn_count"] = counted
+                turns += SessionArchiveWriter.count_turns(str(p)) or 0
             except Exception as e:  # noqa: BLE001
                 logger.debug("count_turns failed for %s: %s", p, e)
-    return _ok({"rows": rows, "archive_dir": str(adir)})
+        g["file_count"] = len(files)
+        g["file_size"] = size
+        g["has_content"] = bool(files)
+        g["turn_count"] = turns
+        # 展示用文件名取最新一段的正文文件（无正文时保留库里原值，供"无正文"提示）
+        g["md_file_path"] = latest_file.name if latest_file is not None else (g.get("md_file_path") or "")
+    return _ok({"rows": groups, "archive_dir": str(adir)})
 
 
 @router.get("/session-archives/{archive_id}/content")
 def get_session_archive_content(archive_id: str):
-    """读取单条归档的对话全文（md 原文，只读）。"""
+    """读取该**会话**的对话全文（md 原文，只读）。
+
+    传任一段的 id 即可：内部展开为该 conversation 的**全部归档段**，
+    按时间升序、**按文件去重**后拼接（同天重启复用同一文件 → 只读一次，不重复）。
+    多段之间插入分隔标题，便于人工阅读。
+    """
     from emily_core.repositories.session_archive_repo import SessionArchiveRepo
+    from emily_core.services.session_archive_writer import SessionArchiveWriter
     try:
         row = SessionArchiveRepo.get_by_id(archive_id)
     except Exception as e:  # noqa: BLE001
@@ -1691,28 +1683,51 @@ def get_session_archive_content(archive_id: str):
         return _err(f"归档记录读取失败：{e}")
     if not row:
         return _err("归档记录不存在")
-    p = _resolve_archive_file(row.get("md_file_path") or "", _archive_dir())
-    if p is None:
+
+    conversation_id = str(row.get("conversation_id") or "")
+    segments: list[dict] = [row]
+    if conversation_id:
+        try:
+            all_segments = SessionArchiveRepo.list_by_conversation(conversation_id)
+            if all_segments:
+                segments = all_segments
+        except Exception as e:  # noqa: BLE001
+            logger.warning("list_by_conversation failed: %s — 退化为单段读取", e)
+
+    adir = _archive_dir()
+    parts: list[str] = []
+    seen: list[str] = []
+    turns = 0
+    for seg in segments:
+        p = _resolve_archive_file(seg.get("md_file_path") or "", adir)
+        if p is None or str(p) in seen:
+            continue
+        try:
+            text = p.read_text(encoding="utf-8", errors="replace")
+        except Exception as e:  # noqa: BLE001
+            logger.warning("归档正文读取失败 %s: %s", p, e)
+            continue
+        seen.append(str(p))
+        try:
+            turns += SessionArchiveWriter.count_turns(str(p)) or 0
+        except Exception as e:  # noqa: BLE001
+            logger.debug("count_turns failed for %s: %s", p, e)
+        if parts:
+            label = seg.get("archive_reason") or seg.get("status") or ""
+            reason = ARCHIVE_REASON_TEXT.get(str(label), str(label))
+            parts.append(
+                f"\n\n{'═' * 30}\n【第 {len(parts) + 1} 段 · {reason} · {p.name}】\n{'═' * 30}\n"
+            )
+        parts.append(text)
+
+    if not parts:
         return _err("归档正文文件不存在")
-    try:
-        content = p.read_text(encoding="utf-8", errors="replace")
-    except Exception as e:  # noqa: BLE001
-        logger.exception("console.session_archive.read failed")
-        return _err(f"归档正文读取失败：{e}")
+    content = "".join(parts)
     if len(content) > 400_000:
         content = content[:400_000] + "\n\n…（正文超长，已截断）"
-    # 轮次与列表口径一致：以归档正文「## 第 N 轮」实时统计，避免 DB 旧值恒为 0
-    from emily_core.services.session_archive_writer import SessionArchiveWriter
-    turn_count = row.get("turn_count", 0)
-    try:
-        counted = SessionArchiveWriter.count_turns(str(p))
-        if counted:
-            turn_count = counted
-    except Exception as e:  # noqa: BLE001
-        logger.debug("count_turns failed for %s: %s", p, e)
     return _ok({
         "id": archive_id,
-        "conversation_id": row.get("conversation_id", ""),
+        "conversation_id": conversation_id,
         "user_name": row.get("user_name", ""),
         "platform": row.get("platform", ""),
         "im_user_id": row.get("im_user_id", ""),
@@ -1721,8 +1736,10 @@ def get_session_archive_content(archive_id: str):
         "last_active_at": row.get("last_active_at", ""),
         "archived_at": row.get("archived_at", ""),
         "archive_reason": row.get("archive_reason", ""),
-        "turn_count": turn_count,
-        "file_name": p.name,
+        "turn_count": turns,
+        "file_name": Path(seen[-1]).name if seen else "",
+        "file_count": len(seen),
+        "segment_count": len(segments),
         "content": content,
     })
 

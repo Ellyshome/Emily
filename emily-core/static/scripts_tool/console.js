@@ -183,7 +183,6 @@ async function selectScript(name) {
     q('#panorama-nodes-panel').hidden = true;
     q('#project-events-panel').hidden = true;
     q('#test-cases-panel').hidden = true;
-    q('#session-pool-panel').hidden = true;
     q('#session-archive-panel').hidden = true;
     q('#runner').hidden = false;
     q('#param-form').innerHTML = '<div class="hint" style="padding:20px">加载参数…</div>';
@@ -832,7 +831,8 @@ const MCP_ENTRY_NAME = '__mcp__';                    // 左侧脚本列表里的
 const SOP_DISPLAY_ENTRY_NAME = '__sop_display__';    // 左侧脚本列表里的「现有 SOP 展示」条目
 const PANORAMA_NODES_ENTRY_NAME = '__panorama_nodes__'; // 左侧脚本列表里的「参考全景节点」条目
 const PROJECT_EVENTS_ENTRY_NAME = '__project_events__';   // 左侧脚本列表里的「项目事件」条目
-// 左侧「会话池 / 归档」合并条目：右侧上框=会话池，下框=会话归档
+// 左侧「会话日志」条目：右侧单框 = 会话索引（进行中 🟢 / 已截断）+ 点行看对话全文
+// 原「会话池」上框已退役（2026-09-15）：其"活跃列表 + 最近消息预览"已被下方索引覆盖。
 const SESSION_OBSERVATORY_ENTRY_NAME = '__session_observatory__';
 const TEST_CASES_ENTRY_NAME = '__test_cases__';           // 左侧脚本列表里的「测试用例库」条目
 const LANGGRAPH_TOOLS_ENTRY_NAME = '__langgraph_tools__'; // 左侧脚本列表里的「LangGraph 工具」条目
@@ -846,7 +846,7 @@ const MODULE_PANEL_SELECTORS = [
     '.resource-display', '#upload-panel', '#rag-panel', '#node-table-panel',
     '#logs-panel', '#self-check-panel', '#prompt-panel', '#llm-trace-panel',
     '#mcp-panel', '#sop-display-panel', '#panorama-nodes-panel',
-    '#project-events-panel', '#test-cases-panel', '#session-pool-panel',
+    '#project-events-panel', '#test-cases-panel',
     '#session-archive-panel', '#langgraph-tools-panel', '#channels-panel',
 ];
 
@@ -991,8 +991,8 @@ const MODULE_ITEMS = [
       cmd: 'GET  /api/v1/console/node-table\n# emily-core/api/routes/console_resources.py::get_node_table' },
     { name: PROJECT_EVENTS_ENTRY_NAME, cls: 'project-events-entry', func: '项目事件', sub: '会议 · 任务 · 文件 · 流转 · 成果 · 节点事件',
       cmd: 'GET  /api/v1/console/project-events\n# emily-core/api/routes/console_resources.py::get_project_events' },
-    { name: SESSION_OBSERVATORY_ENTRY_NAME, cls: 'session-observatory-entry', func: '会话池 / 归档', sub: '活跃 Session · 已归档会话全文',
-      cmd: 'GET  /api/v1/console/session-pool\nGET  /api/v1/console/session-pool/{conversation_id}/messages\nGET  /api/v1/console/session-archives\nGET  /api/v1/console/session-archives/{id}/content\n# emily-core/api/routes/console_resources.py' },
+    { name: SESSION_OBSERVATORY_ENTRY_NAME, cls: 'session-observatory-entry', func: '会话日志', sub: '进行中 · 已截断会话 · 对话全文',
+      cmd: 'GET  /api/v1/console/session-archives\nGET  /api/v1/console/session-archives/{id}/content\n# emily-core/api/routes/console_resources.py' },
     { name: TEST_CASES_ENTRY_NAME, cls: 'test-cases-entry', func: '测试用例库', sub: '回归用例清单 · 点编号看用例细节',
       cmd: 'GET  /api/v1/console/test-cases\nGET  /api/v1/console/test-cases/{case_id}\n# emily-core/api/routes/console_resources.py' },
     { name: LANGGRAPH_TOOLS_ENTRY_NAME, cls: 'langgraph-tools-entry', func: 'LangGraph 工具', sub: 'tool_node · 已注册 BaseTool',
@@ -1033,7 +1033,6 @@ function selectResource() {
     q('#panorama-nodes-panel').hidden = true;
     q('#project-events-panel').hidden = true;
     q('#test-cases-panel').hidden = true;
-    q('#session-pool-panel').hidden = true;
     q('#session-archive-panel').hidden = true;
     q('.resource-display').hidden = false;
 
@@ -1099,7 +1098,6 @@ function selectUpload() {
     q('#panorama-nodes-panel').hidden = true;
     q('#project-events-panel').hidden = true;
     q('#test-cases-panel').hidden = true;
-    q('#session-pool-panel').hidden = true;
     q('#session-archive-panel').hidden = true;
     q('#upload-panel').hidden = false;
 
@@ -1466,7 +1464,6 @@ function selectRag() {
     q('#panorama-nodes-panel').hidden = true;
     q('#project-events-panel').hidden = true;
     q('#test-cases-panel').hidden = true;
-    q('#session-pool-panel').hidden = true;
     q('#session-archive-panel').hidden = true;
     q('#rag-panel').hidden = false;
 
@@ -1613,7 +1610,6 @@ function selectNodeTable() {
     q('#panorama-nodes-panel').hidden = true;
     q('#project-events-panel').hidden = true;
     q('#test-cases-panel').hidden = true;
-    q('#session-pool-panel').hidden = true;
     q('#session-archive-panel').hidden = true;
     q('#node-table-panel').hidden = false;
 
@@ -1746,7 +1742,6 @@ function selectSopDisplay() {
     q('#panorama-nodes-panel').hidden = true;
     q('#project-events-panel').hidden = true;
     q('#test-cases-panel').hidden = true;
-    q('#session-pool-panel').hidden = true;
     q('#session-archive-panel').hidden = true;
     q('#sop-display-panel').hidden = false;
 
@@ -1824,7 +1819,6 @@ function selectPanoramaNodes() {
     q('#panorama-nodes-panel').hidden = false;
     q('#project-events-panel').hidden = true;
     q('#test-cases-panel').hidden = true;
-    q('#session-pool-panel').hidden = true;
     q('#session-archive-panel').hidden = true;
 
     ensureGlobalUsers();
@@ -1878,7 +1872,7 @@ function renderPanoramaNodes(rows) {
     }).join('');
 }
 
-// ── 会话池 / 归档（只读观测：上框 = 活跃 Session + 最近消息；下框 = 已归档会话 + 对话全文）──
+// ── 会话日志（只读观测：会话索引 + 点行看对话全文；原「会话池」上框已退役）──
 
 function selectSessionObservatory() {
     _selectedName = SESSION_OBSERVATORY_ENTRY_NAME;
@@ -1902,104 +1896,13 @@ function selectSessionObservatory() {
     q('#panorama-nodes-panel').hidden = true;
     q('#project-events-panel').hidden = true;
     q('#test-cases-panel').hidden = true;
-    // 上框 + 下框同时显示
-    q('#session-pool-panel').hidden = false;
+    // 单框：会话索引（原「会话池」上框已退役）
     q('#session-archive-panel').hidden = false;
 
-    loadSessionPool();
     loadSessionArchive();
 }
 
-function _fmtIdle(sec) {
-    const s = Number(sec) || 0;
-    if (s < 60) return `${s} 秒`;
-    if (s < 3600) return `${Math.floor(s / 60)} 分`;
-    return `${Math.floor(s / 3600)} 时 ${Math.floor((s % 3600) / 60)} 分`;
-}
-
-function _fmtTs(ts) {
-    if (!ts) return '—';
-    const d = new Date(Number(ts) * 1000);
-    return isNaN(d.getTime()) ? '—' : d.toLocaleString('zh-CN', { hour12: false });
-}
-
-async function loadSessionPool() {
-    const tbody = q('#session-pool-tbody');
-    const empty = q('#session-pool-empty');
-    const status = q('#session-pool-status');
-    const msgBox = q('#session-pool-messages');
-    tbody.innerHTML = '<tr><td colspan="4" class="hint">加载中…</td></tr>';
-    empty.hidden = true;
-    msgBox.hidden = true;
-    try {
-        const resp = await fetch(`${API_CONSOLE}/session-pool`);
-        const json = await resp.json();
-        if (json.code !== 0 || !json.data) {
-            tbody.innerHTML = `<tr><td colspan="4" class="hint">加载失败：${escapeHtml(json.message || 'unknown')}</td></tr>`;
-            status.textContent = '';
-            return;
-        }
-        const d = json.data;
-        status.textContent = `活跃 ${d.total} 个 · 池运行 ${_fmtIdle(d.uptime_seconds)}`;
-        renderSessionPool(d.sessions || []);
-    } catch (e) {
-        tbody.innerHTML = `<tr><td colspan="4" class="hint">网络错误：${escapeHtml(e.message)}</td></tr>`;
-    }
-}
-
-function renderSessionPool(sessions) {
-    const tbody = q('#session-pool-tbody');
-    const empty = q('#session-pool-empty');
-    if (!sessions.length) {
-        tbody.innerHTML = '';
-        empty.hidden = false;
-        return;
-    }
-    empty.hidden = true;
-    tbody.innerHTML = sessions.map(s => {
-        const cid = escapeAttr(s.conversation_id);
-        return `<tr>
-            <td class="cell-link" data-action="session-messages" data-conv="${cid}">${escapeHtml(s.conversation_id)}</td>
-            <td>${_fmtIdle(s.idle_seconds)}</td>
-            <td>${_fmtTs(s.last_active_ts)}</td>
-            <td><button class="cell-add" data-action="session-messages" data-conv="${cid}">查看消息</button></td>
-        </tr>`;
-    }).join('');
-    tbody.querySelectorAll('[data-action="session-messages"]').forEach(el => {
-        el.addEventListener('click', () => showSessionMessages(el.dataset.conv));
-    });
-}
-
-async function showSessionMessages(convId) {
-    const box = q('#session-pool-messages');
-    box.hidden = false;
-    box.innerHTML = '<div class="hint">加载中…</div>';
-    try {
-        const resp = await fetch(`${API_CONSOLE}/session-pool/${encodeURIComponent(convId)}/messages?limit=5`);
-        const json = await resp.json();
-        if (json.code !== 0 || !json.data) {
-            box.innerHTML = `<div class="hint">加载失败：${escapeHtml(json.message || 'unknown')}</div>`;
-            return;
-        }
-        const rows = json.data.messages || [];
-        if (!rows.length) {
-            box.innerHTML = `<div class="hint">会话 ${escapeHtml(convId)} 暂无消息</div>`;
-            return;
-        }
-        const items = rows.map(m => {
-            const dir = m.direction === 'agent_to_user' ? 'Emily' : (m.sender_name || '用户');
-            const ts = String(m.created_at || '').slice(0, 19);
-            return `<li><span class="muted">[${escapeHtml(ts)}]</span> `
-                + `<b>${escapeHtml(dir)}</b>：${escapeHtml(m.content || '')}</li>`;
-        }).join('');
-        box.innerHTML = `<div class="session-pool-msg-head">会话 ${escapeHtml(convId)} · 最近 ${rows.length} 条</div>`
-            + `<ul class="session-pool-msg-list">${items}</ul>`;
-    } catch (e) {
-        box.innerHTML = `<div class="hint">网络错误：${escapeHtml(e.message)}</div>`;
-    }
-}
-
-// ── 会话归档（只读观测：归档索引 + 点姓名看对话全文）──
+// ── 会话日志（只读观测：会话索引 + 点行看对话全文）──
 
 const ARCHIVE_REASON_LABEL = { expired: 'TTL 截断', terminated: '手动终止', manual: '手动归档', restart: '重启收口' };
 const ARCHIVE_STATUS_LABEL = { active: '进行中', truncated: '已截断' };
@@ -2118,10 +2021,19 @@ function renderSessionArchive(rows) {
         const reason = r.archive_reason
             ? ` <span class="muted">${ARCHIVE_REASON_LABEL[r.archive_reason] || escapeHtml(r.archive_reason)}</span>`
             : '';
+        // 多段（同一会话被截断/重启后再续）：状态列标注段数，便于理解轮次为何累积
+        const segTag = (r.segment_count || 1) > 1
+            ? ` <span class="muted">共 ${r.segment_count} 段</span>`
+            : '';
         const channel = [r.platform || '', r.im_user_id || '']
             .filter(Boolean).map(escapeHtml).join(' · ') || '—';
         const fname = String(r.md_file_path || '').split('/').pop();
         const size = r.has_content ? _fmtBytes(r.file_size) : '—';
+        // 正文文件列：多文件（跨天分段）显示文件数 + 总大小，否则显示单文件名
+        const fileCount = r.file_count || (r.has_content ? 1 : 0);
+        const fileCell = fileCount > 1
+            ? `${fileCount} 个文件 <span class="muted">${size}</span>`
+            : `${escapeHtml(fname)} <span class="muted">${size}</span>`;
         const active = (r.status || 'active') === 'active';
         return `<tr>
             <td>${escapeHtml(fmtArchiveTime(r.last_active_at || r.archived_at))}</td>
@@ -2129,8 +2041,8 @@ function renderSessionArchive(rows) {
             <td>${channel}</td>
             <td>${convHtml}</td>
             <td>${r.turn_count || 0}</td>
-            <td>${active ? '🟢 ' : ''}${statusLabel}${reason}</td>
-            <td>${escapeHtml(fname)} <span class="muted">${size}</span></td>
+            <td>${active ? '🟢 ' : ''}${statusLabel}${reason}${segTag}</td>
+            <td>${fileCell}</td>
         </tr>`;
     }).join('');
     tbody.querySelectorAll('[data-archive]').forEach(el => {
@@ -2150,12 +2062,16 @@ async function showSessionArchiveContent(archiveId) {
             return;
         }
         const d = json.data;
+        // 全文为该会话**全部段**合并（跨天分段各自成文件，同天重启复用同一文件）
+        const segInfo = (d.segment_count || 1) > 1 || (d.file_count || 1) > 1
+            ? ` · 共 ${d.segment_count || 1} 段 / ${d.file_count || 1} 个文件`
+            : '';
         const head = `会话 ${escapeHtml(d.conversation_id || '')} · ${escapeHtml(d.user_name || '')}`
             + (d.is_guest ? ' （访客）' : '')
             + (d.platform ? ` · ${escapeHtml(d.platform)} ${escapeHtml(d.im_user_id || '')}` : '')
             + ` · ${ARCHIVE_STATUS_LABEL[d.status] || escapeHtml(d.status || '')}`
             + ` · 最近活跃 ${escapeHtml(fmtArchiveTime(d.last_active_at || d.archived_at))}`
-            + ` · ${d.turn_count || 0} 轮 · ${escapeHtml(d.file_name || '')}`;
+            + ` · ${d.turn_count || 0} 轮 · ${escapeHtml(d.file_name || '')}${segInfo}`;
         box.innerHTML = `<div class="session-archive-head">${head}</div>`
             + `<pre class="session-archive-pre">${escapeHtml(d.content || '')}</pre>`;
     } catch (e) {
@@ -2199,7 +2115,6 @@ function selectTestCases() {
     q('#sop-display-panel').hidden = true;
     q('#panorama-nodes-panel').hidden = true;
     q('#project-events-panel').hidden = true;
-    q('#session-pool-panel').hidden = true;
     q('#session-archive-panel').hidden = true;
     q('#test-cases-panel').hidden = false;
 
@@ -2313,7 +2228,6 @@ function selectProjectEvents() {
     q('#mcp-panel').hidden = true;
     q('#sop-display-panel').hidden = true;
     q('#panorama-nodes-panel').hidden = true;
-    q('#session-pool-panel').hidden = true;
     q('#session-archive-panel').hidden = true;
     q('#test-cases-panel').hidden = true;
     q('#project-events-panel').hidden = false;
@@ -2610,7 +2524,6 @@ function selectLogs() {
     q('#panorama-nodes-panel').hidden = true;
     q('#project-events-panel').hidden = true;
     q('#test-cases-panel').hidden = true;
-    q('#session-pool-panel').hidden = true;
     q('#session-archive-panel').hidden = true;
     q('#logs-panel').hidden = false;
 
@@ -2843,7 +2756,6 @@ function selectSelfCheck() {
     q('#panorama-nodes-panel').hidden = true;
     q('#project-events-panel').hidden = true;
     q('#test-cases-panel').hidden = true;
-    q('#session-pool-panel').hidden = true;
     q('#session-archive-panel').hidden = true;
     q('#self-check-panel').hidden = false;
     q('#prompt-panel').hidden = true;
@@ -2873,7 +2785,6 @@ function selectPrompt() {
     q('#panorama-nodes-panel').hidden = true;
     q('#project-events-panel').hidden = true;
     q('#test-cases-panel').hidden = true;
-    q('#session-pool-panel').hidden = true;
     q('#session-archive-panel').hidden = true;
     q('#self-check-panel').hidden = true;
     q('#prompt-panel').hidden = false;
@@ -3145,7 +3056,6 @@ function selectLlmTrace() {
     q('#panorama-nodes-panel').hidden = true;
     q('#project-events-panel').hidden = true;
     q('#test-cases-panel').hidden = true;
-    q('#session-pool-panel').hidden = true;
     q('#session-archive-panel').hidden = true;
     q('#llm-trace-panel').hidden = false;
 
@@ -3337,7 +3247,6 @@ function selectMcp() {
     q('#panorama-nodes-panel').hidden = true;
     q('#project-events-panel').hidden = true;
     q('#test-cases-panel').hidden = true;
-    q('#session-pool-panel').hidden = true;
     q('#session-archive-panel').hidden = true;
     q('#mcp-panel').hidden = false;
 
@@ -4292,7 +4201,7 @@ function applyChatFrame(frame, bot) {
         renderChat();
     } else if (event === 'timeout') {
         bot.error = true;
-        bot.content = bot.content || '（等待超时：Emily 尚未返回，可稍后在「会话池 / 归档」查看处理结果）';
+        bot.content = bot.content || '（等待超时：Emily 尚未返回，可稍后在「会话日志」查看处理结果）';
         renderChat();
     } else if (event === 'error') {
         bot.error = true;

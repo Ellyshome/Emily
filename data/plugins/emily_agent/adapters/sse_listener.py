@@ -29,15 +29,23 @@ logger = logging.getLogger("emily.plugin.sse")
 class SSEListener:
     """监听 Core SSE 出站事件流，分发到 AstrBotOutboundSender。"""
 
-    def __init__(self, outbound: "AstrBotOutboundSender", event_registry: dict | None = None):
+    def __init__(
+        self,
+        outbound: "AstrBotOutboundSender",
+        event_registry: dict | None = None,
+        api_token: str = "",
+    ):
         """
         Args:
             outbound: AstrBotOutboundSender 实例。
             event_registry: conversation_id → AstrMessageEvent 映射（由 main 维护），
                             异步出站回复据此定位原始 event 发送到 IM。
+            api_token: 与 Core 的 EMILY_API_TOKEN 一致，经 X-Emily-Token 头随
+                       SSE 请求发送（Core 设了 token 时为空会 401）。
         """
         self.outbound = outbound
         self._event_registry = event_registry if event_registry is not None else {}
+        self._api_token = api_token
         self._running = False
         self._handlers = {
             "reply": self._handle_reply,
@@ -68,8 +76,17 @@ class SSEListener:
         sock_read 兜底检测对端静默断开（core 每 15s 有心跳，120s 足够保守）。
         """
         timeout = aiohttp.ClientTimeout(total=None, sock_read=120.0)
-        async with aiohttp.ClientSession(timeout=timeout) as session:
+        headers = {}
+        if self._api_token:
+            headers["X-Emily-Token"] = self._api_token
+        async with aiohttp.ClientSession(timeout=timeout, headers=headers) as session:
             async with session.get(sse_url) as resp:
+                if resp.status != 200:
+                    # 非 200（如 token 不匹配的 401）不是长连接：async for 会立即
+                    # 结束并正常返回，上层不会退避 → 空转死循环打爆 core。抛异常
+                    # 交给 listen() 的 except 分支做退避重连。
+                    text = await resp.text()
+                    raise RuntimeError(f"SSE http {resp.status}: {text[:200]}")
                 logger.info("SSE connected: %s (status=%d)", sse_url, resp.status)
                 event_type = "message"
                 data_buf: list[str] = []

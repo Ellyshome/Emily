@@ -7,12 +7,15 @@
   - 执行权留在编排侧：本模块只负责"照单执行并回报结果"，不做重排决策（重排由 M3 循环按结果决定）。
 
 图形态：
-    START ──dispatch──▶ run_step × N（层内并行）──▶ plan_join ──dispatch──▶ … ──▶ END
+    START ──dispatch──▶ run_step × N（层内并行）──▶ plan_join ──dispatch──▶ … ──END
   - dispatch：取当前可执行层；无则结束；有则以 `Send` 并行派发该层全部步骤
-  - plan_join：单一写者，依据并行回填的 `step_results` 计算 done/failed/skipped、级联跳过与动态追加
+  - plan_join：单一写者，依据并行回填的 `plan_step_results` 计算终态、级联跳过与动态追加
 
-状态合并约定：
-  - `step_results` 使用 add 归约器（并行安全）；`done/failed/skipped` 只在 plan_join 单点写入，避免并行冲突。
+状态合并约定（M1 改造后）：
+  - 本子图**不单独编译检查点**，由父图以节点形式挂载，随父图线程落检查点（LangGraph 子图语义）。
+  - 因此状态键名与父图 `KernelState` 逐一对齐（`plan_*` 前缀），父图声明同名字段以承接子图输出。
+  - `_plan_results` 使用 add 归约器（并行安全，且刻意不声明于父图 → 每次执行从空开始）；
+    `plan_done/failed/skipped/plan_text/plan_step_results` 只在 plan_join 单点写入。
 """
 from __future__ import annotations
 
@@ -35,19 +38,33 @@ _SKIP_SCHEMA_KINDS = frozenset({"sop"})
 
 
 class PlanState(TypedDict, total=False):
-    """计划子图状态（只含基础类型与摘要）。"""
+    """计划子图状态（只含基础类型与摘要）。
 
+    键名与父图 `KernelState` 的 `plan_*` 字段逐一对齐 —— 子图以节点形式挂入父图时，
+    只有两边 schema 都声明的键才会被传递与回写，未声明键会被框架静默丢弃。
+
+    分三段：
+      - 父图输入：`plan_id` / `plan_steps` / `plan_max_depth`（由父图 plan_build 写入）
+      - 子图内部：`_plan_*`（**刻意不出现在父图 schema** → 每次执行必然从空开始，杜绝跨轮残留）
+      - 回写父图：`plan_step_results` / `plan_done` / `plan_failed` / `plan_skipped` / `plan_text`
+        （plan_join 为唯一写者；同一步内单一写值，满足框架的多写约束）
+    """
+
+    # ── 父图输入 ──
     plan_id: str
-    steps: list               # [{step_id, capability, params, depends_on, depth}]
-    step_results: Annotated[list, operator.add]   # 并行回填（add 归约）
-    done: list
-    failed: list
-    skipped: list
-    depth: int
-    max_depth: int
-    layer_index: int
-    _processed: int           # 已并入终态的 step_results 游标（plan_join 单点维护）
-    plan_text: str            # 供对话回灌的成果摘要
+    plan_steps: list               # [{step_id, capability, params, depends_on, depth}]
+    plan_max_depth: int
+    # ── 子图内部（不声明于父图 schema）──
+    _plan_results: Annotated[list, operator.add]   # 并行回填（add 归约）
+    _plan_processed: int           # 已并入终态的结果游标（plan_join 单点维护）
+    _plan_layer: int
+    _plan_depth: int
+    # ── 回写父图 ──
+    plan_step_results: list
+    plan_done: list
+    plan_failed: list
+    plan_skipped: list
+    plan_text: str                 # 供对话回灌的成果摘要
 
 
 # ══════════════════════════════════════════════════════════════════════════════
@@ -104,15 +121,16 @@ def validate_steps(steps: list, specs: Any) -> list:
 
 
 def _finished(state: dict) -> set:
-    return set(state.get("done") or []) | set(state.get("failed") or []) | set(state.get("skipped") or [])
+    return (set(state.get("plan_done") or []) | set(state.get("plan_failed") or [])
+            | set(state.get("plan_skipped") or []))
 
 
 def next_layer(state: dict) -> list:
     """取当前可执行层：依赖已全部完成，且自身未进入终态。"""
-    done = set(state.get("done") or [])
+    done = set(state.get("plan_done") or [])
     finished = _finished(state)
     layer = []
-    for i, step in enumerate(state.get("steps") or []):
+    for i, step in enumerate(state.get("plan_steps") or []):
         sid = _step_id(step, i)
         if sid in finished:
             continue
@@ -124,9 +142,9 @@ def next_layer(state: dict) -> list:
 
 def cascade_skip(state: dict) -> list:
     """上游失败 → 下游级联跳过（传递闭包），返回新增跳过项。"""
-    failed = set(state.get("failed") or [])
-    skipped = set(state.get("skipped") or [])
-    steps = list(state.get("steps") or [])
+    failed = set(state.get("plan_failed") or [])
+    skipped = set(state.get("plan_skipped") or [])
+    steps = list(state.get("plan_steps") or [])
     changed = True
     added: list = []
     while changed:
@@ -145,7 +163,7 @@ def cascade_skip(state: dict) -> list:
 
 def can_append(state: dict, *, depth: int) -> bool:
     """动态追加的深度守卫：超过 max_depth 不再追加。"""
-    return int(depth or 0) <= int(state.get("max_depth") or DEFAULT_MAX_DEPTH)
+    return int(depth or 0) <= int(state.get("plan_max_depth") or DEFAULT_MAX_DEPTH)
 
 
 # ══════════════════════════════════════════════════════════════════════════════
@@ -162,9 +180,12 @@ def build_plan_subgraph(
 ):
     """构建计划子图。
 
+    产物**不传 checkpointer**：生产路径由父图以节点形式挂载（继承父线程检查点）；
+    本函数只负责图形态，执行入口见 `PlanRunner`（独立/回放场景）。
+
     Args:
         capability_executor: `async (capability, params) -> dict`，与 M3 的执行端口同形。
-        specs: M2 契约列表（用于入计划校验）；None 表示不校验。
+        specs: M2 契约列表（仅用于日志；契约校验统一在父图入计划前与 `PlanRunner` 内执行）。
         max_depth: 动态追加的最大深度。
         on_layer_done: `(state) -> list[step]`，每层完成后可动态追加步骤（受深度守卫约束）。
     """
@@ -186,7 +207,7 @@ def build_plan_subgraph(
         record["status"] = str(result.get("status") or ("success" if result.get("success") else "failed"))
         record["digest"] = str(result.get("reply") or result.get("summary") or "")[:300]
         record["needs_input"] = bool(result.get("needs_input"))
-        return {"step_results": [record]}
+        return {"_plan_results": [record]}
 
     def _dispatch(state: dict):
         layer = next_layer(state)
@@ -195,11 +216,11 @@ def build_plan_subgraph(
         return [Send(NODE_RUN_STEP, {"_step": step}) for step in layer]
 
     async def _plan_join(state: dict) -> dict:
-        results = list(state.get("step_results") or [])
-        processed = int(state.get("_processed") or 0)
+        results = list(state.get("_plan_results") or [])
+        processed = int(state.get("_plan_processed") or 0)
         layer_results = results[processed:]
-        done = list(state.get("done") or [])
-        failed = list(state.get("failed") or [])
+        done = list(state.get("plan_done") or [])
+        failed = list(state.get("plan_failed") or [])
         for r in layer_results:
             sid = str(r.get("step_id") or "")
             if r.get("needs_input"):
@@ -209,15 +230,16 @@ def build_plan_subgraph(
             else:
                 done.append(sid)
 
-        merged = dict(state, done=done, failed=failed, step_results=results)
+        merged = dict(state, plan_done=done, plan_failed=failed, plan_step_results=results)
         added_skips = cascade_skip(merged)
-        skipped = list(state.get("skipped") or []) + added_skips
+        skipped = list(state.get("plan_skipped") or []) + added_skips
 
-        steps = list(state.get("steps") or [])
-        depth = int(state.get("depth") or 0)
+        steps = list(state.get("plan_steps") or [])
+        depth = int(state.get("_plan_depth") or 0)
         if on_layer_done is not None:
             try:
-                extra = on_layer_done(dict(state, done=done, failed=failed, skipped=skipped)) or []
+                extra = on_layer_done(dict(state, plan_done=done, plan_failed=failed,
+                                           plan_skipped=skipped)) or []
             except Exception as e:  # noqa: BLE001
                 logger.warning("on_layer_done failed: %s", e)
                 extra = []
@@ -226,7 +248,7 @@ def build_plan_subgraph(
                 step_depth = int(step.get("depth") or (depth + 1))
                 if not can_append(dict(state), depth=step_depth):
                     logger.info("plan: drop appended step %s depth=%s > max=%s",
-                                step.get("step_id"), step_depth, state.get("max_depth"))
+                                step.get("step_id"), step_depth, state.get("plan_max_depth"))
                     continue
                 steps.append(dict(step, depth=step_depth))
 
@@ -243,9 +265,10 @@ def build_plan_subgraph(
         text = "\n".join(text_lines)
 
         return {
-            "done": done, "failed": failed, "skipped": skipped,
-            "steps": steps, "layer_index": int(state.get("layer_index") or 0) + 1,
-            "_processed": len(results),
+            "plan_done": done, "plan_failed": failed, "plan_skipped": skipped,
+            "plan_steps": steps, "plan_step_results": results,
+            "_plan_layer": int(state.get("_plan_layer") or 0) + 1,
+            "_plan_processed": len(results),
             "plan_text": text,
         }
 
@@ -262,7 +285,11 @@ def build_plan_subgraph(
 
 
 class PlanRunner:
-    """计划子图运行器：校验入计划、构造初始状态、执行、回传结果摘要。"""
+    """计划子图运行器：校验入计划、构造初始状态、执行、回传结果摘要。
+
+    定位：**独立/回放执行入口**。生产路径不再经此类调用子图 —— 会话图中子图已直接挂为节点，
+    状态随父线程落检查点。保留本类供回放语料与需要独立执行计划的场景使用（同一份子图，非第二实现）。
+    """
 
     def __init__(self, graph, *, specs: Any = None, max_depth: int = DEFAULT_MAX_DEPTH) -> None:
         self._graph = graph
@@ -273,25 +300,26 @@ class PlanRunner:
         problems = validate_steps(steps, self._specs)
         state: dict = {
             "plan_id": plan_id,
-            "steps": [dict(s) for s in (steps or [])],
-            "step_results": [],
-            "done": [], "failed": [], "skipped": [],
-            "depth": 0, "max_depth": self._max_depth, "layer_index": 0,
-            "_processed": 0, "plan_text": "",
+            "plan_steps": [dict(s) for s in (steps or [])],
+            "plan_step_results": [],
+            "plan_done": [], "plan_failed": [], "plan_skipped": [],
+            "_plan_results": [], "_plan_processed": 0, "_plan_layer": 0, "_plan_depth": 0,
+            "plan_max_depth": self._max_depth, "plan_text": "",
         }
         if problems:
             logger.warning("plan validation problems: %s", problems)
             # 校验不通过的步骤直接标记失败，交由级联跳过处理（不执行）
             bad_ids = {p.split(":", 1)[0] for p in problems}
-            state["failed"] = [sid for sid in
-                               (_step_id(s, i) for i, s in enumerate(state["steps"])) if sid in bad_ids]
+            state["plan_failed"] = [sid for sid in
+                                    (_step_id(s, i) for i, s in enumerate(state["plan_steps"]))
+                                    if sid in bad_ids]
         final = await self._graph.ainvoke(state, {"recursion_limit": int(recursion_limit)})
         return {
             "plan_id": plan_id,
-            "done": list((final or {}).get("done") or []),
-            "failed": list((final or {}).get("failed") or []),
-            "skipped": list((final or {}).get("skipped") or []),
-            "step_results": list((final or {}).get("step_results") or []),
+            "done": list((final or {}).get("plan_done") or []),
+            "failed": list((final or {}).get("plan_failed") or []),
+            "skipped": list((final or {}).get("plan_skipped") or []),
+            "step_results": list((final or {}).get("plan_step_results") or []),
             "plan_text": str((final or {}).get("plan_text") or ""),
             "validation_problems": problems,
         }

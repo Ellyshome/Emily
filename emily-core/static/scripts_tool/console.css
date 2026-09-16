@@ -269,18 +269,15 @@ body {
 .node-type-badge.nt-milestone { background: #3d1a5c; color: #d0a3ff; }
 .node-type-badge.nt-workpackage { background: #12403a; color: #6fe0c8; }
 .node-type-badge.nt-task { background: #26343d; color: #a9c4d0; }
-/* 列表外独立详情框架（会话池 / 会话归档 / 项目事件点击展开） */
+/* 列表外独立详情框架（会话日志 / 项目事件点击展开） */
 .detail-frame {
     margin-top: 10px; border: 1px solid #2a2a3e; border-radius: 6px;
     background: #14141e; padding: 12px; max-height: 58vh; overflow: auto;
 }
-.session-pool-msg-head { font-size: 12px; color: #999; margin-bottom: 6px; }
-.session-pool-msg-list { margin: 0; padding: 0; list-style: none; font-size: 12px; }
-.session-pool-msg-list li { padding: 3px 0; color: #d0d0d0; line-height: 1.5; }
 /* 可点击单元格（姓名 / 会话号）：打开明细全文 */
 .cell-link { color: #66e0ff; cursor: pointer; }
 .cell-link:hover { text-decoration: underline; color: #8ee7ff; }
-/* 会话归档：对话全文明细区（内容头样式） */
+/* 会话日志：对话全文明细区（内容头样式） */
 .session-archive-head { font-size: 12px; color: #999; margin-bottom: 6px; }
 .session-archive-pre {
     margin: 0; max-height: 58vh; overflow: auto; padding: 10px;

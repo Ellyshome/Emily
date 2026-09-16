@@ -21,7 +21,8 @@ import logging
 from dataclasses import dataclass, field
 from typing import Any, Callable
 
-from .kernel_state import ToolContext, bind_tool_context, clear_tool_context
+from ..kernel.context import KernelContext
+from .kernel_state import clear_tool_context
 from .session_graph import SessionGraphRunner, build_session_graph
 from .suspend_interrupt import (
     NOT_INITIATOR_REPLY,
@@ -344,13 +345,21 @@ async def handle_via_graph(loop, message, db_message_id: str = "", current_user_
                 return loop._reply(message, NOT_INITIATOR_REPLY)
             logger.info("suspend resume: conv=%s capability=%s", loop.conversation_id,
                         pending.get("capability"))
-            bind_tool_context(ToolContext(user_id=actor_ref["ref_id"], actor_ref=actor_ref))
+            # ★ 上下文入口：官方运行时上下文（M4）；唯一兼容桥转接进程内通道
+            kernel_ctx = KernelContext(
+                conversation_id=loop.conversation_id,
+                actor_ref=actor_ref,
+                user_id=str(actor_ref.get("ref_id", "") or ""),
+                db_message_id=str(db_message_id or ""),
+            )
+            kernel_ctx.bind_compat()
             try:
                 final = await resume_graph(
                     graph, loop.conversation_id,
                     str(getattr(message, "content", "") or ""),
                     recursion_limit=getattr(runner, "_recursion_limit", 50),
                     actor_ref=actor_ref,
+                    context=kernel_ctx,
                 )
             finally:
                 clear_tool_context()

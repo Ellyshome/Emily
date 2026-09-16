@@ -55,6 +55,11 @@ class AgentLoopState(TypedDict, total=False):
     pipeline_run_id: str
     current_stage: str
     _max_iterations: int
+    # ── 共享循环内核的中性裁决（M2）──
+    # 循环机制由 emily_core.kernel.react_kernel 单份实现，本图节点只做裁决映射。
+    _kernel_outcome: str
+    _kernel_error: dict
+    _kernel_text_nudge: int
 
 
 def make_initial_state(*, pipeline_run_id: str, max_iterations: int = 12) -> dict:
