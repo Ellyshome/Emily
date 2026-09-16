@@ -49,13 +49,15 @@ def _ensure_columns(engine) -> list[dict]:
 
     create_all() 只创建不存在的表，不会为已有表添加新列。
     此函数遍历已知需要补齐的表，检查 information_schema.columns，
-    缺失的列自动 ALTER TABLE ADD COLUMN。
+    缺失的列自动 ALTER TABLE ADD COLUMN；随后补 unique 约束与普通索引
+    （见函数内 `_PENDING_CONSTRAINTS` / `_PENDING_INDEXES`）。
 
-    每次启动执行一次，幂等（已有列跳过）。
+    每次启动执行一次，幂等（已有列/约束/索引跳过）。
 
     Returns:
-        本次实际新增的列清单（已存在的列跳过不记），格式：
+        本次实际新增的清单（已存在的跳过不记），格式：
         [{"table": "hook_execution_logs", "column": "user_id"}, ...]
+        索引项为 {"table": ..., "index": ...}，约束项为 {"table": ..., "constraint": ...}
     """
     # 已知需要补齐的表→列映射（表名: [(列名, SQL类型, 默认值), ...]）
     _PENDING_COLUMNS = {
@@ -104,6 +106,21 @@ def _ensure_columns(engine) -> list[dict]:
         "knowledge_chunks": [
             ("content_hash", "VARCHAR(64)", "''"),
             ("ingest_status", "VARCHAR(20)", "'pending'"),
+        ],
+        # 操作留痕治理：归因四元组与流量性质（见 issues/操作留痕治理/）
+        "business_event_logs": [
+            ("source", "VARCHAR(20)", "''"),
+            ("channel", "VARCHAR(30)", "''"),
+            ("channel_account", "VARCHAR(200)", "''"),
+            ("result", "VARCHAR(20)", "''"),
+            ("error_reason", "VARCHAR(500)", "''"),
+        ],
+        "messages": [
+            ("source", "VARCHAR(20)", "''"),
+        ],
+        "scheduler_job_logs": [
+            ("source", "VARCHAR(20)", "''"),
+            ("actor", "VARCHAR(200)", "''"),
         ],
     }
 
@@ -202,6 +219,61 @@ def _ensure_columns(engine) -> list[dict]:
                     logger.warning(
                         "Schema migration: failed to add constraint %s to %s: %s",
                         cname, table_name, e,
+                    )
+
+    # ── 补齐普通索引（create_all 不 ALTER 已有表；上面的约束块只处理 UNIQUE）──
+    # 操作留痕治理：source 过滤依赖索引（NFR-3），后续新增索引在此登记
+    _PENDING_INDEXES = {
+        "business_event_logs": [
+            ("idx_bel_source_created", "(source, created_at)"),
+        ],
+        "messages": [
+            ("idx_msg_source_created", "(source, created_at)"),
+        ],
+        "scheduler_job_logs": [
+            ("idx_sjl_source_created", "(source, created_at)"),
+        ],
+    }
+    with engine.connect() as conn:
+        for table_name, indexes in _PENDING_INDEXES.items():
+            table_exists = conn.execute(
+                sa_text(
+                    "SELECT EXISTS ("
+                    "  SELECT 1 FROM information_schema.tables"
+                    "  WHERE table_name = :tbl"
+                    ")"
+                ),
+                {"tbl": table_name},
+            ).scalar()
+            if not table_exists:
+                continue
+            for iname, definition in indexes:
+                already = conn.execute(
+                    sa_text(
+                        "SELECT EXISTS ("
+                        "  SELECT 1 FROM pg_indexes"
+                        "  WHERE indexname = :idx"
+                        ")"
+                    ),
+                    {"idx": iname},
+                ).scalar()
+                if already:
+                    continue
+                try:
+                    conn.execute(
+                        sa_text(
+                            f"CREATE INDEX IF NOT EXISTS {iname} "
+                            f"ON {table_name} {definition}"
+                        )
+                    )
+                    conn.commit()
+                    logger.info("Schema migration: created index %s on %s", iname, table_name)
+                    migrations.append({"table": table_name, "index": iname})
+                except Exception as e:
+                    # 索引创建失败只警告不阻塞启动
+                    logger.warning(
+                        "Schema migration: failed to create index %s on %s: %s",
+                        iname, table_name, e,
                     )
 
     return migrations

@@ -8,7 +8,7 @@
 # 说明：
 #   - node_id 为业务编号，统一前缀 ECOC（ECOCITY缩写）
 #   - stage_id: 0=立项 1=规划设计 2=工程施工 3=交付结算
-#   - node_type: MILESTONE / WORK_PACKAGE / TASK
+#   - node_type: MILESTONE（有子节点）/ TASK（无子节点）——由结构派生，填错也会被系统按结构刷新
 #   - owner_dept_id 用中文部门名（现状口径）；related_company_id 可写中文单位名称/类型，
 #     入口由 CompanyResolver 解析为 company_info.id 落库，并自动登记为该节点的参与单位
 #   - children 嵌套自动展平并设 parent_node_id
@@ -40,7 +40,7 @@ nodes:
     children:
       - node_id: "ECOC-LX-01-01"
         node_name: "可行性研究"
-        node_type: "WORK_PACKAGE"
+        node_type: "TASK"
         owner_dept_id: "工程部"
         related_company_id: "建设单位"
         deadline: "2025-04-15"
@@ -54,7 +54,7 @@ nodes:
             is_required: true
       - node_id: "ECOC-LX-01-02"
         node_name: "立项审批"
-        node_type: "WORK_PACKAGE"
+        node_type: "TASK"
         owner_dept_id: "工程部"
         related_company_id: "建设单位"
         deadline: "2025-06-30"
@@ -95,7 +95,7 @@ nodes:
     children:
       - node_id: "ECOC-GH-01-01"
         node_name: "方案设计"
-        node_type: "WORK_PACKAGE"
+        node_type: "TASK"
         owner_dept_id: "建筑所"
         related_company_id: "设计单位"
         deadline: "2025-09-30"
@@ -115,7 +115,7 @@ nodes:
             is_required: true
       - node_id: "ECOC-GH-01-02"
         node_name: "规划许可证办理"
-        node_type: "WORK_PACKAGE"
+        node_type: "TASK"
         owner_dept_id: "工程部"
         related_company_id: "建设单位"
         deadline: "2025-12-31"
@@ -166,7 +166,7 @@ nodes:
       # ── 地基与基础 ──
       - node_id: "ECOC-SG-01-01"
         node_name: "地基与基础"
-        node_type: "WORK_PACKAGE"
+        node_type: "MILESTONE"
         owner_dept_id: "项目部"
         related_company_id: "总包"
         deadline: "2026-03-31"
@@ -219,7 +219,7 @@ nodes:
       # ── 主体结构 ──
       - node_id: "ECOC-SG-01-02"
         node_name: "主体结构"
-        node_type: "WORK_PACKAGE"
+        node_type: "MILESTONE"
         owner_dept_id: "项目部"
         related_company_id: "总包"
         deadline: "2026-12-31"
@@ -290,7 +290,7 @@ nodes:
       # ── 机电安装 ──
       - node_id: "ECOC-SG-01-03"
         node_name: "机电安装"
-        node_type: "WORK_PACKAGE"
+        node_type: "TASK"
         owner_dept_id: "项目部"
         related_company_id: "总包"
         deadline: "2027-04-30"

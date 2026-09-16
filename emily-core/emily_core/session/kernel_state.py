@@ -261,8 +261,12 @@ def current_tool_perm_dict() -> "dict | None":
 def _read_graph_context_fallback() -> ToolContext:
     """过渡桥：端口未绑定时回退读取既有图上下文。
 
-    读取路径与迁移前 tools/expert_manage_tool.py 中的两个私有 helper 完全一致，
-    因此不改变任何运行时行为。M3 图内绑定落地后删除本函数。
+    读取路径与迁移前旧工具层私有 helper 完全一致，因此不改变任何运行时行为。
+    M3 图内绑定落地后删除本函数。
+
+    注（2026-09-16）：`current_tool_user_id` / `current_tool_perm_dict` 的最后一个
+    消费方（专家工具 `expert_manage_tool`）随专家模块整线退役而移除，本端口族当前
+    **无消费方**（孤儿）。它属内核端口，按约束 13 另案评估退役，不随业务能力退役一并删。
     """
     try:
         from ..workitem.langgraph_engine.state import get_bus_context

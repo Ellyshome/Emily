@@ -200,6 +200,32 @@ class ProjectNodeRepo:
             )
 
     @staticmethod
+    def find_all(limit: int = 5000) -> list[ProjectNode]:
+        """查询全部未废弃节点（供全量状态重算等维护用途）。"""
+        with get_session() as session:
+            return (
+                session.query(ProjectNode)
+                .filter(ProjectNode.is_discarded == False)
+                .order_by(ProjectNode.node_id.asc())
+                .limit(limit)
+                .all()
+            )
+
+    @staticmethod
+    def find_children(parent_node_id: str) -> list[ProjectNode]:
+        """查询直接子节点（供父节点状态聚合）。"""
+        with get_session() as session:
+            return (
+                session.query(ProjectNode)
+                .filter(
+                    ProjectNode.parent_node_id == parent_node_id,
+                    ProjectNode.is_discarded == False,
+                )
+                .order_by(ProjectNode.node_id.asc())
+                .all()
+            )
+
+    @staticmethod
     def find_by_status(status: str, project_id: str | None = None,
                        limit: int = 200) -> list[ProjectNode]:
         """按状态查询节点。

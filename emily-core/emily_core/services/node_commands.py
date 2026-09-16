@@ -5,6 +5,8 @@
 
 from dataclasses import dataclass, field
 
+from .node_state_machine import NODE_TYPE_TASK
+
 
 # ══════════════════════════════════════════════════════════════════════════════
 # 节点管理 Commands
@@ -21,7 +23,7 @@ class CreateNodeCommand:
     creator_id: str = ""
     remark: str = ""
     responsible_user_id: str = ""   # 责任人（为空时自动取 creator_id），需求 §3.1.2
-    node_type: str = "WORK_PACKAGE" # 节点类型：MILESTONE / WORK_PACKAGE / TASK，需求 §3.1.1
+    node_type: str = NODE_TYPE_TASK    # 节点类型：MILESTONE / TASK（两层制，由结构派生）
     participant_company_ids: list[str] = field(default_factory=list)  # 参与单位ID列表
 
 
@@ -209,18 +211,6 @@ class ResubmitNodeDeliverableCommand:
     file_name: str = ""         # API 日志预留
     attachment_file_id: str = ""
     submitted_by: str = ""
-
-
-@dataclass
-class CreateTaskNodeCommand:
-    """创建 TASK 类型叶子节点命令。"""
-    project_id: str
-    node_name: str
-    responsible_user_id: str = ""       # 为空时取 creator_id
-    deadline: str = ""
-    parent_node_id: str = ""
-    description: str = ""
-    creator_id: str = ""
 
 
 @dataclass

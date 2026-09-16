@@ -385,6 +385,10 @@
                 <select id="logs-module-select" class="panel-user-select" title="按记录模块过滤">
                     <option value="">全部模块</option>
                 </select>
+                <label class="panel-user-select" title="按流量性质排除（仅对带来源列的模块生效：业务事件 / 调度器作业）"
+                       style="display:inline-flex;align-items:center;gap:6px;cursor:pointer;">
+                    <input type="checkbox" id="logs-exclude-test" style="margin:0;" /> 排除测试流量
+                </label>
             </div>
             <div class="node-table-body">
                 <table class="node-table logs-table">

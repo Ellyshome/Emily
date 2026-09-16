@@ -37,7 +37,7 @@ class CreateNodeRequest(BaseModel):
     remark: str = Field(default="", description="备注")
     creator_id: str = Field(default="", description="创建人ID")
     responsible_user_id: str = Field(default="", description="责任人ID（为空时取creator_id）")
-    node_type: str = Field(default="WORK_PACKAGE", description="节点类型：MILESTONE / WORK_PACKAGE / TASK")
+    node_type: str = Field(default="TASK", description="节点类型：MILESTONE（有子节点）/ TASK（叶子），由结构派生")
 
 
 class UpdateNodeRequest(BaseModel):

@@ -207,7 +207,20 @@ class SchedulerEngine:
                 if handler is None:
                     raise RuntimeError(f"No handler for action_type={job.action_type}")
 
-                result = await handler.execute(ctx.action_params)
+                # 留痕上下文注入（入口职责）：本次作业执行期间的动作记 source=auto
+                from ..infrastructure.logging.audit import (
+                    SOURCE_AUTO,
+                    bind_audit_context,
+                    reset_audit_context,
+                )
+
+                _audit_token = bind_audit_context(
+                    source=SOURCE_AUTO, channel_account=job.action_type,
+                )
+                try:
+                    result = await handler.execute(ctx.action_params)
+                finally:
+                    reset_audit_context(_audit_token)
                 ctx.result = result
                 success = result.success
                 summary = (result.summary or "")[:1000]

@@ -1,12 +1,14 @@
 """embed_and_index 工具 —— 文本批量 embedding + 入 pgvector。
 
+薄壳：实现与留痕都在 `services/knowledge_service.KnowledgeService`（方案 A 同源同痕），
+本模块只负责把 LLM 工具入参转成 service 调用，签名与返回契约保持不变。
+
 输入 chunks[]，调当前 embedding 后端（本地 TEI / 远程 API，选型见
 infrastructure/embedding/factory.py）生成向量，写入 knowledge_chunks 表。
 """
 
 from __future__ import annotations
 import logging
-import time
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
@@ -42,7 +44,7 @@ async def handle_embed_and_index(
     tei: "EmbeddingClient",
     repo: "KnowledgeChunkRepo",
 ) -> dict:
-    """M14 handler：embedding + 入 pgvector。
+    """M14 handler：embedding + 入 pgvector（委托 KnowledgeService）。
 
     Args:
         params: {chunks[{text, index?}], doc_metadata?}
@@ -51,44 +53,9 @@ async def handle_embed_and_index(
     Returns:
         {success, indexed_ids[], count, doc_id, elapsed_ms}
     """
-    started = time.monotonic()
-    chunks = params.get("chunks", [])
-    doc_meta = params.get("doc_metadata", {})
+    from ..services.knowledge_service import KnowledgeService
 
-    if not chunks:
-        return {"success": False, "error": "chunks is empty"}
-
-    # M1: doc_id 必填校验（锚定 files.id，禁止回退 uuid4）
-    if not doc_meta.get("doc_id"):
-        return {"success": False, "error": "doc_metadata.doc_id is required (files.id)"}
-
-    # 1. 提取文本
-    texts = [c.get("text", "") for c in chunks]
-    if not any(texts):
-        return {"success": False, "error": "all chunks have empty text"}
-
-    # 2. 批量 embedding
-    try:
-        embeddings = await tei.embed(texts)
-    except Exception as e:
-        logger.warning("embed_and_index: TEI embed failed: %s", e)
-        return {"success": False, "error": f"embedding failed: {e}"}
-
-    if len(embeddings) != len(chunks):
-        return {"success": False,
-                "error": f"embedding count mismatch: got {len(embeddings)}, expected {len(chunks)}"}
-
-    # 3. 入 pgvector
-    try:
-        ids = repo.batch_insert(chunks, embeddings, doc_meta)
-    except Exception as e:
-        logger.warning("embed_and_index: batch_insert failed: %s", e)
-        return {"success": False, "error": f"DB insert failed: {e}"}
-
-    return {
-        "success": True,
-        "indexed_ids": ids,
-        "count": len(ids),
-        "doc_id": doc_meta.get("doc_id", ids[0] if ids else ""),
-        "elapsed_ms": int((time.monotonic() - started) * 1000),
-    }
+    return await KnowledgeService(tei=tei, repo=repo).index_chunks(
+        params.get("chunks", []) or [],
+        params.get("doc_metadata", {}) or {},
+    )

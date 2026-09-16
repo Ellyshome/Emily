@@ -953,6 +953,37 @@ scripts:
     timeout_seconds: 60
     scheduling_note: "纯手动"
 
+  backfill_audit_source:
+    description: "backfill_audit_source.py — 存量留痕回填流量性质 source（操作留痕治理 FR-13）。默认预览，--apply 实际写入。"
+    category: system_maintenance
+    source_path: scripts/backfill_audit_source.py
+    invocation: uv run python scripts/backfill_audit_source.py {args}
+    check_arg: --dry-run
+    run_args: ["--apply"]
+    auto_run: null
+    auto_run_args: []
+    writes_db: true
+    aggregation_parent: null
+    status: active
+    entrypoint: null
+    timeout_seconds: 120
+    scheduling_note: "一次性回填，纯手动"
+    params:
+      - name: apply
+        type: flag
+        label: "实际写入"
+        help: "勾选后真正 UPDATE；不勾选只做预览与抽样"
+        required: false
+        default: false
+      - name: sample
+        type: int
+        label: "预览样本条数"
+        help: "预览时展示的样本行数"
+        required: false
+        default: 20
+        min: 0
+        max: 200
+
   rag_visible_check:
     description: "rag_visible_check.py — 手动校验某用户可见文件集与检索结果。"
     category: system_maintenance
@@ -1156,6 +1187,37 @@ scripts:
         type: flag
         label: 仅预览
         help: 只统计将影响的行数，不写库（建议先预览再执行）
+
+  migrate_node_type_two_layers:
+    description: "migrate_node_type_two_layers.py — 全景节点两层制 · 存量类型迁移：三层（MILESTONE/WORK_PACKAGE/TASK）收敛为两层（MILESTONE/TASK），幂等。"
+    category: one_shot
+    source_path: scripts/migrate_node_type_two_layers.py
+    invocation: uv run python scripts/migrate_node_type_two_layers.py {args}
+    check_arg: --dry-run
+    run_args: []
+    auto_run: null
+    auto_run_args: []
+    writes_db: true
+    aggregation_parent: null
+    status: one_shot
+    entrypoint: null
+    timeout_seconds: 120
+    scheduling_note: "一次性（幂等，可重复执行；执行前请备份 project_nodes）"
+    params:
+      - name: dry-run
+        type: flag
+        label: 仅预览
+        help: 只统计将影响的行数并列出逐条映射，不写库（建议先预览再执行）
+      - name: project-id
+        type: str
+        label: 项目
+        help: 限定单个项目（留空为全部项目）
+        required: false
+        options_source: projects
+      - name: recalc-status
+        type: flag
+        label: 迁移后重算状态
+        help: 按新状态语义自底向上重算全部节点状态（建议执行，否则库内状态与新规则不一致）
 
   migrate_world_book_segments:
     description: "migrate_world_book_segments.py — 为存量世界书补 structure.node_segments（重跑 Builder，幂等：version +1）。"

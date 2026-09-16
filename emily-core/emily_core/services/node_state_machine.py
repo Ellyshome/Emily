@@ -28,6 +28,18 @@ COMPLETED = "COMPLETED"
 
 VALID_STATUSES = frozenset({CONDITIONS_NOT_MET, IN_PROGRESS, COMPLETED})
 
+
+# ══════════════════════════════════════════════════════════════════════════════
+# 节点类型（两层制：里程碑 / 任务）
+# ══════════════════════════════════════════════════════════════════════════════
+
+NODE_TYPE_MILESTONE = "MILESTONE"   # 有子节点（可嵌套里程碑）
+NODE_TYPE_TASK = "TASK"             # 叶子节点（承载可计量成果）
+# 已退场类型：仅存量迁移脚本读取，新写入路径不再产生
+NODE_TYPE_WORK_PACKAGE = "WORK_PACKAGE"
+
+VALID_NODE_TYPES = frozenset({NODE_TYPE_MILESTONE, NODE_TYPE_TASK})
+
 # 三态流转规则（NOT_ACTIVATED 已退场，PRD US-04）
 # CONDITIONS_NOT_MET → IN_PROGRESS：条件满足
 # IN_PROGRESS → COMPLETED：成果 100% 完成
@@ -144,29 +156,36 @@ def determine_node_status(dependencies: list[DependencySnapshot],
                           children: list[ChildSnapshot]) -> str:
     """判定节点应处于的状态。
 
-    规则：
-    - 无子节点：由自身前置条件 + 成果完成度决定
-    - 有子节点：由所有子节点集体决定
+    任务（叶子，无子节点）：由自身前置条件 + 成果完成量决定
+      - 前置依赖未满足 / 无成果定义 / 完成量为 0 → CONDITIONS_NOT_MET（未启动）
+      - 0 < 完成量 < 目标 → IN_PROGRESS（运行中）
+      - 完成量 >= 目标 → COMPLETED（已完结）
+
+    里程碑（有子节点）：由所有直接子节点集体决定（逐层递归）
       - 所有子节点 CONDITIONS_NOT_MET → CONDITIONS_NOT_MET
-      - 至少一个子节点 IN_PROGRESS → IN_PROGRESS
-      - 所有必需子节点 COMPLETED → COMPLETED
+      - 所有子节点 COMPLETED → COMPLETED
+      - 其余 → IN_PROGRESS
     """
     if children:
-        # 父节点模式：由子节点集体决定
+        # 里程碑模式：由子节点集体决定，自身成果不参与判定
         return _determine_parent_status(children)
 
-    # 普通节点模式
+    # 任务模式
     dep_satisfaction = calc_dependency_satisfaction(dependencies, deliverable_file_status)
     if dep_satisfaction < 1.0:
         return CONDITIONS_NOT_MET
 
-    # 无任何成果定义 → 节点尚未定义工作，保留为"条件不足"
+    # 无任何成果定义 → 节点尚未定义可计量工作，保留为"条件不足"
     if not deliverables:
         return CONDITIONS_NOT_MET
 
     completion = calc_deliverable_completion(deliverables)
     if completion >= 1.0:
         return COMPLETED
+
+    # 已完成量为 0 → 尚未开工（首报即开工）
+    if completion <= 0.0:
+        return CONDITIONS_NOT_MET
 
     return IN_PROGRESS
 

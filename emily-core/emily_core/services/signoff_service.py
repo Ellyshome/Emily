@@ -15,6 +15,8 @@ import asyncio
 import logging
 from datetime import datetime, timezone
 
+from ..infrastructure.logging.audit import audited
+
 logger = logging.getLogger("emily.signoff")
 
 
@@ -53,6 +55,13 @@ class SignoffService:
     #  核心入口
     # ========================================================================
 
+    @audited(
+        category="node",
+        action="acknowledged",
+        target_type="node",
+        actor_arg="user_id",
+        target_arg="object_id",
+    )
     async def acknowledge(self, object_type: str, object_id: str,
                           user_id: str, remark: str = "") -> dict:
         """签认一条业务对象。

@@ -18,7 +18,7 @@
     python scripts/wiring_scan.py --with-models       # 追加 DB 列（低置信度，需复核）
     python scripts/wiring_scan.py --markdown          # Markdown 表格（供测试报告粘贴）
     python scripts/wiring_scan.py --json              # JSON
-    python scripts/wiring_scan.py --only expert_review_enabled,long_term_memory
+    python scripts/wiring_scan.py --only user_memory_enabled,langgraph_checkpointer
 
 退出码：0 = 无断线；1 = 发现断线；2 = 运行错误。
 

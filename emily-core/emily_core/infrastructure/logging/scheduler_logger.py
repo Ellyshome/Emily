@@ -24,10 +24,20 @@ class SchedulerJobLogger:
         error_detail: str = "",
         started_at: str = "",
         completed_at: str = "",
+        source: str = "",
+        actor: str = "",
     ) -> None:
         """同步写入（在 SchedulerEngine 的同步上下文中使用）。"""
         from .log_writer import EvolutionLogWriter
         from ...infrastructure.database.models import SchedulerJobLog
+
+        if not source:
+            try:
+                from .audit import SOURCE_AUTO, current_audit_context
+
+                source = current_audit_context().source or SOURCE_AUTO
+            except Exception:
+                source = "auto"
 
         EvolutionLogWriter.write_sync(
             SchedulerJobLog,
@@ -40,4 +50,6 @@ class SchedulerJobLogger:
             error_detail=error_detail,
             started_at=started_at,
             completed_at=completed_at,
+            source=source,
+            actor=actor or "系统",
         )

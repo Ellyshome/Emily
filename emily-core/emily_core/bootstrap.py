@@ -49,59 +49,97 @@ def _setup_logging(config: Config) -> None:
             _logger.warning("File logging disabled: %s", e)
 
 
+# ── env → Config 映射（唯一权威来源）───────────────────────────────
+# 运行时由 _config_from_env() 消费；配置清单页（emy-config，api/routes/config_inventory.py）
+# 反查同一常量，禁止另行维护副本。新增环境变量入口 = 在此加一行 + 在类型集中登记。
+ENV_CONFIG_MAP: dict[str, str] = {
+    "EMILY_DATABASE_URL": "database_url",
+    "EMILY_BOT_NAME": "bot_name",
+    "EMILY_TAKEOVER_MODE": "takeover_mode",
+    "EMILY_LOG_LEVEL": "log_level",
+    "EMILY_LLM_API_KEY": "llm_api_key",
+    "EMILY_LLM_BASE_URL": "llm_base_url",
+    "EMILY_LLM_MODEL": "llm_model",
+    "EMILY_LLM_ROUTER_MODEL": "llm_router_model",
+    "EMILY_LLM_GUARDIAN_MODEL": "llm_guardian_model",
+    "EMILY_LLM_AGENT_LOOP_MODEL": "llm_agent_loop_model",
+    "EMILY_LLM_TEMPERATURE": "llm_temperature",
+    "EMILY_LLM_MAX_TOKENS": "llm_max_tokens",
+    "EMILY_LLM_AGENT_LOOP_MAX_TOKENS": "llm_agent_loop_max_tokens",
+    "EMILY_LLM_CONTEXT_WINDOW_OVERRIDE": "llm_context_window_override",
+    "EMILY_STORAGE_ROOT": "storage_root",
+    "EMILY_HOOK_CONFIG_PATH": "hook_config_path",
+    "EMILY_TEI_URL": "tei_url",
+    "EMILY_VLM_API_URL": "vlm_api_url",
+    "EMILY_VLM_API_KEY": "vlm_api_key",
+    "EMILY_VLM_MODEL": "vlm_model",
+    "EMILY_KB_ENABLED": "kb_enabled",
+    "EMILY_PROMPTS_DIR": "prompts_dir",
+    "EMILY_EMBEDDING_API_URL": "embedding_api_url",
+    "EMILY_EMBEDDING_API_KEY": "embedding_api_key",
+    "EMILY_EMBEDDING_MODEL": "embedding_model",
+    "EMILY_EMBEDDING_MODE": "embedding_mode",
+    "EMILY_LANGGRAPH_CHECKPOINTER": "langgraph_checkpointer",
+    "EMILY_SESSION_LOOP_SOP_ALLOWLIST": "session_loop_sop_allowlist",
+    "EMILY_CAPABILITY_CALL_TIMEOUT_SECONDS": "capability_call_timeout_seconds",
+    "EMILY_TEST_CONV_PREFIXES": "test_conv_prefixes",
+    "EMILY_DEFAULT_INTERACTION_CHANNEL": "default_interaction_channel",
+    "EMILY_SCHEDULER_ENABLED": "scheduler_enabled",
+    "EMILY_SESSION_ARCHIVE_ENABLED": "session_archive_enabled",
+}
+
+# 布尔字段：环境变量为字符串，需显式转换（bool("false") 为真）
+ENV_BOOL_FIELDS: set[str] = {
+    "llm_console_trace_enabled", "kb_enabled",
+    "scheduler_enabled", "session_archive_enabled",
+}
+# 整数字段：环境变量为字符串，需显式转换
+ENV_INT_FIELDS: set[str] = {
+    "capability_call_timeout_seconds", "llm_max_tokens",
+    "llm_agent_loop_max_tokens", "llm_context_window_override",
+}
+# 浮点字段：环境变量为字符串，需显式转换
+ENV_FLOAT_FIELDS: set[str] = {
+    "llm_temperature",
+}
+# 列表字段：逗号分隔（空串 = 显式置空，如清空测试前缀＝不做前缀判定）
+ENV_LIST_FIELDS: set[str] = {
+    "test_conv_prefixes",
+}
+
+
 def _config_from_env(config_data: dict | None) -> dict:
-    """从环境变量补全配置（容器化部署主路径）。"""
+    """从环境变量补全配置（容器化部署主路径）。
+
+    映射与类型转换集定义在模块级常量（ENV_CONFIG_MAP / ENV_*_FIELDS），
+    配置清单页反查同一常量，避免两处维护。
+    """
     data = dict(config_data or {})
-    env_map = {
-        "EMILY_DATABASE_URL": "database_url",
-        "EMILY_LLM_API_KEY": "llm_api_key",
-        "EMILY_LLM_BASE_URL": "llm_base_url",
-        "EMILY_LLM_MODEL": "llm_model",
-        "EMILY_STORAGE_ROOT": "storage_root",
-        "EMILY_HOOK_CONFIG_PATH": "hook_config_path",
-        "EMILY_TEI_URL": "tei_url",
-        "EMILY_VLM_API_URL": "vlm_api_url",
-        "EMILY_VLM_API_KEY": "vlm_api_key",
-        "EMILY_VLM_MODEL": "vlm_model",
-        "EMILY_KB_ENABLED": "kb_enabled",
-        "EMILY_PROMPTS_DIR": "prompts_dir",
-        "EMILY_EMBEDDING_API_URL": "embedding_api_url",
-        "EMILY_EMBEDDING_API_KEY": "embedding_api_key",
-        "EMILY_EMBEDDING_MODEL": "embedding_model",
-        "EMILY_EMBEDDING_MODE": "embedding_mode",
-        "EMILY_EXPERT_REVIEW_ENABLED": "expert_review_enabled",
-        "EMILY_LANGGRAPH_CHECKPOINTER": "langgraph_checkpointer",
-        "EMILY_SESSION_LOOP_SOP_ALLOWLIST": "session_loop_sop_allowlist",
-        "EMILY_CAPABILITY_CALL_TIMEOUT_SECONDS": "capability_call_timeout_seconds",
-        "EMILY_TEST_CONV_PREFIXES": "test_conv_prefixes",
-        "EMILY_DEFAULT_INTERACTION_CHANNEL": "default_interaction_channel",
-    }
-    # 布尔字段：环境变量为字符串，需显式转换
-    bool_fields = {
-            "llm_console_trace_enabled", "kb_enabled", "expert_review_enabled",
-    }
-    # 整数字段：环境变量为字符串，需显式转换
-    int_fields = {
-        "capability_call_timeout_seconds",
-    }
-    # 列表字段：逗号分隔（空串 = 显式置空，如清空测试前缀＝不做前缀判定）
-    list_fields = {
-        "test_conv_prefixes",
-    }
-    for env_key, cfg_key in env_map.items():
+    for env_key, cfg_key in ENV_CONFIG_MAP.items():
         val = os.environ.get(env_key)
         if val is None or data.get(cfg_key):
             continue
-        if cfg_key in bool_fields:
+        if cfg_key in ENV_LIST_FIELDS:
+            # 列表字段：空串 = 显式置空（如清空测试前缀＝不做前缀判定）
+            data[cfg_key] = [x.strip() for x in str(val).split(",") if x.strip()]
+            continue
+        if not str(val).strip():
+            # 其余类型：空串视为「未配置」，保留代码默认值
+            # （compose 以 ${VAR:-} 形式列出入口时，未设置的变量会以空值注入）
+            continue
+        if cfg_key in ENV_BOOL_FIELDS:
             data[cfg_key] = val.strip().lower() in ("1", "true", "yes", "on")
-        elif cfg_key in int_fields:
+        elif cfg_key in ENV_INT_FIELDS:
             try:
                 data[cfg_key] = int(str(val).strip())
             except ValueError:
                 _logger.warning("Invalid int env %s=%r — ignored", env_key, val)
-        elif cfg_key in list_fields:
-            data[cfg_key] = [x.strip() for x in str(val).split(",") if x.strip()]
-        elif val:
+        elif cfg_key in ENV_FLOAT_FIELDS:
+            try:
+                data[cfg_key] = float(str(val).strip())
+            except ValueError:
+                _logger.warning("Invalid float env %s=%r — ignored", env_key, val)
+        else:
             data[cfg_key] = val
     return data
 
@@ -637,7 +675,12 @@ def build_startup_email_body(startup_report: dict) -> str:
         if migrations:
             migration_lines = []
             for m in migrations:
-                migration_lines.append(f"{m['table']}.{m['column']}")
+                if "column" in m:
+                    migration_lines.append(f"{m['table']}.{m['column']}")
+                elif "index" in m:
+                    migration_lines.append(f"{m['table']}.{m['index']}（索引）")
+                elif "constraint" in m:
+                    migration_lines.append(f"{m['table']}.{m['constraint']}（约束）")
             lines.append("数据库迁移：新增列 " + ", ".join(migration_lines))
         else:
             lines.append("数据库迁移：无")

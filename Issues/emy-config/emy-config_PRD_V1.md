@@ -3,7 +3,7 @@
 > **模块标识**：emy-config（Emily 配置中心，前端页面 + 只读清单 API）
 > **版本**：V1
 > **日期**：2026-09-16
-> **状态**：待评审（**尚未实施**，本文档为计划与规格）
+> **状态**：**已实施**（2026-09-16，实测验收与偏差见「附录 E」）
 > **与 emy-console 的关系**：并列的独立页面。emy-console = 运行时操作与观测；emy-config = 配置的声明面与生效面
 > **决策记录**（已确认）：
 > 1. 页面形态 = **独立页面，挂在 `/config`**
@@ -382,3 +382,44 @@ restart_hint     三类改动的生效方式说明
 3. 静态资源目录命名（`static/config/`）与 `StaticFiles` 挂载顺序是否需与 `/console` 保持一致的写法。
 4. 字段分组前缀规则的表是否需要单测守护（新增 `Config` 字段时能被正确归类）。
 5. 是否需要把清单接口的响应固化为测试夹具，以便回归比对（防字段增删后清单悄悄漏项）。
+
+## 附录 E　实施结果与偏差（2026-09-16）
+
+### E.1 交付物
+
+| 类型 | 文件 |
+|---|---|
+| 新增（后端） | `emily-core/emily_core/services/config_inventory.py`（清单引擎，只读） |
+| 新增（路由） | `emily-core/api/routes/config_inventory.py` |
+| 新增（前端） | `emily-core/static/config/{index.html,config.css,config.js}` |
+| 改动 | `emily_core/bootstrap.py`（`ENV_CONFIG_MAP` + 4 个类型集 + float 分支 + 13 个入口）、`api/server.py`（路由 + `/config` 静态挂载）、`api/middleware/auth.py`（白名单）、`docker-compose-{napcat,minimal,wecom}.yml`（`.env` 只读挂载 + 13 个 environment 条目） |
+| 文档 | `docs/Manual/代码文件目录.md`、`docs/Manual/接口协议与调用约定.md` §7.5/7.6、`docs/Manual/技术踩坑备忘录.md` §1.12/§8.6 |
+
+### E.2 实测验收（对照第八章）
+
+| # | 验收项 | 结果 |
+|---|---|---|
+| 1 | `/config` 返回 200，控制台无报错 | ✅ 新标签页加载后 `Console messages: (none)`（实测中发现并修复两个真实缺陷：遮罩吞点击、`inv.dotenv_readable` 字段路径写错，详见 §8.6） |
+| 2 | `fields` 条数 == Config 字段总数 | ✅ 79 / 79（`env_entry_count` 35 = 22 + 13） |
+| 3 | 三方对照正确性（抽查 `llm_model`） | ✅ `declared=deepseek-v4-pro`、`effective=deepseek-v4-pro`、`source=env` |
+| 4 | 幽灵字段已补齐 | ✅ `llm_agent_loop_model.env=EMILY_LLM_AGENT_LOOP_MODEL`、`has_env=true` |
+| 5 | 回归：设 env 后 agent loop 实际调用该模型 | ✅ 以 `EMILY_LLM_AGENT_LOOP_MODEL=deepseek-chat` 重建容器后，`llm_trace.jsonl` 该轮 4 次调用全部记为 `model=deepseek-chat`；撤销后回到 `deepseek-v4-pro`（AC-US-02.4） |
+| 6 | 告警准确性 | ✅ warn 4：`dotenv-uninjected`（EMILY_TEI_URL）/`file-conflict`（core_config.json 5 项）/`file-not-loaded`×2；info 3：`env-unmapped` 4 个（附源码消费位置）/`env-without-dotenv` 21 个/`file-invalid-key` 3 个 |
+| 7 | 密钥不泄密 | ✅ 全量响应体 grep `EMILY_LLM_API_KEY`/`SILICONFLOW_API_KEY`/`EMILY_EMAIL_PASSWORD`/`EMILY_API_TOKEN` 零命中 |
+| 8 | 只读性 | ✅ 无写配置接口；`/file` 对 `../.env`、`.env` 均返回「配置文件未登记」；操作前后 `git status` 对配置文件无变化 |
+
+### E.3 与 PRD 的偏差（均为实施中发现的必要修正）
+
+1. **补 compose `environment` 条目（PRD 未列，但不补则 US-02 不成立）**：env 只在容器**创建**时注入，仅把入口写进 `ENV_CONFIG_MAP` 而三份 compose 的 `environment` 段不列出该键，`.env` 里的值永远到不了容器——正是 P1 本身。故 13 个键同步写入三份 compose，形如 `${VAR:-}`。
+2. **「空值注入」语义**：`${VAR:-}` 在未设置时以空串注入。为避免 `EMILY_LLM_MAX_TOKENS=` 触发 `int("")` 告警、`EMILY_SCHEDULER_ENABLED=` 被误判为 `False`，`_config_from_env()` 统一按「空串 = 未配置，保留代码默认值」处理（**列表字段除外**，其空串语义为「显式置空」，原行为保留）；清单页对「已注入但为空」的字段 `source` 记为 `default`，并在 `env-without-dotenv` 告警中点明有几个空值项。
+3. **「是否被读取」改为运行时判定**：附录 B 的行号与结论改为由**源码 AST 扫描**（跳过注释与语句级裸字符串、剔除扫描器自身）在请求时算出，`evidence` 回传 `文件:行号`；不再硬编码。R4 的漂移风险随之消解——实测即发现附录 B 的 `_load_hook_config` 位置已从 920 漂到 `__init__.py:936/938`。
+4. **两组附加告警**：新增 `env-type-unregistered`（warn，应对 R2：设了 env 但类型未登记）与 `file-invalid-key`（info，仅对 `config-overrides` 语义的文件生效）。
+5. **前端 `fetch` 加 `no-store`**：本页的全部价值在于展示**当下**生效值，禁用缓存以免读到过期清单。
+
+### E.4 附带发现（既有故障，非本需求引入）
+
+实测 US-02.3 回归时发现 **LLM 全链路 SSL 失败**：mitmproxy 的**签发用 CA** 与 emily-core 信任的**分发证书**是两张不同 CA（指纹 `CE:80:54…` vs `C5:C3:37…`），导致所有 HTTPS 拦截握手 `CERTIFICATE_VERIFY_FAILED`、LLM 调用全部失败（用户仅见兜底话术）。已按「让分发证书等于签发 CA + 重启 emily-core」修复并验证通过，排查与修复口径记入 `docs/Manual/技术踩坑备忘录.md` §1.12。
+
+### E.5 未决（沿用 PRD 开放问题）
+
+- Q1（配置健康度并入 `/health`）、Q3（导出生效配置快照）未实施；Q2（`core_config.json` / `scheduler_config.json` 清理或接线）仍由独立需求决定——本需求只负责暴露，页面已给出「改了无效 + 应改哪里」的处置指引。

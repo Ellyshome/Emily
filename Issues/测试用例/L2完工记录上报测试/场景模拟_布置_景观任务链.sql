@@ -19,12 +19,12 @@
 --
 -- 【布置后的任务链】（层级深度上限 3，见 node_service.MAX_PARENT_DEPTH=3）
 --   EMR-SG-01 施工总控 (MILESTONE)
---     ├─ EMR-SG-01-05 景观绿化工程 (WORK_PACKAGE, 总包)
+--     ├─ EMR-SG-01-05 景观绿化工程 (MILESTONE, 总包)
 --     │    ├─ EMR-SG-01-05-01 绿化种植        (TASK, 责任人 黄志强) + 乔木灌木种植 120 株   ← 干扰项
 --     │    ├─ EMR-SG-01-05-02 硬质铺装与园路  (TASK, 责任人 黄志强) + 园路面层铺装 500㎡    ← 本场景正解
 --     │    │                                                        + 人行步道基层 800㎡
 --     │    └─ EMR-SG-01-05-03 景观照明与小品  (TASK, 责任人 陈志远)（无铺装类成果）
---     └─ EMR-SG-01-11 景观水景工程 (WORK_PACKAGE, 总包, 责任人 陈志远)   ← 本次新建（对照链）
+--     └─ EMR-SG-01-11 景观水景工程 (MILESTONE, 总包, 责任人 陈志远)   ← 本次新建（对照链）
 --          └─ EMR-SG-01-11-01 水景石材铺装 (TASK, 责任人 黄志强) + 水景池壁石材铺装 120㎡ ← 高干扰项
 --
 -- 【可见性口径】新建节点沿用 EMR-SG-01-05 的参与单位/参与人登记（含总包 中天建设集团），
@@ -74,7 +74,7 @@ SELECT
     uuid_generate_v4()::text, c.project_id, 'EMR-SG-01-11', '景观水景工程',
     '', c.c_zongbao, '2026-10-15',
     '[场景模拟布置] 对照链任务包：成果不含园路铺装工序，用于检验候选区分能力',
-    c.u_creator, NOW()::text, c.u_chen, 'WORK_PACKAGE', 'specific',
+    c.u_creator, NOW()::text, c.u_chen, 'MILESTONE', 'specific',
     'IN_PROGRESS', '0.00', 'EMR-SG-01', '1.0000', NOW()::text, false
 FROM _sim_ctx c
 ON CONFLICT (node_id) DO NOTHING;

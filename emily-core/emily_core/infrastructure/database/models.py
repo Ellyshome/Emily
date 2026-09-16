@@ -6,10 +6,12 @@
   新增表：company_info / project_indicator_details
           / business_flow_orders / instruction_orders / project_plans / plan_items
           / hook_execution_logs (M12a)
-          / experts / expert_approvals (专家Agent)
 
 users 表已合并原 employee 的人事档案字段（gender/id_card/qq/wechat/grouping/position 等），
 不再需要独立的 employees 表。
+
+注：experts / expert_approvals 两表随专家模块整线退役（2026-09-16）已移除，见
+`issues/已完成需求文件/专家Agent/专家Agent_退役记录_V1.md`。
 """
 
 from datetime import datetime, timezone, timedelta
@@ -163,8 +165,16 @@ class Message(Base):
     receiver_id = Column(String(200), nullable=True)  # 接收者ID（单聊）
     group_id = Column(String(200), nullable=True)     # 群ID（群聊，冗余以便查询）
 
+    # ── 操作留痕治理：流量性质暗记（user / ops / auto / test）──
+    # 取代 messages.event_id 的 "console_chat_" 字符串前缀判定（前缀保留作兼容）
+    source = Column(String(20), default="")
+
     # M11: 附件关联
     attachments_rel = relationship("MessageAttachment", back_populates="message", lazy="selectin")
+
+    __table_args__ = (
+        Index("idx_msg_source_created", "source", "created_at"),
+    )
 
 
 class Project(Base):
@@ -1098,7 +1108,7 @@ class ProjectNode(Base):
     is_discarded = Column(Boolean, default=False, comment="是否被废弃")
     status = Column(String(20), default="CONDITIONS_NOT_MET", comment="当前状态：CONDITIONS_NOT_MET / IN_PROGRESS / COMPLETED")
     responsible_user_id = Column(String(100), nullable=False, default="", comment="责任人（FK→users.id，创建时默认取 creator_id）")
-    node_type = Column(String(20), nullable=False, default="WORK_PACKAGE", comment="节点类型：MILESTONE / WORK_PACKAGE / TASK")
+    node_type = Column(String(20), nullable=False, default="TASK", comment="节点类型：MILESTONE（有子节点）/ TASK（叶子）")
     visibility_mode = Column(
         String(30), nullable=False, default="specific",
         comment="【已废弃，恒为 specific】历史值 all_project_files（全项目文件默认可见）已下线，文件必须经 node_accessible_files 显式绑定到节点"
@@ -1549,8 +1559,13 @@ class SchedulerJobLog(Base):
     completed_at = Column(String, default="")
     created_at = Column(String, default=_utc_now)
 
+    # ── 操作留痕治理：来源与操作人（与业务事件同处一套归因模型）──
+    source = Column(String(20), default="")        # auto / ops / ...
+    actor = Column(String(200), default="")        # "系统" 或作业标识/操作人
+
     __table_args__ = (
         Index("idx_sjl_action_created", "action_type", "created_at"),
+        Index("idx_sjl_source_created", "source", "created_at"),
     )
 
 
@@ -1590,9 +1605,18 @@ class BusinessEventLog(Base):
     pipeline_run_id = Column(String, default="")
     created_at = Column(String, default=_utc_now)
 
+    # ── 操作留痕治理：归因四元组（source/channel/channel_account + result/error_reason）──
+    # source 记"流量性质"（user/ops/auto/test），不是入口类型；channel 仅 source=user 时必填
+    source = Column(String(20), default="")
+    channel = Column(String(30), default="")            # QQ / 企微 / 小程序 / 邮箱
+    channel_account = Column(String(200), default="")   # 渠道账号，或 ops 的操作载体（cli/console）
+    result = Column(String(20), default="")             # succeeded / failed / rejected
+    error_reason = Column(String(500), default="")
+
     __table_args__ = (
         Index("idx_bel_category_created", "event_category", "created_at"),
         Index("idx_bel_project_created", "project_id", "created_at"),
+        Index("idx_bel_source_created", "source", "created_at"),
     )
 
 
@@ -1762,56 +1786,6 @@ class GroupMemory(Base):
 
     __table_args__ = (
         Index("idx_gm_group_id", "group_id"),
-    )
-
-
-# ══════════════════════════════════════════════════════════════════════════════
-# 专家Agent — 2 张新表（experts + expert_approvals）
-# ══════════════════════════════════════════════════════════════════════════════
-
-
-class Expert(Base):
-    """专家库表 —— 窄域业务专家定义与状态管理。
-
-    状态机：PENDING → ACTIVE/REJECTED；ACTIVE ↔ DISABLED。
-    每个专家绑定一份职能手册 + 一份任务手册，供评审节点加载注入 prompt。
-    """
-    __tablename__ = "experts"
-
-    id = Column(String, primary_key=True, default=_new_uuid)
-    expert_no = Column(String(32), unique=True, nullable=False, comment="业务编号 EXP-001")
-    name = Column(String(100), nullable=False, comment="专家名称")
-    function_desc = Column(String(200), nullable=False, comment="一句话职能描述")
-    manual_path = Column(String(500), nullable=False, comment="职能手册文件名（相对手册目录）")
-    task_manual_path = Column(String(500), nullable=False, comment="任务手册文件名（相对手册目录）")
-    review_schema = Column(Text, default="{}", comment="评审成果 JSON schema（注入 prompt）")
-    sop_id = Column(String(64), default="", comment="绑定 SOP ID，可空=通用专家")
-    status = Column(String(16), nullable=False, default="PENDING", comment="PENDING/ACTIVE/REJECTED/DISABLED")
-    creator_id = Column(String, nullable=False, comment="创建人 FK→users.id（软关联）")
-    approver_id = Column(String, default="", comment="审批人 FK→users.id（软关联）")
-    created_at = Column(String(50), nullable=False, default=_utc_now, comment="创建时间 ISO")
-    approved_at = Column(String(50), default="", comment="审批时间 ISO")
-    updated_at = Column(String(50), nullable=False, default=_utc_now, onupdate=_utc_now, comment="更新时间 ISO")
-
-    __table_args__ = (
-        Index("idx_experts_status", "status"),
-        Index("idx_experts_sop_id", "sop_id"),
-    )
-
-
-class ExpertApproval(Base):
-    """专家审批记录表 —— 只增不删，记录每次审批/启停操作。"""
-    __tablename__ = "expert_approvals"
-
-    id = Column(String, primary_key=True, default=_new_uuid)
-    expert_id = Column(String, nullable=False, comment="关联专家 FK→experts.id（软关联）")
-    action = Column(String(16), nullable=False, comment="APPROVE/REJECT/ENABLE/DISABLE")
-    operator_id = Column(String, nullable=False, comment="操作人 FK→users.id（软关联）")
-    reason = Column(Text, default="", comment="操作理由")
-    created_at = Column(String(50), nullable=False, default=_utc_now, comment="操作时间 ISO")
-
-    __table_args__ = (
-        Index("idx_expert_approvals_expert_id", "expert_id"),
     )
 
 

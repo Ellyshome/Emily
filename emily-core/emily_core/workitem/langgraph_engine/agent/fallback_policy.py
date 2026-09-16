@@ -44,7 +44,6 @@ class FallbackPolicy:
         "query_node",
         "query_my_nodes",
         "query_files",
-        "query_experts",
         "knowledge_search",
         "list_attachments",
         "list_file_versions",

@@ -16,7 +16,7 @@ from .state import AgentLoopState
 from .checkpointer import build_checkpointer
 from .nodes import (
     make_created, make_routing, make_executing, make_summarizing, make_error_analysis,
-    make_quality_gate, make_expert_review,
+    make_quality_gate,
 )
 from .agent.loop import route_after_agent, route_after_tool
 
@@ -74,19 +74,11 @@ def build_workitem_graph(
         hook_adapter, llm_client=llm_client, config=config),
         timeout=_timeout("error_analysis"))
     gs.add_node("quality_gate", make_quality_gate(), timeout=_timeout("quality_gate"))
-    gs.add_node("expert_review", make_expert_review(
-        hook_adapter, llm_client=llm_client, config=config),
-        retry_policy=retry_policy, timeout=_timeout("expert_review"))
 
     # ── 边 ──
     gs.add_edge(START, "created")
     gs.add_edge("created", "routing")
-    # routing → 条件路由（开关关：→ executing；开关开：expert_required → expert_review，否则 → executing）
-    gs.add_conditional_edges(
-        "routing",
-        make_route_after_routing(config),
-        {"executing": "executing", "expert_review": "expert_review"},
-    )
+    gs.add_edge("routing", "executing")
 
     # executing 触发首轮 agent_node
     gs.add_edge("executing", "agent_node")
@@ -108,8 +100,6 @@ def build_workitem_graph(
 
     # summarizing → quality_gate → 条件路由（pass→END / reject→agent_node）
     gs.add_edge("summarizing", "quality_gate")
-    # expert_review → summarizing（专家评审完成后直接进总结）
-    gs.add_edge("expert_review", "summarizing")
     gs.add_conditional_edges(
         "quality_gate",
         route_after_quality_gate,
@@ -136,57 +126,6 @@ def route_after_error(state: dict) -> str:
     if ea.get("should_abort"):
         return "failed"
     return "agent_node"
-
-
-def make_route_after_routing(config):
-    """构造 routing 后的路由闭包，注入 expert_review_enabled 开关。
-
-    config.expert_review_enabled 为 False 时全局跳过专家评审（即使 SOP 已绑定专家），
-    直接进 executing 并记录一条跳过说明；为 True（默认）时维持原判定逻辑。
-    """
-    enabled = getattr(config, "expert_review_enabled", True)
-
-    def _route(state: dict) -> str:
-        if not enabled:
-            wi_id = "?"
-            try:
-                from .state import get_bus_context
-                _wi = getattr(get_bus_context(), "work_item", None)
-                if _wi is not None:
-                    wi_id = getattr(_wi, "id", "?")
-            except RuntimeError:
-                pass
-            logger.info(
-                "route_after_routing: WI %s → executing (expert_review disabled by config)",
-                wi_id,
-            )
-            return "executing"
-        return _route_expert_or_executing(state)
-
-    _route.__name__ = "route_after_routing"
-    return _route
-
-
-def route_after_routing(state: dict) -> str:
-    """向后兼容入口（默认启用专家评审）；图内实际使用 make_route_after_routing(config)。"""
-    return _route_expert_or_executing(state)
-
-
-def _route_expert_or_executing(state: dict) -> str:
-    """expert_required && expert_id → expert_review，否则 → executing。"""
-    ctx = None
-    try:
-        from .state import get_bus_context
-        ctx = get_bus_context()
-    except RuntimeError:
-        pass
-    if ctx:
-        wi = getattr(ctx, "work_item", None)
-        if wi and getattr(wi, "expert_required", False) and getattr(wi, "expert_id", ""):
-            logger.info("route_after_routing: WI %s → expert_review (expert=%s)",
-                        getattr(wi, "id", "?"), wi.expert_id)
-            return "expert_review"
-    return "executing"
 
 
 def route_after_quality_gate(state: dict) -> str:

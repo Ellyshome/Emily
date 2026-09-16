@@ -31,12 +31,14 @@ def _time_sort_key(value: str) -> float:
     return dt.timestamp()
 
 # 模块白名单：key 供 API/前端使用；user=None 表示该日志不归属具体用户（按人过滤时跳过）。
+# source：该表是否带"流量性质"列（user/ops/auto/test）；仅这三张表有（见操作留痕治理），
+#         有该列的模块才支持"排除测试流量"过滤。
 LOG_MODULES = [
     dict(key="node_events", label="节点事件", table="node_events",
          id_field="id", time="created_at", user="operator_id",
          summary="CONCAT_WS(' | ', event_type, remark)"),
     dict(key="business_event_logs", label="业务事件", table="business_event_logs",
-         id_field="id", time="created_at", user="user_id",
+         id_field="id", time="created_at", user="user_id", source="source",
          summary="CONCAT_WS(' | ', event_action, event_category, summary, target_no, user_name)"),
     dict(key="pipeline_execution_logs", label="Pipeline 执行", table="pipeline_execution_logs",
          id_field="id", time="created_at", user="user_id",
@@ -70,7 +72,7 @@ LOG_MODULES = [
          summary="CONCAT_WS(' | ', NULLIF(archive_reason, ''), '轮次' || turn_count, "
                  "user_name, CASE WHEN is_guest THEN '访客' ELSE '' END)"),
     dict(key="scheduler_job_logs", label="调度器作业", table="scheduler_job_logs",
-         id_field="id", time="created_at", user=None,
+         id_field="id", time="created_at", user=None, source="source",
          summary="CONCAT_WS(' | ', action_type, CASE WHEN success THEN '成功' ELSE '失败' END, summary)"),
     dict(key="permission_audit_log", label="权限审计", table="permission_audit_log",
          id_field="log_id", time="event_time", user="grantor_id",
@@ -88,17 +90,28 @@ class ConsoleLogRepo:
     """聚合查看各类日志的只读 Repository。"""
 
     @staticmethod
-    def _query_module(session, m: dict, user_id: str, limit: int) -> list[dict]:
-        user_clause = ""
+    def _query_module(session, m: dict, user_id: str, limit: int,
+                      exclude_sources: list[str] | None = None) -> list[dict]:
+        conditions: list[str] = []
         params: dict = {"lim": limit}
         if user_id and m["user"]:
-            user_clause = f"WHERE {m['user']} = :uid"
+            conditions.append(f"{m['user']} = :uid")
             params["uid"] = user_id
+        src_col = m.get("source") or ""
+        if exclude_sources and src_col:
+            placeholders = []
+            for i, s in enumerate(exclude_sources):
+                key = f"ex{i}"
+                placeholders.append(f":{key}")
+                params[key] = s
+            conditions.append(f"{src_col} NOT IN ({', '.join(placeholders)})")
+        where = ("WHERE " + " AND ".join(conditions)) if conditions else ""
         uid_expr = m["user"] or "NULL"
+        src_expr = f"{src_col} AS source" if src_col else "NULL AS source"
         sql = text(
             f"SELECT {m['id_field']} AS id, {m['time']} AS t, {uid_expr} AS uid, "
-            f"({m['summary']}) AS summary "
-            f"FROM {m['table']} {user_clause} ORDER BY {m['time']} DESC LIMIT :lim"
+            f"({m['summary']}) AS summary, {src_expr} "
+            f"FROM {m['table']} {where} ORDER BY {m['time']} DESC LIMIT :lim"
         )
         rows = []
         for r in session.execute(sql, params).mappings():
@@ -109,12 +122,30 @@ class ConsoleLogRepo:
                 "time": r["t"] or "",
                 "user_id": r["uid"] or "",
                 "summary": (r["summary"] or "").strip(),
+                "source": (r["source"] or "") if src_col else "",
             })
         return rows
 
     @staticmethod
-    def query_aggregated(user_id: str, module: str, limit: int) -> list[dict]:
-        """按「人 / 记录模块」聚合各类日志，返回按时间倒序的扁平列表。"""
+    def is_test_record(row: dict) -> bool:
+        """统一分辨方法：该条留痕是否为测试流量（读 source 字段，不 grep 前缀）。
+
+        无 source 的模块（13/16）恒返回 False —— 这些表的测试流量当前无法结构化过滤
+        （见需求基线 §四.6 与计划 §2.6 的范围外说明）。
+        """
+        from ..infrastructure.logging.audit import SOURCE_TEST
+
+        return (row.get("source") or "") == SOURCE_TEST
+
+    @staticmethod
+    def query_aggregated(user_id: str, module: str, limit: int,
+                         exclude_sources: list[str] | None = None) -> list[dict]:
+        """按「人 / 记录模块」聚合各类日志，返回按时间倒序的扁平列表。
+
+        Args:
+            exclude_sources: 需要排除的流量性质（如 ["test"] 排除测试流量）。
+                             仅对带 source 列的模块生效。
+        """
         modules = [m for m in LOG_MODULES if not module or m["key"] == module]
         collected: list[dict] = []
         with get_session() as session:
@@ -122,7 +153,9 @@ class ConsoleLogRepo:
                 if user_id and not m["user"]:
                     continue
                 try:
-                    collected.extend(ConsoleLogRepo._query_module(session, m, user_id, limit))
+                    collected.extend(ConsoleLogRepo._query_module(
+                        session, m, user_id, limit, exclude_sources,
+                    ))
                 except Exception as ex:
                     logger.warning("console_log_repo query failed module=%s: %s", m["key"], ex)
         collected.sort(key=lambda r: _time_sort_key(r["time"]), reverse=True)

@@ -6,6 +6,7 @@ from typing import Optional
 from ..repositories.task_repo import TaskRepository
 from ..adapters.standard.command import TaskCommand
 from ..infrastructure.database.models import Task
+from ..infrastructure.logging.audit import audited
 
 logger = logging.getLogger("emily.service.task")
 
@@ -14,6 +15,15 @@ class TaskService:
     def __init__(self):
         self.repo = TaskRepository()
 
+    @audited(
+        category="task",
+        action="created",
+        target_type="task",
+        actor_arg="cmd.creator_id",
+        target_result_attr="id",
+        summary_arg="cmd.title",
+        summary="创建任务：{summary}",
+    )
     def create_task(self, cmd: TaskCommand) -> Task:
         task_no = self.repo.generate_task_no()
         task = self.repo.create(

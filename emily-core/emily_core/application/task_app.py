@@ -1,6 +1,9 @@
-"""TaskApplication —— 任务创建编排。"""
+"""TaskApplication —— 任务创建编排。
 
-import asyncio
+留痕（业务事件日志）已下沉到 TaskService.create_task（service 动作层统一挂载），
+本层只保留 EventJournal 的项目流水（面向项目成员的 md 台账，另案）。
+"""
+
 import logging
 
 from ..adapters.standard.result import RouteResult, HandlerResult
@@ -8,19 +11,6 @@ from ..adapters.standard.command import TaskCommand
 from ..services.task_service import TaskService
 
 logger = logging.getLogger("emily.app.task")
-
-
-def _log_business_event(**kwargs) -> None:
-    """非阻断写入业务事件日志。在调用时立即捕获 Pipeline 上下文。"""
-    try:
-        from ..infrastructure.logging.business_event_logger import BusinessEventLogger
-        # ensure_future 延迟执行，此时 Pipeline 上下文可能已清理，因此在此立即捕获
-        ctx = BusinessEventLogger._current_context
-        kwargs.setdefault("pipeline_run_id", ctx.get("pipeline_run_id", ""))
-        kwargs.setdefault("conversation_id", ctx.get("conversation_id", ""))
-        asyncio.ensure_future(BusinessEventLogger.log(**kwargs))
-    except Exception as e:
-        logger.debug("_log_business_event failed: %s", e, exc_info=True)
 
 
 class TaskApplication:
@@ -59,20 +49,6 @@ class TaskApplication:
                 if assignee:
                     summary += f"，负责人{assignee}"
                 self._journal.append(name=user_name, summary=summary)
-            # ── 进化日志：业务事件日志 ──
-            from ._user_utils import resolve_user_name
-            _uname = resolve_user_name(cmd.creator_id) or ""
-            _log_business_event(
-                event_category="task",
-                event_action="created",
-                target_type="task",
-                target_id=task.id,
-                target_no=getattr(task, "task_no", "") or "",
-                summary=f"创建任务：{task.title[:100]}",
-                user_id=user_id,
-                user_name=_uname,
-                project_id=route_result.project_id or "",
-            )
             reply = f"✅ 已创建任务（{task.task_no}）\n──────────────\n标题：{task.title}"
             if task.owner_text:
                 reply += f"\n负责人：{task.owner_text}"

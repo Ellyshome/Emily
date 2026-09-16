@@ -586,7 +586,7 @@ class SessionAgent:
     def _build_workitem(self, intent: dict, subtask: dict | None = None) -> WorkItem:
         """WI 物化工厂（供 SessionOrchestrator 回调用）。
 
-        保留原有 output_spec / result_constraints / work_spec / 专家匹配 /
+        保留原有 output_spec / result_constraints / work_spec /
         SOP-005 query_type 预填 逻辑，确保编排路径与 legacy 路径产出等价 WI。
         """
         from ..workitem.langgraph_engine.agent.fallback_policy import FallbackPolicy
@@ -629,7 +629,6 @@ class SessionAgent:
         )
 
         if not is_fallback:
-            self._match_expert(wi, sop_id)
             query_type = intent.get("query_type")
             if sop_id == "SOP-005-QRY" and query_type:
                 setattr(wi, "_prefilled_params", {"query_type": query_type})
@@ -716,23 +715,6 @@ class SessionAgent:
             ]
             return [wi for wi in items if wi is not None]
         return [self._build_workitem(intent, None)]
-
-    @staticmethod
-    def _match_expert(wi: "WorkItem", sop_id: str) -> None:
-        """专家Agent: 检查 SOP 是否绑定 ACTIVE 专家，设置 wi.expert_id / wi.expert_required。"""
-        if not sop_id:
-            return
-        try:
-            from emily_core.repositories.expert_repo import ExpertRepository
-            expert = ExpertRepository.get_by_sop_id(sop_id)
-            if expert and expert.status == "ACTIVE":
-                wi.expert_id = expert.id
-                wi.expert_required = True
-                logger.info("Session[%s] matched expert %s (%s) for sop=%s",
-                            wi.session_id, expert.expert_no, expert.name, sop_id)
-        except Exception as e:
-            logger.warning("Session[%s] expert match failed for sop=%s: %s",
-                           wi.session_id, sop_id, e)
 
     @staticmethod
     def _derive_constraints(intent: dict) -> dict:

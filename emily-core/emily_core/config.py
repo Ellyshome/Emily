@@ -182,18 +182,6 @@ class Config:
     memory（MemorySaver，仅用于本地调试/无库环境）。Postgres 不可达时自动回退 memory
     并打 WARNING，不阻断启动。可通过环境变量 EMILY_LANGGRAPH_CHECKPOINTER 覆盖。"""
 
-    # ── 专家Agent 配置 ──
-    expert_review_enabled: bool = True
-    """专家评审功能开关。False 时全局跳过专家评审——即使 SOP 已绑定 ACTIVE 专家，
-    routing 也直接进 executing（agent loop），并在日志中记录跳过说明。
-    可通过环境变量 EMILY_EXPERT_REVIEW_ENABLED 覆盖（false/0/no/off 视为关闭）。"""
-
-    expert_model: str = "deepseek-chat"
-    """专家评审用模型（chat 类，支持 temperature + json_mode）"""
-
-    llm_expert_max_tokens: int = 16384
-    """专家评审 LLM 最大输出 token 数（复杂评审需足够 token 输出完整 JSON）"""
-
     # ── Agent loop（L3）──
     agent_loop_max_iterations: int = 12
     """Agent loop 最大迭代次数（agent_node↔tool_node 循环上限，防 runaway）。

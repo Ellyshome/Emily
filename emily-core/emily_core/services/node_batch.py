@@ -24,6 +24,8 @@ from typing import Any
 
 logger = logging.getLogger("emily.node_batch")
 
+from .node_state_machine import NODE_TYPE_MILESTONE, NODE_TYPE_TASK
+
 
 # ══════════════════════════════════════════════════════════════════════════════
 # 节点树展平
@@ -39,7 +41,10 @@ def flatten_nodes(
 
     YAML 中 children 嵌套 → 展平后按层级顺序排列。
     node_id 为空时自动生成：NODE-{hash4}（基于 node_name + project_id）。
-    同时保留 node_type / child_weight / parent_node_id，供后续挂载与类型落库。
+    节点类型（单向派生）：有子节点 → 里程碑；无子节点 → 取声明值（仅接受
+    MILESTONE / TASK，其余含已退场的 WORK_PACKAGE 一律视为任务）。
+    保留"无子节点的里程碑"用于尚未分解的重大节点。
+    同时保留 child_weight / parent_node_id，供后续挂载使用。
     """
     flat: list[dict] = []
 
@@ -51,13 +56,20 @@ def flatten_nodes(
             node_id = generate_node_id(node_name, project_id)
             logger.debug("自动生成 node_id: %s → %s", node_name, node_id)
 
+        children = node_def.get("children", [])
+        declared_type = node_def.get("node_type", "")
+
         record = {
             "node_id": node_id,
             "node_name": node_def.get("node_name", ""),
             "deadline": node_def.get("deadline", ""),
             "related_company_id": node_def.get("related_company_id", "建设单位"),
             "remark": node_def.get("remark", ""),
-            "node_type": node_def.get("node_type", "WORK_PACKAGE"),
+            "node_type": (
+                NODE_TYPE_MILESTONE if children
+                else declared_type if declared_type in (NODE_TYPE_MILESTONE, NODE_TYPE_TASK)
+                else NODE_TYPE_TASK
+            ),
             "child_weight": node_def.get("child_weight", 1.0),
             "parent_node_id": parent_node_id,
             "deliverables": node_def.get("deliverables", []),
@@ -66,7 +78,6 @@ def flatten_nodes(
         flat.append(record)
 
         # 递归展平子节点
-        children = node_def.get("children", [])
         if children:
             child_records = flatten_nodes(
                 children,
@@ -225,7 +236,7 @@ async def create_node_tree(
             related_company_id=fn.get("related_company_id", "建设单位"),
             creator_id=creator_id,
             remark=fn.get("remark", ""),
-            node_type=fn.get("node_type", "WORK_PACKAGE"),
+            node_type=fn.get("node_type", NODE_TYPE_TASK),
         )
 
         try:

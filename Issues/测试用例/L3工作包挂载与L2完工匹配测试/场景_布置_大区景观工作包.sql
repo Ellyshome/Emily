@@ -19,9 +19,9 @@
 --
 -- 【布置出的结构】（深度上限 3，本布置只用到 2 层，留有 1 层余量）
 --   EMR-LG-01 大区景观工程 (MILESTONE · 总包 · 责任人 张正宏)
---     ├─ EMR-LG-01-01 铺装面层        (WORK_PACKAGE · 责任人 张正宏) 成果：铺装面层 500 平方米
---     ├─ EMR-LG-01-02 车行路基础垫层  (WORK_PACKAGE · 责任人 张正宏) 成果：车行路基础垫层 300 平方米
---     └─ EMR-LG-01-03 人行路基础垫层  (WORK_PACKAGE · 责任人 张正宏) 成果：人行路基础垫层 200 平方米
+--     ├─ EMR-LG-01-01 铺装面层        (TASK · 责任人 张正宏) 成果：铺装面层 500 平方米
+--     ├─ EMR-LG-01-02 车行路基础垫层  (TASK · 责任人 张正宏) 成果：车行路基础垫层 300 平方米
+--     └─ EMR-LG-01-03 人行路基础垫层  (TASK · 责任人 张正宏) 成果：人行路基础垫层 200 平方米
 --
 -- 【可见性口径】参与单位/参与人沿用同专业节点 EMR-SG-01-05 的登记（含总包 中天建设集团），
 --   保证张正宏（L3）与黄志强（L2）都能在 query_my_nodes 中看到这些节点。
@@ -86,7 +86,7 @@ INSERT INTO project_nodes (
 SELECT
     uuid_generate_v4()::text, c.project_id, v.node_id, v.node_name,
     '', c.c_zongbao, v.deadline, v.remark, c.u_creator, NOW()::text,
-    c.u_l3, 'WORK_PACKAGE', 'specific', 'IN_PROGRESS', '0.00',
+    c.u_l3, 'TASK', 'specific', 'IN_PROGRESS', '0.00',
     'EMR-LG-01', '1.0000', NOW()::text, false
 FROM _lg_ctx c,
 (VALUES

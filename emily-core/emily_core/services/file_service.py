@@ -10,6 +10,7 @@ from typing import Optional
 from ..repositories.file_repo import FileRepository
 from ..adapters.standard.command import FileCommand
 from ..infrastructure.database.models import File as FileModel
+from ..infrastructure.logging.audit import audited
 
 logger = logging.getLogger("emily.service.file")
 
@@ -80,6 +81,13 @@ class FileService:
             logger.info("File category updated: %s → %s by %s", result.file_no, validated, operator_id)
         return result
 
+    @audited(
+        category="file",
+        action="confidentiality_updated",
+        target_type="file",
+        actor_arg="operator_id",
+        target_arg="file_id",
+    )
     def update_confidentiality(
         self, file_id: str, confidentiality: int, operator_id: str = "",
     ) -> dict:

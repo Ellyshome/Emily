@@ -155,8 +155,8 @@ class InitializationChecker:
             t3["T3_milestone_deadlines"] = len(milestones) > 0 and all(m.deadline for m in milestones)
 
             # T3-3: 关键节点有责任人
-            wp_and_ms = [n for n in nodes if getattr(n, 'node_type', '') in ('MILESTONE', 'WORK_PACKAGE')]
-            t3["T3_node_responsible_persons"] = len(wp_and_ms) > 0 and all(n.responsible_user_id for n in wp_and_ms)
+            ms_nodes = [n for n in nodes if getattr(n, 'node_type', '') == 'MILESTONE']
+            t3["T3_node_responsible_persons"] = len(ms_nodes) > 0 and all(n.responsible_user_id for n in ms_nodes)
 
             # T3-4: 至少1个适配 SOP
             sop_count = 0
@@ -204,15 +204,15 @@ class InitializationChecker:
             t4["T4_all_node_responsible"] = len(nodes) > 0 and all(n.responsible_user_id for n in nodes)
 
             # T4-3: 节点依赖关系已建立
-            wp_nodes = [n for n in nodes if getattr(n, 'node_type', '') == 'WORK_PACKAGE']
-            wp_node_ids = [n.node_id for n in wp_nodes]
+            task_nodes = [n for n in nodes if getattr(n, 'node_type', '') == 'TASK']
+            task_node_ids = [n.node_id for n in task_nodes]
             dep_count = 0
-            if wp_node_ids:
+            if task_node_ids:
                 deps = session.query(NodeDependency).filter(
-                    NodeDependency.node_id.in_(wp_node_ids)
+                    NodeDependency.node_id.in_(task_node_ids)
                 ).count()
                 dep_count = deps
-            t4["T4_dependency_coverage"] = len(wp_nodes) > 0 and dep_count >= len(wp_nodes) * 0.5
+            t4["T4_dependency_coverage"] = len(task_nodes) > 0 and dep_count >= len(task_nodes) * 0.5
 
             # T4-4: 知识库已填充
             file_count = 0

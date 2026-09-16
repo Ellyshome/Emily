@@ -70,6 +70,30 @@ def _get_node_service():
     return NodeService(user_repo=PermissionRepository())
 
 
+def _get_file_manager():
+    """获取系统正确的 FileManager（复用 core 已注入实例，同源同能力）。"""
+    from api.server import get_core
+
+    core = get_core()
+    return getattr(core, "_file_manager", None)
+
+
+def _get_knowledge_service(tei=None, repo=None):
+    """构造 KnowledgeService（复用 core 的 chunk repo 与 storage，同源同能力）。
+
+    `tei` 由调用方按请求选定后端后传入（与既有 `_build_embedding_client` 一致）。
+    """
+    from api.server import get_core
+    from emily_core.services.knowledge_service import KnowledgeService
+
+    core = get_core()
+    return KnowledgeService(
+        tei=tei,
+        repo=repo if repo is not None else getattr(core, "_knowledge_chunk_repo", None),
+        storage=_get_storage_service(),
+    )
+
+
 def _get_self_check_fn():
     """加载 scripts/self_check.py 的 self_check()（复用运维脚本能力，容器/开发两态）。"""
     import importlib.util
@@ -591,7 +615,11 @@ async def upload_file(
     file: UploadFile = File(...),
     confidentiality: int = Form(1),
 ):
-    """上传文件到文件库（以选定用户名义归档，默认密级内部）。"""
+    """上传文件到文件库（以选定用户名义归档，默认密级内部）。
+
+    动作与留痕均在 FileManager.archive_upload（service 动作层，同源同痕），
+    本路由只做参数校验与转调（不自行落盘、不直调 repo）。
+    """
     if not user_id:
         return _err("请选择上传用户")
 
@@ -602,42 +630,28 @@ async def upload_file(
     if not data:
         return _err("文件内容为空")
 
+    fm = _get_file_manager()
+    if fm is None:
+        return _err("文件服务未就绪")
+
     try:
-        from emily_core.repositories.file_repo import FileRepository
-        from emily_core.services.file_storage_service import FileStorageService
-
-        storage = _get_storage_service()  # 正确 root=/app/attachments（复用 core 实例）
-        file_no = FileRepository.generate_file_no()
-        target_dir = storage.ensure_dir()  # /app/attachments/napcat/YYYY-MM/
-
-        ext = FileStorageService._infer_extension(file.filename or "", file.content_type or "")
-        saved_name = f"{file_no}{ext}"
-        local_path = target_dir / saved_name
-        await asyncio.to_thread(local_path.write_bytes, data)
-
-        record = await asyncio.to_thread(
-            FileRepository.create,
-            file_no=file_no,
-            filename=file.filename or saved_name,
+        res = await asyncio.to_thread(
+            fm.archive_upload,
+            file.filename or "",
+            data,
             uploaded_by=user_id,
-            file_type=file.content_type or "",
-            storage_path=str(local_path.relative_to(storage._storage_root)),
-            file_size=len(data),
-            file_category="OTHER",
-            purpose="RECORD",
+            content_type=file.content_type or "",
             confidentiality=confidentiality,
         )
-
-        return _ok({
-            "file_id": str(record.id) if record else "",
-            "file_no": file_no,
-            "filename": file.filename or saved_name,
-            "size": len(data),
-            "confidentiality": confidentiality,
-        })
     except Exception as ex:
         logger.exception("console.upload failed user_id=%s", user_id)
         return _err(f"上传失败：{ex}")
+
+    if not res.get("success"):
+        return _err("上传失败：文件记录未创建")
+    return _ok({k: res.get(k) for k in (
+        "file_id", "file_no", "filename", "size", "confidentiality",
+    )})
 
 
 # ══════════════════════════════════════════════════════════════════════════════
@@ -823,19 +837,8 @@ async def _delete_file(file_id: str, operator_id: str = "") -> dict:
         "deleted_links": int(deleted_links),
     }
 
-    if operator_id:
-        try:
-            await BusinessEventLogger.log(
-                event_category="file",
-                event_action="console_file_delete",
-                target_id=file_id,
-                summary=f"删除文件：{name or file_id}",
-                detail_json=json.dumps(result, ensure_ascii=False),
-                user_id=operator_id,
-            )
-        except Exception as ex:
-            logger.warning("console.file_delete log write failed: %s", ex)
-
+    # 留痕由 FileManager.soft_delete 的挂载点产生（service 动作层），
+    # 入口层不再写留痕 —— 否则同一次删除会记两条。
     return result
 
 
@@ -1060,93 +1063,40 @@ def _build_embedding_client(backend: str):
     return None, "本地 TEI 与远程 Embedding API 均不可用"
 
 
-def _prepare_file_chunks(file_id: str) -> dict:
-    """读取文件实体 → 解析文本 → 结构分块（同步，供 to_thread 包裹）。"""
-    from pathlib import Path
-
-    from emily_core.infrastructure.database.models import File
-    from emily_core.infrastructure.database.session import get_session
-    from emily_core.services.document_parser import DocumentParser
-    from emily_core.services.structural_chunker import StructuralChunker
-
-    with get_session() as session:
-        f = session.query(File).filter(File.id == file_id).first()
-        if f is None:
-            return {"success": False, "error": "文件不存在"}
-        if not f.storage_path:
-            return {"success": False, "error": "文件缺少本地存储路径"}
-        storage_path = f.storage_path
-        file_no = f.file_no or file_id
-        filename = f.filename or file_no
-
-    storage_root = str(_get_storage_service()._storage_root)
-    local_path = Path(storage_root) / storage_path
-    if not local_path.exists():
-        return {"success": False, "error": f"文件实体不存在：{local_path.name}"}
-
-    text = DocumentParser().parse(local_path)
-    if not text.strip():
-        return {"success": False, "error": "文件解析后无文本内容（可能是不支持的二进制格式）"}
-
-    chunks = StructuralChunker().chunk(text)
-    if not chunks:
-        return {"success": False, "error": "分块结果为空"}
-
-    return {
-        "success": True,
-        "chunks": chunks,
-        "file_no": file_no,
-        "filename": filename,
-    }
-
-
 @router.post("/rag-index")
 async def rag_index_file(req: RagIndexRequest):
-    """给选定文件执行 RAG 入库（doc_id 锚定 files.id，选定执行人溯源）。"""
+    """给选定文件执行 RAG 入库（doc_id 锚定 files.id，选定执行人溯源）。
+
+    动作与留痕均在 KnowledgeService.index_file（service 动作层，同源同痕）。
+    """
     file_id = req.file_id.strip()
     if not file_id:
         return _err("请选择要入库的文件")
 
+    from api.server import get_core
+
+    repo = getattr(get_core(), "_knowledge_chunk_repo", None)
+    if repo is None:
+        return _err("RAG 知识库未就绪")
+
+    tei, err = _build_embedding_client(req.backend)
+    if tei is None:
+        return _err(err)
+
     try:
-        prep = await asyncio.to_thread(_prepare_file_chunks, file_id)
-        if not prep.get("success"):
-            return _err(prep.get("error", "入库失败"))
-
-        from api.server import get_core
-        core = get_core()
-        repo = getattr(core, "_knowledge_chunk_repo", None)
-        if repo is None:
-            return _err("RAG 知识库未就绪")
-
-        tei, err = _build_embedding_client(req.backend)
-        if tei is None:
-            return _err(err)
-
-        from emily_core.tools.embed_tool import handle_embed_and_index
-        res = await handle_embed_and_index({
-            "chunks": prep["chunks"],
-            "doc_metadata": {
-                "doc_id": file_id,
-                "doc_name": prep.get("file_no") or file_id,
-                "stage": "console_rag_index",
-                "role": req.user_id or "",
-            },
-        }, tei=tei, repo=repo)
-
-        if not res.get("success"):
-            return _err(res.get("error", "入库失败"))
-
-        return _ok({
-            "file_id": file_id,
-            "file_no": prep.get("file_no", ""),
-            "filename": prep.get("filename", ""),
-            "doc_id": res.get("doc_id", file_id),
-            "count": res.get("count", 0),
-            "elapsed_ms": res.get("elapsed_ms", 0),
-        })
+        res = await _get_knowledge_service(tei=tei, repo=repo).index_file(
+            file_id, operator_id=req.user_id or "",
+        )
     except Exception as ex:
         logger.exception("console.rag_index failed file_id=%s", file_id)
         return _err(f"入库失败：{ex}")
+
+    if not res.get("success"):
+        return _err(res.get("error", "入库失败"))
+
+    return _ok({k: res.get(k) for k in (
+        "file_id", "file_no", "filename", "doc_id", "count", "elapsed_ms",
+    )})
 
 
 @router.get("/rag/backends")
@@ -1194,92 +1144,82 @@ async def rag_backends():
 
 @router.post("/rag-delete")
 async def rag_delete_file(req: RagDeleteRequest):
-    """删除库内指定文档的全部向量分块（doc_id 锚定 files.id），以 operator_id 登记日志。"""
+    """删除库内指定文档的全部向量分块（doc_id 锚定 files.id），以 operator_id 登记日志。
+
+    动作与留痕均在 KnowledgeService.remove_document（service 动作层，同源同痕），
+    本路由不再直写 business_event_logs。
+    """
     doc_id = req.doc_id.strip()
     if not doc_id:
         return _err("请选择要删除的库内文件")
 
+    from api.server import get_core
+
+    repo = getattr(get_core(), "_knowledge_chunk_repo", None)
+    if repo is None:
+        return _err("RAG 知识库未就绪")
+
     try:
-        from api.server import get_core
-        repo = getattr(get_core(), "_knowledge_chunk_repo", None)
-        if repo is None:
-            return _err("RAG 知识库未就绪")
-
-        deleted = await asyncio.to_thread(repo.delete_by_doc, doc_id)
-
-        if req.operator_id:
-            try:
-                import json
-
-                from emily_core.infrastructure.database.models import BusinessEventLog
-                from emily_core.infrastructure.database.session import get_session
-                with get_session() as session:
-                    session.add(BusinessEventLog(
-                        user_id=req.operator_id,
-                        event_category="rag",
-                        event_action="console_rag_delete",
-                        summary=f"RAG 移除：{doc_id}",
-                        detail_json=json.dumps(
-                            {"doc_id": doc_id, "deleted": int(deleted or 0)},
-                            ensure_ascii=False),
-                    ))
-            except Exception as ex:
-                logger.warning("console.rag_delete log write failed: %s", ex)
-
-        return _ok({"doc_id": doc_id, "deleted": int(deleted or 0)})
+        res = await _get_knowledge_service(repo=repo).remove_document(
+            doc_id, operator_id=req.operator_id or "",
+        )
     except Exception as ex:
         logger.exception("console.rag_delete failed doc_id=%s", doc_id)
         return _err(f"删除失败：{ex}")
 
+    if not res.get("success"):
+        return _err(res.get("error", "删除失败"))
+    return _ok({"doc_id": res.get("doc_id", doc_id), "deleted": res.get("deleted", 0)})
+
 
 @router.post("/rag-search")
 async def rag_search(req: RagSearchRequest):
-    """根据输入信息查库（向量 + 关键词混合检索）。"""
+    """根据输入信息查库（向量检索）。
+
+    检索实现与留痕均在 KnowledgeService.search（service 动作层，同源同痕）；
+    可见范围过滤（scope）仍由本路由按所选用户解析后下传。
+    """
     query = (req.query or "").strip()
     if not query:
         return _err("请输入查询内容")
 
+    client, err = _build_embedding_client(req.backend)
+    if client is None:
+        return _err(err)
+
+    from api.server import get_core
+
+    repo = getattr(get_core(), "_knowledge_chunk_repo", None)
+    if repo is None:
+        return _err("RAG 知识库未就绪")
+
+    # C14/M3：按所选用户可见文件范围过滤（复用 VisibleFileSetResolver，宁少答不泄露）
+    scoped_doc_ids = None
+    user_id = (req.user_id or "").strip()
     try:
-        client, err = _build_embedding_client(req.backend)
-        if client is None:
-            return _err(err)
-
-        from api.server import get_core
-        repo = getattr(get_core(), "_knowledge_chunk_repo", None)
-        if repo is None:
-            return _err("RAG 知识库未就绪")
-
-        from emily_core.providers.rag.pgvector_provider import PgVectorRagProvider
-        provider = PgVectorRagProvider(tei=client, repo=repo)
-
-        # C14/M3：按所选用户可见文件范围过滤（复用 VisibleFileSetResolver，宁少答不泄露）
-        scoped_doc_ids = None
-        user_id = (req.user_id or "").strip()
         if user_id:
             visible_file_ids, _, _ = await asyncio.to_thread(_build_visible_sets, user_id)
             scoped_doc_ids = list(visible_file_ids)
 
-        resp = await provider.search(query, top_k=req.top_k, scoped_doc_ids=scoped_doc_ids)
-
-        results = [
-            {
-                "content": r.content,
-                "score": r.score,
-                "source_document": r.source_document,
-                "source_file_id": r.source_file_id,
-                "source_title": r.source_title,
-            }
-            for r in resp.results
-        ]
-        return _ok({
-            "query": query,
-            "backend": req.backend,
-            "total": resp.total,
-            "results": results,
-        })
+        res = await _get_knowledge_service(tei=client, repo=repo).search(
+            query,
+            top_k=req.top_k,
+            scoped_doc_ids=scoped_doc_ids,
+            operator_id=user_id,
+        )
     except Exception as ex:
         logger.exception("console.rag_search failed query=%s", query)
         return _err(f"查库失败：{ex}")
+
+    if not res.get("success"):
+        return _err(res.get("error", "查库失败"))
+
+    return _ok({
+        "query": res.get("query", query),
+        "backend": req.backend,
+        "total": res.get("total", 0),
+        "results": res.get("results", []),
+    })
 
 
 # ══════════════════════════════════════════════════════════════════════════════
@@ -1367,23 +1307,44 @@ async def get_aggregated_logs(
     user_id: str = Query("", description="按用户过滤（操作人/归属人）"),
     module: str = Query("", description="记录模块 key，空=全部模块"),
     limit: int = Query(500, ge=1, le=2000, description="返回条数上限"),
+    exclude_sources: str = Query(
+        "", description="排除的流量性质，逗号分隔（如 test / test,ops）；空=不排除"),
 ):
-    """聚合查看各类日志，可按「人」和「记录模块」过滤。"""
+    """聚合查看各类日志，可按「人」和「记录模块」过滤。
+
+    exclude_sources：按流量性质排除（仅对带 source 列的模块生效，见操作留痕治理）。
+    """
     from emily_core.repositories.console_log_repo import ConsoleLogRepo, LOG_MODULES
 
     log_keys = {m["key"] for m in LOG_MODULES}
     if module and module not in log_keys:
         return _err(f"未知记录模块：{module}")
+
+    from emily_core.infrastructure.logging.audit import VALID_SOURCES
+
+    exclude_list = [s.strip() for s in (exclude_sources or "").split(",") if s.strip()]
+    unknown = [s for s in exclude_list if s not in VALID_SOURCES]
+    if unknown:
+        return _err(f"未知流量性质：{','.join(unknown)}")
+
     try:
-        rows = await asyncio.to_thread(ConsoleLogRepo.query_aggregated, user_id, module, limit)
+        rows = await asyncio.to_thread(
+            ConsoleLogRepo.query_aggregated, user_id, module, limit, exclude_list or None,
+        )
     except Exception as ex:
         logger.exception("console.logs failed module=%s user=%s", module, user_id)
         return _err(f"读取日志失败：{ex}")
     return _ok({
         "user_id": user_id or None,
         "module": module or None,
+        "exclude_sources": exclude_list,
         "modules": [
-            {"key": m["key"], "label": m["label"], "user_filterable": bool(m["user"])}
+            {
+                "key": m["key"],
+                "label": m["label"],
+                "user_filterable": bool(m["user"]),
+                "source_filterable": bool(m.get("source")),
+            }
             for m in LOG_MODULES
         ],
         "count": len(rows),
@@ -1402,17 +1363,13 @@ class SelfCheckRequest(BaseModel):
 
 
 async def _run_self_check(mode: str, check_tool_registry: bool, operator_id: str) -> dict:
-    """复用 scripts/self_check.py 的 self_check()，再补操作日志。"""
-    import json
-
-    from emily_core.infrastructure.logging.business_event_logger import BusinessEventLogger
-
+    """复用 scripts/self_check.py 的 self_check()（动作层自带留痕），此处只做报告裁剪。"""
     fn = _get_self_check_fn()
     if fn is None:
         raise RuntimeError("未找到 scripts/self_check.py")
 
     result = await asyncio.to_thread(
-        fn, mode=mode, check_tool_registry=check_tool_registry,
+        fn, mode=mode, check_tool_registry=check_tool_registry, operator_id=operator_id,
     )
 
     report = {
@@ -1425,23 +1382,10 @@ async def _run_self_check(mode: str, check_tool_registry: bool, operator_id: str
             "business": result.get("business", {}),
             "world_books": result.get("world_books", {}),
             "knowledge": result.get("knowledge", {}),
+            "audit": result.get("audit", {}),
         },
         "tools_consistency": result.get("tools_consistency", {}),
     }
-
-    if operator_id:
-        try:
-            await BusinessEventLogger.log(
-                event_category="system",
-                event_action="console_self_check",
-                summary=f"系统自检（{mode}）",
-                detail_json=json.dumps(
-                    {"mode": mode, "check_tool_registry": check_tool_registry},
-                    ensure_ascii=False),
-                user_id=operator_id,
-            )
-        except Exception as ex:
-            logger.warning("console.self_check log write failed: %s", ex)
 
     return report
 
@@ -2511,6 +2455,15 @@ async def chat_send(req: ChatSendRequest):
                 "platform_label": CHAT_PLATFORMS[req.platform],
                 "sender_name": sender_name,
             })
+
+            # 留痕上下文：console 模拟对话属测试流量（覆盖中间件注入的 ops）
+            # 走的是真实 IM 入口，产物与真实消息同构，故必须显式标记 source=test
+            from emily_core.infrastructure.logging.audit import (
+                SOURCE_TEST,
+                bind_audit_context,
+            )
+
+            bind_audit_context(source=SOURCE_TEST, override=True)
 
             task = _asyncio.ensure_future(core.handle_message(message, event_id=event_id))
             waiter = task

@@ -17,16 +17,18 @@ _CREATE_TASK_NODE_SCHEMA = {
     "type": "object",
     "properties": {
         "project_id": {"type": "string", "description": "项目ID（UUID）"},
-        "title": {"type": "string", "description": "任务标题"},
+        "title": {"type": "string", "description": "任务标题（即任务名称）"},
         "node_name": {"type": "string", "description": "节点名称（与title二选一）"},
         "executor_id": {"type": "string", "description": "执行人用户ID（UUID）"},
         "responsible_user_id": {"type": "string", "description": "负责人用户ID（UUID，与executor_id二选一）"},
         "deadline_at": {"type": "string", "description": "截止日期（ISO格式）"},
-        "parent_node_id": {"type": "string", "description": "父节点ID（UUID）"},
-        "node_id": {"type": "string", "description": "节点ID（UUID，与parent_node_id二选一）"},
+        "parent_node_id": {"type": "string", "description": "要挂载到的父节点ID（通常是里程碑；挂载后父节点即成为里程碑）"},
         "description": {"type": "string", "description": "任务描述"},
+        "deliverable_name": {"type": "string", "description": "可计量成果名称（如“乔木种植”“铺装面层”）；缺省取任务标题"},
+        "target_amount": {"type": "number", "description": "目标量（如 100 棵、200 平方米）。必填——无目标量的任务无法上报进度，也无法被完工上报匹配"},
+        "unit": {"type": "string", "description": "量纲（棵/平方米/米/份/项…）"},
     },
-    "required": ["project_id", "title"],
+    "required": ["project_id", "title", "target_amount"],
 }
 
 _SUBMIT_DELIVERABLE_SCHEMA = {
@@ -77,29 +79,93 @@ async def handle_create_task_node(
     user_id: str = "",
     **kwargs,
 ) -> dict:
-    """创建 TASK 类型叶子节点。"""
+    """创建 TASK 类型叶子节点（含可计量成果）。
+
+    两层制下任务必须带目标量：无成果的任务无法上报进度，也无法被完工上报
+    匹配。父节点挂载走 service 的 mount_child，由结构派生节点类型。
+    """
     if node_service is None:
         return {"success": False, "reply": "NodeService 未初始化"}
 
-    from ..services.node_commands import CreateTaskNodeCommand
+    from ..services.node_commands import (
+        CreateNodeCommand, CreateDeliverableCommand, MountChildCommand,
+    )
+    from ..services.node_batch import generate_node_id
 
-    cmd = CreateTaskNodeCommand(
-        project_id=params.get("project_id", ""),
-        node_name=params.get("title", params.get("node_name", "")),
+    project_id = params.get("project_id", "")
+    node_name = params.get("title", params.get("node_name", ""))
+    parent_node_id = params.get("parent_node_id", "")
+
+    if not node_name:
+        return {"success": False, "reply": "缺少任务名称（title）"}
+
+    target_amount = float(params.get("target_amount") or 0)
+    unit = (params.get("unit") or "").strip()
+    if target_amount <= 0:
+        return {
+            "success": False,
+            "reply": "缺少目标量（target_amount）：任务必须携带可计量目标（如 100 棵乔木、200 平方米铺装），"
+                     "请先向用户确认数量与量纲",
+        }
+
+    # 幂等：同名同项目生成确定性 node_id，已存在则跳过
+    node_id = generate_node_id(node_name, project_id)
+    existing = await node_service.get_node_detail(node_id)
+    if existing:
+        return {
+            "success": True,
+            "object_type": "node",
+            "object_id": node_id,
+            "skipped": True,
+            "reply": f"任务「{node_name}」已存在（{node_id}），未重复创建",
+        }
+
+    cmd = CreateNodeCommand(
+        project_id=project_id,
+        node_id=node_id,
+        node_name=node_name,
         responsible_user_id=params.get("executor_id", params.get("responsible_user_id", "")),
         deadline=params.get("deadline_at", ""),
-        parent_node_id=params.get("parent_node_id", params.get("node_id", "")),
-        description=params.get("description", ""),
+        remark=params.get("description", ""),
         creator_id=user_id,
     )
-
     result = await node_service.create_node(cmd)
+    if not result.success:
+        return {"success": False, "reply": result.message}
+
+    # 挂载到父节点（父节点因有子节点而成为里程碑）
+    if parent_node_id:
+        mount = await node_service.mount_child(MountChildCommand(
+            parent_node_id=parent_node_id,
+            child_node_id=node_id,
+            operator_id=user_id,
+        ))
+        if not mount.success:
+            return {
+                "success": True,
+                "object_type": "node",
+                "object_id": node_id,
+                "reply": f"任务「{node_name}」已创建（{node_id}），但挂载到 {parent_node_id} 失败：{mount.message}",
+            }
+
+    # 落可计量成果
+    deliverable = await node_service.create_deliverable(CreateDeliverableCommand(
+        node_id=node_id,
+        deliverable_name=params.get("deliverable_name", "") or node_name,
+        target_amount=target_amount,
+        unit=unit or "项",
+        operator_id=user_id,
+    ))
 
     return {
-        "success": result.success,
+        "success": True,
         "object_type": "node",
-        "object_id": result.node_id,
-        "reply": result.message,
+        "object_id": node_id,
+        "reply": (
+            f"任务「{node_name}」已创建（{node_id}），目标 {target_amount:g} {unit or '项'}"
+            + (f"；已挂载到 {parent_node_id}" if parent_node_id else "")
+            + ("" if deliverable.success else f"（注意：成果创建失败：{deliverable.message}）")
+        ),
     }
 
 
@@ -183,7 +249,7 @@ async def handle_query_my_nodes(
 
     状态口径：
       - 责任人：**不按状态过滤**——节点未启动时，责任人仍需看到它才能把成果/记录挂对位置；
-      - 参与人：只返回 IN_PROGRESS 节点（别人负责的已启动节点才与其当前工作相关）。
+      - 参与人：返回未完结（未启动 + 进行中）节点——未启动任务需可被首报，已完结节点不再相关。
     """
     if node_service is None:
         return {"success": False, "reply": "NodeService 未初始化"}
@@ -194,7 +260,7 @@ async def handle_query_my_nodes(
     node_type = params.get("node_type") or None
     limit = int(params.get("limit", 20))
 
-    # 查责任人（不限状态）+ 参与人（限进行中），合并去重
+    # 查责任人（不限状态）+ 参与人（未完结），合并去重
     resp_nodes = await asyncio.to_thread(
         ProjectNodeRepo.find_by_responsible_user,
         user_id,
@@ -207,9 +273,10 @@ async def handle_query_my_nodes(
         user_id,
         project_id=project_id,
         node_type=node_type,
-        status="IN_PROGRESS",
+        status="",
         limit=limit,
     )
+    part_nodes = [n for n in part_nodes if n.status != "COMPLETED"]
 
     seen: set[str] = set()
     merged: list[dict] = []

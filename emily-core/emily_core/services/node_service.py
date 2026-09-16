@@ -44,12 +44,13 @@ from .node_state_machine import (
     CONDITIONS_NOT_MET,
     IN_PROGRESS,
     COMPLETED,
+    NODE_TYPE_MILESTONE,
+    NODE_TYPE_TASK,
     NodeSnapshot,
     DependencySnapshot,
     DeliverableSnapshot,
     ChildSnapshot,
     calc_dependency_satisfaction,
-    calc_deliverable_completion,
     determine_node_status,
     detect_cycle,
 )
@@ -66,6 +67,7 @@ from ..repositories.node_repo import (
 )
 from ..repositories.file_repo import FileRepository
 from ..infrastructure.database.models import _new_id
+from ..infrastructure.logging.audit import audited
 
 if TYPE_CHECKING:
     from ..infrastructure.database.models import (
@@ -112,8 +114,9 @@ def _derive_related_company_from_participants(
 
 # 单父节点子节点数量上限（需求 §3.4 父子节点层级）
 MAX_CHILDREN_PER_PARENT = 100
-# 父子嵌套深度上限（含根节点最多 3 层）
-MAX_PARENT_DEPTH = 3
+# 树深度安全上限（仅防止脏数据导致无限递归/成环；两层制下里程碑可任意嵌套，
+# 结构约束由"有子节点即里程碑、无子节点即任务"的派生规则自动保证）
+MAX_TREE_DEPTH = 10
 
 
 class NodeService:
@@ -181,6 +184,7 @@ class NodeService:
 
     # ── 节点 CRUD ──
 
+    @audited(category="node", action="created", target_type="node", actor_arg="cmd.creator_id", target_arg="cmd.node_id")
     async def create_node(self, cmd: CreateNodeCommand) -> NodeOperationResult:
         """创建节点（入库即生效，无审批阻断）。
 
@@ -258,7 +262,7 @@ class NodeService:
             remark=cmd.remark,
             status=initial_status,
             responsible_user_id=responsible_user_id,
-            node_type=getattr(cmd, 'node_type', 'WORK_PACKAGE'),
+            node_type=getattr(cmd, 'node_type', NODE_TYPE_TASK),
         )
 
         # ── 写入参与单位（多对多关联）──
@@ -291,6 +295,7 @@ class NodeService:
             message=f"节点「{cmd.node_name}」已创建并入库（状态：条件未满足）",
         )
 
+    @audited(category="node", action="updated", target_type="node", actor_arg="cmd.operator_id", target_arg="cmd.node_id")
     async def update_node(self, cmd: UpdateNodeCommand) -> NodeOperationResult:
         """更新节点字段。"""
         updates = {}
@@ -341,6 +346,7 @@ class NodeService:
             message="节点更新成功",
         )
 
+    @audited(category="node", action="discarded", target_type="node", actor_arg="cmd.operator_id", target_arg="cmd.node_id")
     async def discard_node(self, cmd: DiscardNodeCommand) -> NodeOperationResult:
         """废弃节点。"""
         node = await asyncio.to_thread(self._node_repo.get_by_node_id, cmd.node_id)
@@ -424,6 +430,7 @@ class NodeService:
 
     # ── 成果管理 ──
 
+    @audited(category="node", action="deliverable_created", target_type="node", actor_arg="cmd.operator_id", target_arg="cmd.node_id")
     async def create_deliverable(self, cmd: CreateDeliverableCommand) -> NodeOperationResult:
         """为节点新增成果。"""
         node = await asyncio.to_thread(self._node_repo.get_by_node_id, cmd.node_id)
@@ -453,6 +460,7 @@ class NodeService:
 
         # 新增成果可能改变完成度，触发状态重算
         await self._recalc_node_status(cmd.node_id)
+        await self._recalc_ancestors(cmd.node_id)
 
         return NodeOperationResult(
             success=True,
@@ -460,6 +468,7 @@ class NodeService:
             message=f"成果「{cmd.deliverable_name}」创建成功",
         )
 
+    @audited(category="node", action="deliverable_progress_updated", target_type="deliverable", actor_arg="cmd.operator_id", target_arg="cmd.deliverable_id")
     async def update_deliverable_progress(self, cmd: UpdateDeliverableProgressCommand) -> NodeOperationResult:
         """更新成果进度——核心入口，触发状态流转。"""
         deliv = await asyncio.to_thread(self._deliv_repo.get_by_deliverable_id, cmd.deliverable_id)
@@ -488,12 +497,14 @@ class NodeService:
             remark=f"成果进度更新：{old_amount} → {amount_str}",
         )
 
-        # 关键：成果进度更新 → 触发状态重算
+        # 关键：成果进度更新 → 触发状态重算（并向上传播到父级里程碑）
         result = await self._recalc_node_status(deliv.node_id)
+        await self._recalc_ancestors(deliv.node_id)
         return result
 
     # ── 依赖管理 ──
 
+    @audited(category="node", action="dependency_added", target_type="node", actor_arg="cmd.operator_id", target_arg="cmd.node_id")
     async def add_dependency(self, cmd: AddDependencyCommand) -> NodeOperationResult:
         """添加依赖——含循环检测前置。"""
         # 1. 查上游成果所属节点
@@ -568,6 +579,7 @@ class NodeService:
 
         # 6. 依赖变更 → 重新计算状态
         await self._recalc_node_status(cmd.node_id)
+        await self._recalc_ancestors(cmd.node_id)
 
         return NodeOperationResult(
             success=True,
@@ -575,6 +587,7 @@ class NodeService:
             message="依赖添加成功",
         )
 
+    @audited(category="node", action="dependency_removed", target_type="dependency", actor_arg="cmd.operator_id", target_arg="cmd.dependency_id")
     async def remove_dependency(self, cmd: RemoveDependencyCommand) -> NodeOperationResult:
         """移除依赖。"""
         dep = await asyncio.to_thread(self._dep_repo.get_by_id, cmd.dependency_id)
@@ -604,16 +617,19 @@ class NodeService:
 
         # 依赖移除 → 重新计算状态
         await self._recalc_node_status(node_id)
+        await self._recalc_ancestors(node_id)
 
         return NodeOperationResult(success=True, node_id=node_id, message="依赖已移除")
 
     # ── 父子节点挂载 ──
 
+    @audited(category="node", action="child_mounted", target_type="node", actor_arg="cmd.operator_id", target_arg="cmd.parent_node_id")
     async def mount_child(self, cmd: MountChildCommand) -> NodeOperationResult:
         """挂载子节点。
 
-        校验：数量上限、嵌套深度（最多 3 层）、循环依赖（parent 不能是 child 的后代）。
-        通过后设置 child 的 parent_node_id + child_weight，并触发父节点状态重算。
+        校验：数量上限、树深度安全上限、循环依赖（parent 不能是 child 的后代）。
+        通过后设置 child 的 parent_node_id + child_weight，刷新两端节点类型，
+        并触发父节点及其祖先的状态重算。
         """
         # 1. 数量上限检查
         count = await asyncio.to_thread(self._node_repo.count_children, cmd.parent_node_id)
@@ -625,14 +641,14 @@ class NodeService:
             )
 
         # 2. 深度检查 + 循环检查共用 parent 祖先链（一次查询）
-        #    深度：parent 祖先链最多 MAX_PARENT_DEPTH-1 层（挂载后含 child 共 MAX_PARENT_DEPTH 层）
+        #    深度：仅作安全上限，防止脏数据成环；两层制下里程碑可任意嵌套
         parent_ancestors = await asyncio.to_thread(
-            self._node_repo.get_ancestor_chain, cmd.parent_node_id, max_depth=MAX_PARENT_DEPTH,
+            self._node_repo.get_ancestor_chain, cmd.parent_node_id, max_depth=MAX_TREE_DEPTH,
         )
-        if len(parent_ancestors) >= MAX_PARENT_DEPTH - 1:
+        if len(parent_ancestors) >= MAX_TREE_DEPTH - 1:
             return NodeOperationResult(
                 success=False, node_id=cmd.parent_node_id,
-                message=f"嵌套深度已达上限（{MAX_PARENT_DEPTH}层），无法继续挂载子节点",
+                message=f"嵌套深度已达安全上限（{MAX_TREE_DEPTH}层），无法继续挂载子节点",
             )
         parent_ancestor_ids = {a.node_id for a in parent_ancestors}
 
@@ -655,7 +671,7 @@ class NodeService:
             )
         # 3c. parent 若是 child 的后代 → 正向挂载形成循环
         child_ancestors = await asyncio.to_thread(
-            self._node_repo.get_ancestor_chain, cmd.child_node_id, max_depth=MAX_PARENT_DEPTH,
+            self._node_repo.get_ancestor_chain, cmd.child_node_id, max_depth=MAX_TREE_DEPTH,
         )
         child_descendants_check = cmd.parent_node_id in {a.node_id for a in child_ancestors}
         if child_descendants_check:
@@ -682,8 +698,11 @@ class NodeService:
             remark=f"挂载到父节点 {cmd.parent_node_id}",
         )
 
-        # 父子关系变更 → 重新计算父节点状态（进度由子节点加权汇总）
+        # 父子关系变更 → 刷新两端类型（父因有子节点变为里程碑），并自底向上重算状态
+        await self._refresh_node_type(cmd.parent_node_id)
+        await self._refresh_node_type(cmd.child_node_id)
         await self._recalc_node_status(cmd.parent_node_id)
+        await self._recalc_ancestors(cmd.parent_node_id)
 
         logger.info("Node %s mounted under %s (weight=%s)",
                     cmd.child_node_id, cmd.parent_node_id, weight_str)
@@ -693,6 +712,7 @@ class NodeService:
             message=f"子节点「{cmd.child_node_id}」已挂载到 {cmd.parent_node_id}",
         )
 
+    @audited(category="node", action="child_unmounted", target_type="node", actor_arg="cmd.operator_id", target_arg="cmd.parent_node_id")
     async def unmount_child(self, cmd: UnmountChildCommand) -> NodeOperationResult:
         """移除子节点（清空 parent_node_id + child_weight）。"""
         await asyncio.to_thread(
@@ -711,6 +731,8 @@ class NodeService:
         )
 
         await self._recalc_node_status(cmd.parent_node_id)
+        await self._refresh_node_type(cmd.parent_node_id)
+        await self._recalc_ancestors(cmd.parent_node_id)
 
         return NodeOperationResult(
             success=True,
@@ -720,6 +742,7 @@ class NodeService:
 
     # ── 责任人管理 ──
 
+    @audited(category="node", action="assigned", target_type="node", actor_arg="cmd.operator_id", target_arg="cmd.node_id")
     async def assign_node(self, cmd: AssignNodeCommand) -> NodeOperationResult:
         """变更节点责任人。需权限校验。"""
         node = await asyncio.to_thread(self._node_repo.get_by_node_id, cmd.node_id)
@@ -781,6 +804,7 @@ class NodeService:
             logger.warning("resolve creator company failed user=%s: %s", creator_id, e)
             return []
 
+    @audited(category="node", action="participant_company_added", target_type="node", actor_arg="cmd.operator_id", target_arg="cmd.node_id")
     async def add_participant_company(self, cmd: AddParticipantCompanyCommand) -> NodeOperationResult:
         """添加节点参与单位。"""
         node = await asyncio.to_thread(self._node_repo.get_by_node_id, cmd.node_id)
@@ -795,6 +819,7 @@ class NodeService:
         await asyncio.to_thread(self._npc_repo.add, cmd.node_id, cmd.company_id, cmd.operator_id)
         return NodeOperationResult(success=True, node_id=cmd.node_id, message="参与单位添加成功")
 
+    @audited(category="node", action="participant_company_removed", target_type="node", actor_arg="cmd.operator_id", target_arg="cmd.node_id")
     async def remove_participant_company(self, cmd: RemoveParticipantCompanyCommand) -> NodeOperationResult:
         """移除节点参与单位。"""
         node = await asyncio.to_thread(self._node_repo.get_by_node_id, cmd.node_id)
@@ -806,6 +831,7 @@ class NodeService:
             return NodeOperationResult(success=False, node_id=cmd.node_id, message="该单位不是参与单位")
         return NodeOperationResult(success=True, node_id=cmd.node_id, message="参与单位移除成功")
 
+    @audited(category="node", action="participant_companies_set", target_type="node", actor_arg="cmd.operator_id", target_arg="cmd.node_id")
     async def set_participant_companies(self, cmd: SetParticipantCompaniesCommand) -> NodeOperationResult:
         """全量设置节点参与单位。"""
         node = await asyncio.to_thread(self._node_repo.get_by_node_id, cmd.node_id)
@@ -817,6 +843,7 @@ class NodeService:
 
     # ── 节点参与人（自然人）增删 ──
 
+    @audited(category="node", action="participant_added", target_type="node", actor_arg="operator_id", target_arg="node_id")
     async def add_node_participant(self, node_id: str, user_id: str,
                                    operator_id: str, role: str = "participant") -> NodeOperationResult:
         """添加节点参与人（单个用户）。"""
@@ -839,6 +866,7 @@ class NodeService:
                            remark=f"添加参与人：{user_id}（{role or 'participant'}）")
         return NodeOperationResult(success=True, node_id=node_id, message="参与人添加成功")
 
+    @audited(category="node", action="participant_removed", target_type="node", actor_arg="operator_id", target_arg="node_id")
     async def remove_node_participant(self, node_id: str, user_id: str,
                                       operator_id: str) -> NodeOperationResult:
         """移除节点参与人。"""
@@ -854,6 +882,7 @@ class NodeService:
 
     # ── 节点共享文件增删 ──
 
+    @audited(category="node", action="file_added", target_type="node", actor_arg="operator_id", target_arg="node_id")
     async def add_node_file(self, node_id: str, file_id: str,
                             operator_id: str) -> NodeOperationResult:
         """添加节点共享文件（可见范围）。"""
@@ -871,6 +900,7 @@ class NodeService:
                            remark=f"添加共享文件：{file_id}")
         return NodeOperationResult(success=True, node_id=node_id, message="共享文件添加成功")
 
+    @audited(category="node", action="file_removed", target_type="node", actor_arg="operator_id", target_arg="node_id")
     async def remove_node_file(self, node_id: str, file_id: str,
                                operator_id: str) -> NodeOperationResult:
         """移除节点共享文件。"""
@@ -886,6 +916,7 @@ class NodeService:
 
     # ── 成果提交确认工作流 ──
 
+    @audited(category="node", action="deliverable_submitted", target_type="deliverable", actor_arg="cmd.submitted_by", target_arg="cmd.deliverable_id")
     async def submit_deliverable(self, cmd: SubmitNodeDeliverableCommand) -> NodeOperationResult:
         """提交节点成果（PENDING → SUBMITTED）。"""
         deliv = await asyncio.to_thread(self._deliv_repo.get_by_deliverable_id, cmd.deliverable_id)
@@ -898,12 +929,12 @@ class NodeService:
                 message=f"成果当前状态为「{deliv.submission_status}」，无法提交",
             )
 
-        # 节点必须 IN_PROGRESS
+        # 门禁：只要节点未终结即可上报（首报即开工，未启动的任务允许首报）
         node = await asyncio.to_thread(self._node_repo.get_by_node_id, deliv.node_id)
-        if node is None or node.status != "IN_PROGRESS":
+        if node is None or node.status == COMPLETED:
             return NodeOperationResult(
                 success=False, node_id=deliv.node_id,
-                message=f"节点状态为「{getattr(node, 'status', '未知')}」，非「IN_PROGRESS」",
+                message=f"节点状态为「{getattr(node, 'status', '未知')}」，已完成节点不可再提交成果",
             )
 
         # 权限校验：提交人必须是节点责任人或同单位人员
@@ -932,6 +963,7 @@ class NodeService:
 
         return NodeOperationResult(success=True, node_id=deliv.node_id, message="成果提交成功")
 
+    @audited(category="node", action="deliverable_confirmed", target_type="deliverable", actor_arg="cmd.confirmed_by", target_arg="cmd.deliverable_id")
     async def confirm_deliverable(self, cmd: ConfirmNodeDeliverableCommand) -> NodeOperationResult:
         """确认节点成果（SUBMITTED → CONFIRMED）。触发进度重算。"""
         deliv = await asyncio.to_thread(self._deliv_repo.get_by_deliverable_id, cmd.deliverable_id)
@@ -967,11 +999,13 @@ class NodeService:
             remark="成果确认",
         )
 
-        # 触发进度重算
+        # 触发状态重算（并向上传播到父级里程碑）
         await self._recalc_node_status(deliv.node_id)
+        await self._recalc_ancestors(deliv.node_id)
 
         return NodeOperationResult(success=True, node_id=deliv.node_id, message="成果确认成功")
 
+    @audited(category="node", action="deliverable_returned", target_type="deliverable", actor_arg="cmd.returned_by", target_arg="cmd.deliverable_id")
     async def return_deliverable(self, cmd: ReturnNodeDeliverableCommand) -> NodeOperationResult:
         """退回节点成果（SUBMITTED → RETURNED）。"""
         deliv = await asyncio.to_thread(self._deliv_repo.get_by_deliverable_id, cmd.deliverable_id)
@@ -1007,6 +1041,7 @@ class NodeService:
 
         return NodeOperationResult(success=True, node_id=deliv.node_id, message="成果已退回")
 
+    @audited(category="node", action="deliverable_resubmitted", target_type="deliverable", actor_arg="cmd.submitted_by", target_arg="cmd.deliverable_id")
     async def resubmit_deliverable(self, cmd: ResubmitNodeDeliverableCommand) -> NodeOperationResult:
         """重新提交节点成果（RETURNED → SUBMITTED）。"""
         deliv = await asyncio.to_thread(self._deliv_repo.get_by_deliverable_id, cmd.deliverable_id)
@@ -1138,58 +1173,131 @@ class NodeService:
                 file_status[dep.depends_on_deliverable_id] = (current >= target)
 
         old_status = snap.status
-        old_progress = snap.progress
 
         # 调用引擎
         new_status = determine_node_status(
             snap.dependencies, snap.deliverables, file_status, snap.children,
         )
 
-        # 进度计算
-        new_progress = calc_deliverable_completion(snap.deliverables) * 100.0
-
-        # 检查是否需要更新
-        status_changed = (new_status != old_status)
-        progress_changed = abs(new_progress - old_progress) > 0.001
-
-        if not status_changed and not progress_changed:
+        if new_status == old_status:
             return NodeOperationResult(
-                success=True, node_id=node_id, status=old_status, progress=old_progress,
+                success=True, node_id=node_id, status=old_status, progress=snap.progress,
                 message="状态无变化",
             )
 
-        # 写入 DB
-        await asyncio.to_thread(self._node_repo.update_progress, node_id, new_progress)
-        if status_changed:
-            await asyncio.to_thread(self._node_repo.update_status, node_id, new_status)
+        # 写入 DB（进度不再由系统计算写库；progress 列保留为存量只读字段）
+        await asyncio.to_thread(self._node_repo.update_status, node_id, new_status)
 
-            # 记录状态变更事件
+        # 记录状态变更事件
+        self._record_event(
+            node_id=node_id,
+            event_type="status_changed",
+            old_value=json.dumps({"status": old_status}),
+            new_value=json.dumps({"status": new_status}),
+            remark="状态自动流转",
+        )
+        if new_status == COMPLETED:
             self._record_event(
                 node_id=node_id,
-                event_type="status_changed",
-                old_value=json.dumps({"status": old_status}),
-                new_value=json.dumps({"status": new_status, "progress": new_progress}),
-                remark="状态自动流转",
+                event_type="auto_triggered",
+                remark="节点已完成",
             )
-            if new_status == COMPLETED:
-                self._record_event(
-                    node_id=node_id,
-                    event_type="auto_triggered",
-                    remark="节点已完成",
-                )
 
-        logger.info(
-            "Node %s recalc: status %s->%s, progress %.2f->%.2f",
-            node_id, old_status, new_status, old_progress, new_progress,
-        )
+        logger.info("Node %s recalc: status %s->%s", node_id, old_status, new_status)
 
         return NodeOperationResult(
             success=True,
             node_id=node_id,
             status=new_status,
-            progress=new_progress,
+            progress=snap.progress,
             message=f"状态重算完成：{old_status} → {new_status}",
         )
+
+    async def recalc_all_statuses(self, project_id: str = "", limit: int = 5000) -> dict:
+        """自底向上重算全部节点状态（维护用途）。
+
+        用于批量导入、状态语义变更后的存量对齐：按树深度从深到浅逐层重算，
+        保证父节点聚合时其子节点状态已是新值。
+
+        Returns:
+            {"total": 节点总数, "changed": 状态发生变化的节点数}
+        """
+        if project_id:
+            nodes = await asyncio.to_thread(
+                self._node_repo.find_by_project, project_id, None, limit,
+            )
+        else:
+            nodes = await asyncio.to_thread(self._node_repo.find_all, limit)
+
+        id_to_parent = {n.node_id: (getattr(n, "parent_node_id", "") or "") for n in nodes}
+        ids = set(id_to_parent)
+
+        def _depth(node_id: str) -> int:
+            d, cur = 0, id_to_parent.get(node_id, "")
+            while cur and cur in ids and d < MAX_TREE_DEPTH:
+                d += 1
+                cur = id_to_parent.get(cur, "")
+            return d
+
+        changed = 0
+        for node_id in sorted(ids, key=_depth, reverse=True):
+            result = await self._recalc_node_status(node_id)
+            if result.success and result.message.startswith("状态重算完成"):
+                changed += 1
+
+        logger.info("recalc_all_statuses: total=%d changed=%d", len(ids), changed)
+        return {"total": len(ids), "changed": changed}
+
+    async def _recalc_ancestors(self, node_id: str) -> None:
+        """自底向上重算祖先链状态。
+
+        里程碑状态由直接子节点聚合而来，因此子节点状态变化必须向上传播；
+        某层状态未变化时，其上游也必然不变，可提前终止。
+        """
+        current = node_id
+        for _ in range(MAX_TREE_DEPTH):
+            node = await asyncio.to_thread(self._node_repo.get_by_node_id, current)
+            parent_id = getattr(node, "parent_node_id", "") if node else ""
+            if not parent_id:
+                return
+
+            parent = await asyncio.to_thread(self._node_repo.get_by_node_id, parent_id)
+            if parent is None:
+                return
+            old_status = parent.status
+
+            await self._recalc_node_status(parent_id)
+
+            parent_after = await asyncio.to_thread(self._node_repo.get_by_node_id, parent_id)
+            current = parent_id
+            if parent_after is None or parent_after.status == old_status:
+                return
+
+    async def _refresh_node_type(self, node_id: str) -> None:
+        """按结构刷新节点类型（单向提升）。
+
+        - 有子节点 → 必为里程碑（自动提升）
+        - 无子节点 → 任务，或"尚未分解的里程碑"（由创建时显式声明，不下沉）
+
+        保留"无子节点的里程碑"是业务必需：里程碑登记后可能尚未分解任务，
+        其状态即为「未启动」。"已退场类型 WORK_PACKAGE"在此一并修正为任务。
+        """
+        node = await asyncio.to_thread(self._node_repo.get_by_node_id, node_id)
+        if node is None:
+            return
+
+        current = getattr(node, "node_type", "")
+        child_count = await asyncio.to_thread(self._node_repo.count_children, node_id)
+        if child_count > 0:
+            expected = NODE_TYPE_MILESTONE
+        else:
+            expected = current if current in (NODE_TYPE_MILESTONE, NODE_TYPE_TASK) else NODE_TYPE_TASK
+
+        if current == expected:
+            return
+
+        await asyncio.to_thread(self._node_repo.update_fields, node_id, node_type=expected)
+        logger.info("Node %s type refreshed: %s -> %s", node_id, current, expected)
 
     async def _build_snapshot(self, node_id: str) -> NodeSnapshot | None:
         """构建节点快照（供引擎计算）。"""
@@ -1226,6 +1334,17 @@ class NodeService:
                 file_id=d.file_id,
             )
             for d in delivs
+        ]
+
+        # 加载直接子节点（里程碑状态由其聚合而来）
+        children = await asyncio.to_thread(self._node_repo.find_children, node_id)
+        snap.children = [
+            ChildSnapshot(
+                node_id=c.node_id,
+                status=c.status,
+                progress=_parse_decimal(c.progress),
+            )
+            for c in children
         ]
 
         return snap

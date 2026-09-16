@@ -11,6 +11,7 @@ from typing import Optional
 
 from ..infrastructure.database import get_session
 from ..infrastructure.database.models import File, SessionAccessibleFile
+from ..infrastructure.logging.audit import audited
 from ..adapters.standard.command import FileCommand
 
 logger = logging.getLogger("emily.service.file_manager")
@@ -91,6 +92,61 @@ class FileManager:
         return self._storage.get_local_path(file_no)
 
     # ── 归档 ──
+
+    @audited(
+        category="file",
+        action="uploaded",
+        target_type="file",
+        actor_arg="uploaded_by",
+        target_result_attr="file_id",
+        summary_arg="filename",
+        summary="上传文件：{summary}",
+    )
+    def archive_upload(
+        self,
+        filename: str,
+        data: bytes,
+        *,
+        uploaded_by: str = "",
+        content_type: str = "",
+        confidentiality: int = 1,
+        file_category: str = "OTHER",
+        purpose: str = "RECORD",
+    ) -> dict:
+        """把一段字节流归档进文件库（落盘 + 建 files 记录）。
+
+        各入口（console 上传等）共用此动作，留痕由本方法的挂载点产生。
+        同步方法：调用方（async 上下文）用 `asyncio.to_thread` 包裹。
+        """
+        from ..repositories.file_repo import FileRepository
+        from .file_storage_service import FileStorageService
+
+        file_no = FileRepository.generate_file_no()
+        target_dir = self._storage.ensure_dir()
+        ext = FileStorageService._infer_extension(filename or "", content_type or "")
+        saved_name = f"{file_no}{ext}"
+        local_path = target_dir / saved_name
+        local_path.write_bytes(data)
+
+        record = FileRepository.create(
+            file_no=file_no,
+            filename=filename or saved_name,
+            uploaded_by=uploaded_by,
+            file_type=content_type or "",
+            storage_path=str(local_path.relative_to(self._storage._storage_root)),
+            file_size=len(data),
+            file_category=file_category,
+            purpose=purpose,
+            confidentiality=confidentiality,
+        )
+        return {
+            "success": bool(record),
+            "file_id": str(record.id) if record else "",
+            "file_no": file_no,
+            "filename": filename or saved_name,
+            "size": len(data),
+            "confidentiality": confidentiality,
+        }
 
     def create_record(self, cmd: FileCommand):
         """元数据录入（委托 FileService.create_file_record）。"""
@@ -226,6 +282,13 @@ class FileManager:
             logger.error("create_version failed: %s", e)
             return None
 
+    @audited(
+        category="file",
+        action="deleted",
+        target_type="file",
+        actor_arg="operator_id",
+        target_arg="file_id",
+    )
     def soft_delete(self, file_id: str, operator_id: str = "") -> bool:
         """软删除：is_deleted=True。"""
         try:
@@ -266,6 +329,13 @@ class FileManager:
 
     # ── M5 附件链 ──
 
+    @audited(
+        category="file",
+        action="attachment_linked",
+        target_type="file",
+        actor_arg="operator_id",
+        target_arg="file_id",
+    )
     def link_to_master(self, file_id: str, master_file_id: str, operator_id: str = "") -> dict:
         """挂载附件到主文件。禁止嵌套校验（Service 层）。
 
@@ -280,17 +350,21 @@ class FileManager:
         # 1. 主文件必须存在且未删除
         master = self._file_svc.repo.get_by_id(master_file_id)
         if master is None or master.is_deleted:
-            return {"success": False, "error": "主文件不存在或已删除"}
+            return {"success": False, "reason_code": "invalid_master",
+                    "error": "主文件不存在或已删除"}
         # 2. 禁止嵌套：主文件自身 attachment_of 必须为 NULL
         if getattr(master, "attachment_of", None) is not None:
-            return {"success": False, "error": "禁止嵌套：目标文件本身是附件，不能作为主文件"}
+            return {"success": False, "reason_code": "invalid_nesting",
+                    "error": "禁止嵌套：目标文件本身是附件，不能作为主文件"}
         # 3. 禁止自挂
         if file_id == master_file_id:
-            return {"success": False, "error": "不能挂载到自己"}
+            return {"success": False, "reason_code": "self_reference",
+                    "error": "不能挂载到自己"}
         # 4. 附件文件必须存在
         child = self._file_svc.repo.get_by_id(file_id)
         if child is None or child.is_deleted:
-            return {"success": False, "error": "附件文件不存在或已删除"}
+            return {"success": False, "reason_code": "file_not_found",
+                    "error": "附件文件不存在或已删除"}
         # 5. 调 Repository 更新
         result = self._file_svc.repo.update_attachment_of(file_id, master_file_id)
         if result is None:
@@ -298,6 +372,13 @@ class FileManager:
         logger.info("link_to_master: %s → %s by %s", file_id, master_file_id, operator_id)
         return {"success": True, "file_no": result.file_no}
 
+    @audited(
+        category="file",
+        action="attachment_unlinked",
+        target_type="file",
+        actor_arg="operator_id",
+        target_arg="file_id",
+    )
     def unlink_attachment(self, file_id: str, operator_id: str = "") -> dict:
         """卸载附件，提升为独立文件（attachment_of=NULL）。
 
@@ -306,7 +387,7 @@ class FileManager:
         """
         result = self._file_svc.repo.update_attachment_of(file_id, None)
         if result is None:
-            return {"success": False, "error": "文件不存在"}
+            return {"success": False, "reason_code": "file_not_found", "error": "文件不存在"}
         logger.info("unlink_attachment: %s by %s", file_id, operator_id)
         return {"success": True, "file_no": result.file_no}
 
@@ -314,6 +395,13 @@ class FileManager:
         """列出主文件下的所有附件。"""
         return self._file_svc.repo.query_attachments(master_file_id)
 
+    @audited(
+        category="file",
+        action="purpose_updated",
+        target_type="file",
+        actor_arg="operator_id",
+        target_arg="file_id",
+    )
     def update_purpose(self, file_id: str, purpose: str, operator_id: str = "") -> dict:
         """校正 purpose，标 purpose_confirmed=True。
 
@@ -326,7 +414,7 @@ class FileManager:
         with get_session() as session:
             f = session.query(File).filter(File.id == file_id, File.is_deleted == False).first()
             if f is None:
-                return {"success": False, "error": "文件不存在"}
+                return {"success": False, "reason_code": "file_not_found", "error": "文件不存在"}
             f.purpose = validated
             f.purpose_confirmed = True
             session.commit()
