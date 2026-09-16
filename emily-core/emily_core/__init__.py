@@ -40,6 +40,14 @@ class EmilyCore:
             whitelist=getattr(config, "auto_create_whitelist", []) or [],
         )
 
+        # 测试会话设置：把 Config 默认值推入运行期设置模块（测试前缀 / 交互通道），
+        # 使无 config 句柄的出站发布点（BUS / 调度器等）也拿到同一口径
+        from .services.test_settings import set_config_defaults
+        set_config_defaults(
+            getattr(config, "test_conv_prefixes", None),
+            getattr(config, "default_interaction_channel", None),
+        )
+
         # 出站事件总线
         self.outbound_bus = OutboundEventBus()
 
@@ -1073,10 +1081,14 @@ class EmilyCore:
 
         # 出站
         if reply is not None:
+            from .outbound_bus import is_test_session
             self.outbound_bus.publish("reply", {
                 "conversation_id": reply.conversation_id,
                 "content": reply.content,
                 "reply_to_message_id": reply.reply_to_message_id,
+                # 测试会话标记（会话 ID 命中测试前缀）→ 插件只走 SSE、不外发真实 IM
+                "test_session": is_test_session(reply.conversation_id, self.config),
+                "platform": message.platform,
             })
             # 持久化 agent 回复到 messages 表（非阻断，fail-open）
             if self._chat_archive_service is not None:
@@ -1116,6 +1128,8 @@ class EmilyCore:
             "sessions": pool.size if pool else 0,
             "uptime": pool.uptime_seconds if pool else 0,
             "langgraph_engine": getattr(self, "_workitem_graph", None) is not None,
+            # 出站订阅者数（薄插件 SSE 连接数）：为 0 表示回复无人接收
+            "outbound_subscribers": self.outbound_bus.subscriber_count,
         }
         return result
 

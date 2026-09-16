@@ -24,7 +24,8 @@ INSERT INTO tool_registry (id, signature, display_name, category, permission_fla
 ('unlink_attachment', '{}', '卸载附件为独立文件','business', 'write', 'sop_only', '', true, '2026-07-26T00:00:00', '2026-07-26T00:00:00'),
 ('update_file_purpose','{}','校正文件业务意图', 'business', 'write', 'sop_only', '', true, '2026-07-26T00:00:00', '2026-07-26T00:00:00'),
 ('create_task_node',   '{}', '创建任务节点',     'business', 'write', 'sop_only', '', true, '2026-07-24T00:00:00', '2026-07-24T00:00:00'),
-('submit_node_deliverable','{}','提交节点成果',  'business', 'write', 'sop_only', '', true, '2026-07-24T00:00:00', '2026-07-24T00:00:00'),
+-- 上传类放开到 L2（授权由 node_service 按「责任人 / L5+ / 节点参与单位人员」二次校验）
+('submit_node_deliverable','{}','提交节点成果',  'business', 'write_l2', 'sop_only', '', true, '2026-07-24T00:00:00', '2026-07-24T00:00:00'),
 ('confirm_node_deliverable','{}','确认节点成果', 'business', 'write', 'sop_only', '', true, '2026-07-24T00:00:00', '2026-07-24T00:00:00'),
 ('return_node_deliverable', '{}','退回节点成果', 'business', 'write', 'sop_only', '', true, '2026-07-24T00:00:00', '2026-07-24T00:00:00'),
 ('query_my_nodes',     '{}', '查询我的节点',     'business', 'write', 'sop_only', '', true, '2026-07-24T00:00:00', '2026-07-24T00:00:00'),

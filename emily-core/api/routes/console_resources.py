@@ -2183,6 +2183,49 @@ async def get_langgraph_tools():
     })
 
 
+# ── 测试会话设置（左侧栏顶部：测试前缀 + 交互通道）──
+
+class TestSettingsIn(BaseModel):
+    """测试会话设置请求体。"""
+    test_prefixes: list[str] = Field(default_factory=list)
+    interaction_channel: str = ""
+
+
+@router.get("/test-settings")
+async def get_test_settings():
+    """读取测试前缀与交互通道。
+
+    测试前缀：会话 ID 命中任前缀 → 判定为测试会话，其出站只走 SSE、不外发真实 IM；
+    留空 = 不做前缀判定（通道账号能对上真实用户时回复照常发真实 IM）。
+    交互通道：测试注入（消息模拟器 / emy-test / 对话面板）默认使用的渠道。
+    """
+    try:
+        from api.server import get_core
+        from emily_core.services.test_settings import describe
+        state = describe(getattr(get_core(), "config", None))
+    except Exception as ex:  # noqa: BLE001
+        return _err(f"读取测试会话设置失败：{ex}")
+    return _ok(state)
+
+
+@router.post("/test-settings")
+async def set_test_settings(req: TestSettingsIn):
+    """保存测试前缀与交互通道（写入 /app/runtime/test_settings.json，立即生效）。"""
+    try:
+        from api.server import get_core
+        from emily_core.services.test_settings import describe, save_settings
+        save_settings(req.test_prefixes, req.interaction_channel)
+        state = describe(getattr(get_core(), "config", None))
+    except Exception as ex:  # noqa: BLE001
+        return _err(f"保存测试会话设置失败：{ex}")
+    prefixes = state.get("test_prefixes") or []
+    message = (
+        f"已保存：测试前缀 {('、'.join(prefixes)) if prefixes else '（空＝不拦截，按真实投递）'}；"
+        f"交互通道 {state.get('interaction_channel') or '未指定'}"
+    )
+    return _ok({"state": state, "message": message})
+
+
 @router.get("/channels")
 async def get_channels():
     """接入渠道连通性（QQ / 企业微信 / 微信小程序 / 邮箱）—— emy-console「模块能力」只读展示。

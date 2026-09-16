@@ -57,6 +57,37 @@ body {
     color: #e0e0e0; font-size: 13px;
 }
 .sidebar-operator select:focus { outline: none; border-color: #00d4ff; }
+/* ── 测试会话设置（左侧栏顶部：交互通道 + 测试前缀）── */
+.sidebar-test {
+    padding: 10px 16px 12px;
+    border-bottom: 1px solid #2a2a3e;
+    background: #131a2e;
+}
+.test-row { display: flex; align-items: baseline; justify-content: space-between; gap: 8px; }
+.test-title { font-size: 12px; font-weight: 600; color: #00d4ff; letter-spacing: 1px; }
+.test-hint { margin-top: 8px; font-size: 10px; color: #666; }
+.test-row .test-hint { margin-top: 0; }
+.sidebar-test select {
+    width: 100%; margin-top: 6px; padding: 6px 8px;
+    background: #1a1a2e; border: 1px solid rgba(0, 212, 255, 0.4); border-radius: 4px;
+    color: #e0e0e0; font-size: 12px;
+}
+.sidebar-test select:focus { outline: none; border-color: #00d4ff; }
+.sidebar-test input[type="text"] {
+    width: 100%; margin-top: 4px; padding: 5px 8px;
+    background: #1a1a2e; border: 1px solid #333; border-radius: 4px;
+    color: #e0e0e0; font-size: 12px;
+}
+.sidebar-test input[type="text"]:focus { outline: none; border-color: #00d4ff; }
+.test-actions { display: flex; align-items: center; gap: 8px; margin-top: 8px; }
+.test-save {
+    padding: 4px 12px; font-size: 12px; cursor: pointer;
+    background: rgba(0, 212, 255, 0.12); border: 1px solid rgba(0, 212, 255, 0.5);
+    border-radius: 4px; color: #00d4ff;
+}
+.test-save:hover { background: rgba(0, 212, 255, 0.22); }
+.test-save:disabled { opacity: .5; cursor: not-allowed; }
+.test-msg { font-size: 11px; color: #8a8a9a; }
 .sidebar-head {
     padding: 16px;
     border-bottom: 1px solid #2a2a3e;

@@ -170,6 +170,35 @@ def get_db_url() -> str:
     )
 
 
+def get_interaction_channel(default: str = "napcat") -> str:
+    """读取控制台左侧栏「交互通道」——测试注入默认使用的渠道。
+
+    来源：GET {core}/api/v1/console/test-settings 的 interaction_channel；
+    读不到（core 未起 / 接口异常）时回退 default。
+    """
+    try:
+        import json as _json
+        import urllib.request as _ur
+
+        # 直连 Core：绕过 HTTP(S)_PROXY（宿主机可能设了代理）
+        opener = _ur.build_opener(_ur.ProxyHandler({}))
+        url = f"{get_core_url()}/api/v1/console/test-settings"
+        headers = {}
+        token = get_api_token()
+        if token:
+            headers["X-Emily-Token"] = token
+        req = _ur.Request(url, headers=headers)
+        with opener.open(req, timeout=5) as resp:
+            payload = _json.loads(resp.read().decode("utf-8"))
+        channel = ((payload or {}).get("data") or {}).get("interaction_channel") or ""
+        if channel:
+            return str(channel)
+    except Exception as e:  # noqa: BLE001 — 读不到就走默认
+        logging.getLogger("emys.config_loader").debug(
+            "get interaction channel failed: %s", e)
+    return default
+
+
 # ═══════════════════════════════════════════════════════════════════════════════
 # 数据库查询函数（用于 Web UI 下拉选择）
 # ═══════════════════════════════════════════════════════════════════════════════
@@ -308,6 +337,83 @@ def get_user_by_id(user_id: str) -> dict | None:
     except Exception as e:
         logging.getLogger("emys.config_loader").warning(
             "Failed to get user by id: %s", e
+        )
+        return None
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# 通道账号 → users 表解析（测试发消息前的身份校验）
+# ═══════════════════════════════════════════════════════════════════════════════
+
+#: 通道 → 人事档案账号列（与 Core UserRepository._CONTACT_COLUMN_BY_PLATFORM 同口径）
+_CONTACT_COLUMN_BY_PLATFORM = {
+    "napcat": "qq", "qq": "qq", "aiocqhttp": "qq", "onebot": "qq",
+    "wecom": "wechat", "wechat": "wechat", "wxmp": "wechat", "wechat_mp": "wechat",
+}
+
+
+def resolve_user_by_channel(platform: str, sender_id: str) -> dict | None:
+    """按「通道 + 通道用户 ID」解析 users 表用户（与 Core 身份解析同口径）。
+
+    解析顺序：① UUID 直查 ② user_im_bindings(active) ③ users.qq / users.wechat / users.phone。
+
+    Args:
+        platform: 通道标识（napcat / wecom / wxmp ...）。
+        sender_id: 通道内用户 ID（QQ 号 / 微信号 / 企业微信 userid / UUID）。
+
+    Returns:
+        dict: {"id", "username", "matched_by"}；解析不到返回 None。
+    """
+    if not sender_id:
+        return None
+    try:
+        from sqlalchemy import create_engine, text
+    except ImportError:
+        return None
+
+    value = str(sender_id).strip()
+    is_uuid = len(value) == 36 and value.count("-") == 4
+
+    try:
+        engine = create_engine(get_db_url())
+        with engine.connect() as conn:
+            # ① UUID 直查
+            if is_uuid:
+                row = conn.execute(text(
+                    "SELECT id, username FROM users "
+                    "WHERE id = :v AND is_deleted = false"
+                ), {"v": value}).fetchone()
+                if row:
+                    return {"id": row[0], "username": row[1], "matched_by": "users.id(UUID)"}
+
+            # ② IM 绑定表（active）
+            row = conn.execute(text(
+                "SELECT u.id, u.username FROM user_im_bindings b "
+                "JOIN users u ON u.id = b.user_id "
+                "WHERE b.im_platform = :p AND b.im_user_id = :v "
+                "AND b.status = 'active' AND u.is_deleted = false"
+            ), {"p": platform, "v": value}).fetchone()
+            if row:
+                return {"id": row[0], "username": row[1], "matched_by": "user_im_bindings"}
+
+            # ③ 人事档案账号列
+            columns: list[str] = []
+            mapped = _CONTACT_COLUMN_BY_PLATFORM.get((platform or "").strip().lower())
+            if mapped:
+                columns.append(mapped)
+            else:
+                columns.extend(["qq", "wechat", "phone"])
+            for col in columns:
+                row = conn.execute(text(
+                    f"SELECT id, username FROM users "
+                    f"WHERE {col} = :v AND is_deleted = false AND status = 'active'"
+                ), {"v": value}).fetchone()
+                if row:
+                    return {"id": row[0], "username": row[1], "matched_by": f"users.{col}"}
+            return None
+    except Exception as e:
+        logging.getLogger("emys.config_loader").warning(
+            "Failed to resolve user by channel (%s/%s): %s", platform, value, e
         )
         return None
 

@@ -62,6 +62,14 @@ _EVENT_TOOL_SCHEMA = {
                     "type": "string",
                     "description": "事件完整描述",
                 },
+                "node_id": {
+                    "type": "string",
+                    "description": (
+                        "归属全景节点编号（如 'EMR-SG-01-05-02'）。"
+                        "优先填本人负责的节点，其次填本企业参与节点；"
+                        "确实无法确定归属时留空，系统会暂存到临时节点待归类"
+                    ),
+                },
             },
             "required": ["title", "event_type"],
         },
@@ -94,6 +102,7 @@ _EVENT_TOOL_DESCRIPTION = (
     "  [应有] project_name — 关联项目名称\n"
     "  [可有] description — 事件完整描述\n"
     "  [可有] related_event_ids — 关联事件编号列表\n"
+    "  [可有] node_id — 归属全景节点编号；无法确定归属时留空（落临时节点待归类）\n"
     "\n"
     "守护核验三选一（仅在核验不通过时）：\n"
     "  force=false — 正常录入（核验不通过时会返回 needs_review 信号）\n"
@@ -138,6 +147,7 @@ async def handle_record_event(
             "event_type": params.get("event_type", "general"),
             "event_date": params.get("event_date"),
             "description": params.get("description", ""),
+            "node_id": params.get("node_id"),
         }
         logger.debug("event_tool: flat params detected, auto-wrapped into data dict")
 
@@ -151,6 +161,7 @@ async def handle_record_event(
             "event_type": data.get("event_type", "general"),
             "event_date": data.get("event_date"),
             "description": data.get("description", ""),
+            "node_id": data.get("node_id") or params.get("node_id"),
             "related_event_ids": related_event_ids,
             "_conversation_id": params.get("_conversation_id", ""),  # BUG-005: 从 tool_params 透传
         },

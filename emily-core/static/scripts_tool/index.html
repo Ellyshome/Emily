@@ -20,6 +20,19 @@
                 <option value="">加载中…</option>
             </select>
         </div>
+        <div class="sidebar-test" id="sidebar-test">
+            <div class="test-row">
+                <span class="test-title">交互通道</span>
+                <span class="test-hint" id="test-hint">后续测试以此渠道模拟</span>
+            </div>
+            <select id="test-channel" title="选定后：控制台消息模拟器 / 对话面板 / emy-test 默认以此渠道发消息"></select>
+            <div class="test-hint">测试前缀（逗号分隔；留空＝不拦截，按真实投递）</div>
+            <input type="text" id="test-prefixes" placeholder="test_,conv_">
+            <div class="test-actions">
+                <button type="button" class="test-save" id="test-save">保存</button>
+                <span class="test-msg" id="test-msg"></span>
+            </div>
+        </div>
         <div class="sidebar-head">
             <input type="search" id="filter" placeholder="筛选模块 / 脚本…" autocomplete="off">
         </div>

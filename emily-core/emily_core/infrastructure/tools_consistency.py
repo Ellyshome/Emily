@@ -94,7 +94,10 @@ TOOL_META_MAP: dict[str, tuple[str, str, str, str]] = {
     "unlink_attachment":  ("卸载附件为独立文件", "business", "write", "sop_only"),
     "update_file_purpose": ("校正文件的业务意图", "business", "write", "sop_only"),
     "create_task_node":        ("创建TASK类型叶子节点", "business", "write", "sop_only"),
-    "submit_node_deliverable": ("提交节点成果",   "business", "write", "sop_only"),
+    # 上传类：放开到 L2 参建执行及以上（一线可在参与节点内上报成果）；授权由服务层按
+    # 「节点责任人 / L5+ / 节点参与单位人员」二次校验（node_service._check_submission_permission）。
+    # exposure_mode 保持 sop_only：不进入 SOP-999 直调白名单，避免写操作绕过确认。
+    "submit_node_deliverable": ("提交节点成果",   "business", "write_l2", "sop_only"),
     "confirm_node_deliverable":("确认节点成果",   "business", "write", "sop_only"),
     "return_node_deliverable": ("退回节点成果",   "business", "write", "sop_only"),
     "query_my_nodes":          ("查询我负责的节点","business", "write", "sop_only"),

@@ -37,9 +37,15 @@ scripts:
       - name: platform
         type: enum
         label: 平台
-        choices: [simulator, napcat, wechat, dingtalk, feishu]
-        default: simulator
-        help: 模拟的来源平台标识
+        choices:
+          - {value: follow, label: 跟随交互通道}
+          - {value: simulator, label: 模拟器}
+          - {value: napcat, label: QQ}
+          - {value: wechat, label: 微信}
+          - {value: dingtalk, label: 钉钉}
+          - {value: feishu, label: 飞书}
+        default: follow
+        help: follow = 跟随控制台左侧栏「交互通道」
       - name: conversation-type
         type: enum
         label: 会话类型

@@ -16,6 +16,7 @@ import asyncio
 import json
 import logging
 import re
+import time
 from datetime import datetime, timedelta, timezone
 
 from ..adapters.standard.reply import ReplyMessage
@@ -84,7 +85,9 @@ class SessionLoop:
         self._config = config
 
         self._archive_md_path = ""
-        self._turn_counter = 0
+        self._turn_counter = 0          # 文件内轮次号（跨段续接，下方按现有正文校准）
+        self._turns_at_start = 0        # 本段会话起始基线，用于算「本段轮数」
+        self._segment_started_at = datetime.now(timezone.utc).isoformat()
         self._compacting = False
         self._last_actor: dict | None = None
         self._last_calls: list = []
@@ -96,11 +99,19 @@ class SessionLoop:
                 self._archive_md_path = self._archive_writer.ensure_header(
                     conversation_id=conversation_id,
                     user_name=getattr(context, "user_name", "") or "anonymous",
-                    started_at=datetime.now(timezone.utc).isoformat(),
+                    started_at=self._segment_started_at,
                     context=self._header_context(),
                 )
             except Exception as e:  # noqa: BLE001
                 logger.warning("SessionLoop archive header failed: %s", e)
+        # 轮次号跨段续接 + 本段基线：同天重启会复用同一 md 文件，若从 1 重开会
+        # 在同一文件里出现两个「第 1 轮」；以现有正文轮次为基线续编，并据此算本段轮数。
+        if self._archive_writer is not None and self._archive_md_path:
+            try:
+                self._turns_at_start = self._archive_writer.count_turns(self._archive_md_path)
+            except Exception as e:  # noqa: BLE001
+                logger.warning("SessionLoop archive count_turns failed: %s", e)
+        self._turn_counter = self._turns_at_start
         try:
             context.register_live_index(md_file_path=self._archive_md_path)
         except Exception as e:  # noqa: BLE001
@@ -116,6 +127,7 @@ class SessionLoop:
             "level": getattr(c, "level", 1),
             "is_management_unit": getattr(c, "is_management_unit", False),
             "scopes": list(getattr(c, "scopes", []) or []),
+            "authorized_node_ids": list(getattr(c, "authorized_node_ids", []) or []),
             "project_ids": list(getattr(c, "project_ids", []) or []),
             "sop_allow": list(getattr(c, "sop_allow", []) or []),
             "project_name": getattr(c, "project_name", ""),
@@ -246,6 +258,7 @@ class SessionLoop:
         if cap is None or self._capability_runner is None:
             return CapabilityResult.failed("能力未注册")
         timeout = int(getattr(self._config, "capability_call_timeout_seconds", 120) or 120)
+        t0 = time.monotonic()
         try:
             return await asyncio.wait_for(
                 self._capability_runner.run(
@@ -256,9 +269,13 @@ class SessionLoop:
                 timeout=timeout,
             )
         except asyncio.TimeoutError:
-            logger.warning("SessionLoop[%s] capability %s timed out (%ds)",
-                           self.conversation_id, name, timeout)
-            return CapabilityResult.failed(f"该操作耗时超过 {timeout} 秒，已中止。")
+            # 实际耗时必须回填：否则归档把 120s 的超时渲染成「失败（0ms）」，
+            # 日志里只有阈值也答不出"这次到底卡了多久"。
+            elapsed_ms = int((time.monotonic() - t0) * 1000)
+            logger.warning("SessionLoop[%s] capability %s timed out after %dms (limit %ds)",
+                           self.conversation_id, name, elapsed_ms, timeout)
+            return CapabilityResult.failed(
+                f"该操作耗时超过 {timeout} 秒，已中止。", elapsed_ms=elapsed_ms)
 
     def _record_call(self, capability: str, request: str, result) -> CapabilityCallRecord:
         actor_uid = (self._last_actor or {}).get("user_id") or self.context.user_id
@@ -429,7 +446,8 @@ class SessionLoop:
         DB I/O 走线程池，不阻塞会话主循环；失败只告警（归档非主流程）。
         """
         try:
-            await asyncio.to_thread(self.context.touch_live_index, self._turn_counter)
+            await asyncio.to_thread(self.context.touch_live_index,
+                                    self._turn_counter - self._turns_at_start)
         except Exception as e:  # noqa: BLE001
             logger.warning("SessionArchive live index touch failed: %s", e)
 
@@ -479,6 +497,8 @@ class SessionLoop:
             await self.context.persist_and_consolidate(
                 llm_client=self._llm, md_file_path=self._archive_md_path,
                 archive_writer=self._archive_writer, archive_reason=archive_reason,
+                segment_turn_count=self._turn_counter - self._turns_at_start,
+                segment_started_at=self._segment_started_at,
             )
         except Exception as e:  # noqa: BLE001
             logger.warning("SessionLoop archive warning: %s", e)
@@ -608,11 +628,16 @@ class SessionLoopPool:
 
         超时只做「截断」（写 footer + 标记 status=truncated），归档索引早在
         会话建立时已实时落库，故此处不再承担归档触发职责。
+
+        截断同时广播 session_closed：插件据此清掉 conversation_id → IM event
+        的映射，避免过期会话的 event 长期残留、被后续（如测试注入的）出站事件
+        误发到真实用户会话。
         """
         import time
         now = time.time()
         ttl = self._ttl()
         expired = [cid for cid, e in self._sessions.items() if now - e.last_active > ttl]
+        core = self._core
         for cid in expired:
             entry = self._sessions.pop(cid, None)
             if entry is not None:
@@ -620,6 +645,12 @@ class SessionLoopPool:
                     asyncio.ensure_future(entry.loop.archive(archive_reason="expired"))
                 except Exception as e:  # noqa: BLE001
                     logger.warning("SessionLoopPool sweep archive failed for %s: %s", cid, e)
+            bus = getattr(core, "outbound_bus", None)
+            if bus is not None:
+                try:
+                    bus.publish("session_closed", {"conversation_id": cid})
+                except Exception as e:  # noqa: BLE001
+                    logger.warning("SessionLoopPool session_closed publish failed: %s: %s", cid, e)
         if expired:
             logger.info("SessionLoopPool swept %d expired session(s)", len(expired))
         return len(expired)

@@ -53,6 +53,14 @@ _TASK_TOOL_SCHEMA = {
                     "type": "string",
                     "description": "截止日期自然语言描述（如 '下周五前'），可选",
                 },
+                "node_id": {
+                    "type": "string",
+                    "description": (
+                        "归属全景节点编号（如 'EMR-SG-01-05-02'）。"
+                        "优先填本人负责的节点，其次填本企业参与节点；"
+                        "确实无法确定归属时留空，系统会暂存到临时节点待归类"
+                    ),
+                },
             },
             "required": ["title"],
         },
@@ -78,6 +86,7 @@ _TASK_TOOL_DESCRIPTION = (
     "  [应有] due_date — 截止日期 YYYY-MM-DD（从'明天/下周五'等短语换算）\n"
     "  [应有] project_name — 关联项目名称\n"
     "  [可有] description — 任务详细描述\n"
+    "  [可有] node_id — 归属全景节点编号；无法确定归属时留空（落临时节点待归类）\n"
     "\n"
     "守护核验三选一（仅在核验不通过时）：\n"
     "  force=false — 正常录入（核验不通过时会返回 needs_review 信号）\n"
@@ -114,6 +123,7 @@ async def handle_record_task(
             "assignee": data.get("assignee") or data.get("owner", ""),
             "due_date": data.get("due_date"),
             "due_text": data.get("due_text", ""),
+            "node_id": data.get("node_id") or params.get("node_id"),
         },
     )
     result = await task_app.handle_task(route_result, user_id, message_id)

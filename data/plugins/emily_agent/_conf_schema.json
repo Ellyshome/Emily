@@ -46,5 +46,11 @@
     "type": "float",
     "default": 120.0,
     "hint": "POST 到 emily-core 的等待超时"
+  },
+  "event_registry_ttl_seconds": {
+    "description": "会话→IM事件映射有效期（秒）",
+    "type": "float",
+    "default": 300.0,
+    "hint": "超过该时长未再收到该会话入站消息时，映射判废、出站不再发真实 IM；0=不判废（仅调试）"
   }
 }

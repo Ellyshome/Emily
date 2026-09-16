@@ -195,11 +195,15 @@ class PermissionCache:
         规则：
           1. deny 绑定（用户匹配组）→ denied
           2. is_public=True → allow
-          3. can_access(level, min_level) → level check
+          3. level >= min_level → level check（线性「不低于」语义，见下）
           4. 企业类型细筛
           （部门匹配已移除，PRD R1）
+
+        ⚠ 第 3 条为**线性比较**而非 level.can_access 的树形继承：SOP 授权语义是
+        「级别不低于 min_level 即可用」。树形继承下建设线（L4/L5/L6）不继承参建线
+        （L2），用 can_access 会让管理员反而失去参建类 SOP。跨线资源继承语义仍由
+        level.can_access 保留，仅此处不适用。
         """
-        from .level import can_access
 
         # 匹配用户的权限组（仅按企业类型）
         matched_group_ids: set[str] = set()
@@ -229,8 +233,8 @@ class PermissionCache:
                 sop_allow.append(flow.sop_id)
                 continue
 
-            # 3. 树形继承级别检查
-            if flow.min_level is not None and not can_access(user_level, flow.min_level):
+            # 3. 级别检查（线性：不低于 min_level 即可用）
+            if flow.min_level is not None and int(user_level or 1) < int(flow.min_level):
                 continue
 
             # 4. 企业类型匹配

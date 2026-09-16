@@ -7,12 +7,28 @@
 from __future__ import annotations
 
 import logging
+from datetime import datetime, timezone
 
 from sqlalchemy import text
 
 from ..infrastructure.database.session import get_session
 
 logger = logging.getLogger("emily.console_log_repo")
+
+
+def _time_sort_key(value: str) -> float:
+    """把各日志表的时间字符串归一为可比较的时间戳。
+
+    各表时间列的时区口径并不统一（会话归档为北京时间 +08:00，其余多为 UTC），
+    直接按字符串比较会把不同偏移的记录排错，故统一按「时刻」比较。
+    """
+    try:
+        dt = datetime.fromisoformat(str(value).replace("Z", "+00:00"))
+    except (ValueError, TypeError):
+        return 0.0
+    if dt.tzinfo is None:
+        return dt.replace(tzinfo=timezone.utc).timestamp()
+    return dt.timestamp()
 
 # 模块白名单：key 供 API/前端使用；user=None 表示该日志不归属具体用户（按人过滤时跳过）。
 LOG_MODULES = [
@@ -109,5 +125,5 @@ class ConsoleLogRepo:
                     collected.extend(ConsoleLogRepo._query_module(session, m, user_id, limit))
                 except Exception as ex:
                     logger.warning("console_log_repo query failed module=%s: %s", m["key"], ex)
-        collected.sort(key=lambda r: r["time"] or "", reverse=True)
+        collected.sort(key=lambda r: _time_sort_key(r["time"]), reverse=True)
         return collected[:limit]

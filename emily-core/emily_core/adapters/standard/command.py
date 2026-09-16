@@ -20,6 +20,7 @@ class EventCommand:
     source_message_id: str = ""
     related_event_ids: list[str] | None = None  # M8a: 关联事件编号列表
     conversation_id: str = ""  # BUG-005: 来源会话 ID，供确认流程直查
+    node_id: str | None = None  # 归属全景节点；空 = 无法确定归属，落临时节点（UNASSIGNED）
 
 
 @dataclass
@@ -34,6 +35,7 @@ class TaskCommand:
     due_text: str = ""             # LLM 提取的原始截止日期文本
     creator_id: str = ""
     source_message_id: str = ""
+    node_id: str | None = None     # 归属全景节点；空 = 无法确定归属，落临时节点（UNASSIGNED）
 
 
 @dataclass
@@ -62,6 +64,7 @@ class FileCommand:
     uploaded_by: str = ""
     source_message_id: str = ""
     confidentiality: int = 1  # 0=公开 1=内部(默认) 2=机密
+    node_id: str | None = None  # 归属全景节点；非空则同时绑定到节点可见范围
 
 
 # ── M5 查询命令 ──

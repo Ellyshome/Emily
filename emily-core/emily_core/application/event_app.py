@@ -73,7 +73,9 @@ class EventApplication:
 
             # 生成确认简报
             project_name = route_result.project_name
-            reply = EventService.format_confirmation_reply(event, project_name)
+            reply = EventService.format_confirmation_reply(
+                event, project_name, node_id=cmd.node_id or None,
+            )
 
             # ── 进化日志：业务事件日志 ──
             _log_business_event(
@@ -215,4 +217,5 @@ class EventApplication:
             source_message_id=message_id,
             related_event_ids=related if isinstance(related, list) else None,
             conversation_id=data.get("_conversation_id", ""),  # BUG-005: 透传会话 ID
+            node_id=data.get("node_id") or None,
         )

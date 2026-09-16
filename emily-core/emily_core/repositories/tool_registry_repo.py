@@ -7,7 +7,6 @@ from __future__ import annotations
 
 import json
 import logging
-from typing import Optional
 
 from ..infrastructure.database import get_session
 from ..infrastructure.database.models import ToolRegistryModel
@@ -66,16 +65,21 @@ class ToolRegistryRepo:
             return False
 
     @staticmethod
-    def get_available(
-        level: int = 0,
-        sop_allow: Optional[list[str]] = None,
-    ) -> list[dict]:
-        """查询当前用户可用的 API 列表。
+    def get_available(level: int = 0) -> list[dict]:
+        """查询当前用户按**级别**可用的 API 列表。
 
         权限过滤规则：
           - category=base     → 全部用户可用
           - category=business → 检查 permission_flag vs 6 级权限
+              all      → 全部用户（含 L1 访客）
+              write_l2 → L2 参建执行及以上（线性 >=2；用于"一线可上传"的追加型写工具）
+              write    → L3 参建管理及以上
+              admin    → L5 管理员及以上
           - category=project  → 仅 L5-L6 管理员可用
+
+        注意：本方法**不做 SOP 授权判定**。已授权 SOP 所声明工具的放行，由调用方
+        （session/fetchers/fetch_available_tools.py）在拿到本结果后并集处理——
+        层级职责不同：本仓库只管 tool_registry 表自身，不感知 SOP 文档。
         """
         try:
             with get_session() as session:
@@ -101,6 +105,8 @@ class ToolRegistryRepo:
                     if row.permission_flag == "all":
                         available.append(_row_to_dict(row))
                     elif row.permission_flag == "admin" and level >= 5:
+                        available.append(_row_to_dict(row))
+                    elif row.permission_flag == "write_l2" and level >= 2:
                         available.append(_row_to_dict(row))
                     elif row.permission_flag == "write" and level >= 3:
                         available.append(_row_to_dict(row))

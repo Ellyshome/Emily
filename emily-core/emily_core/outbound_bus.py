@@ -16,6 +16,44 @@ import logging
 
 logger = logging.getLogger("emily.outbound_bus")
 
+#: Core 未推送 Config 默认时的兜底测试前缀（空列表 = 不做前缀判定）
+DEFAULT_TEST_PREFIXES = ("test_", "conv_")
+
+
+def is_test_session(
+    conversation_id: str = "",
+    config=None,
+    prefixes: list | None = None,
+) -> bool:
+    """判定该会话是否为「测试会话」（其出站只走 SSE、不外发真实 IM）。
+
+    判定只看测试前缀：会话 ID 命中任一前缀 → 测试会话。前缀为空（未配置或控制台清空）
+    → 一律不是测试会话，出站按真实投递处理（此时通道账号能对上真实用户就会真发）。
+
+    口径来源：控制台左侧栏「测试前缀」（运行期覆盖）> Config.test_conv_prefixes
+    > 模块默认（test_ / conv_）。
+
+    Args:
+        conversation_id: 会话 ID。
+        config: Config 实例（缺省用已推送的默认口径）。
+        prefixes: 显式前缀列表；传入则不读运行期配置（便于单测）。
+
+    Returns:
+        bool: True = 测试会话，出站仅 SSE。
+    """
+    if prefixes is None:
+        try:
+            from .services.test_settings import resolve_test_prefixes
+            prefixes = resolve_test_prefixes(config)
+        except Exception as e:  # noqa: BLE001 — 读取失败回退模块默认口径
+            logger.debug("resolve test prefixes failed: %s", e)
+            prefixes = list(DEFAULT_TEST_PREFIXES)
+
+    cid = (conversation_id or "").strip()
+    if not cid:
+        return False
+    return any(cid.startswith(str(p)) for p in (prefixes or []) if str(p))
+
 
 class OutboundEventBus:
     """出站事件发布-订阅总线。"""

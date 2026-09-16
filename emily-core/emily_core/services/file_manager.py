@@ -144,7 +144,12 @@ class FileManager:
     def link_to_module(
         self, file_id: str, module_id: str, module_type: str, operator_id: str = "",
     ) -> Optional[File]:
-        """关联文件到业务对象（节点/事件/会议等）。"""
+        """关联文件到业务对象（节点/事件/会议等）。
+
+        module_type 以 NODE_ 开头时，同时把文件绑定到该节点的可见范围
+        （node_accessible_files）——只写 source_module_* 对节点可见性无作用，
+        节点内看不到这份文件。
+        """
         try:
             with get_session() as session:
                 f = session.query(File).filter(
@@ -159,10 +164,36 @@ class FileManager:
                     "File %s linked to module %s(%s) by %s",
                     f.file_no, module_id, module_type, operator_id,
                 )
+                if module_type.startswith("NODE_"):
+                    self.bind_file_to_node(file_id, module_id, operator_id)
                 return f
         except Exception as e:
             logger.error("link_to_module failed: %s", e)
             return None
+
+    def bind_file_to_node(
+        self, file_id: str, node_id: str, operator_id: str = "",
+    ) -> bool:
+        """把文件绑定到全景节点可见范围（node_accessible_files）。
+
+        节点可见文件集以该表为唯一依据（VisibleFileSetResolver ③），
+        因此"上传到节点"必须经此绑定，否则文件不会出现在节点内。
+        幂等：已绑定直接返回 True。
+        """
+        if not file_id or not node_id:
+            return False
+        try:
+            from ..repositories.node_repo import NodeAccessibleFileRepo
+            if NodeAccessibleFileRepo.exists(node_id, file_id):
+                return True
+            NodeAccessibleFileRepo.create(
+                node_id=node_id, file_id=file_id, added_by=operator_id,
+            )
+            logger.info("File %s bound to node %s by %s", file_id, node_id, operator_id)
+            return True
+        except Exception as e:
+            logger.error("bind_file_to_node failed: file=%s node=%s: %s", file_id, node_id, e)
+            return False
 
     def create_version(
         self, parent_file_no: str, new_file_id: str, version_label: str,

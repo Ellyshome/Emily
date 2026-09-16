@@ -56,6 +56,14 @@ _FILE_TOOL_SCHEMA = {
                     "description": "业务意图：EVIDENCE(凭证)/RECORD(记录)/DESIGN(图纸)/REFERENCE(参考)（CHAT 不入库，默认 RECORD）",
                     "default": "RECORD",
                 },
+                "node_id": {
+                    "type": "string",
+                    "description": (
+                        "归属全景节点编号（如 'EMR-SG-01-05-02'）。"
+                        "非空时文件同时绑定到该节点，节点内可见；"
+                        "优先填本人负责的节点，其次填本企业参与节点，无法确定时留空"
+                    ),
+                },
             },
             "required": ["filename"],
         },
@@ -95,6 +103,7 @@ _FILE_TOOL_DESCRIPTION = (
     "  [必有] purpose — 业务意图（上述 5 类，默认 RECORD）\n"
     "  [应有] project_name — 关联项目名称\n"
     "  [应有] file_type — 文件类型（从后缀推断）\n"
+    "  [可有] node_id — 归属全景节点编号；填了则文件绑定到该节点（节点内可见）\n"
     "\n"
     "守护核验三选一（仅在核验不通过时）：\n"
     "  force=false — 正常录入\n"
@@ -158,6 +167,7 @@ async def handle_record_file(
             "file_type": raw_file_type,
             "file_category": data.get("file_category", "OTHER"),
             "purpose": data.get("purpose") or params.get("purpose") or "RECORD",
+            "node_id": data.get("node_id") or params.get("node_id"),
         },
     )
     result = await file_app.handle_file(

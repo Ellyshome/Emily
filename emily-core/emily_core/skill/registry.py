@@ -7,12 +7,19 @@
 from __future__ import annotations
 
 import logging
+import re
 import threading
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from pathlib import Path
 
 logger = logging.getLogger("emily.skill.registry")
+
+#: SOP 文档中声明所需系统工具的章节标记（「### 3.2 使用的系统工具 / API」）
+_TOOLS_SECTION_MARKER = "使用的系统工具"
+
+#: 工具名在表格首列中以反引号包裹，如 | `record_event` | 事件录入 | 核心工具 |
+_TOOL_NAME_RE = re.compile(r"`([^`]+)`")
 
 
 def _extract_sop_type(sop_id: str) -> str:
@@ -30,6 +37,7 @@ class SopDoc:
     display_name: str
     file_path: str
     instructions: str = ""  # 首行摘要
+    tools: list[str] = field(default_factory=list)  # 3.2 节声明的系统工具
 
 
 @dataclass
@@ -93,9 +101,15 @@ class SkillRegistry:
                 text = p.read_text(encoding="utf-8")
                 display_name = self._extract_display_name(text, sop_id)
                 first_line = self._extract_first_instruction(text)
+                tools = self._extract_tools(text)
+                if not tools and _TOOLS_SECTION_MARKER in text:
+                    # fail-closed：有 3.2 节却解析不出工具 → 该 SOP 声明的工具一律不放行，
+                    # 并告警提示 SOP 文档格式需要修（空声明与格式损坏必须可区分）。
+                    logger.warning(
+                        "SOP 工具声明解析为空（fail-closed，其工具不会放行）: %s", p.name)
                 new_reg[sop_id] = SopDoc(
                     sop_id=sop_id, display_name=display_name,
-                    file_path=str(p), instructions=first_line,
+                    file_path=str(p), instructions=first_line, tools=tools,
                 )
                 ok += 1
             except Exception as e:
@@ -125,6 +139,34 @@ class SkillRegistry:
             if line and not line.startswith("#") and not line.startswith(">") and not line.startswith("|"):
                 return line[:100]
         return ""
+
+    @staticmethod
+    def _extract_tools(text: str) -> list[str]:
+        """解析「### 3.2 使用的系统工具 / API」表格，返回 SOP 声明的工具名。
+
+        表首列即工具名（反引号包裹优先，兼容 SOP-000 的「`文件写入`（系统基础能力）」
+        这类带注解写法）。解析不到时返回空列表 —— 调用方据此 fail-closed，不得放行
+        任何工具。不做去注册表校验，由调用方按已注册工具过滤。
+        """
+        names: list[str] = []
+        in_section = False
+        for raw in text.splitlines():
+            line = raw.strip()
+            if line.startswith("#"):
+                if in_section:
+                    break  # 进入下一章节，结束采集
+                in_section = line.startswith("###") and _TOOLS_SECTION_MARKER in line
+                continue
+            if not in_section or not line.startswith("|"):
+                continue
+            first_cell = line.strip("|").split("|")[0].strip()
+            if not first_cell or first_cell == "工具名" or set(first_cell) <= set("-: "):
+                continue  # 表头 / 分隔行
+            matched = _TOOL_NAME_RE.search(first_cell)
+            name = (matched.group(1) if matched else first_cell).strip()
+            if name and name not in names:
+                names.append(name)
+        return names
 
     # ── 查询接口（SessionAgent 依赖，签名不变）──
 

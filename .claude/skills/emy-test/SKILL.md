@@ -133,6 +133,11 @@ uv run python .claude/skills/emy-test/cli.py --managed --llm \
 
 **推荐方式：直接用 `--sender` 传入用户名，CLI 自动解析。**
 
+> 自 2026-09 起 CLI 已内置发送前校验：`--qq` / `--sender-id` 必须能在
+> `user_im_bindings`（active）或 `users.qq / users.wechat / users.id` 中解析到人，
+> 否则**直接退出（exit 2）并打印正确用法**；确需验证访客降级行为时显式加
+> `--allow-unknown-sender`。
+
 也可以手动查询 users 表获取 QQ 号：
 
 ```powershell
@@ -237,6 +242,8 @@ uv run python .claude/skills/emy-test/cli.py --managed --llm \
 | `--sender "李明华"` | 发送者用户名（从 users 表自动查找，提取 QQ 号作为 sender_id）**推荐** |
 | `--qq "123456789"` | 发送者 QQ 号（直接作为 sender_id，与 AstrBot 行为完全一致） |
 | `--sender-id "UUID"` | 发送者 UUID（走 Core UUID 直查路径，需在 users 表中存在） |
+| `--platform "napcat"` | 发送平台；默认取控制台左侧栏「交互通道」（读不到回退 napcat） |
+| `--allow-unknown-sender` | 放行未登记的通道 ID（走访客降级路径，仅用于验证访客行为） |
 | `--cid "conv_01"` | 显式会话 ID（覆盖自动推导） |
 | `--file "D:\path"` | 附件文件路径（可多次指定） |
 | `--managed` | 接管所有消息 |
@@ -268,6 +275,19 @@ http://localhost:18080/console/
 未确认时只跑 `--dry-run` 预览。**同一发送者连续执行即可完成多轮确认类测试**
 （会话上下文由 Core 按 sender_id 维持）。结果面板会回显 HTTP 状态、SSE 前导消息、
 send_file 事件与 Emily 的回复。
+
+### 测试会话设置（控制台左侧栏顶部）
+
+左侧栏顶部有「交互通道」+「测试前缀」两项设置（`/app/runtime/test_settings.json`，保存后立即生效）：
+
+| 项 | 作用 |
+|---|---|
+| 交互通道 | 后续测试（消息模拟器 / 对话面板 / 本 skill 的 CLI 与探针）默认以该渠道发消息；改动即时保存 |
+| 测试前缀 | 会话 ID 命中任前缀 → 判定为「测试会话」，其出站只走 SSE、**不外发真实 IM**；默认 `test_`、`conv_` |
+
+- **前缀留空 = 不拦截**：此时不做前缀判定，只要通道账号能对上真实用户，回复就按真实投递处理。
+- 本 skill 的 CLI / 探针默认 platform 取自「交互通道」（读不到回退 `napcat`），可用 `--platform` 覆盖。
+- 实操建议：注入测试统一用 `--cid test_xxx`——既命中前缀被拦在 SSE，又天然避开真实用户会话 ID。
 
 CLI 等价用法（在容器内执行，与脚本控制台同一环境）：
 

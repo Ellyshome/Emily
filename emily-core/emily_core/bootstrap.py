@@ -73,6 +73,8 @@ def _config_from_env(config_data: dict | None) -> dict:
         "EMILY_LANGGRAPH_CHECKPOINTER": "langgraph_checkpointer",
         "EMILY_SESSION_LOOP_SOP_ALLOWLIST": "session_loop_sop_allowlist",
         "EMILY_CAPABILITY_CALL_TIMEOUT_SECONDS": "capability_call_timeout_seconds",
+        "EMILY_TEST_CONV_PREFIXES": "test_conv_prefixes",
+        "EMILY_DEFAULT_INTERACTION_CHANNEL": "default_interaction_channel",
     }
     # 布尔字段：环境变量为字符串，需显式转换
     bool_fields = {
@@ -82,18 +84,25 @@ def _config_from_env(config_data: dict | None) -> dict:
     int_fields = {
         "capability_call_timeout_seconds",
     }
+    # 列表字段：逗号分隔（空串 = 显式置空，如清空测试前缀＝不做前缀判定）
+    list_fields = {
+        "test_conv_prefixes",
+    }
     for env_key, cfg_key in env_map.items():
         val = os.environ.get(env_key)
-        if val and not data.get(cfg_key):
-            if cfg_key in bool_fields:
-                data[cfg_key] = val.strip().lower() in ("1", "true", "yes", "on")
-            elif cfg_key in int_fields:
-                try:
-                    data[cfg_key] = int(str(val).strip())
-                except ValueError:
-                    _logger.warning("Invalid int env %s=%r — ignored", env_key, val)
-            else:
-                data[cfg_key] = val
+        if val is None or data.get(cfg_key):
+            continue
+        if cfg_key in bool_fields:
+            data[cfg_key] = val.strip().lower() in ("1", "true", "yes", "on")
+        elif cfg_key in int_fields:
+            try:
+                data[cfg_key] = int(str(val).strip())
+            except ValueError:
+                _logger.warning("Invalid int env %s=%r — ignored", env_key, val)
+        elif cfg_key in list_fields:
+            data[cfg_key] = [x.strip() for x in str(val).split(",") if x.strip()]
+        elif val:
+            data[cfg_key] = val
     return data
 
 

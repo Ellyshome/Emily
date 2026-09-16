@@ -13,6 +13,7 @@ Scheduler 是每 Session 一个，只管本 Session 的 WorkItem 排队与分配
 
 from __future__ import annotations
 
+import asyncio
 import logging
 
 from .workitem import WorkItem
@@ -282,6 +283,12 @@ class SessionScheduler:
             else:
                 wi.transition_to(WorkItemState.DONE)
                 logger.info("Scheduler[%s] WI %s DONE", self.session_id, wi.id)
+        except asyncio.CancelledError:
+            # 同 _run_graph：外部取消原样上抛。此处补工单号——取消时 wi 尚未落终态，
+            # 不会有 FAILED 日志，这是唯一能把超时定位到具体工单的地方。
+            logger.warning("Scheduler[%s] WI %s cancelled (state=%s)",
+                           self.session_id, wi.id, getattr(wi.state, "value", wi.state))
+            raise
         except Exception as e:
             logger.error("Scheduler[%s] WI %s crashed: %s",
                          self.session_id, wi.id, e, exc_info=True)
@@ -339,9 +346,17 @@ class SessionScheduler:
         outbound_bus = getattr(core, "outbound_bus", None) if core else None
         if outbound_bus is not None and context.message is not None:
             _cid = context.message.conversation_id or ""
+            _platform = getattr(context.message, "platform", "") or ""
+            from ..outbound_bus import is_test_session
+            _test = is_test_session(_cid)
 
-            def _send_progress(text: str, _bus=outbound_bus, _cid=_cid) -> None:
-                _bus.publish("progress", {"content": text, "conversation_id": _cid})
+            def _send_progress(text: str, _bus=outbound_bus, _cid=_cid,
+                               _platform=_platform, _test=_test) -> None:
+                # test_session 一并下发：测试会话的进度只走 SSE，不外发真实 IM
+                _bus.publish("progress", {
+                    "content": text, "conversation_id": _cid, "platform": _platform,
+                    "test_session": _test,
+                })
 
             context.baggage.setdefault("progress_sender", _send_progress)
 
@@ -364,6 +379,15 @@ class SessionScheduler:
 
             # 检测 interrupt 挂起
             await _check_interrupt(self, context, config, graph)
+        except asyncio.CancelledError:
+            # 外部取消（如 M1 能力超时的 asyncio.wait_for）。**必须原样上抛**：吞掉取消会让
+            # wait_for 的超时判定整体失效。此处只补痕迹——CancelledError 是 BaseException
+            # 子类，下面的 except Exception 接不住它，被取消的工单会既无 DONE 也无 FAILED，
+            # 在日志里彻底失踪；留下 stage 才能看出卡在哪一步。
+            logger.warning("Scheduler[%s] workitem graph cancelled at stage=%s",
+                           getattr(self, "session_id", "?"),
+                           getattr(context, "current_stage", "") or "?")
+            raise
         except Exception as exc:
             # 节点级重试耗尽 / 节点超时 / 图级异常 → 转**可读**收尾（US-02、R3：不出现无响应）
             logger.error("Scheduler[%s] workitem graph aborted: %s",

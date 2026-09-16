@@ -265,6 +265,16 @@ class Config:
     """IM 用户 ID 白名单——仅当 auto_create_user=False 时生效。
     白名单内的 im_user_id 仍可自动创建用户。"""
 
+    # ── 测试会话（测试注入用；不做按通道截断真实 IM）----
+    test_conv_prefixes: list = field(default_factory=lambda: ["test_", "conv_"])
+    """测试前缀：会话 ID 命中任前缀 → 判定为测试会话，其出站只走 SSE、不外发真实 IM。
+
+    留空 = 不做前缀判定（此时只要通道账号能对上真实用户，回复照常发真实 IM）。"""
+
+    default_interaction_channel: str = "simulator"
+    """交互通道默认值：测试注入（消息模拟器 / emy-test / 控制台对话面板）默认以该
+    渠道发消息，可在控制台左侧栏改。"""
+
     # ---- 权限管理 (Permission) ----
     permission_cache_ttl_seconds: int = 300
     """权限矩阵缓存 TTL（秒），默认 5 分钟"""

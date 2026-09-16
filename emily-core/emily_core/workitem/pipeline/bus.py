@@ -161,9 +161,17 @@ class PipelineBUS:
         if self._outbound_bus is not None and context.message is not None:
             _bus = self._outbound_bus
             _cid = context.message.conversation_id or ""
+            _platform = getattr(context.message, "platform", "") or ""
+            from ...outbound_bus import is_test_session
+            _test = is_test_session(_cid)
 
-            def _send_progress(text: str, _bus=_bus, _cid=_cid) -> None:
-                _bus.publish("progress", {"content": text, "conversation_id": _cid})
+            def _send_progress(text: str, _bus=_bus, _cid=_cid, _platform=_platform,
+                               _test=_test) -> None:
+                # test_session 一并下发：测试会话的进度只走 SSE，不外发真实 IM
+                _bus.publish("progress", {
+                    "content": text, "conversation_id": _cid, "platform": _platform,
+                    "test_session": _test,
+                })
 
             context.baggage.setdefault("progress_sender", _send_progress)
 
