@@ -93,13 +93,18 @@ async def resume_graph(
     *,
     recursion_limit: int = 50,
     actor_ref: "dict | None" = None,
+    context: Any = None,
 ) -> dict:
-    """以用户补充信息续接挂起中的图（`Command(resume=...)`）。"""
-    final = await graph.ainvoke(
-        Command(resume=str(answer or "")),
-        {"configurable": {"thread_id": str(conversation_id)},
-         "recursion_limit": int(recursion_limit)},
-    )
+    """以用户补充信息续接挂起中的图（`Command(resume=...)`）。
+
+    上下文入口为官方运行时上下文（M4）：`context=` 透传，未提供时不注入（兼容调用方）。
+    """
+    cfg = {"configurable": {"thread_id": str(conversation_id)},
+           "recursion_limit": int(recursion_limit)}
+    if context is not None:
+        final = await graph.ainvoke(Command(resume=str(answer or "")), cfg, context=context)
+    else:
+        final = await graph.ainvoke(Command(resume=str(answer or "")), cfg)
     return final if isinstance(final, dict) else {}
 
 

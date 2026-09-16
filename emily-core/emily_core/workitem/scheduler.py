@@ -304,8 +304,9 @@ class SessionScheduler:
         from langgraph.types import Command
         from emily_core.infrastructure.logging.llm_logger import LLMInteractionLogger
         from emily_core.infrastructure.logging.business_event_logger import BusinessEventLogger
+        from emily_core.kernel.context import KernelContext
         from emily_core.workitem.langgraph_engine.state import (
-            set_bus_context, clear_bus_context, make_initial_state,
+            clear_bus_context, make_initial_state,
         )
 
         core = getattr(self, "_core", None)
@@ -313,7 +314,16 @@ class SessionScheduler:
         if graph is None:
             raise RuntimeError("LangGraph engine not built — check EmilyCore._build_pipeline_bus()")
 
-        set_bus_context(context)
+        # ★ 上下文入口：官方运行时上下文（M4 / US-04）。工单 BusContext 经 context= 传入图，
+        # 图声明 context_schema 承接；进程内通道只由 bind_compat() 这一个标注兼容点转接。
+        kernel_ctx = KernelContext(
+            conversation_id=context.message.conversation_id if context.message else "",
+            actor_ref={"kind": "user", "ref_id": str(context.user_id or "")},
+            user_id=str(context.user_id or ""),
+            db_message_id=str(getattr(context, "db_message_id", "") or ""),
+            bus=context,
+        )
+        kernel_ctx.bind_compat()
 
         LLMInteractionLogger.set_context(
             pipeline_run_id=context.pipeline_run_id,
@@ -343,17 +353,23 @@ class SessionScheduler:
             if is_resuming and resume_input:
                 # 续接：用 Command(resume=...) 把用户回复注入 interrupt 断点
                 result = await graph.ainvoke(
-                    Command(resume=resume_input), config=config,
+                    Command(resume=resume_input), config=config, context=kernel_ctx,
                 )
             else:
                 state = make_initial_state(
                     pipeline_run_id=context.pipeline_run_id,
                     max_iterations=max_iter,
                 )
-                result = await graph.ainvoke(state, config=config)
+                result = await graph.ainvoke(state, config=config, context=kernel_ctx)
 
             # 检测 interrupt 挂起
             await _check_interrupt(self, context, config, graph)
+        except Exception as exc:
+            # 节点级重试耗尽 / 节点超时 / 图级异常 → 转**可读**收尾（US-02、R3：不出现无响应）
+            logger.error("Scheduler[%s] workitem graph aborted: %s",
+                         getattr(self, "session_id", "?"), exc, exc_info=True)
+            context.should_abort = True
+            context.abort_reason = _readable_graph_failure(exc)
         finally:
             clear_bus_context()
             LLMInteractionLogger.clear_context()
@@ -412,6 +428,19 @@ async def _cleanup_checkpoint(core, thread_id: str) -> None:
     except Exception as e:
         logging.getLogger("emily.scheduler").warning(
             "Checkpoint cleanup failed for thread=%s: %s", thread_id, e)
+
+
+def _readable_graph_failure(exc: Exception) -> str:
+    """把图级失败（节点级重试耗尽 / 节点超时 / 节点异常）转为用户可读的中止原因。
+
+    US-02：执行有界——任何节点异常或超时后用户仍应收到可读结果，而不是无响应或报错原文。
+    技术细节只进日志，不直接作为用户可见文案。
+    """
+    name = type(exc).__name__.lower()
+    text = str(exc).lower()
+    if "timeout" in name or "timeout" in text or "timed out" in text:
+        return "这次处理超时了，已中止；请稍后再试，或把请求拆小一点。"
+    return "处理过程中出现了异常，已中止；请稍后重试或换个说法。"
 
 
 def _extract_interrupt_question(snap) -> str:

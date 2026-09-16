@@ -54,7 +54,9 @@ class Main(star.Star):
         )
         # conversation_id → 最近 event，供异步 SSE 出站回复定位
         self._event_registry: dict = {}
-        self.sse = SSEListener(self.outbound, event_registry=self._event_registry)
+        self.sse = SSEListener(
+            self.outbound, event_registry=self._event_registry, api_token=api_token
+        )
         self._sse_url = cfg.get("emycore_sse_url", "") or self.api.get_sse_url()
 
         self._seen: deque[str] = deque(maxlen=DEDUP_MAX)

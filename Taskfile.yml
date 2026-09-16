@@ -75,7 +75,7 @@ tasks:
       SERVICE: '{{.SERVICE | default "emily-core"}}'
     cmds:
       - |
-        RETRIES=30
+        RETRIES=60
         for i in $(seq 1 $RETRIES); do
           STATUS=$(docker inspect -f '{{.State.Health.Status}}' {{.SERVICE}} 2>/dev/null || echo "unknown")
           if [ "$STATUS" = "healthy" ]; then
@@ -312,8 +312,24 @@ tasks:
 
 # ───────────────────── 反向代理（宿主机 nginx）─────────────────────
 
+  # ── 内部：宿主机反向代理依赖检查 ──
+  proxy:check:
+    desc: 检查宿主机反向代理依赖（nginx / envsubst / htpasswd / sudo）
+    preconditions:
+      - sh: command -v nginx >/dev/null 2>&1
+        msg: "❌ 未找到 nginx，请先安装：sudo apt install -y nginx"
+      - sh: command -v envsubst >/dev/null 2>&1
+        msg: "❌ 未找到 envsubst（包名 gettext-base），请先安装：sudo apt install -y gettext-base"
+      - sh: command -v htpasswd >/dev/null 2>&1
+        msg: "❌ 未找到 htpasswd（包名 apache2-utils），请先安装：sudo apt install -y apache2-utils"
+      - sh: command -v sudo >/dev/null 2>&1
+        msg: "❌ 未找到 sudo，请先安装：sudo apt install -y sudo"
+    cmds:
+      - echo "✅ 宿主机反向代理依赖检查通过"
+
   proxy:render:
     desc: 渲染 nginx 配置并同步证书到 /etc/nginx（需 sudo）
+    deps: [proxy:check]
     vars:
       SSL_DIR: /etc/nginx/ssl/emily
       TMPL: deploy/nginx/emily.conf.tmpl
@@ -435,6 +451,7 @@ tasks:
         echo "    task env:check          环境检查"
         echo ""
         echo "  反向代理（宿主机 nginx）："
+        echo "    task proxy:check        检查 nginx/envsubst/htpasswd/sudo 是否就绪"
         echo "    task proxy:render       渲染 nginx 配置 + 同步证书（需 sudo）"
         echo "    task proxy:test         校验 nginx 配置语法"
         echo "    task proxy:reload       重载 nginx"

@@ -175,13 +175,73 @@ class SessionArchiveRepo:
     # ── 只读观测（供 emy-console 消费；返回 dict，避免 detached-instance 访问）──
 
     @staticmethod
-    def list_all(limit: int = 200) -> list[dict]:
-        """列出全部归档记录（按最后活跃时间倒序，只读）。"""
+    def list_grouped_by_conversation(limit: int = 200) -> list[dict]:
+        """按会话合并的只读视图：**一个 conversation 一行**（供 emy-console「会话日志」）。
+
+        为什么需要合并：索引是"会话建立即建档、截断即收口"（见模块 docstring），
+        同一 conversation 在 TTL 截断 / 重启收口后再来消息就会新开一段，
+        故原始表里一个 conversation 会有多行（新段 active + 历史段 truncated）。
+        观测窗口应按会话聚合展示，而不是按"段"罗列。
+
+        合并口径：
+          - 状态：任一段进行中 → `active`；否则 `truncated`
+          - 时间：`last_active_at` / `archived_at` 取最新值，`started_at` 取最早值
+          - 身份与 `md_file_path`：以**最新一段**为准（首行即最新，查询已按时间倒序）
+          - `segments`：各段明细，供调用方按**去重后的文件**聚合轮次与正文
+            （同一 conversation 同天重启会复用同一 md 文件，按行累加会重复计数）
+
+        Args:
+            limit: 参与合并的原始行数上限（不是合并后的会话数）。
+
+        Returns:
+            list[dict]: 每个 conversation 一条记录，含 `segments` / `segment_count`。
+        """
         with get_session() as session:
             rows = (
                 session.query(SessionArchive)
                 .order_by(SessionArchive.last_active_at.desc(), SessionArchive.archived_at.desc())
                 .limit(limit)
+                .all()
+            )
+        grouped: dict[str, dict] = {}
+        for row in rows:
+            r = _to_dict(row)
+            g = grouped.get(r["conversation_id"])
+            if g is None:
+                g = dict(r)
+                g["segments"] = []
+                g["segment_count"] = 0
+                grouped[r["conversation_id"]] = g
+            g["segments"].append({
+                "id": r["id"],
+                "status": r["status"],
+                "archive_reason": r["archive_reason"],
+                "md_file_path": r["md_file_path"],
+                "turn_count": r["turn_count"],
+                "started_at": r["started_at"],
+                "last_active_at": r["last_active_at"],
+                "archived_at": r["archived_at"],
+            })
+            g["segment_count"] += 1
+            if r["status"] == "active":
+                # 任一段进行中即视为进行中，且不显示截断原因/截断时间
+                g["status"] = "active"
+                g["archive_reason"] = ""
+                g["archived_at"] = ""
+            if r["started_at"] and (not g["started_at"] or r["started_at"] < g["started_at"]):
+                g["started_at"] = r["started_at"]
+            if r["last_active_at"] and r["last_active_at"] > (g["last_active_at"] or ""):
+                g["last_active_at"] = r["last_active_at"]
+        return list(grouped.values())
+
+    @staticmethod
+    def list_by_conversation(conversation_id: str) -> list[dict]:
+        """列出该会话的全部归档段（按最后活跃升序，只读）——供全文合并读取。"""
+        with get_session() as session:
+            rows = (
+                session.query(SessionArchive)
+                .filter(SessionArchive.conversation_id == conversation_id)
+                .order_by(SessionArchive.last_active_at.asc(), SessionArchive.archived_at.asc())
                 .all()
             )
             return [_to_dict(r) for r in rows]

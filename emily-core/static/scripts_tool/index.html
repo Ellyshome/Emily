@@ -312,34 +312,12 @@
             <div id="project-event-detail" class="detail-frame" hidden></div>
         </section>
 
-        <!-- 会话池（上框）：「会话池 / 归档」条目选中时显示，活跃 Session 观测（只读） -->
-        <section id="session-pool-panel" class="upload-panel" hidden>
-            <div class="upload-panel-head">
-                <h2>会话池</h2>
-                <code class="module-cmd"></code>
-                <span id="session-pool-status" class="upload-status"></span>
-            </div>
-            <div class="node-table-body">
-                <table class="node-table">
-                    <thead>
-                        <tr>
-                            <th>会话ID</th>
-                            <th>空闲时长</th>
-                            <th>最后活跃</th>
-                            <th>最近消息</th>
-                        </tr>
-                    </thead>
-                    <tbody id="session-pool-tbody"></tbody>
-                </table>
-                <div id="session-pool-empty" class="resource-empty" hidden>当前无活跃会话</div>
-            </div>
-            <div id="session-pool-messages" class="detail-frame" hidden></div>
-        </section>
-
-        <!-- 会话归档（下框）：归档索引；点某行时在其下方追加详情 frame 承载对话全文（只读） -->
+        <!-- 会话日志：「会话日志」条目选中时显示。
+             已退役原「会话池」上框（2026-09-15）：进行中会话已由本表以 🟢 状态灯体现，
+             且点行可看对话全文，覆盖原上框的"活跃列表 + 最近消息预览"能力。 -->
         <section id="session-archive-panel" class="upload-panel" hidden>
             <div class="upload-panel-head">
-                <h2>会话归档</h2>
+                <h2>会话日志</h2>
                 <span id="session-archive-status" class="upload-status"></span>
             </div>
             <div class="node-table-body">

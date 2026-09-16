@@ -11,6 +11,7 @@ import logging
 
 from langgraph.graph import StateGraph, START, END
 
+from ...kernel.context import KernelContext
 from .state import AgentLoopState
 from .checkpointer import build_checkpointer
 from .nodes import (
@@ -41,26 +42,41 @@ def build_workitem_graph(
         config: Config 实例
         max_iterations: agent loop 最大迭代数
     """
-    gs = StateGraph(AgentLoopState)
+    gs = StateGraph(AgentLoopState, context_schema=KernelContext)
+
+    # ── 节点级策略（M3 / US-02）──
+    # 重试只挂"纯模型调用"节点；执行类节点不挂（避免重复副作用）；
+    # tool_node 内含 interrupt（ask_user），故不设超时（挂起需无限期等待用户补充信息）。
+    from ...kernel import policies
+    retry_policy = policies.build_retry_policy(config)
+
+    def _timeout(node_name: str, default: int = policies.DEFAULT_NODE_TIMEOUT_SECONDS):
+        return policies.node_timeout(config, node_name, default_seconds=default)
 
     # ── 注册节点 ──
     gs.add_node("created", make_created(
-        hook_adapter, business_tools=business_tools, resolvers=resolvers))
-    gs.add_node("routing", make_routing(hook_adapter))
+        hook_adapter, business_tools=business_tools, resolvers=resolvers),
+        timeout=_timeout("created"))
+    gs.add_node("routing", make_routing(hook_adapter), timeout=_timeout("routing"))
     gs.add_node("executing", make_executing(
         hook_adapter, llm_client=llm_client, business_tools=business_tools,
-        resolvers=resolvers, config=config))
+        resolvers=resolvers, config=config), timeout=_timeout("executing"))
     gs.add_node("agent_node", _make_agent_loop_entry(
         llm_client=llm_client, business_tools=business_tools,
-        resolvers=resolvers, config=config))
+        resolvers=resolvers, config=config),
+        retry_policy=retry_policy, timeout=_timeout("agent_node"))
+    # tool_node 不挂重试（工具执行有副作用）；不设超时（ask_user 的 interrupt 在此挂起）
     gs.add_node("tool_node", _make_tool_loop_entry(
         llm_client=llm_client, business_tools=business_tools, resolvers=resolvers))
-    gs.add_node("summarizing", make_summarizing(hook_adapter))
+    gs.add_node("summarizing", make_summarizing(hook_adapter),
+                timeout=_timeout("summarizing"))
     gs.add_node("error_analysis", make_error_analysis(
-        hook_adapter, llm_client=llm_client, config=config))
-    gs.add_node("quality_gate", make_quality_gate())
+        hook_adapter, llm_client=llm_client, config=config),
+        timeout=_timeout("error_analysis"))
+    gs.add_node("quality_gate", make_quality_gate(), timeout=_timeout("quality_gate"))
     gs.add_node("expert_review", make_expert_review(
-        hook_adapter, llm_client=llm_client, config=config))
+        hook_adapter, llm_client=llm_client, config=config),
+        retry_policy=retry_policy, timeout=_timeout("expert_review"))
 
     # ── 边 ──
     gs.add_edge(START, "created")
@@ -182,10 +198,14 @@ def route_after_quality_gate(state: dict) -> str:
 
 
 def _make_agent_loop_entry(*, llm_client, business_tools, resolvers, config):
-    """agent_node 节点入口（直接调 loop.agent_node，不经 hook 包装——executing 节点已 fire hook）。"""
+    """agent_node 节点入口（直接调 loop.agent_node，不经 hook 包装——executing 节点已 fire hook）。
+
+    M4：把官方运行时上下文（`runtime`）透传给 agent_node —— 工单上下文由此入口进入节点，
+    不再依赖节点内的进程内读取。
+    """
     from .agent.loop import agent_node
 
-    async def _node(state: dict) -> dict:
+    async def _node(state: dict, runtime=None) -> dict:
         ctx = None
         try:
             from .state import get_bus_context
@@ -195,7 +215,7 @@ def _make_agent_loop_entry(*, llm_client, business_tools, resolvers, config):
         sop_text = ctx.get("sop_text", "") if ctx else ""
         return await agent_node(
             state, llm_client=llm_client, business_tools=business_tools,
-            resolvers=resolvers, sop_text=sop_text, config=config)
+            resolvers=resolvers, sop_text=sop_text, config=config, runtime=runtime)
     _node.__name__ = "agent_node"
     return _node
 
@@ -204,8 +224,9 @@ def _make_tool_loop_entry(*, llm_client, business_tools, resolvers):
     """tool_node 节点入口（直接调 loop.tool_node）。"""
     from .agent.loop import tool_node
 
-    async def _node(state: dict) -> dict:
+    async def _node(state: dict, runtime=None) -> dict:
         return await tool_node(state, llm_client=llm_client,
-                               business_tools=business_tools, resolvers=resolvers)
+                               business_tools=business_tools, resolvers=resolvers,
+                               runtime=runtime)
     _node.__name__ = "tool_node"
     return _node

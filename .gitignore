@@ -36,6 +36,38 @@ emily-data/napcat_qq/
 # PostgreSQL 数据目录（含重命名备份，如 postgres_data_broken_20260914）
 emily-data/postgres_data*/
 
+# NapCat：WebUI 凭据 / 登录二维码（严禁入库）
+# 注：napcat_config/napcat_<qq>.json、onebot11_*.json、napcat_protocol_*.json 含账号与
+#     OneBot 连接 token，同时又是新环境接入 QQ 所必需的配置——待改为 .example 模板后再忽略
+emily-data/napcat_config/passkey.json
+emily-data/napcat_config/webui.json
+emily-data/napcat_qrcode.png
+
+# mitmproxy CA 密钥与派生件（严禁入库）
+# 私钥：mitmproxy-ca.pem（证书+私钥合体）、mitmproxy-ca.p12（PKCS12 含私钥）
+# 公钥证书保留入库：mitmproxy-ca-cert.pem / mitmproxy-ca-cert.cer（被挂载给 emily-core 信任 CA）
+# mitmproxy-ca-cert.p12 是「仅证书」的 PKCS12，属派生件且无配置引用，一并忽略
+emily-data/mitmproxy/mitmproxy-ca.pem
+emily-data/mitmproxy/mitmproxy-ca.p12
+emily-data/mitmproxy/mitmproxy-ca-cert.p12
+
+# LangGraph 检查点运行态（二进制 pickle，无版本意义）
+.langgraph_api/
+
+# AstrBot 运行时数据与缓存（data/ 下仅 plugins/ 与 t2i_templates/ 属代码需入库）
+data/*.db
+data/*/*.db
+data/cmd_config.json.bak
+data/dashboard.zip
+data/skills.json
+data/mcp_server.json
+data/config/abconf_*.json
+# AstrBot 插件的运行期配置（含 emily_api_token 明文，运行时由控制台写入）
+data/config/emily_agent_config.json
+
+# 部署备份输出（task db:backup）
+backups/
+
 # SQLite WAL/SHM
 data/*.db-shm
 data/*.db-wal

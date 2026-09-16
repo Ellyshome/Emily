@@ -98,8 +98,16 @@ class CoreApiClient:
                 await asyncio.sleep(reconnect_delay)
 
     async def _listen_once(self, on_event: SSEEventHandler) -> None:
-        """单次 SSE 连接，逐帧解析并回调。"""
-        async with aiohttp.ClientSession(headers=self._headers()) as session:
+        """单次 SSE 连接，逐帧解析并回调。
+
+        注意：SSE 是长连接，不能沿用 aiohttp 默认的 total 超时（300s 会掐断流，
+        导致重连空窗内的回复事件丢失）。这里 total=None（不设总超时），仅用
+        sock_read 兜底检测对端静默断开（core 每 15s 有心跳，120s 足够保守）。
+        """
+        timeout = aiohttp.ClientTimeout(total=None, sock_read=120.0)
+        async with aiohttp.ClientSession(
+            timeout=timeout, headers=self._headers()
+        ) as session:
             async with session.get(f"{self.base_url}/api/v1/events/outbound") as resp:
                 if resp.status != 200:
                     text = await resp.text()

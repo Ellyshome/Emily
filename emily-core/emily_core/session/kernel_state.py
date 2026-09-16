@@ -87,6 +87,26 @@ class KernelState(TypedDict, total=False):
     _suspend_question: str
     _suspend_active: bool
     state_summary: dict
+    # ── 计划子图字段（M1）──
+    # 计划子图以节点形式挂入本图，只有两边 schema 都声明的键才会被传递与回写；
+    # 键名与 plan_graph.PlanState 逐一对齐，缺失声明会导致子图输出被框架静默丢弃。
+    plan_steps: list
+    plan_step_results: list
+    plan_done: list
+    plan_failed: list
+    plan_skipped: list
+    plan_depth: int
+    plan_max_depth: int
+    plan_layer: int
+    plan_processed: int
+    plan_text: str
+    plan_problems: list
+    # ── 共享循环内核的中性裁决（M2）──
+    # 循环机制由 emily_core.kernel.react_kernel 单份实现，节点只做"裁决 → 本图节点"的映射。
+    _kernel_outcome: str
+    _kernel_text: str
+    _kernel_error: dict
+    _kernel_text_nudge: int
 
 
 def make_initial_state(
@@ -98,6 +118,10 @@ def make_initial_state(
     """构造初始状态。
 
     入参只接受标识与摘要（DomainRef 或等价 dict），不接受领域对象本体。
+
+    注意：本字典同时充当**每一轮的输入更新**（LangGraph 把输入作为 update 应用到该线程的
+    检查点状态），因此这里必须把**每轮瞬态标记显式重置**——否则上一轮的标记会随检查点残留，
+    表现为"同一会话第二轮不再触发计划"这类跨轮缺陷（M1 回归实测发现，见执行报告）。
     """
     if isinstance(actor_ref, DomainRef):
         ref = actor_ref.to_dict()
@@ -114,6 +138,27 @@ def make_initial_state(
         "capability_calls": [],
         "gate_result": {},
         "reply_text": "",
+        # ── 每轮瞬态标记（必须重置，不得跨轮残留）──
+        "_should_plan": False,
+        "_plan_done": False,
+        "_should_suspend": False,
+        "_suspend_question": "",
+        "_fast": False,
+        "_capped": False,
+        "_pending_tool_call": {},
+        # ── 计划子图字段（每轮从空开始）──
+        "plan_steps": [],
+        "plan_step_results": [],
+        "plan_done": [],
+        "plan_failed": [],
+        "plan_skipped": [],
+        "plan_text": "",
+        "plan_problems": [],
+        # ── 共享循环内核的裁决（每轮清空）──
+        "_kernel_outcome": "",
+        "_kernel_text": "",
+        "_kernel_error": {},
+        "_kernel_text_nudge": 0,
     }
 
 
