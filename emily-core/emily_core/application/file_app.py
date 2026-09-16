@@ -90,8 +90,17 @@ class FileApplication:
                 file_category=data.get("file_category", "OTHER"),
                 purpose=data.get("purpose", "RECORD"),
                 confidentiality=confidentiality,
+                node_id=data.get("node_id") or None,
             )
             f = self.file_service.create_file_record(cmd)
+
+            # ═══ 节点绑定：填了归属节点则挂到节点可见范围（节点内可见）═══
+            node_id = data.get("node_id") or ""
+            if node_id and self._file_manager is not None:
+                try:
+                    self._file_manager.bind_file_to_node(str(f.id), node_id, user_id)
+                except Exception as e:
+                    logger.warning("Node binding failed (non-blocking): %s", e)
 
             # ═══ 如果有附件 URL，下载并存到物理磁盘 ═══
             local_path = ""

@@ -33,8 +33,32 @@ from pathlib import Path
 from typing import Any
 
 DEFAULT_CORE_URL = "http://127.0.0.1:18080"
+#: 仓库根目录（scripts/ 的上一级）：用于定位宿主侧运行期设置文件
+_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 PLATFORMS = ["simulator", "napcat", "wechat", "dingtalk", "feishu"]
+#: 「跟随控制台左侧栏『交互通道』」的哨兵值（默认值）
+FOLLOW_CHANNEL = "follow"
 LEVEL_LABELS = {1: "访客", 2: "参建执行", 3: "参建管理", 4: "建设主管", 5: "管理员", 6: "系统管理员"}
+
+
+def resolve_platform(value: str) -> str:
+    """解析 --platform：follow（或留空）→ 控制台左侧栏「交互通道」。
+
+    运行期设置文件 /app/runtime/test_settings.json（宿主等价路径 emily-data/runtime/…），
+    读不到时回退 simulator（历史默认值）。
+    """
+    if value and value != FOLLOW_CHANNEL:
+        return value
+    for candidate in ("/app/runtime/test_settings.json",
+                      os.path.join(_ROOT, "emily-data", "runtime", "test_settings.json")):
+        try:
+            with open(candidate, encoding="utf-8-sig") as f:
+                channel = (json.load(f) or {}).get("interaction_channel") or ""
+            if channel:
+                return str(channel)
+        except Exception:  # noqa: BLE001 — 读不到就试下一个
+            continue
+    return "simulator"
 
 # 直连 Core：绕过 HTTP(S)_PROXY（容器内设有 mitmproxy 代理）
 _OPENER = urllib.request.build_opener(urllib.request.ProxyHandler({}))
@@ -352,7 +376,9 @@ def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description="Emily 消息模拟器（模拟 astrbot 插件收发消息）")
     parser.add_argument("--message", default="", help="消息文本")
     parser.add_argument("--sender", default="", help="发送者：users 表 UUID 或用户名")
-    parser.add_argument("--platform", default="simulator", choices=PLATFORMS, help="来源平台")
+    parser.add_argument("--platform", default=FOLLOW_CHANNEL,
+                        choices=[FOLLOW_CHANNEL] + PLATFORMS,
+                        help="来源平台；follow=跟随控制台左侧栏『交互通道』")
     parser.add_argument("--conversation-type", default="private", choices=["private", "group"])
     parser.add_argument("--group-id", default="", help="群号（群聊时生效）")
     parser.add_argument("--at-bot", action="store_true", dest="at_bot", help="群聊时 @机器人")
@@ -377,7 +403,7 @@ def main(argv: list[str] | None = None) -> int:
     result = simulate(
         args.message,
         args.sender,
-        platform=args.platform,
+        platform=resolve_platform(args.platform),
         conversation_type=args.conversation_type,
         group_id=args.group_id,
         is_at_bot=args.at_bot,

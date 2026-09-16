@@ -47,6 +47,7 @@ class TaskApplication:
                 due_text=data.get("due_text", ""),
                 creator_id=user_id,
                 source_message_id=message_id,
+                node_id=data.get("node_id") or None,
             )
             task = self.task_service.create_task(cmd)
             # 写入项目日志

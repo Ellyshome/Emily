@@ -15,7 +15,13 @@ from contextlib import contextmanager
 from pathlib import Path
 from typing import Callable
 
-from config_loader import get_core_url, get_api_token, get_pg_config, _PROJECT_ROOT
+from config_loader import (
+    get_core_url,
+    get_api_token,
+    get_interaction_channel,
+    get_pg_config,
+    _PROJECT_ROOT,
+)
 
 _logger = logging.getLogger("emys.tester")
 
@@ -223,7 +229,7 @@ class EmysTester:
         *,
         sender_id: str | None = None,
         sender_name: str | None = None,
-        platform: str = "napcat",
+        platform: str | None = None,
         conversation_type: str = "private",
         conversation_id: str | None = None,
         group_id: str | None = None,
@@ -240,7 +246,7 @@ class EmysTester:
             text: 消息文本内容。
             sender_id: 发送者 ID，None 则自动生成。
             sender_name: 发送者昵称，None 则使用 sender_id。
-            platform: 平台标识，默认 "simulator"。
+            platform: 平台标识，None 则取控制台左侧栏「交互通道」（读不到回退 napcat）。
             conversation_type: "private" 或 "group"。
             conversation_id: 会话 ID，None 则自动推导。
             group_id: 群号（群聊时有效），None 则自动生成。
@@ -273,6 +279,8 @@ class EmysTester:
         sname = sender_name or sid
         mid = message_id or f"msg_{uuid.uuid4().hex[:12]}"
         eid = event_id or f"evt_{uuid.uuid4().hex[:12]}"
+        # 平台：未指定 → 跟控制台左侧栏「交互通道」
+        plat = platform or get_interaction_channel()
 
         # 对话 ID 推导
         if conversation_id is None:
@@ -295,7 +303,7 @@ class EmysTester:
 
         msg = StandardMessage(
             message_id=mid,
-            platform=platform,
+            platform=plat,
             conversation_type=conversation_type,
             conversation_id=conversation_id,
             sender_id=sid,

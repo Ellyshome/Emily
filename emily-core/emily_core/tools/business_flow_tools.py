@@ -32,7 +32,7 @@ class BusinessFlowTool:
     parameters: dict                    # JSON Schema 参数定义
     handler: Callable                   # async fn(params: dict) -> dict
     category: str = "base"              # base / business / project
-    permission_flag: str = "all"        # all / admin / write
+    permission_flag: str = "all"        # all / write_l2(L2+) / write(L3+) / admin(L5+)
     write_mode: str = WriteMode.READ.value  # 写语义类别（M2）：read/append/transition/overwrite/delete
 
 

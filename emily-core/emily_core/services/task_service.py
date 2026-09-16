@@ -35,6 +35,7 @@ class TaskService:
             ProjectEventAccumulator.record_task(
                 title=cmd.title,
                 project_id=cmd.project_id or None,
+                node_id=cmd.node_id or None,
                 summary=cmd.description or "",
                 status="todo",
                 actor_id=cmd.creator_id or None,

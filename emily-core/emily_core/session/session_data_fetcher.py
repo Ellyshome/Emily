@@ -229,7 +229,7 @@ class SessionDataFetcher:
         # Agent 需要历史时通过 chat_archive 工具按需检索
 
         # ── 步骤 5: 原子化能力（API 工具列表、可见文件、RAG） ──
-        available_tools = _sub_fetch_available_tools(perms)
+        available_tools = _sub_fetch_available_tools(perms, core)
         visible_schema = _sub_fetch_visible_schema(perms)
         visible_files = _sub_fetch_visible_files(user_id)
         rag_info = _sub_fetch_rag_info(core)
@@ -384,10 +384,14 @@ def _sub_fetch_recent_turns(user_id: str) -> list[dict]:
         return []
 
 
-def _sub_fetch_available_tools(perms: dict) -> list[dict]:
-    """从 ToolRegistryRepo 获取用户可用 API 列表。委托给 fetchers 子模块。"""
+def _sub_fetch_available_tools(perms: dict, core=None) -> list[dict]:
+    """从 ToolRegistryRepo 获取用户可用 API 列表。委托给 fetchers 子模块。
+
+    core 用于取 SkillRegistry —— SOP 授权层需要它拿到各 SOP 声明的工具（见
+    fetchers/fetch_available_tools.py 的两层过滤说明）。
+    """
     from .fetchers.fetch_available_tools import fetch
-    return fetch(perms=perms)
+    return fetch(perms=perms, skill_registry=getattr(core, "_skill_registry", None))
 
 
 def _sub_fetch_visible_schema(perms: dict) -> str:

@@ -25,6 +25,14 @@ if TYPE_CHECKING:
 
 logger = logging.getLogger("emily.tool.registry")
 
+# 节点任务工具的权限标识覆盖（未列出的沿用 write → L3+）。
+# write_l2 = L2 参建执行及以上（线性 >=2，排除 L1 访客）：上传类能力对一线开放，
+# 授权由 NodeService 按节点参与关系二次校验（node_service._check_submission_permission）。
+# 与 infrastructure/tools_consistency.py::TOOL_META_MAP 保持同步。
+_NODE_TASK_PERM_FLAGS: dict[str, str] = {
+    "submit_node_deliverable": "write_l2",
+}
+
 
 def register_all(core: "EmilyCore") -> None:
     """将所有工具注册到 core._business_flow_tools。此函数是唯一的注册入口。
@@ -509,12 +517,15 @@ def _register_project(core, reg):
                      partial(handle_confirm_node_deliverable, node_service=ns), _CONFIRM_DELIVERABLE_SCHEMA),
                     ("return_node_deliverable", "退回节点成果",
                      partial(handle_return_node_deliverable, node_service=ns), _RETURN_DELIVERABLE_SCHEMA),
-                    ("query_my_nodes", "查询我负责的节点（替代query_plan_tasks）",
+                    ("query_my_nodes", "查询我负责或参与的全景节点（含各节点成果名/状态，用于判断成果或记录该挂哪个节点）",
                      partial(handle_query_my_nodes, node_service=ns), _QUERY_MY_NODES_SCHEMA),
                 ]:
                     if not reg.has(name):
+                        # 上传类（提交成果）放开到 L2 参建执行及以上：一线人员可在参与节点内上报；
+                        # 真正授权由 NodeService 按「责任人 / L5+ / 节点参与单位人员」二次校验。
                         reg.register(_tool(name, desc, schema, handler,
-                                          category="business", permission_flag="write"))
+                                          category="business",
+                                          permission_flag=_NODE_TASK_PERM_FLAGS.get(name, "write")))
                         _pjc += 1
             except Exception as e:
                 logger.warning("node task tools registration failed: %s", e)

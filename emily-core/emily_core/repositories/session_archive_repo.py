@@ -6,13 +6,15 @@
   3. 会话截断 → `truncate()` 标记 status=truncated + 截断时间/原因
 超时截断不再是归档触发点：索引在会话建立时就已可查，避免进程重启等
 未走截断路径的会话在归档列表中完全不可见。
+唯一时间口径：本表的时间列（started_at / last_active_at / archived_at）一律存**北京时间**
+ISO8601（带 +08:00），与归档 md 正文口径一致，避免同一时刻两套钟面。
 """
 
 import logging
 from typing import Optional
 
 from ..infrastructure.database.session import get_session
-from ..infrastructure.database.models import SessionArchive, _utc_now
+from ..infrastructure.database.models import SessionArchive, _beijing_now
 
 logger = logging.getLogger("emily.repo.session_archive")
 
@@ -39,7 +41,7 @@ class SessionArchiveRepo:
         Returns:
             str: 索引行 id；失败返回空字符串。
         """
-        now = _utc_now()
+        now = _beijing_now()
         try:
             with get_session() as session:
                 row = (
@@ -80,7 +82,7 @@ class SessionArchiveRepo:
     @staticmethod
     def touch(*, conversation_id: str, turn_count: int) -> bool:
         """每轮收口刷新索引（轮次 + 最后活跃时间）。"""
-        now = _utc_now()
+        now = _beijing_now()
         try:
             with get_session() as session:
                 updated = (
@@ -108,7 +110,7 @@ class SessionArchiveRepo:
         turn_count: Optional[int] = None,
     ) -> bool:
         """会话截断：标记进行中的索引行为已截断（TTL 超时 / 手动终止）。"""
-        now = _utc_now()
+        now = _beijing_now()
         values = {
             SessionArchive.status: "truncated",
             SessionArchive.archived_at: now,
@@ -141,7 +143,7 @@ class SessionArchiveRepo:
         启动时统一收口，避免归档列表出现「幽灵进行中」。
         不改 last_active_at（保留真实最后活跃时间，仅供展示与排序）。
         """
-        now = _utc_now()
+        now = _beijing_now()
         try:
             with get_session() as session:
                 updated = (

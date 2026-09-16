@@ -70,6 +70,7 @@ class EventService:
             ProjectEventAccumulator.record_event(
                 title=cmd.title,
                 project_id=project_id,
+                node_id=cmd.node_id or None,
                 summary=cmd.description or "",
                 status="pending",
                 actor_id=cmd.creator_id or None,
@@ -139,12 +140,33 @@ class EventService:
         return self.repo.find_pending_by_conversation_id(conversation_id)
 
     @staticmethod
-    def format_confirmation_reply(event: Event, project_name: Optional[str] = None) -> str:
+    def node_label(node_id: Optional[str]) -> str:
+        """节点编号 → 可读标签「名称（编号）」。
+
+        查不到节点名时退化为编号；未指定归属返回空串（此时由 Agent 在对话中
+        按业务流程要求口头说明"暂存待归类"，不在此暴露内部归类概念）。
+        """
+        if not node_id:
+            return ""
+        name = ""
+        try:
+            from ..repositories.node_repo import ProjectNodeRepo
+            node = ProjectNodeRepo.get_by_node_id(node_id)
+            name = getattr(node, "node_name", "") if node else ""
+        except Exception as e:  # 节点名仅用于展示，查询失败不阻断录入
+            logger.debug("node_label lookup failed node=%s: %s", node_id, e)
+        return f"{name}（{node_id}）" if name else node_id
+
+    @staticmethod
+    def format_confirmation_reply(
+        event: Event, project_name: Optional[str] = None, node_id: Optional[str] = None,
+    ) -> str:
         """生成事件确认简报。
 
         Args:
             event: 事件记录
             project_name: 项目名称（优先使用参数，其次从 payload 提取）
+            node_id: 归属全景节点编号（非空时在简报中回显，便于用户确认归属）
 
         Returns:
             str: 格式化的确认简报文本
@@ -160,17 +182,22 @@ class EventService:
         # 事件日期
         event_date = event.event_date or "未指定"
 
-        reply = (
-            f"📋 事件录入确认\n"
-            f"──────────────\n"
-            f"简述：{event.title}\n"
-            f"项目：{project_name}\n"
-            f"时间：{event_date}\n"
-            f"编号：{event.event_no}\n"
-            f"──────────────\n"
-            f"回复\"确认\"录入，回复\"取消\"放弃"
-        )
-        return reply
+        lines = [
+            "📋 事件录入确认",
+            "──────────────",
+            f"简述：{event.title}",
+            f"项目：{project_name}",
+        ]
+        label = EventService.node_label(node_id)
+        if label:
+            lines.append(f"归属：{label}")
+        lines += [
+            f"时间：{event_date}",
+            f"编号：{event.event_no}",
+            "──────────────",
+            "回复\"确认\"录入，回复\"取消\"放弃",
+        ]
+        return "\n".join(lines)
 
     def get_by_id(self, event_id: str) -> Optional[Event]:
         """按 ID 获取事件（包装 repo 调用，保持分层原则）。

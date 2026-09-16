@@ -353,21 +353,31 @@ function renderParamGroup(p) {
     }
 
     if (p.type === 'enum' && p.choices && p.choices.length > 0) {
+        // 选项支持两种写法：纯值 "napcat"，或 {value, label} 带中文标签
+        const norm = c => (c && typeof c === 'object')
+            ? { value: String(c.value ?? ''), label: String(c.label ?? c.value ?? '') }
+            : { value: String(c), label: String(c) };
         if (p.choices.length <= 6) {
             // 少量选项 → radio 按钮
-            const radios = p.choices.map(c => `<label>
-                <input type="radio" name="radio-${p.name}" value="${escapeHtml(c)}"
-                    ${c === p.default ? 'checked' : ''}>
-                ${escapeHtml(c)}
-            </label>`).join('');
+            const radios = p.choices.map(c => {
+                const { value, label } = norm(c);
+                return `<label>
+                <input type="radio" name="radio-${p.name}" value="${escapeAttr(value)}"
+                    ${value === p.default ? 'checked' : ''}>
+                ${escapeHtml(label)}
+            </label>`;
+            }).join('');
             return `<div class="param-group radio-group-label">
                 <label class="param-label">${escapeHtml(p.label)}${reqMark}${helpHtml}</label>
                 <div class="radio-group">${radios}</div>
             </div>`;
         }
         // 大量选项 → 下拉框
-        const opts = p.choices.map(c => `<option value="${escapeHtml(c)}"
-            ${c === p.default ? 'selected' : ''}>${escapeHtml(c)}</option>`).join('');
+        const opts = p.choices.map(c => {
+            const { value, label } = norm(c);
+            return `<option value="${escapeAttr(value)}"
+            ${value === p.default ? 'selected' : ''}>${escapeHtml(label)}</option>`;
+        }).join('');
         return `<div class="param-group">
             <label class="param-label">${escapeHtml(p.label)}${reqMark}${helpHtml}</label>
             <select id="param-${p.name}"><option value="">—</option>${opts}</select>
@@ -1914,7 +1924,7 @@ function _fmtBytes(n) {
     return `${(b / 1024 / 1024).toFixed(1)} MB`;
 }
 
-// 归档索引时间存 UTC ISO，展示统一转北京时间（与归档正文的 UTC+8 口径一致）
+// 归档索引时间存北京时间 ISO（+08:00），本函数按「时刻」统一渲染为北京时间
 function fmtArchiveTime(v) {
     const s = String(v || '');
     if (!s) return '';
@@ -3212,11 +3222,96 @@ q('#llm-trace-auto-btn').addEventListener('click', () => {
 });
 
 
+// ══════════════════════════════════════════════════════════════════════════════
+//  测试会话设置（左侧栏顶部）：交互通道 + 测试前缀
+//
+//  交互通道：后续测试（消息模拟器 / 对话面板 / emy-test）默认以该渠道发消息；
+//           改动即时保存。
+//  测试前缀：会话 ID 命中任前缀 → 判定为测试会话，其出站只走 SSE、不外发真实 IM；
+//           留空＝不做前缀判定（通道账号能对上真实用户时回复照常发真实 IM）。
+//  配置落在 /app/runtime/test_settings.json，保存后下一轮消息即生效。
+// ══════════════════════════════════════════════════════════════════════════════
+
+const API_TEST = API_CONSOLE + '/test-settings';
+const TEST_CHANNELS = [
+    ['simulator', '模拟器（测试注入）'],
+    ['napcat', 'QQ'],
+    ['wecom', '企微'],
+    ['wxmp', '小程序'],
+];
+let _testSettings = null;
+
+function applyInteractionChannelToChat(channel) {
+    // 对话面板的渠道下拉只有真实通道（无模拟器）→ 仅在存在该选项时跟随
+    const sel = q('#chat-channel-select');
+    if (!sel || !channel) return;
+    if (Array.from(sel.options).some(o => o.value === channel)) sel.value = channel;
+}
+
+async function loadTestSettings() {
+    try {
+        const resp = await fetch(API_TEST);
+        const json = await resp.json();
+        if (json.code !== 0 || !json.data) throw new Error(json.message || '读取失败');
+        _testSettings = json.data;
+        renderTestSettings();
+    } catch (e) {
+        const msgEl = q('#test-msg');
+        if (msgEl) msgEl.textContent = '读取失败';
+    }
+}
+
+function renderTestSettings(msg) {
+    const s = _testSettings || {};
+    const channel = s.interaction_channel || '';
+    const prefixes = s.test_prefixes || [];
+    q('#test-channel').innerHTML = TEST_CHANNELS.map(([value, label]) =>
+        `<option value="${escapeAttr(value)}"${value === channel ? ' selected' : ''}>`
+        + `${escapeHtml(label)}</option>`).join('');
+    q('#test-prefixes').value = prefixes.join(',');
+    q('#test-hint').textContent = prefixes.length
+        ? '测试会话只走 SSE'
+        : '前缀空：不拦截';
+    q('#test-msg').textContent = msg || '';
+    applyInteractionChannelToChat(channel);
+}
+
+async function saveTestSettings() {
+    const btn = q('#test-save');
+    if (btn) btn.disabled = true;
+    const prefixes = q('#test-prefixes').value.split(',').map(x => x.trim()).filter(Boolean);
+    const payload = {
+        test_prefixes: prefixes,
+        interaction_channel: q('#test-channel').value || '',
+    };
+    try {
+        const resp = await fetch(API_TEST, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(payload),
+        });
+        const json = await resp.json();
+        if (json.code !== 0 || !json.data) throw new Error(json.message || '保存失败');
+        _testSettings = json.data.state;
+        renderTestSettings(json.data.message || '已保存');
+    } catch (e) {
+        q('#test-msg').textContent = `保存失败：${e.message}`;
+    } finally {
+        if (btn) btn.disabled = false;
+    }
+}
+
+q('#test-save').addEventListener('click', saveTestSettings);
+// 交互通道是单选，改动即保存（后续测试立即以该渠道为准）
+q('#test-channel').addEventListener('change', saveTestSettings);
+
+
 // ── 启动 ──
 
 loadEnv();
 loadList();
 ensureGlobalUsers();
+loadTestSettings();
 
 
 // ══════════════════════════════════════════════════════════════════════════════

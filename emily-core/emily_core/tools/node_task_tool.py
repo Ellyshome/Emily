@@ -179,23 +179,27 @@ async def handle_query_my_nodes(
     user_id: str = "",
     **kwargs,
 ) -> dict:
-    """查询我负责或参与的节点。"""
+    """查询我负责或参与的节点（含各节点成果名，供录入时判断成果归属）。
+
+    状态口径：
+      - 责任人：**不按状态过滤**——节点未启动时，责任人仍需看到它才能把成果/记录挂对位置；
+      - 参与人：只返回 IN_PROGRESS 节点（别人负责的已启动节点才与其当前工作相关）。
+    """
     if node_service is None:
         return {"success": False, "reply": "NodeService 未初始化"}
 
-    from ..repositories.node_repo import ProjectNodeRepo
+    from ..repositories.node_repo import NodeDeliverableRepo, ProjectNodeRepo
 
     project_id = params.get("project_id") or None
     node_type = params.get("node_type") or None
     limit = int(params.get("limit", 20))
 
-    # 查责任人 + 参与人，合并去重
+    # 查责任人（不限状态）+ 参与人（限进行中），合并去重
     resp_nodes = await asyncio.to_thread(
         ProjectNodeRepo.find_by_responsible_user,
         user_id,
         project_id=project_id,
         node_type=node_type,
-        status="IN_PROGRESS",
         limit=limit,
     )
     part_nodes = await asyncio.to_thread(
@@ -226,5 +230,22 @@ async def handle_query_my_nodes(
     resp_ids = {n.node_id for n in resp_nodes}
     for item in merged:
         item["role"] = "responsible" if item["node_id"] in resp_ids else "participant"
+
+    # 批量补成果（成果名 + 状态），供"本次成果该挂哪个任务节点"的判定
+    deliv_map = await asyncio.to_thread(
+        NodeDeliverableRepo.find_by_nodes, [item["node_id"] for item in merged],
+    )
+    for item in merged:
+        item["deliverables"] = [
+            {
+                "deliverable_id": d.deliverable_id,
+                "name": d.deliverable_name,
+                "status": d.submission_status,
+                "current_amount": d.current_amount,
+                "target_amount": d.target_amount,
+                "unit": d.unit,
+            }
+            for d in deliv_map.get(item["node_id"], [])
+        ]
 
     return {"success": True, "reply": f"找到 {len(merged)} 个节点", "data": merged}

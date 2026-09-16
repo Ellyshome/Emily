@@ -432,6 +432,7 @@ class SessionContext:
             bool: 是否成功写入索引。
         """
         from ..repositories.session_archive_repo import SessionArchiveRepo
+        from ..services.session_archive_writer import beijing_iso
 
         self.resolve_identity()
         row_id = SessionArchiveRepo.upsert_live(
@@ -442,7 +443,8 @@ class SessionContext:
             im_user_id=self.im_user_id,
             is_guest=self.is_guest,
             md_file_path=md_file_path,
-            started_at=self.created_at or None,
+            # 索引时间列统一存北京时间（与归档正文口径一致）
+            started_at=beijing_iso(self.created_at) or None,
         )
         return bool(row_id)
 
@@ -638,34 +640,49 @@ class SessionContext:
         }
 
     async def persist_and_consolidate(self, llm_client=None, md_file_path: str = "",
-                                     archive_writer=None, archive_reason: str = "expired") -> None:
+                                     archive_writer=None, archive_reason: str = "expired",
+                                     segment_turn_count: int | None = None,
+                                     segment_started_at: str = "") -> None:
         """归档截断 + 整合 conversation_summary。
 
         归档索引已在会话建立时实时落库（`register_live_index`），此处只做
         「截断」收口：标记 status=truncated + 写 footer，超时不再是归档触发点。
+
+        Args:
+            segment_turn_count: **本段会话**轮数（由 SessionLoop 按本段基线计算）。
+            segment_started_at: 本段会话开始时间（ISO8601）。
         """
         await self._persist_archive(md_file_path=md_file_path, archive_writer=archive_writer,
-                                    archive_reason=archive_reason)
+                                    archive_reason=archive_reason,
+                                    segment_turn_count=segment_turn_count,
+                                    segment_started_at=segment_started_at)
         if self.user_id and llm_client:
             await self._consolidate_conversation_summary(llm_client)
 
     async def _persist_archive(self, md_file_path: str = "", archive_writer=None,
-                               archive_reason: str = "expired") -> None:
+                               archive_reason: str = "expired",
+                               segment_turn_count: int | None = None,
+                               segment_started_at: str = "") -> None:
         """会话截断：标记归档索引为已截断 + 追加 md footer（薄索引模式）。"""
         try:
             from ..repositories.session_archive_repo import SessionArchiveRepo
 
-            # 轮次以归档文档为准：统计 md 正文的「## 第 N 轮」标题。
+            # 文件累计轮次以归档文档为准：统计 md 正文的「## 第 N 轮」标题。
             # 不能用 len(message_history)//2 —— 会话主循环下
             # message_history 恒为空，会把轮次统计成 0。
-            turn_count = len(self.message_history) // 2
+            file_turn_count = len(self.message_history) // 2
             if archive_writer is not None and md_file_path:
                 try:
                     counted = archive_writer.count_turns(md_file_path)
                     if counted:
-                        turn_count = counted
+                        file_turn_count = counted
                 except Exception as e:
                     logger.warning("SessionArchive count_turns failed: %s", e)
+
+            # 本段轮数：优先用调用方按「本段基线」算出的增量；缺省退化为文件累计值
+            # （旧调用方）。同一 md 文件会被同天重启的多段会话复用，若直接写文件累计，
+            # 每段的「总轮数」都会是文件总数，与「本段」对不上。
+            turn_count = segment_turn_count if segment_turn_count is not None else file_turn_count
 
             SessionArchiveRepo.truncate(
                 conversation_id=self.conversation_id,
@@ -676,7 +693,8 @@ class SessionContext:
             # 归档时追加 footer 到 md 文件
             if archive_writer is not None and md_file_path:
                 try:
-                    archive_writer.append_footer(md_file_path, turn_count, archive_reason)
+                    archive_writer.append_footer(md_file_path, turn_count, archive_reason,
+                                                 segment_started_at=segment_started_at)
                 except Exception as e:
                     logger.warning("SessionArchive append_footer failed: %s", e)
 

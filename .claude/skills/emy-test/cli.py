@@ -20,22 +20,60 @@ import sys
 import uuid
 from pathlib import Path
 
-from config_loader import get_llm_config, get_active_users
+from config_loader import (
+    get_interaction_channel,
+    get_llm_config,
+    get_active_users,
+    resolve_user_by_channel,
+)
 from tester import EmysTester
+
+
+def _ensure_known_sender(platform: str, sender_id: str, allow_unknown: bool) -> dict | None:
+    """发送前校验「通道用户 ID → users 表」可解析；不可解析则终止（防伪造 ID 污染生产库）。
+
+    假 ID 会被 Core 当成未登记访客：权限快照 fail-closed 成 L1，测试结论不可信，
+    且可能触发自动建号污染 users 表。故默认直接拒绝，需显式
+    `--allow-unknown-sender` 才能走访客路径（专用于验证访客降级行为）。
+    """
+    info = resolve_user_by_channel(platform, sender_id)
+    if info:
+        print(f"✅ 身份解析: {info['username']} ({info['id']}) via {info['matched_by']}")
+        return info
+    if allow_unknown:
+        print(f"⚠️  未解析到用户（platform={platform} sender_id={sender_id}）"
+              f"—— 已按 --allow-unknown-sender 放行，本次将走访客降级路径")
+        return None
+    print("")
+    print(f"❌ 通道身份解析失败：platform={platform} sender_id={sender_id}")
+    print("   该 ID 不在 user_im_bindings，也不是 users.qq / users.wechat / UUID。")
+    print("   Core 会把它当成未登记访客（L1、无 SOP 权限），测试结论不可信。")
+    print("")
+    print("   正确用法（三选一）：")
+    print("     --sender \"<用户名>\"           # 自动从 users 表取绑定通道 ID（推荐）")
+    print("     --qq \"<QQ号>\"                 # 已绑定通道账号")
+    print("     --sender-id \"<users.id UUID>\"  # UUID 直查")
+    print("   若确实要验证访客降级行为，请显式加 --allow-unknown-sender。")
+    sys.exit(2)
 
 
 def _resolve_sender(
     sender_name: str | None,
     sender_id: str | None,
     qq: str | None,
+    allow_unknown: bool = False,
+    platform: str = "",
 ) -> dict:
     """解析发送者信息，自动从 users 表补全。
 
     优先级：
     1. --qq 指定 QQ 号 → 用 QQ 号作为 sender_id（与 AstrBot 行为一致）
     2. --sender-id 指定 → 直接使用（走 UUID 直查路径，需在 users 表中存在）
-    3. --sender 指定用户名 → 从 users 表查找匹配用户，提取 QQ 号
+    3. --sender 指定用户名 → 从 users 表查找匹配用户，提取绑定通道 ID
     4. 都未指定 → 交互式选择
+
+    Args:
+        platform: 交互通道（控制台左侧栏选定），作为默认发送平台。
 
     Returns:
         dict: {sender_id, sender_name, qq, platform, user_record}
@@ -44,19 +82,21 @@ def _resolve_sender(
         "sender_id": "",
         "sender_name": "Tester",
         "qq": "",
-        "platform": "napcat",
+        "platform": platform or "napcat",
         "user_record": None,
     }
 
-    # ① --qq 指定 QQ 号 → 直接用
+    # ① --qq 指定 QQ 号 → 直接用（发送前校验：必须是已登记通道账号）
     if qq:
+        _ensure_known_sender(result["platform"], qq, allow_unknown)
         result["sender_id"] = qq
         result["qq"] = qq
         result["sender_name"] = sender_name or f"QQ用户{qq}"
         return result
 
-    # ② --sender-id 指定 → 直接使用（UUID 或其他 ID）
+    # ② --sender-id 指定 → 直接使用（UUID 或其他 ID，发送前校验）
     if sender_id:
+        _ensure_known_sender(result["platform"], sender_id, allow_unknown)
         result["sender_id"] = sender_id
         result["sender_name"] = sender_name or sender_id[:8]
         return result
@@ -76,7 +116,7 @@ def _resolve_sender(
                 if uqq:
                     result["sender_id"] = uqq
                     result["qq"] = uqq
-                    result["platform"] = u.get("im_platform", "") or "napcat"
+                    result["platform"] = u.get("im_platform", "") or result["platform"]
                 else:
                     result["sender_id"] = u["id"]
                 return result
@@ -380,6 +420,18 @@ def main():
         help="发送者名称（从 users 表自动查找匹配用户，提取 QQ 号作为 sender_id）",
     )
     parser.add_argument(
+        "--platform",
+        type=str,
+        default=None,
+        help="发送平台（默认取控制台左侧栏『交互通道』，读不到则 napcat）",
+    )
+    parser.add_argument(
+        "--allow-unknown-sender",
+        action="store_true",
+        default=False,
+        help="允许未登记的通道 ID（走访客降级路径）；默认拒绝，防止伪造 ID 污染生产库",
+    )
+    parser.add_argument(
         "--cid",
         type=str,
         default=None,
@@ -416,11 +468,15 @@ def main():
 
     args = parser.parse_args()
 
-    # ── 解析发送者身份（自动从 users 表枚举选择）──
+    # ── 解析发送者身份（平台默认取控制台左侧栏「交互通道」）──
+    platform = args.platform or get_interaction_channel()
+    print(f"📡 交互通道: {platform}")
     sender_info = _resolve_sender(
         sender_name=args.sender,
         sender_id=args.sender_id,
         qq=args.qq,
+        allow_unknown=args.allow_unknown_sender,
+        platform=platform,
     )
 
     # ── 推导 conversation_id（与 AstrBot 行为一致）──
@@ -450,7 +506,7 @@ def main():
         # ── REPL 模式 ──
         use_llm = args.llm or bool(get_llm_config())
         with EmysTester(use_llm=use_llm) as emy:
-            repl(emy, cid, sender_info["sender_name"], sender_info["sender_id"], sender_info.get("platform", "napcat"))
+            repl(emy, cid, sender_info["sender_name"], sender_info["sender_id"], sender_info["platform"])
     elif args.message:
         # ── 单条消息模式 ──
         use_llm = args.llm or bool(get_llm_config())
@@ -498,7 +554,7 @@ def main():
                 args.message,
                 sender_id=sender_info["sender_id"],
                 sender_name=sender_info["sender_name"],
-                platform=sender_info.get("platform", "napcat"),
+                platform=sender_info["platform"],
                 conversation_id=cid,
                 conversation_type=args.conversation_type,
                 group_id=group_id if is_group else None,

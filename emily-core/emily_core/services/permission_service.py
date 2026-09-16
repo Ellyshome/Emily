@@ -27,7 +27,7 @@ from emily_core.infrastructure.database.models import (
     User,
     _utc_now,
 )
-from emily_core.permission.level import can_access, LEVEL_NAME, level_label
+from emily_core.permission.level import LEVEL_NAME, level_label
 from emily_core.repositories.permission_grant_repo import PermissionGrantRepository
 from emily_core.repositories.permission_repo import PermissionRepository
 
@@ -226,8 +226,11 @@ class PermissionService:
                     sop_allow.append(flow.sop_id)
                     continue
 
-                # 3. 树形继承级别检查
-                if flow.min_level is not None and not can_access(user.level, flow.min_level):
+                # 3. 级别检查（线性：不低于 min_level 即可用）
+                #    与 PermissionCache._compute_user_whitelist 保持同一口径 —— 树形继承下
+                #    建设线（L4/L5/L6）不继承参建线（L2），用 can_access 会让管理员反而
+                #    失去参建类 SOP。
+                if flow.min_level is not None and int(user.level or 1) < int(flow.min_level):
                     continue
 
                 sop_allow.append(flow.sop_id)

@@ -493,6 +493,23 @@ class NodeDeliverableRepo:
             )
 
     @staticmethod
+    def find_by_nodes(node_ids: list[str]) -> dict[str, list[NodeDeliverable]]:
+        """批量查询多个节点的成果：{node_id: [成果]}（避免逐个节点查询的 N+1）。"""
+        ids = [n for n in (node_ids or []) if n]
+        if not ids:
+            return {}
+        with get_session() as session:
+            rows = (
+                session.query(NodeDeliverable)
+                .filter(NodeDeliverable.node_id.in_(ids))
+                .all()
+            )
+        grouped: dict[str, list[NodeDeliverable]] = {}
+        for d in rows:
+            grouped.setdefault(d.node_id, []).append(d)
+        return grouped
+
+    @staticmethod
     def update_progress(deliverable_id: str, current_amount: str, file_id: str = "") -> NodeDeliverable | None:
         """更新成果当前量和关联文件。"""
         with get_session() as session:

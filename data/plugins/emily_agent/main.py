@@ -52,10 +52,13 @@ class Main(star.Star):
             api_token=api_token,
             timeout=float(cfg.get("emily_api_timeout", 300)),
         )
-        # conversation_id → 最近 event，供异步 SSE 出站回复定位
+        # conversation_id → 最近 event（含注册时间，供 TTL 判废），供异步 SSE 出站回复定位
         self._event_registry: dict = {}
         self.sse = SSEListener(
-            self.outbound, event_registry=self._event_registry, api_token=api_token
+            self.outbound,
+            event_registry=self._event_registry,
+            api_token=api_token,
+            registry_ttl_seconds=float(cfg.get("event_registry_ttl_seconds", 300)),
         )
         self._sse_url = cfg.get("emycore_sse_url", "") or self.api.get_sse_url()
 
@@ -128,7 +131,7 @@ class Main(star.Star):
 
         # 注册 event 供异步 SSE 出站回复定位
         if msg.conversation_id:
-            self._event_registry[msg.conversation_id] = event
+            self.sse.register(msg.conversation_id, event)
 
         # 3. HTTP 转发到 Core
         reply = await self.api.send_message(msg)
@@ -159,7 +162,7 @@ class Main(star.Star):
 
         # 2. 注册 event 供异步 SSE 出站回复定位
         if msg.conversation_id:
-            self._event_registry[msg.conversation_id] = event
+            self.sse.register(msg.conversation_id, event)
 
         # 3. HTTP 转发到 Core
         reply = await self.api.send_message(msg)

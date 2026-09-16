@@ -3,6 +3,7 @@
 M2 规则：
 - 已绑定 → 直接返回已有用户
 - UUID 直查 → sender_id 为 UUID 格式时先查 users 表（避免重复创建）
+- 通道账号兜底 → 按平台匹配 users.qq / users.wechat（档案已登记账号但未建绑定行），命中即补建绑定
 - 未绑定 → 根据 auto_create_user 配置决定是否自动创建
 - 用户名先用 IM 昵称填充，后续可人工补全
 
@@ -59,10 +60,12 @@ class UserBindingService:
     ) -> Tuple[User, bool]:
         """获取或创建用户（自动绑定）。
 
-        查找优先级（BUG-003）：
+        查找优先级（BUG-003 + 通道账号兜底）：
         1. IM 绑定表查找（im_platform + im_user_id）
         2. UUID 直查：若 sender_id 为 UUID 格式，查 users 表（避免重复创建）
-        3. 自动创建新用户
+        3. 通道账号兜底：按平台匹配 users.qq / users.wechat（人事档案已登记账号，
+           但没人建绑定行）；命中即补建绑定行，后续走 ① 快路径
+        4. 自动创建新用户
 
         Args:
             im_platform: IM 平台，如 "napcat"
@@ -73,7 +76,7 @@ class UserBindingService:
             (User, is_new): 用户对象，是否新创建
 
         Raises:
-            UserNotAllowedError: 未知用户且 auto_create=False + 不在白名单时
+            UserNotAllowedError: 已知账号对不上人且 auto_create=False + 不在白名单时
         """
         # ① IM 绑定表查找
         existing = self.repo.get_by_im(im_platform, im_user_id)
@@ -93,6 +96,24 @@ class UserBindingService:
                     im_user_id, direct_user.id, direct_user.username,
                 )
                 return direct_user, False
+
+        # ③ 通道账号兜底（人事档案 users.qq / users.wechat 已登记该通道账号）
+        try:
+            contact_user = self.repo.find_by_contact(im_platform, im_user_id)
+        except Exception as e:  # noqa: BLE001 — 兜底查询失败按未命中处理
+            logger.warning("find_by_contact failed (%s/%s): %s", im_platform, im_user_id, e)
+            contact_user = None
+        if contact_user:
+            try:
+                self.repo.ensure_binding(
+                    user_id=contact_user.id,
+                    im_platform=im_platform,
+                    im_user_id=im_user_id,
+                    im_display_name=im_display_name,
+                )
+            except Exception as e:  # noqa: BLE001 — 补绑定失败不影响本轮身份
+                logger.warning("ensure_binding failed (%s/%s): %s", im_platform, im_user_id, e)
+            return contact_user, False
 
         # BUG-002: 准入门禁 — 检查是否允许自动创建
         if not self._allow_auto_create(im_platform, im_user_id):

@@ -120,6 +120,7 @@ class SessionAgent:
         self._archive_md_path = ""
         self._last_turn_workitems: list = []
         self._turn_counter: int = 0
+        self._turns_at_start: int = 0
         self._compacting: bool = False  # 压缩进行中互斥，避免并发二次压缩
         # ── 多轮续接 ──
         self._paused_workitem = None  # 挂起等待用户补充信息的 WorkItem
@@ -174,6 +175,14 @@ class SessionAgent:
                 )
             except Exception as e:
                 logger.warning("SessionArchive ensure_header failed: %s", e)
+
+        # 轮次号跨段续接 + 本段基线（与 SessionLoop 同口径：复用同一 md 文件时不重开编号）
+        if self._archive_writer is not None and self._archive_md_path:
+            try:
+                self._turns_at_start = self._archive_writer.count_turns(self._archive_md_path)
+            except Exception as e:
+                logger.warning("SessionArchive count_turns failed: %s", e)
+        self._turn_counter = self._turns_at_start
 
         # 将归档路径注入 scheduler，由其在 BusContext.baggage 中传递给 ArchiveHook
         self.scheduler.archive_md_path = self._archive_md_path
@@ -1029,6 +1038,8 @@ class SessionAgent:
                 llm_client=self._llm,
                 md_file_path=self._archive_md_path,
                 archive_writer=self._archive_writer,
+                segment_turn_count=self._turn_counter - self._turns_at_start,
+                segment_started_at=self._created_at,
             )
 
             logger.info("Session[%s] archived successfully", self.conversation_id)

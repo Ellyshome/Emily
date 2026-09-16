@@ -33,19 +33,45 @@ def _sanitize_filename(name: str) -> str:
     return name or "anonymous"
 
 
+#: 全链路统一时区口径：归档索引（DB）与归档正文（md）一律使用北京时间。
+BEIJING_TZ = timezone(timedelta(hours=8))
+
+
 def _beijing_date_str() -> str:
     """返回北京时间日期字符串 YYYY-MM-DD。"""
-    return (datetime.now(timezone.utc) + timedelta(hours=8)).strftime("%Y-%m-%d")
+    return datetime.now(BEIJING_TZ).strftime("%Y-%m-%d")
 
 
 def _beijing_time_str() -> str:
     """返回北京时间时间字符串 HH:MM:SS。"""
-    return (datetime.now(timezone.utc) + timedelta(hours=8)).strftime("%H:%M:%S")
+    return datetime.now(BEIJING_TZ).strftime("%H:%M:%S")
 
 
 def _beijing_datetime_str() -> str:
     """返回北京时间完整日期时间。"""
-    return (datetime.now(timezone.utc) + timedelta(hours=8)).strftime("%Y-%m-%d %H:%M:%S")
+    return datetime.now(BEIJING_TZ).strftime("%Y-%m-%d %H:%M:%S")
+
+
+def _to_beijing_dt(value: str):
+    """把 ISO8601 时间字符串解析为北京时间 datetime（幂等）。
+
+    - 带时区（`Z` / `±hh:mm`）→ 换算到 UTC+8；
+    - 朴素字符串 → 视为已经是北京时间，**不再叠加 +8**（避免二次偏移）；
+    - 解析失败返回 None。
+    """
+    try:
+        dt = datetime.fromisoformat(str(value).replace("Z", "+00:00"))
+    except (ValueError, TypeError):
+        return None
+    if dt.tzinfo is not None:
+        dt = dt.astimezone(BEIJING_TZ)
+    return dt
+
+
+def beijing_iso(value: str) -> str:
+    """把 ISO8601 时间字符串规范为北京时间 ISO8601（带 +08:00）；失败原样返回。"""
+    dt = _to_beijing_dt(value)
+    return dt.isoformat() if dt is not None else (value or "")
 
 
 def _truncate(text: str, limit: int) -> str:
@@ -94,6 +120,9 @@ class SessionArchiveWriter:
     # 轮次锚点：「## 第 N 轮 · 时间」——归档正文里唯一的轮次标记（由 render_turn_start 写入）
     _TURN_HEADER_RE = re.compile(r"^##\s+第\s+\d+\s+轮")
 
+    # 段锚点：「## 会话归档（第 N 段）」——每次截断收口追加一段（由 _render_footer 写入）
+    _SEGMENT_HEADER_RE = re.compile(r"^##\s+会话归档")
+
     @classmethod
     def count_turns(cls, path: str) -> int:
         """从归档 md 正文统计轮次数（以「## 第 N 轮」为唯一锚点）。
@@ -107,6 +136,20 @@ class SessionArchiveWriter:
             logger.debug("count_turns read failed: %s — %s", path, e)
             return 0
         return sum(1 for line in text.splitlines() if cls._TURN_HEADER_RE.match(line))
+
+    @classmethod
+    def count_segments(cls, path: str) -> int:
+        """从归档 md 正文统计「已收口的段数」（以「## 会话归档」为锚点）。
+
+        同一 conversation 同天重启会复用同一 md 文件，每段截断各追加一个尾段；
+        该计数用于给新尾段编号，让多段在正文里可区分。
+        """
+        try:
+            text = Path(path).read_text(encoding="utf-8", errors="replace")
+        except Exception as e:  # noqa: BLE001
+            logger.debug("count_segments read failed: %s — %s", path, e)
+            return 0
+        return sum(1 for line in text.splitlines() if cls._SEGMENT_HEADER_RE.match(line))
 
     def _path_for(self, conversation_id: str, user_name: str, started_at: str = "",
                   group_name: str = "") -> Path:
@@ -129,30 +172,14 @@ class SessionArchiveWriter:
         if group_name:
             # 群聊：按群名命名
             safe_name = _sanitize_filename(group_name) or "group"
-            time_part = ""
-            if started_at:
-                try:
-                    dt = datetime.fromisoformat(started_at.replace("Z", "+00:00"))
-                    local_dt = dt + timedelta(hours=8)
-                    time_part = local_dt.strftime("%Y-%m-%d_%H-%M-%S")
-                except (ValueError, TypeError):
-                    time_part = _beijing_date_str()
-            else:
-                time_part = _beijing_date_str()
+            dt = _to_beijing_dt(started_at) if started_at else None
+            time_part = dt.strftime("%Y-%m-%d_%H-%M-%S") if dt else _beijing_date_str()
             filename = f"{safe_name}_{time_part}.md"
             return Path(self.archive_dir) / filename
 
         # 私聊：原命名规则
-        date_str = ""
-        if started_at:
-            try:
-                dt = datetime.fromisoformat(started_at.replace("Z", "+00:00"))
-                local_dt = dt + timedelta(hours=8)
-                date_str = local_dt.strftime("%Y-%m-%d")
-            except (ValueError, TypeError):
-                date_str = _beijing_date_str()
-        else:
-            date_str = _beijing_date_str()
+        dt = _to_beijing_dt(started_at) if started_at else None
+        date_str = dt.strftime("%Y-%m-%d") if dt else _beijing_date_str()
 
         safe_name = _sanitize_filename(user_name) or "anonymous"
         conv_short = conversation_id[:8] if len(conversation_id) >= 8 else conversation_id
@@ -334,12 +361,9 @@ class SessionArchiveWriter:
         level = ctx.get("level", 1)
 
         start_display = started_at
-        try:
-            dt = datetime.fromisoformat(started_at.replace("Z", "+00:00"))
-            local_dt = dt + timedelta(hours=8)
-            start_display = local_dt.strftime("%Y-%m-%d %H:%M:%S")
-        except (ValueError, TypeError):
-            pass
+        _start_dt = _to_beijing_dt(started_at)
+        if _start_dt is not None:
+            start_display = _start_dt.strftime("%Y-%m-%d %H:%M:%S")
 
         persona = user_name
         extras = []
@@ -511,12 +535,18 @@ class SessionArchiveWriter:
         return lines
 
     @staticmethod
-    def _render_footer(turn_count: int, archive_reason: str = "expired") -> str:
+    def _render_footer(turn_count: int, archive_reason: str = "expired",
+                       segment_no: int = 1, segment_started_at: str = "",
+                       file_turn_count: int = 0) -> str:
         """渲染归档结尾。
 
         Args:
-            turn_count: 总轮数。
+            turn_count: **本段会话**轮数（不是文件累计）。
             archive_reason: 归档原因。
+            segment_no: 本段序号（同一 md 文件内第几段会话，从 1 起），
+                用于区分同一文件里并列的多段「会话归档」。
+            segment_started_at: 本段会话开始时间（ISO8601，展示转北京时间）。
+            file_turn_count: 该文件累计轮数（跨段），便于人工比对。
 
         Returns:
             str: 归档结尾 markdown。
@@ -532,11 +562,16 @@ class SessionArchiveWriter:
 
         lines = [
             "",
-            "## 会话归档",
-            f"- 归档时间: {now}",
-            f"- 归档原因: {reason_display}",
-            f"- 总轮数: {turn_count}",
+            f"## 会话归档（第 {segment_no} 段）",
         ]
+        seg_start = _to_beijing_dt(segment_started_at) if segment_started_at else None
+        if seg_start is not None:
+            lines.append(f"- 本段开始: {seg_start.strftime('%Y-%m-%d %H:%M:%S')}")
+        lines.append(f"- 归档时间: {now}")
+        lines.append(f"- 归档原因: {reason_display}")
+        lines.append(f"- 本段轮数: {turn_count}")
+        if file_turn_count:
+            lines.append(f"- 文件累计轮数: {file_turn_count}")
         return "\n".join(lines)
 
     # ── V2 逐段追加渲染方法（纯函数，无 I/O）──
@@ -954,13 +989,15 @@ class SessionArchiveWriter:
             logger.warning("SessionArchive append_turn failed: %s — %s", path, e)
             return False
 
-    def append_footer(self, path: str, turn_count: int, archive_reason: str = "expired") -> bool:
+    def append_footer(self, path: str, turn_count: int, archive_reason: str = "expired",
+                      segment_started_at: str = "") -> bool:
         """渲染并追加归档结尾到归档文件。
 
         Args:
             path: 文件路径。
-            turn_count: 总轮数。
+            turn_count: **本段会话**轮数。
             archive_reason: 归档原因。
+            segment_started_at: 本段会话开始时间（ISO8601）。
 
         Returns:
             bool: 是否成功写入。
@@ -969,10 +1006,17 @@ class SessionArchiveWriter:
             return False
 
         try:
-            content = self._render_footer(turn_count, archive_reason)
+            # 段号与文件累计轮数从正文现算，保证同天重启复用同一文件时尾段可区分
+            segment_no = self.count_segments(path) + 1
+            file_turn_count = self.count_turns(path)
+            content = self._render_footer(turn_count, archive_reason,
+                                          segment_no=segment_no,
+                                          segment_started_at=segment_started_at,
+                                          file_turn_count=file_turn_count)
             with open(path, "a", encoding="utf-8") as f:
                 f.write(content)
-            logger.info("SessionArchive footer appended: %s (turns=%d)", path, turn_count)
+            logger.info("SessionArchive footer appended: %s (segment=%d turns=%d file_turns=%d)",
+                        path, segment_no, turn_count, file_turn_count)
             return True
         except OSError as e:
             logger.warning("SessionArchive append_footer failed: %s — %s", path, e)

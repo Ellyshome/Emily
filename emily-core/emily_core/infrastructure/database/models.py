@@ -1285,7 +1285,7 @@ class ToolRegistryModel(Base):
     signature       = Column(Text, nullable=False, default="{}")   # API 签名（参数+返回值 JSON Schema）
     display_name    = Column(String(200), nullable=False)          # 功能一句话说明
     category        = Column(String(20), nullable=False, default="base")  # base / business / project
-    permission_flag = Column(String(50), nullable=False, default="all")
+    permission_flag = Column(String(50), nullable=False, default="all", comment="all / write_l2(L2+) / write(L3+) / admin(L5+)")
     exposure_mode   = Column(String(20), nullable=False, default="meta")  # meta=可被SOP-999直调 / sop_only=必须走专属SOP；默认值按 permission_flag 分级：all→meta，write/admin→sop_only
     handler_module  = Column(String(200), default="")
     is_active       = Column(Boolean, nullable=False, default=True)
