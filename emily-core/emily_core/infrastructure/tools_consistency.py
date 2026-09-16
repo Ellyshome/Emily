@@ -53,8 +53,6 @@ REGISTERED_TOOLS: set[str] = {
     "create_node", "query_node", "update_node_progress", "add_node_dependency",
     "mount_child_node", "update_nodes", "acknowledge_nodes", "discard_nodes",
     "send_email", "fetch_inbox", "chat_archive", "manage_pending_issues",
-    # expert_agent
-    "create_expert", "approve_expert", "toggle_expert", "query_experts",
 }
 
 # ── 工具名 → (display_name, category, permission_flag, exposure_mode) ──
@@ -70,11 +68,6 @@ TOOL_META_MAP: dict[str, tuple[str, str, str, str]] = {
     "fetch_inbox":        ("获取收件箱",            "base",     "all",   "meta"),
     "chat_archive":       ("聊天归档查询",          "base",     "all",   "meta"),
     "manage_pending_issues": ("管理待解决问题",     "base",     "all",   "meta"),
-    # expert_agent
-    "create_expert":     ("新建专家",              "business", "write", "sop_only"),
-    "approve_expert":    ("审批专家",              "project",  "admin", "sop_only"),
-    "toggle_expert":     ("启停专家",              "project",  "admin", "sop_only"),
-    "query_experts":     ("查询专家列表",          "base",     "all",   "meta"),
     # business — permission_flag=all → exposure_mode=meta（只读可直调）
     "query_files":        ("按分类查询项目文件", "business", "all",   "meta"),
     "send_file":          ("向用户发送已有文件", "business", "all",   "meta"),
@@ -161,10 +154,6 @@ TOOL_SCHEMA_MAP: dict[str, tuple[str, str]] = {
     "fetch_inbox": ("emily_core.tools.project", "_FETCH_INBOX_SCHEMA"),
     "chat_archive": ("emily_core.tools.project", "_CHAT_ARCHIVE_SCHEMA"),
     "manage_pending_issues": ("emily_core.tools.project", "_PENDING_ISSUE_SCHEMA"),
-    "create_expert": ("emily_core.tools.expert_manage_tool", "_EXPERT_CREATE_SCHEMA"),
-    "approve_expert": ("emily_core.tools.expert_manage_tool", "_EXPERT_APPROVE_SCHEMA"),
-    "toggle_expert": ("emily_core.tools.expert_manage_tool", "_EXPERT_TOGGLE_SCHEMA"),
-    "query_experts": ("emily_core.tools.expert_manage_tool", "_EXPERT_QUERY_SCHEMA"),
 }
 
 
@@ -174,6 +163,11 @@ TOOL_SCHEMA_MAP: dict[str, tuple[str, str]] = {
 REMOVED_TOOLS: set[str] = {
     "voice_entry",  # 2026-09 摘除：实现文件孤儿且坏导入（audit 报告 §3.1），stub 已删
     "activate_nodes",  # 2026-09 摘除：审批改签认，被 acknowledge_nodes 取代（PRD US-04/US-06）
+    # 2026-09 摘除：专家模块整线退役（含 expert_review 图节点 / experts 表 / SOP-012）
+    "create_expert",
+    "approve_expert",
+    "toggle_expert",
+    "query_experts",
 }
 
 

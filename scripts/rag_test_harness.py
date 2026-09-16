@@ -549,7 +549,7 @@ class Harness:
                         owner_dept_id="", related_company_id="建设单位",
                         deadline="2026-12-31T00:00:00", creator_id=u1.id,
                         visibility_mode=mode, status="IN_PROGRESS",
-                        node_type="WORK_PACKAGE", responsible_user_id=u1.id,
+                        node_type="TASK", responsible_user_id=u1.id,
                     )
                     s.add(node)
                     s.flush()

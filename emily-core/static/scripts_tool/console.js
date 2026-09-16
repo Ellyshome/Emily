@@ -1587,9 +1587,9 @@ let _nodeTableFiles = [];   // [{id,name,file_no}]
 
 const ROLE_LABEL = { participant: '参与人', approver: '审批人', observer: '观察者' };
 
-// 全景节点三级类型（MILESTONE / WORK_PACKAGE / TASK）
-const NODE_TYPE_LABEL = { MILESTONE: '里程碑', WORK_PACKAGE: '工作包', TASK: '任务' };
-const NODE_TYPE_CLASS = { MILESTONE: 'nt-milestone', WORK_PACKAGE: 'nt-workpackage', TASK: 'nt-task' };
+// 全景节点两类（MILESTONE / TASK）
+const NODE_TYPE_LABEL = { MILESTONE: '里程碑', TASK: '任务' };
+const NODE_TYPE_CLASS = { MILESTONE: 'nt-milestone', TASK: 'nt-task' };
 
 function nodeTypeHtml(t) {
     const v = String(t || '').trim();
@@ -2561,6 +2561,10 @@ async function loadLogs(module, userId) {
         if (module) params.set('module', module);
         if (userId) params.set('user_id', userId);
         params.set('limit', '500');
+        // 流量性质排除（仅对带 source 列的模块生效，见操作留痕治理）
+        if (q('#logs-exclude-test') && q('#logs-exclude-test').checked) {
+            params.set('exclude_sources', 'test');
+        }
         const qs = params.toString();
         const resp = await fetch(API_CONSOLE + '/logs' + (qs ? '?' + qs : ''));
         const json = await resp.json();
@@ -2611,6 +2615,7 @@ function renderLogs(rows) {
 }
 
 q('#logs-module-select').addEventListener('change', ev => loadLogs(ev.target.value, getGlobalOperator()));
+q('#logs-exclude-test').addEventListener('change', () => loadLogs(q('#logs-module-select').value, getGlobalOperator()));
 
 // ── 消息模拟器（日志聚合框架内）──
 // 发送者不再单独提供下拉，统一使用左侧全局「操作人」。

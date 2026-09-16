@@ -291,14 +291,13 @@ body {
 }
 .node-table .mini-btn.ok { background: #00d4ff; color: #0a0a12; }
 .node-table .mini-btn.cancel { background: #2a2a3e; color: #aaa; }
-/* 全景节点三级类型标签（里程碑 / 工作包 / 任务） */
+/* 全景节点两类类型标签（里程碑 / 任务） */
 .node-type-badge {
     display: inline-block; padding: 2px 8px; border-radius: 10px;
     font-size: 11px; font-weight: 600; white-space: nowrap;
     background: #2a2a3e; color: #bbb;
 }
 .node-type-badge.nt-milestone { background: #3d1a5c; color: #d0a3ff; }
-.node-type-badge.nt-workpackage { background: #12403a; color: #6fe0c8; }
 .node-type-badge.nt-task { background: #26343d; color: #a9c4d0; }
 /* 列表外独立详情框架（会话日志 / 项目事件点击展开） */
 .detail-frame {

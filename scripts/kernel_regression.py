@@ -271,7 +271,6 @@ def _workitem_graph(script: list):
         llm_agent_loop_max_tokens = 1024
         llm_dynamic_output = False
         langgraph_checkpointer = "memory"
-        expert_review_enabled = False
 
     state = {"n": 0}
 

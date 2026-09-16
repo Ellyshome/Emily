@@ -7,6 +7,7 @@ from typing import Optional
 from ..repositories.meeting_repo import MeetingRepository
 from ..adapters.standard.command import MeetingCommand
 from ..infrastructure.database.models import Meeting
+from ..infrastructure.logging.audit import audited
 
 logger = logging.getLogger("emily.service.meeting")
 
@@ -15,6 +16,15 @@ class MeetingService:
     def __init__(self):
         self.repo = MeetingRepository()
 
+    @audited(
+        category="meeting",
+        action="created",
+        target_type="meeting",
+        actor_arg="cmd.creator_id",
+        target_result_attr="id",
+        summary_arg="cmd.title",
+        summary="录入会议：{summary}",
+    )
     def create_meeting(self, cmd: MeetingCommand) -> Meeting:
         meeting_no = self.repo.generate_meeting_no()
         meeting = self.repo.create(

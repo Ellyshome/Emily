@@ -51,14 +51,35 @@ class BusinessEventLogger:
         user_name: str = "",
         pipeline_run_id: str = "",
         conversation_id: str = "",
+        source: str = "",
+        channel: str = "",
+        channel_account: str = "",
+        result: str = "",
+        error_reason: str = "",
     ) -> None:
-        """写入一条业务事件日志。"""
+        """写入一条业务事件日志。
+
+        归因字段（source / channel / channel_account）未显式传入时，
+        从留痕门面的上下文回填（见 infrastructure/logging/audit.py）。
+        """
         # 自动从 Pipeline 上下文填充（调用方未传时生效）
         ctx = cls._current_context
         if not pipeline_run_id:
             pipeline_run_id = ctx.get("pipeline_run_id", "")
         if not conversation_id:
             conversation_id = ctx.get("conversation_id", "")
+
+        # 归因字段：上下文回填（入口注入一次，此处自动携带）
+        if not source:
+            try:
+                from .audit import current_audit_context
+
+                actx = current_audit_context()
+                source = actx.source
+                channel = channel or actx.channel
+                channel_account = channel_account or actx.channel_account
+            except Exception:
+                pass
 
         from .log_writer import EvolutionLogWriter
         from ...infrastructure.database.models import BusinessEventLog
@@ -76,4 +97,9 @@ class BusinessEventLogger:
             summary=summary,
             detail_json=detail_json,
             pipeline_run_id=pipeline_run_id,
+            source=source,
+            channel=channel,
+            channel_account=channel_account,
+            result=result,
+            error_reason=error_reason,
         )

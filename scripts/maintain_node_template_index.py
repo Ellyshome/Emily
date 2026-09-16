@@ -106,7 +106,7 @@ def _scan_templates(templates_dir: Path) -> list[dict]:
         templates.append({
             "ref_id": ref_id,
             "node_name": fm.get("node_name", ""),
-            "node_type": fm.get("node_type", "WORK_PACKAGE"),
+            "node_type": fm.get("node_type", "TASK"),
             "stage_id": fm.get("stage_id", 0),
             "summary": summary,
             "file": md_file.name,

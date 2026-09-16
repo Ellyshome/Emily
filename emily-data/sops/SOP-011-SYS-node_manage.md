@@ -84,7 +84,7 @@
 
 | 工具名 | 用途 | 关键参数（`*` = 必填） |
 |--------|------|----------------------|
-| `create_task_node` | 创建 TASK 类型叶子节点（挂载到父节点） | `project_id`*、`title`*（或 `node_name`）、`executor_id` / `responsible_user_id`、`deadline_at`、`parent_node_id` / `node_id` |
+| `create_task_node` | 创建 TASK 类型叶子节点（挂载到父节点） | `project_id`*、`title`*、`target_amount`*（目标量，必填）、`unit`、`parent_node_id`、`executor_id`/`responsible_user_id`、`deadline_at`、`deliverable_name`、`description` |
 | `submit_node_deliverable` | 提交节点成果（PENDING → SUBMITTED） | `content`*、`deliverable_id`、`file_url` / `attachment_file_id` |
 | `confirm_node_deliverable` | 确认成果（SUBMITTED → CONFIRMED，触发进度重算） | `deliverable_id`*、`reason` |
 | `return_node_deliverable` | 退回成果（SUBMITTED → RETURNED） | `deliverable_id`*、`reason`* |

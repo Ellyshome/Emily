@@ -70,6 +70,11 @@ from .middleware.auth import AuthMiddleware  # noqa: E402
 
 app.add_middleware(AuthMiddleware)
 
+# 留痕上下文注入（console 入口统一注入 source=ops，一处覆盖全部 console 端点）
+from .middleware.audit_context import AuditContextMiddleware  # noqa: E402
+
+app.add_middleware(AuditContextMiddleware)
+
 # 注册路由
 from .routes import health, message, session, permission, skills  # noqa: E402
 from .sse import outbound  # noqa: E402
@@ -119,6 +124,17 @@ _console_static = Path(__file__).resolve().parent.parent / "static" / "scripts_t
 if _console_static.exists():
     from fastapi.staticfiles import StaticFiles
     app.mount("/console", StaticFiles(directory=str(_console_static), html=True), name="console")
+
+# emy-config — 配置清单页（只读：字段三方对照 + 配置文件生效状态 + 差异告警）
+from .routes import config_inventory  # noqa: E402
+
+app.include_router(config_inventory.router, prefix="/api/v1")
+
+# 配置清单页静态文件（挂 /config 前缀，已加入 AuthMiddleware 白名单）
+_config_static = Path(__file__).resolve().parent.parent / "static" / "config"
+if _config_static.exists():
+    from fastapi.staticfiles import StaticFiles
+    app.mount("/config", StaticFiles(directory=str(_config_static), html=True), name="config")
 
 # 群列表同步 API
 from .routes import groups  # noqa: E402

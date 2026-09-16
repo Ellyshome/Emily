@@ -13,6 +13,7 @@ from typing import Optional
 from ..repositories.event_repo import EventRepository
 from ..adapters.standard.command import EventCommand
 from ..infrastructure.database.models import Event, Project
+from ..infrastructure.logging.audit import audited
 
 logger = logging.getLogger("emily.service.event")
 
@@ -23,6 +24,15 @@ class EventService:
     def __init__(self):
         self.repo = EventRepository()
 
+    @audited(
+        category="event",
+        action="created",
+        target_type="event",
+        actor_arg="cmd.creator_id",
+        target_result_attr="id",
+        summary_arg="cmd.title",
+        summary="创建事件：{summary}",
+    )
     def create_pending_event(self, cmd: EventCommand) -> Event:
         """创建 pending 状态的事件记录（待用户确认）。
 

@@ -173,6 +173,10 @@ class ScriptManager:
             env["PYTHONPATH"] = str(_CORE_PARENT) + (
                 os.pathsep + existing_path if existing_path else ""
             )
+            # 留痕上下文（subprocess 通道）：脚本动作 = 人发起的运维操作（source=ops）。
+            # 子进程内的 service 动作留痕经 audit.current_audit_context() 回退读取该环境变量。
+            env["EMILY_AUDIT_SOURCE"] = "ops"
+            env["EMILY_AUDIT_CHANNEL_ACCOUNT"] = f"cli:{name}"
             proc = subprocess.run(
                 [sys.executable, str(script_path), *args],
                 capture_output=True, text=True, timeout=timeout,

@@ -1,0 +1,53 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>emy-config · Emily 配置中心</title>
+    <link rel="stylesheet" href="/config/config.css">
+</head>
+<body>
+<header class="topbar">
+    <div class="brand">emy-config · Emily 配置中心</div>
+    <div class="badges" id="badges"><span class="badge badge-muted">加载中…</span></div>
+    <div class="topbar-right">
+        <input type="search" id="filter" placeholder="筛选字段 / 环境变量 / 说明…" autocomplete="off">
+        <a class="ext-link" href="/console/" title="运行时操作与观测仍在 emy-console">emy-console ↗</a>
+    </div>
+</header>
+
+<div class="layout">
+    <aside class="sidebar">
+        <nav id="nav" class="nav"></nav>
+        <div class="sidebar-foot" id="sidebar-foot"></div>
+    </aside>
+    <main class="main" id="main">
+        <div class="hint">加载配置清单…</div>
+    </main>
+</div>
+
+<div class="draftbar" id="draftbar" hidden>
+    <span id="draft-count">草稿 0 项</span>
+    <button type="button" id="draft-export">生成 .env 片段</button>
+    <button type="button" id="draft-clear" class="ghost">清空草稿</button>
+</div>
+
+<div class="modal" id="modal" hidden>
+    <div class="modal-box">
+        <div class="modal-head">
+            <span id="modal-title"></span>
+            <button type="button" id="modal-close" class="ghost">关闭</button>
+        </div>
+        <div class="modal-body">
+            <pre id="modal-body"></pre>
+        </div>
+        <div class="modal-foot">
+            <span class="hint" id="modal-hint"></span>
+            <button type="button" id="modal-copy">复制</button>
+        </div>
+    </div>
+</div>
+
+<script src="/config/config.js"></script>
+</body>
+</html>

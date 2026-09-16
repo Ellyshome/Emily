@@ -60,18 +60,6 @@
       "empty_semantics": "不可用",
       "upgrade_to": [],
       "enabled": true
-    },
-    {
-      "name": "专家名册",
-      "tools": ["query_experts"],
-      "domain": "SYS",
-      "answers": "专家名册与状态",
-      "params": "无",
-      "permission": "等级",
-      "has_text": false,
-      "empty_semantics": "未启用（休眠）",
-      "upgrade_to": [],
-      "enabled": false
     }
   ]
 }

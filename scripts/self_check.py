@@ -53,11 +53,14 @@ def _init_db(db_url: str = "") -> None:
 
 
 def self_check(*, db_url: str = "", dry_run: bool = False,
-               mode: str = "quick", check_tool_registry: bool = False) -> dict:
+               mode: str = "quick", check_tool_registry: bool = False,
+               operator_id: str = "") -> dict:
     """系统级自检。
 
     mode: quick=快速一致性检查（check_quick），full=全量一致性检查（check_all）。
     check_tool_registry: 仅 full 模式生效，是否连库检查 tool_registry 表。
+    operator_id: 后台触发者 UUID（console 传入）；传入即在本层（动作层）留痕，
+                 入口层不再写留痕。CLI / 冷启动链不传，保持既有不留痕行为。
     """
     _init_db(db_url)
 
@@ -109,6 +112,26 @@ def self_check(*, db_url: str = "", dry_run: bool = False,
             pass
         result["knowledge"] = {"sop_count": sop_count}
 
+        # 留痕治理：写入失败可观测（"未记"与"记失败"外部可区分）+ 流量性质分布
+        try:
+            from sqlalchemy import func as sa_func
+
+            from emily_core.infrastructure.database.models import BusinessEventLog
+            from emily_core.infrastructure.logging.audit import audit_write_stats
+
+            stats = audit_write_stats()
+            source_rows = session.query(
+                BusinessEventLog.source, sa_func.count(BusinessEventLog.id),
+            ).group_by(BusinessEventLog.source).all()
+            by_source = {(row[0] or "(empty)"): int(row[1]) for row in source_rows}
+            result["audit"] = {
+                "write_failures": int(stats.get("failures", 0)),
+                "last_error": str(stats.get("last_error", ""))[:200],
+                "by_source": by_source,
+            }
+        except Exception as e:
+            result["audit"] = {"error": str(e)}
+
     # 工具一致性检查（复用 self_check 启动链路；full 模式走 check_all）
     try:
         from emily_core.infrastructure.tools_consistency import check_quick, check_all
@@ -118,6 +141,25 @@ def self_check(*, db_url: str = "", dry_run: bool = False,
             result["tools_consistency"] = check_quick()
     except Exception as e:
         result["tools_consistency"] = {"ok": False, "error": str(e)}
+
+    # 留痕：自检动作由本层（动作层）记录，入口只传操作人（约束「挂载点唯一」）
+    if operator_id:
+        try:
+            from emily_core.infrastructure.logging.audit import record_action
+
+            record_action(
+                category="system",
+                action="self_checked",
+                target_type="system",
+                target_id="self_check",
+                summary=f"系统自检（{mode}）",
+                detail_json=json.dumps(
+                    {"mode": mode, "check_tool_registry": check_tool_registry},
+                    ensure_ascii=False),
+                actor_id=operator_id,
+            )
+        except Exception as e:
+            logger.debug("self_check audit record failed: %s", e)
 
     return result
 
@@ -144,6 +186,20 @@ def _format_self_check(result: dict) -> str:
 
     k = result.get("knowledge", {})
     lines.append(f"知识库：{k.get('sop_count', 0)} 个 SOP")
+
+    a = result.get("audit", {})
+    if a.get("error"):
+        lines.append(f"留痕治理：❌ 采集失败 {a.get('error')}")
+    elif a:
+        failures = a.get("write_failures", 0)
+        status = "✅" if not failures else "❌"
+        dist = a.get("by_source", {}) or {}
+        dist_text = " ".join(f"{k}={v}" for k, v in sorted(dist.items()))
+        lines.append(
+            f"留痕治理：{status} 写入失败 {failures} 次"
+            + (f"（最近：{a.get('last_error')}）" if failures and a.get("last_error") else "")
+            + f"；存量按来源：{dist_text or '无'}"
+        )
 
     tc = result.get("tools_consistency", {})
     if tc:

@@ -1,6 +1,9 @@
-"""MeetingApplication —— 会议记录编排。"""
+"""MeetingApplication —— 会议记录编排。
 
-import asyncio
+留痕（业务事件日志）已下沉到 MeetingService.create_meeting（service 动作层统一挂载），
+本层只保留 EventJournal 的项目流水（面向项目成员的 md 台账，另案）。
+"""
+
 import logging
 
 from ..adapters.standard.result import RouteResult, HandlerResult
@@ -8,19 +11,6 @@ from ..adapters.standard.command import MeetingCommand
 from ..services.meeting_service import MeetingService
 
 logger = logging.getLogger("emily.app.meeting")
-
-
-def _log_business_event(**kwargs) -> None:
-    """非阻断写入业务事件日志。在调用时立即捕获 Pipeline 上下文。"""
-    try:
-        from ..infrastructure.logging.business_event_logger import BusinessEventLogger
-        # ensure_future 延迟执行，此时 Pipeline 上下文可能已清理，因此在此立即捕获
-        ctx = BusinessEventLogger._current_context
-        kwargs.setdefault("pipeline_run_id", ctx.get("pipeline_run_id", ""))
-        kwargs.setdefault("conversation_id", ctx.get("conversation_id", ""))
-        asyncio.ensure_future(BusinessEventLogger.log(**kwargs))
-    except Exception as e:
-        logger.debug("_log_business_event failed: %s", e, exc_info=True)
 
 
 class MeetingApplication:
@@ -55,20 +45,6 @@ class MeetingApplication:
                     name=user_name,
                     summary=f"录入会议纪要：{meeting.title}（{meeting.meeting_no}）",
                 )
-            # ── 进化日志：业务事件日志 ──
-            from ._user_utils import resolve_user_name
-            _uname = resolve_user_name(cmd.creator_id) or ""
-            _log_business_event(
-                event_category="meeting",
-                event_action="created",
-                target_type="meeting",
-                target_id=meeting.id,
-                target_no=getattr(meeting, "meeting_no", "") or "",
-                summary=f"录入会议：{meeting.title[:100]}",
-                user_id=user_id,
-                user_name=_uname,
-                project_id=route_result.project_id or "",
-            )
             reply = MeetingService.format_reply(meeting)
             return HandlerResult(
                 success=True, object_type="meeting", object_id=meeting.id, reply=reply,

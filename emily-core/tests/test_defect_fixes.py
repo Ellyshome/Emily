@@ -2,7 +2,8 @@
 
 覆盖：
   A. 用户记忆链路：文件记忆优先、DB 兜底、超长截断
-  B. expert_review_enabled：闭包工厂两分支 + 节点防御性兜底
+
+注：B 段（expert_review_enabled 接线）随专家模块整线退役（2026-09-16）移除。
 """
 from __future__ import annotations
 
@@ -95,58 +96,3 @@ def test_write_then_read_roundtrip(tmp_path):
     got = resolve_long_term_memory(_FakeUser(""), "张三", _FakeCore(svc))
     assert "每周一提交周报" in got
 
-
-# ══════════════════════════════════════════════════════════════════════════════
-# B. expert_review_enabled 接线
-# ══════════════════════════════════════════════════════════════════════════════
-
-def _bind_expert_wi():
-    from emily_core.workitem.workitem import WorkItem
-    from emily_core.workitem.pipeline.context import BusContext
-    from emily_core.workitem.langgraph_engine.state import set_bus_context
-    wi = WorkItem(id="wi-test")
-    wi.expert_required = True
-    wi.expert_id = "expert-1"
-    set_bus_context(BusContext(work_item=wi))
-    return wi
-
-
-def test_expert_review_disabled_routes_to_executing():
-    from emily_core.config import Config
-    from emily_core.workitem.langgraph_engine.graph import make_route_after_routing
-    _bind_expert_wi()
-    assert make_route_after_routing(Config(expert_review_enabled=False))({}) == "executing"
-
-
-def test_expert_review_enabled_routes_to_review():
-    from emily_core.config import Config
-    from emily_core.workitem.langgraph_engine.graph import make_route_after_routing
-    _bind_expert_wi()
-    assert make_route_after_routing(Config(expert_review_enabled=True))({}) == "expert_review"
-
-
-def test_expert_review_disabled_takes_precedence_over_binding():
-    """开关关闭优先于专家绑定（核心缺陷点：旧实现只看绑定）。"""
-    from emily_core.config import Config
-    from emily_core.workitem.langgraph_engine.graph import make_route_after_routing
-    _bind_expert_wi()
-    route = make_route_after_routing(Config(expert_review_enabled=False))
-    assert route({}) == "executing"   # 绑定存在也跳过
-
-
-def test_backward_compat_route_after_routing():
-    from emily_core.workitem.langgraph_engine.graph import route_after_routing
-    _bind_expert_wi()
-    assert route_after_routing({}) == "expert_review"
-
-
-def test_env_bool_mapping():
-    """bootstrap env_map 应把 EMILY_EXPERT_REVIEW_ENABLED=false 解析为 False。"""
-    import os
-    from emily_core.bootstrap import _config_from_env
-    os.environ["EMILY_EXPERT_REVIEW_ENABLED"] = "false"
-    try:
-        data = _config_from_env({})
-        assert data.get("expert_review_enabled") is False
-    finally:
-        os.environ.pop("EMILY_EXPERT_REVIEW_ENABLED", None)

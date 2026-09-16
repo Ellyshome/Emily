@@ -13,6 +13,7 @@ from typing import Optional
 from sqlalchemy import func, text, or_
 from sqlalchemy.orm import Session
 
+from emily_core.infrastructure.logging.audit import SOURCE_USER
 from emily_core.infrastructure.database.models import (
     BEIJING_TZ,
     EvolutionDailyInsight,
@@ -937,6 +938,11 @@ class EvolutionRepo:
 
     @staticmethod
     def get_user_recent_events(user_id: str, date_str: str, *, session: Optional[Session] = None) -> list[BusinessEventLog]:
+        """取某用户某日最近 10 条业务事件（仅真实用户行为，排除测试/运维/系统流量）。
+
+        留痕治理：晨报是面向人的产出，测试流量（source=test）与运维/系统动作
+        （ops / auto）不得混入"昨日动态"。source 为空的历史数据一并排除。
+        """
         def _impl(sess: Session):
             start = f"{date_str}T00:00:00"
             end_dt = datetime.fromisoformat(date_str) + timedelta(days=1)
@@ -945,6 +951,7 @@ class EvolutionRepo:
                 BusinessEventLog.user_id == user_id,
                 BusinessEventLog.created_at >= start,
                 BusinessEventLog.created_at < end,
+                BusinessEventLog.source == SOURCE_USER,
             ).order_by(BusinessEventLog.created_at.desc()).limit(10).all()
 
         if session is not None:

@@ -997,6 +997,26 @@ class EmilyCore:
 
         self._ensure_initialized()
 
+        # ── 留痕上下文注入（入口职责，见 issues/操作留痕治理/）──
+        # IM 四渠道在此注入 source=user + 渠道身份；console 模拟对话已先绑定 test，
+        # 故用 override=False：已绑定则不覆盖（它走的是同一入口，但属测试流量）。
+        try:
+            from .infrastructure.logging.audit import (
+                SOURCE_USER,
+                bind_audit_context,
+                current_audit_context,
+            )
+
+            _audit_ctx = current_audit_context()
+            bind_audit_context(
+                source=SOURCE_USER,
+                channel=message.platform,
+                channel_account=_audit_ctx.channel_account or message.sender_id,
+                override=False,
+            )
+        except Exception as e:  # 非阻断：留痕注入失败不影响消息处理
+            logger.debug("audit context bind failed in handle_message: %s", e)
+
         # 用户解析：BUG-001 修复 — 增加 UUID 直查路径
         user_id = ""
         try:
@@ -1022,6 +1042,15 @@ class EmilyCore:
         except Exception as e:
             # UserNotAllowedError 不应吞掉——记录但继续（返回无用户回复）
             logger.warning("user binding failed (continuing): %s", e)
+
+        # 留痕上下文补充操作人：actor 在用户解析后才可得；动作方法未自带操作人时用它兜底
+        if user_id:
+            try:
+                from .infrastructure.logging.audit import bind_audit_context
+
+                bind_audit_context(actor_id=user_id)
+            except Exception as e:
+                logger.debug("audit actor bind failed: %s", e)
 
         # ── 入站消息持久化（M1 修复：恢复落库，供 trace 关联）──
         db_message_id = ""

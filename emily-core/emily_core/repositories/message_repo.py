@@ -17,6 +17,21 @@ from ..adapters.standard.route_decision import RouteDecision
 logger = logging.getLogger("emily.repo.message")
 
 
+def _current_source() -> str:
+    """消息的流量性质暗记（user / test / ops / auto），取自入口注入的留痕上下文。
+
+    见操作留痕治理：取代 `event_id` 的 console_chat_ 字符串前缀判定（前缀保留作兼容）。
+    取不到上下文时回退 'auto'（异常路径告警，不抛出）。
+    """
+    try:
+        from ..infrastructure.logging.audit import current_audit_context
+
+        return current_audit_context().source
+    except Exception as e:
+        logger.debug("resolve message source failed: %s", e)
+        return "auto"
+
+
 class MessageRepository:
     """消息 CRUD 操作。"""
 
@@ -85,6 +100,7 @@ class MessageRepository:
                 attachments=_attachments_json,
                 receiver_id=_receiver_id,
                 group_id=msg.group_id,
+                source=_current_source(),
             )
             session.add(db_msg)
             session.flush()
@@ -349,6 +365,7 @@ class MessageRepository:
                 status="sent",
                 takeover=True,
                 is_at_bot=False,
+                source=_current_source(),
             )
             if reply_to_message_id:
                 db_msg.message_uid = reply_to_message_id

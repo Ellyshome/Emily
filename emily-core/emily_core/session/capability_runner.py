@@ -4,12 +4,12 @@
   - 把"一个启用中的 SOP"包装为一个可被会话主循环调用的能力；
   - 外部只暴露成果（结构化 + 可读文本），不暴露 WorkItem 实体与状态；
   - 内部复用现有执行引擎（SessionScheduler._run_one → core._workitem_graph），
-    因此 SOP 全文、质量门、专家评审、分级兜底、审计全部保留。
+    因此 SOP 全文、质量门、分级兜底、审计全部保留。
 
 命名契约（计划 v1.1 修订，实测三种 sop_id 形态后确定）：
   - 能力名 = 短形编号（SOP-002-REC）—— 与 SessionContext.sop_allow 同形，否则权限过滤恒为空；
-  - 执行期 wi.sop_id = 文件 stem 全文（SOP-002-REC-event_record）—— 保持 experts 绑定
-    与 _load_sop_text 的 glob 行为不变。
+  - 执行期 wi.sop_id = 文件 stem 全文（SOP-002-REC-event_record）—— 与 _load_sop_text
+    的 glob 行为一致。
 
 准入契约：sops/ 下的系统/元规范/图内触发/工具直调兜底类 SOP 不作为用户可调用能力，
 由 SYSTEM_INTERNAL_SOPS 排除；旧路径仍需其 .md，**不得删除文件**。
@@ -31,7 +31,6 @@ logger = logging.getLogger("emily.session.capability_runner")
 
 SYSTEM_INTERNAL_SOPS: frozenset = frozenset({
     "SOP-000-SYS",   # 标准/元规范，非业务诉求
-    "SOP-012-SYS",   # 由执行图内 expert_review 节点自身触发，非用户诉求
     "SOP-999-SYS",   # 工具直调兜底；新主循环直接调工具，天然吸收其职责
 })
 """非用户可调用能力（按短形编号匹配）。"""

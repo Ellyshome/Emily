@@ -8,7 +8,7 @@
 # 说明：
 #   - node_id 为业务编号，统一前缀 EMR（EMERALD 缩写）
 #   - stage_id: 0=立项 1=规划设计 2=工程施工 3=交付结算
-#   - node_type: MILESTONE / WORK_PACKAGE / TASK
+#   - node_type: MILESTONE / TASK（两层制，类型由系统按结构派生：有子节点=里程碑，无子节点=任务）
 #   - owner_dept_id 用中文部门名（现状口径）；related_company_id 可写中文单位名称/类型，
 #     入口由 CompanyResolver 解析为 company_info.id 落库，并自动登记为该节点的参与单位
 #   - children 嵌套自动展平并设 parent_node_id
@@ -44,7 +44,7 @@ nodes:
     children:
       - node_id: "EMR-LX-01-01"
         node_name: "可行性研究"
-        node_type: "WORK_PACKAGE"
+        node_type: "TASK"
         stage_id: 0
         owner_dept_id: "工程部"
         related_company_id: "建设单位"
@@ -61,7 +61,7 @@ nodes:
             is_required: true
       - node_id: "EMR-LX-01-02"
         node_name: "立项审批"
-        node_type: "WORK_PACKAGE"
+        node_type: "TASK"
         stage_id: 0
         owner_dept_id: "工程部"
         related_company_id: "建设单位"
@@ -108,7 +108,7 @@ nodes:
     children:
       - node_id: "EMR-GH-01-01"
         node_name: "方案设计"
-        node_type: "WORK_PACKAGE"
+        node_type: "TASK"
         stage_id: 1
         owner_dept_id: "建筑所"
         related_company_id: "设计单位"
@@ -131,7 +131,7 @@ nodes:
             is_required: true
       - node_id: "EMR-GH-01-02"
         node_name: "规划许可证办理"
-        node_type: "WORK_PACKAGE"
+        node_type: "TASK"
         stage_id: 1
         owner_dept_id: "工程部"
         related_company_id: "建设单位"
@@ -188,7 +188,7 @@ nodes:
       # ── 地基与基础工程 ──
       - node_id: "EMR-SG-01-01"
         node_name: "地基与基础工程"
-        node_type: "WORK_PACKAGE"
+        node_type: "MILESTONE"
         stage_id: 2
         owner_dept_id: "项目部"
         related_company_id: "总包"
@@ -250,7 +250,7 @@ nodes:
       # ── 主体结构工程 ──
       - node_id: "EMR-SG-01-02"
         node_name: "主体结构工程"
-        node_type: "WORK_PACKAGE"
+        node_type: "MILESTONE"
         stage_id: 2
         owner_dept_id: "项目部"
         related_company_id: "总包"
@@ -333,7 +333,7 @@ nodes:
       # ── 二次结构工程（专业分包）──
       - node_id: "EMR-SG-01-06"
         node_name: "二次结构工程"
-        node_type: "WORK_PACKAGE"
+        node_type: "MILESTONE"
         stage_id: 2
         owner_dept_id: "项目部"
         related_company_id: "苏州二次结构工程有限公司"
@@ -374,7 +374,7 @@ nodes:
       # ── 钢结构工程（结构专业分包）──
       - node_id: "EMR-SG-01-10"
         node_name: "钢结构工程"
-        node_type: "WORK_PACKAGE"
+        node_type: "MILESTONE"
         stage_id: 2
         owner_dept_id: "项目部"
         related_company_id: "苏州钢结构工程有限公司"
@@ -415,7 +415,7 @@ nodes:
       # ── 幕墙工程（专业分包）──
       - node_id: "EMR-SG-01-07"
         node_name: "幕墙工程"
-        node_type: "WORK_PACKAGE"
+        node_type: "MILESTONE"
         stage_id: 2
         owner_dept_id: "项目部"
         related_company_id: "苏州幕墙工程有限公司"
@@ -456,7 +456,7 @@ nodes:
       # ── 门窗工程（专业分包）──
       - node_id: "EMR-SG-01-08"
         node_name: "门窗工程"
-        node_type: "WORK_PACKAGE"
+        node_type: "MILESTONE"
         stage_id: 2
         owner_dept_id: "项目部"
         related_company_id: "苏州门窗工程有限公司"
@@ -497,7 +497,7 @@ nodes:
       # ── 外檐装饰工程（专业分包）──
       - node_id: "EMR-SG-01-09"
         node_name: "外檐装饰工程"
-        node_type: "WORK_PACKAGE"
+        node_type: "MILESTONE"
         stage_id: 2
         owner_dept_id: "项目部"
         related_company_id: "苏州外檐装饰工程有限公司"
@@ -538,7 +538,7 @@ nodes:
       # ── 机电安装工程 ──
       - node_id: "EMR-SG-01-03"
         node_name: "机电安装工程"
-        node_type: "WORK_PACKAGE"
+        node_type: "MILESTONE"
         stage_id: 2
         owner_dept_id: "项目部"
         related_company_id: "总包"
@@ -596,7 +596,7 @@ nodes:
       # ── 室外场地平整 ──
       - node_id: "EMR-SG-01-04"
         node_name: "室外场地平整"
-        node_type: "WORK_PACKAGE"
+        node_type: "MILESTONE"
         stage_id: 2
         owner_dept_id: "项目部"
         related_company_id: "总包"
@@ -637,7 +637,7 @@ nodes:
       # ── 景观绿化工程 ──
       - node_id: "EMR-SG-01-05"
         node_name: "景观绿化工程"
-        node_type: "WORK_PACKAGE"
+        node_type: "MILESTONE"
         stage_id: 2
         owner_dept_id: "项目部"
         related_company_id: "总包"

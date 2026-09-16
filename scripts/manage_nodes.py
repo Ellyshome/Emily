@@ -308,6 +308,14 @@ def main():
 
     args = parser.parse_args()
 
+    # 留痕来源声明（脚本入口职责）：本脚本动作记 source=ops
+    try:
+        from emily_core.infrastructure.logging.audit import declare_script_source
+
+        declare_script_source("manage_nodes")
+    except Exception as ex:  # 非阻断
+        logging.getLogger("manage_nodes").debug("declare_script_source failed: %s", ex)
+
     handlers = {
         "create": _run_create,
         "update": _run_update,

@@ -93,7 +93,7 @@ async def create_node(body: CreateNodeRequest):
         creator_id=body.creator_id,
         remark=body.remark,
         responsible_user_id=getattr(body, 'responsible_user_id', ''),
-        node_type=getattr(body, 'node_type', 'WORK_PACKAGE'),
+        node_type=getattr(body, 'node_type', 'TASK'),
         participant_company_ids=getattr(body, 'participant_company_ids', []),
     )
     result = await svc.create_node(cmd)
