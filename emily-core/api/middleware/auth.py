@@ -2,7 +2,7 @@
 
 emily-core 仅监听内网（astrbot_network），当前默认放行。
 真实的请求级鉴权（如插件 ↔ Core 的共享密钥校验）属后续增强。
-健康检查 + emy-console（/console/）路由始终放行，不受 EMILY_API_TOKEN 约束。
+健康检查 + emy-console（/console/）+ emy-config（/config/）路由始终放行，不受 EMILY_API_TOKEN 约束。
 """
 
 from __future__ import annotations
@@ -32,6 +32,8 @@ class AuthMiddleware(BaseHTTPMiddleware):
         "/console",
         "/api/v1/console",
         "/api/v1/scripts",
+        "/config",
+        "/api/v1/config",
     )
 
     # 精确匹配放行（不做前缀展开）
