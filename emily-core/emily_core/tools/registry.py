@@ -31,6 +31,28 @@ logger = logging.getLogger("emily.tool.registry")
 # 与 infrastructure/tools_consistency.py::TOOL_META_MAP 保持同步。
 _NODE_TASK_PERM_FLAGS: dict[str, str] = {
     "submit_node_deliverable": "write_l2",
+    # 缺口 G-10：工具口径与承载 SOP 对齐 —— SOP-011 准入 L5+，工具层同口径（原 write=L3+
+    # 会让 L3/L4 看得到工具却进不了 SOP）。
+    "create_task_node": "admin",
+}
+
+# 节点任务工具的写语义（M2/G-9）；未列出的沿用 read。
+_NODE_TASK_WRITE_MODES: dict[str, str] = {
+    "create_task_node": "append",
+    "submit_node_deliverable": "transition",
+    "confirm_node_deliverable": "transition",
+    "return_node_deliverable": "transition",
+}
+
+# 8 个核心节点工具的写语义（M2/G-9）；query_node 为只读，不在此列。
+_NODE_CORE_WRITE_MODES: dict[str, str] = {
+    "create_node": "append",
+    "update_node_progress": "overwrite",
+    "add_node_dependency": "append",
+    "mount_child_node": "append",
+    "update_nodes": "overwrite",
+    "acknowledge_nodes": "transition",
+    "discard_nodes": "transition",
 }
 
 
@@ -247,6 +269,10 @@ def _register_business(core, reg):
         _SEND_FILE_SCHEMA, _LINK_FILE_SCHEMA, _NEW_FILE_VERSION_SCHEMA,
         _DELETE_FILE_SCHEMA, _LIST_FILE_VERSIONS_SCHEMA, _LINK_TO_MASTER_SCHEMA,
         _UNLINK_ATTACHMENT_SCHEMA, _LIST_ATTACHMENTS_SCHEMA, _UPDATE_PURPOSE_SCHEMA,
+        _UPDATE_CONFIDENTIALITY_SCHEMA,
+    )
+    from .personnel_tool import (
+        _UPDATE_USER_LEVEL_SCHEMA, _UPDATE_USER_COMPANY_SCHEMA, _MANAGE_COMPANY_SCHEMA,
     )
 
     # 5 个核心 CRUD
@@ -282,7 +308,8 @@ def _register_business(core, reg):
     _buc += _reg_biz(reg, "update_file_category", "修改文件分类归属",
                      partial(_h("file_tool", "handle_update_file_category"),
                              file_app=core._file_app),
-                     params=_UPDATE_CATEGORY_SCHEMA, category="business", permission_flag="write")
+                     params=_UPDATE_CATEGORY_SCHEMA, category="business", permission_flag="write",
+                     write_mode="overwrite")
 
     # M2: send_file — Emily 主动发送文件
     _buc += _reg_biz(reg, "send_file", "向用户发送已有文件",
@@ -295,12 +322,14 @@ def _register_business(core, reg):
     _buc += _reg_biz(reg, "link_file", "关联文件到业务对象",
                      partial(_h("file_tool", "handle_link_file"),
                              file_manager=core._file_manager),
-                     params=_LINK_FILE_SCHEMA, category="business", permission_flag="write")
+                     params=_LINK_FILE_SCHEMA, category="business", permission_flag="write",
+                     write_mode="append")
     _buc += _reg_biz(reg, "new_file_version", "创建文件新版本",
                      partial(_h("file_tool", "handle_new_file_version"),
                              file_app=core._file_app,
                              file_manager=core._file_manager),
-                     params=_NEW_FILE_VERSION_SCHEMA, category="business", permission_flag="write")
+                     params=_NEW_FILE_VERSION_SCHEMA, category="business", permission_flag="write",
+                     write_mode="append")
     _buc += _reg_biz(reg, "delete_file", "软删除文件",
                      partial(_h("file_tool", "handle_delete_file"),
                              file_manager=core._file_manager),
@@ -315,11 +344,13 @@ def _register_business(core, reg):
     _buc += _reg_biz(reg, "link_to_master", "挂载附件到主文件",
                      partial(_h("file_tool", "handle_link_to_master"),
                              file_manager=core._file_manager),
-                     params=_LINK_TO_MASTER_SCHEMA, category="business", permission_flag="write")
+                     params=_LINK_TO_MASTER_SCHEMA, category="business", permission_flag="write",
+                     write_mode="append")
     _buc += _reg_biz(reg, "unlink_attachment", "卸载附件为独立文件",
                      partial(_h("file_tool", "handle_unlink_attachment"),
                              file_manager=core._file_manager),
-                     params=_UNLINK_ATTACHMENT_SCHEMA, category="business", permission_flag="write")
+                     params=_UNLINK_ATTACHMENT_SCHEMA, category="business", permission_flag="write",
+                     write_mode="overwrite")
     _buc += _reg_biz(reg, "list_attachments", "列出主文件下的附件",
                      partial(_h("file_tool", "handle_list_attachments"),
                              file_manager=core._file_manager),
@@ -329,7 +360,16 @@ def _register_business(core, reg):
     _buc += _reg_biz(reg, "update_file_purpose", "校正文件的业务意图",
                      partial(_h("file_tool", "handle_update_file_purpose"),
                              file_manager=core._file_manager),
-                     params=_UPDATE_PURPOSE_SCHEMA, category="business", permission_flag="write")
+                     params=_UPDATE_PURPOSE_SCHEMA, category="business", permission_flag="write",
+                     write_mode="overwrite")
+
+    # 密级调整（缺口 G-4：IM 侧入口）—— 授权口径在服务层（上传人本人 或 L5/L6），
+    # write_mode=overwrite → 不进 LLM 自由工具集，经 SOP-004 声明后执行。
+    _buc += _reg_biz(reg, "update_file_confidentiality", "调整文件密级（公开/内部/机密）",
+                     partial(_h("file_tool", "handle_update_file_confidentiality"),
+                             file_app=core._file_app),
+                     params=_UPDATE_CONFIDENTIALITY_SCHEMA, category="business",
+                     permission_flag="write", write_mode="overwrite")
 
     # 计划任务工具已废弃（由 node_task_tool 替代），不再注册
 
@@ -368,8 +408,38 @@ def _register_business(core, reg):
         from .embed_tool import handle_embed_and_index, _EMBED_SCHEMA as _ES, _EMBED_DESCRIPTION as _ED
         reg.register(_tool("embed_and_index", _ED, _ES,
                           partial(handle_embed_and_index, tei=tei, repo=kc_repo),
-                          category="business", permission_flag="write"))
+                          category="business", permission_flag="write", write_mode="append"))
         _buc += 1
+
+    # rag_remove_document（缺口 G-5：IM 侧出库入口）—— 授权在 handler（仅 L5/L6，fail-closed），
+    # write_mode=delete → 不进 LLM 自由工具集；console /rag-delete 改调本 handler（同源）。
+    if kc_repo is not None:
+        from ..services.knowledge_service import KnowledgeService
+        from .embed_tool import (
+            handle_rag_remove_document, _RAG_REMOVE_SCHEMA as _RRS,
+            _RAG_REMOVE_DESCRIPTION as _RRD,
+        )
+
+        _buc += _reg_biz(reg, "rag_remove_document", _RRD,
+                         partial(handle_rag_remove_document,
+                                 knowledge_service=KnowledgeService(repo=kc_repo)),
+                         params=_RRS, category="business", permission_flag="admin",
+                         write_mode="delete")
+
+    # 人员管理写能力（等级调整 / 归属调整 / 企业增删）—— 授权判定在 PersonnelService
+    # 服务层（fail-closed），工具层仅作 admin 粗闸；manage_company 含删除，标 delete 高危。
+    _buc += _reg_biz(reg, "update_user_level", "调整人员权限等级",
+                     _h("personnel_tool", "handle_update_user_level"),
+                     params=_UPDATE_USER_LEVEL_SCHEMA, category="business",
+                     permission_flag="admin", write_mode="transition")
+    _buc += _reg_biz(reg, "update_user_company", "调整人员所属企业",
+                     _h("personnel_tool", "handle_update_user_company"),
+                     params=_UPDATE_USER_COMPANY_SCHEMA, category="business",
+                     permission_flag="admin", write_mode="transition")
+    _buc += _reg_biz(reg, "manage_company", "新增或删除企业",
+                     _h("personnel_tool", "handle_manage_company"),
+                     params=_MANAGE_COMPANY_SCHEMA, category="business",
+                     permission_flag="admin", write_mode="delete")
 
 
 def _reg_biz(reg, name, desc, handler, params=None,
@@ -472,7 +542,8 @@ def _register_project(core, reg):
             ]:
                 if not reg.has(name):
                     reg.register(_tool(name, desc, schema, handler,
-                                      category="project", permission_flag="admin"))
+                                      category="project", permission_flag="admin",
+                                      write_mode=_NODE_CORE_WRITE_MODES.get(name, "read")))
                     _pjc += 1
         except Exception as e:
             logger.warning("node tools registration failed: %s", e)
@@ -504,9 +575,34 @@ def _register_project(core, reg):
                     if not reg.has(name):
                         # 上传类（提交成果）放开到 L2 参建执行及以上：一线人员可在参与节点内上报；
                         # 真正授权由 NodeService 按「责任人 / L5+ / 节点参与单位人员」二次校验。
+                        # create_task_node 与承载它的 SOP-011（L5+）同口径（缺口 G-10）。
                         reg.register(_tool(name, desc, schema, handler,
                                           category="business",
-                                          permission_flag=_NODE_TASK_PERM_FLAGS.get(name, "write")))
+                                          permission_flag=_NODE_TASK_PERM_FLAGS.get(name, "write"),
+                                          write_mode=_NODE_TASK_WRITE_MODES.get(name, "read")))
+                        _pjc += 1
+
+                # 缺口 G-6 / G-7：节点参与单位维护 + 节点共享文件关联
+                from .node_tool import (
+                    handle_manage_node_participant, handle_manage_node_file,
+                    _MANAGE_NODE_PARTICIPANT_SCHEMA, _MANAGE_NODE_PARTICIPANT_DESCRIPTION,
+                    _MANAGE_NODE_FILE_SCHEMA, _MANAGE_NODE_FILE_DESCRIPTION,
+                )
+                for name, desc, schema, handler, category, perm in [
+                    ("manage_node_participant", _MANAGE_NODE_PARTICIPANT_DESCRIPTION,
+                     _MANAGE_NODE_PARTICIPANT_SCHEMA,
+                     partial(handle_manage_node_participant, node_service=ns),
+                     "project", "admin"),
+                    # 共享文件：新增由服务层按「责任人 / L5+ / 参与单位人员」判定，移除仅 L5+
+                    ("manage_node_file", _MANAGE_NODE_FILE_DESCRIPTION,
+                     _MANAGE_NODE_FILE_SCHEMA,
+                     partial(handle_manage_node_file, node_service=ns),
+                     "business", "write"),
+                ]:
+                    if not reg.has(name):
+                        reg.register(_tool(name, desc, schema, handler,
+                                          category=category, permission_flag=perm,
+                                          write_mode="overwrite"))
                         _pjc += 1
             except Exception as e:
                 logger.warning("node task tools registration failed: %s", e)

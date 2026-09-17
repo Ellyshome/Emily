@@ -16,6 +16,22 @@ from .definitions import ToolDefinition
 
 logger = logging.getLogger("emily.tool.memory")
 
+# 工具参数 schema（约束 11：LLM 填参依赖它；同时登记到 tools_consistency.TOOL_SCHEMA_MAP）
+_MEMORY_TOOL_SCHEMA = {
+    "type": "object",
+    "properties": {
+        "content": {
+            "type": "string",
+            "description": "用户的长期工作要求描述，清晰完整地记录",
+        },
+        "title": {
+            "type": "string",
+            "description": "记忆标题，可选，为空时从内容截取前30字",
+        },
+    },
+    "required": ["content"],
+}
+
 
 def create_memory_tool(user_memory_service) -> ToolDefinition:
     """创建 write_user_memory 工具。
@@ -108,19 +124,6 @@ def create_memory_tool(user_memory_service) -> ToolDefinition:
             "'每周...'、'定期...'等。"
             "不用于记录一次性对话或临时查询。"
         ),
-        parameters={
-            "type": "object",
-            "properties": {
-                "content": {
-                    "type": "string",
-                    "description": "用户的长期工作要求描述，清晰完整地记录",
-                },
-                "title": {
-                    "type": "string",
-                    "description": "记忆标题，可选，为空时从内容截取前30字",
-                },
-            },
-            "required": ["content"],
-        },
+        parameters=_MEMORY_TOOL_SCHEMA,
         execute=execute,
     )

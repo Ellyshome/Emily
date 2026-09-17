@@ -261,3 +261,74 @@ class UserRepository:
             if status:
                 q = q.filter(User.status == status)
             return q.count()
+
+    # ── 人员台账（console 人员管理模块，只读 + 窄写）──
+
+    @staticmethod
+    def list_personnel(limit: int = 2000) -> list[dict]:
+        """人员台账五列查询：人员ID / 姓名 / 所属企业 / 登记时间 / 录入人。
+
+        一次连接查询取齐 company_name 与 creator_name（自连接），避免 N+1。
+        后台视角全量（仅排除软删），不做可见范围收敛（需求基线 Q6）。
+
+        Returns:
+            dict 列表，字段：user_id / username / company_id / company_name /
+            created_at / creator_id / creator_name（空值以空串返回）。
+        """
+        from sqlalchemy.orm import aliased
+
+        from ..infrastructure.database.models import CompanyInfo
+
+        Creator = aliased(User)
+        with get_session() as session:
+            rows = (
+                session.query(
+                    User.id.label("user_id"),
+                    User.username.label("username"),
+                    User.company.label("company_id"),
+                    CompanyInfo.company_name.label("company_name"),
+                    User.created_at.label("created_at"),
+                    User.creator_id.label("creator_id"),
+                    Creator.username.label("creator_name"),
+                    User.level.label("level"),
+                )
+                .outerjoin(CompanyInfo, CompanyInfo.id == User.company)
+                .outerjoin(Creator, Creator.id == User.creator_id)
+                .filter(User.is_deleted.isnot(True))
+                .order_by(User.created_at.desc())
+                .limit(limit)
+                .all()
+            )
+        return [
+            {
+                "user_id": r.user_id or "",
+                "username": r.username or "",
+                "company_id": r.company_id or "",
+                "company_name": r.company_name or "",
+                "created_at": r.created_at or "",
+                "creator_id": r.creator_id or "",
+                "creator_name": r.creator_name or "",
+                "level": int(r.level or 0),
+            }
+            for r in rows
+        ]
+
+    @staticmethod
+    def set_level(user_id: str, level: int) -> User | None:
+        """只写 users.level（窄写，无校验无授权——校验/授权在 service 层）。"""
+        with get_session() as session:
+            user = session.query(User).filter(User.id == user_id).first()
+            if user is None:
+                return None
+            user.level = level
+            return user
+
+    @staticmethod
+    def set_company(user_id: str, company_id: str | None) -> User | None:
+        """只写 users.company（窄写；company_id 为空表清空归属）。"""
+        with get_session() as session:
+            user = session.query(User).filter(User.id == user_id).first()
+            if user is None:
+                return None
+            user.company = company_id or None
+            return user

@@ -15,6 +15,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import logging
 from typing import Any
 
@@ -418,4 +419,174 @@ async def handle_discard_nodes(
         "fail_count": fail_count,
         "results": results,
         "message": f"批量废弃完成：{success_count} 成功，{fail_count} 失败",
+    }
+
+
+# ══════════════════════════════════════════════════════════════════════════════
+# 节点参与单位 / 参与人维护（缺口 G-6）· 节点共享文件关联（缺口 G-7）
+# ══════════════════════════════════════════════════════════════════════════════
+
+_MANAGE_NODE_PARTICIPANT_SCHEMA = {
+    "type": "object",
+    "properties": {
+        "action": {"type": "string", "enum": ["add", "remove"],
+                   "description": "add=添加 / remove=移除"},
+        "node_id": {"type": "string", "description": "节点编号（业务主键，如 SG-DX-01-2026）"},
+        "company": {"type": "string",
+                    "description": "参与单位（单位名称或 company_info.id）；与 user_id 二选一"},
+        "user_id": {"type": "string",
+                    "description": "参与人用户 UUID；与 company 二选一"},
+        "role": {"type": "string", "enum": ["participant", "approver", "observer"],
+                 "description": "参与人角色（仅 user_id 目标，默认 participant）"},
+    },
+    "required": ["action", "node_id"],
+}
+
+_MANAGE_NODE_PARTICIPANT_DESCRIPTION = (
+    "维护全景节点的参与单位 / 参与人（决定该节点数据与共享文件的可见范围）。\n"
+    "必填字段：\n"
+    "  action — add / remove\n"
+    "  node_id — 节点编号\n"
+    "  company 或 user_id — 二选一（单位名称 / 单位 ID / 用户 UUID）\n"
+    "\n"
+    "授权口径：仅 L5/L6 管理员可执行（fail-closed），L4 及以下一律拒绝。"
+)
+
+
+async def handle_manage_node_participant(
+    params: dict[str, Any],
+    node_service=None,
+    user_id: str = "",
+    **kw,
+) -> dict[str, Any]:
+    """节点参与单位 / 参与人增删（授权 L5+，动作委托 NodeService）。"""
+    if node_service is None:
+        return {"success": False, "reply": "NodeService 未初始化"}
+
+    action = (params.get("action") or "").strip().lower()
+    node_id = (params.get("node_id") or "").strip()
+    company_ref = (params.get("company") or "").strip()
+    target_user_id = (params.get("user_id") or "").strip()
+
+    if action not in ("add", "remove"):
+        return {"success": False, "reply": "action 仅支持 add / remove"}
+    if not node_id:
+        return {"success": False, "reply": "缺少节点编号（node_id）"}
+    if not company_ref and not target_user_id:
+        return {"success": False, "reply": "请提供参与单位（company）或参与人（user_id）"}
+    if company_ref and target_user_id:
+        return {"success": False, "reply": "company 与 user_id 只能二选一"}
+
+    # 授权：仅 L5/L6；无操作人或取不到等级一律拒绝（fail-closed）
+    operator_level = 0
+    if user_id:
+        try:
+            from ..repositories.permission_repo import PermissionRepository
+
+            operator = PermissionRepository.get_user(user_id)
+            operator_level = getattr(operator, "level", 0) or 0
+        except Exception:
+            operator_level = 0
+    if operator_level < 5:
+        return {"success": False, "reply": "仅 L5/L6 管理员可维护节点参与单位 / 参与人",
+                "error_code": "permission_denied"}
+
+    if target_user_id:
+        if action == "add":
+            result = await node_service.add_node_participant(
+                node_id, target_user_id, user_id, params.get("role") or "participant")
+        else:
+            result = await node_service.remove_node_participant(node_id, target_user_id, user_id)
+    else:
+        from ..services.company_resolver import CompanyResolver
+        from ..services.node_commands import (
+            AddParticipantCompanyCommand, RemoveParticipantCompanyCommand,
+        )
+
+        detail = await node_service.get_node_detail(node_id)
+        if detail is None:
+            return {"success": False, "reply": f"节点不存在：{node_id}"}
+        company_id = CompanyResolver.resolve(company_ref, detail.get("project_id", ""))
+        if not company_id:
+            return {"success": False,
+                    "reply": f"无法唯一确定单位「{company_ref}」，请改用单位全称或 company_info.id"}
+
+        if action == "add":
+            result = await node_service.add_participant_company(
+                AddParticipantCompanyCommand(node_id=node_id, company_id=company_id,
+                                             operator_id=user_id))
+        else:
+            result = await node_service.remove_participant_company(
+                RemoveParticipantCompanyCommand(node_id=node_id, company_id=company_id,
+                                                operator_id=user_id))
+
+    return {
+        "success": bool(result.success),
+        "object_type": "node",
+        "object_id": node_id,
+        "reply": result.message or ("操作成功" if result.success else "操作失败"),
+        "error_code": "" if result.success else "node_participant_failed",
+    }
+
+
+_MANAGE_NODE_FILE_SCHEMA = {
+    "type": "object",
+    "properties": {
+        "action": {"type": "string", "enum": ["add", "remove"],
+                   "description": "add=把文件挂为节点共享文件 / remove=解除共享"},
+        "node_id": {"type": "string", "description": "节点编号（业务主键）"},
+        "file_no": {"type": "string", "description": "文件编号（如 FIL-20260709-0001）"},
+    },
+    "required": ["action", "node_id", "file_no"],
+}
+
+_MANAGE_NODE_FILE_DESCRIPTION = (
+    "维护节点的共享文件关联（node_accessible_files）：挂上后该节点参与单位可见此文件。\n"
+    "必填字段：\n"
+    "  action — add / remove\n"
+    "  node_id — 节点编号\n"
+    "  file_no — 文件编号\n"
+    "\n"
+    "授权口径（服务层判定，fail-closed）：新增 → 节点责任人 / L5+ / 节点参与单位人员；移除 → 仅 L5+。"
+)
+
+
+async def handle_manage_node_file(
+    params: dict[str, Any],
+    node_service=None,
+    user_id: str = "",
+    **kw,
+) -> dict[str, Any]:
+    """节点共享文件增删（授权与动作均在 NodeService）。"""
+    if node_service is None:
+        return {"success": False, "reply": "NodeService 未初始化"}
+
+    action = (params.get("action") or "").strip().lower()
+    node_id = (params.get("node_id") or "").strip()
+    file_no = (params.get("file_no") or "").strip()
+
+    if action not in ("add", "remove"):
+        return {"success": False, "reply": "action 仅支持 add / remove"}
+    if not node_id or not file_no:
+        return {"success": False, "reply": "缺少节点编号（node_id）或文件编号（file_no）"}
+
+    from ..repositories.file_repo import FileRepository
+
+    file_record = await asyncio.to_thread(FileRepository.get_by_file_no, file_no)
+    if file_record is None or file_record.is_deleted:
+        return {"success": False, "reply": f"找不到文件编号 {file_no}",
+                "error_code": "file_not_found"}
+
+    if action == "add":
+        result = await node_service.add_node_file(node_id, str(file_record.id), user_id)
+    else:
+        result = await node_service.remove_node_file(node_id, str(file_record.id), user_id)
+
+    return {
+        "success": bool(result.success),
+        "object_type": "node",
+        "object_id": node_id,
+        "file_no": file_no,
+        "reply": result.message or ("操作成功" if result.success else "操作失败"),
+        "error_code": "" if result.success else "node_file_failed",
     }
