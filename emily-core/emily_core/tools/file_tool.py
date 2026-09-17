@@ -677,6 +677,21 @@ async def handle_delete_file(
     if not file_manager.can_access(user_id, file_record.id):
         return {"success": False, "reply": "您无权访问该文件", "error_code": "permission_denied"}
 
+    # 删除授权（口径 D2：仅上传人本人或 L5/L6，与密级调整一致；无操作人信息 fail-closed）
+    operator_level = 0
+    if user_id:
+        try:
+            from emily_core.repositories.permission_repo import PermissionRepository
+            operator = PermissionRepository.get_user(user_id)
+            operator_level = getattr(operator, "level", 0) or 0
+        except Exception:
+            operator_level = 0
+    is_uploader = bool(user_id) and (file_record.uploaded_by == user_id)
+    is_admin = operator_level >= 5
+    if not (is_uploader or is_admin):
+        return {"success": False, "reply": "仅上传人本人或 L5/L6 管理员可删除文件",
+                "error_code": "permission_denied"}
+
     ok = file_manager.soft_delete(file_record.id, user_id)
     if not ok:
         return {"success": False, "reply": "文件删除失败", "error_code": "delete_failed"}
