@@ -2,7 +2,7 @@
 
 emily-core 仅监听内网（astrbot_network），当前默认放行。
 真实的请求级鉴权（如插件 ↔ Core 的共享密钥校验）属后续增强。
-健康检查 + emy-console（/console/）+ emy-config（/config）路由始终放行，不受 EMILY_API_TOKEN 约束。
+健康检查 + emy-console（/console/）+ emy-config（/config/）路由始终放行，不受 EMILY_API_TOKEN 约束。
 """
 
 from __future__ import annotations
@@ -29,15 +29,11 @@ class AuthMiddleware(BaseHTTPMiddleware):
     # 校验静默失效（历史 bug）。根路径如需放行，用下方 _PUBLIC_EXACT 精确匹配。
     _PUBLIC_PREFIXES = (
         "/health",
-        # 实际健康检查路由注册在 /api/v1 前缀下（api/server.py），此前白名单只写了根路径
-        # "/health" 导致 /api/v1/health 被 Token 校验拦下（401）。探活只回答"进程是否就绪"，
-        # 不驱动业务，故与 /console 一样放行。
-        "/api/v1/health",
         "/console",
         "/api/v1/console",
         "/api/v1/scripts",
-        "/config",              # emy-config 配置清单页（静态）
-        "/api/v1/config",       # emy-config 清单接口（只读）
+        "/config",
+        "/api/v1/config",
     )
 
     # 精确匹配放行（不做前缀展开）

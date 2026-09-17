@@ -19,21 +19,21 @@ services:
       - EMILY_LLM_API_KEY=${EMILY_LLM_API_KEY:-}
       - EMILY_LLM_BASE_URL=${EMILY_LLM_BASE_URL:-https://api.deepseek.com}
       - EMILY_LLM_MODEL=${EMILY_LLM_MODEL:-deepseek-v4-flash}
-      # ── LLM 分层模型 / 采样参数（emy-config /config 可查可改）──
-      # 格式 ${VAR:-}：未在 .env 设置时以空值注入 = 沿用代码默认值（不是覆盖成空）
-      - EMILY_LLM_ROUTER_MODEL=${EMILY_LLM_ROUTER_MODEL:-}
-      - EMILY_LLM_GUARDIAN_MODEL=${EMILY_LLM_GUARDIAN_MODEL:-}
-      - EMILY_LLM_AGENT_LOOP_MODEL=${EMILY_LLM_AGENT_LOOP_MODEL:-}
-      - EMILY_LLM_TEMPERATURE=${EMILY_LLM_TEMPERATURE:-}
-      - EMILY_LLM_MAX_TOKENS=${EMILY_LLM_MAX_TOKENS:-}
-      - EMILY_LLM_AGENT_LOOP_MAX_TOKENS=${EMILY_LLM_AGENT_LOOP_MAX_TOKENS:-}
-      - EMILY_LLM_CONTEXT_WINDOW_OVERRIDE=${EMILY_LLM_CONTEXT_WINDOW_OVERRIDE:-}
-      # ── 运行形态（机器人名 / 接管模式 / 日志级别 / 调度 / 归档）──
-      - EMILY_BOT_NAME=${EMILY_BOT_NAME:-}
-      - EMILY_TAKEOVER_MODE=${EMILY_TAKEOVER_MODE:-}
-      - EMILY_LOG_LEVEL=${EMILY_LOG_LEVEL:-}
-      - EMILY_SCHEDULER_ENABLED=${EMILY_SCHEDULER_ENABLED:-}
-      - EMILY_SESSION_ARCHIVE_ENABLED=${EMILY_SESSION_ARCHIVE_ENABLED:-}
+      # ── 模型分层与采样（emy-config 补入口；不设则取代码默认值）──
+      - EMILY_LLM_ROUTER_MODEL=${EMILY_LLM_ROUTER_MODEL:-deepseek-v4-flash}
+      - EMILY_LLM_GUARDIAN_MODEL=${EMILY_LLM_GUARDIAN_MODEL:-deepseek-v4-flash}
+      - EMILY_LLM_AGENT_LOOP_MODEL=${EMILY_LLM_AGENT_LOOP_MODEL:-deepseek-v4-pro}
+      - EMILY_EXPERT_MODEL=${EMILY_EXPERT_MODEL:-deepseek-chat}
+      - EMILY_LLM_TEMPERATURE=${EMILY_LLM_TEMPERATURE:-0.1}
+      - EMILY_LLM_MAX_TOKENS=${EMILY_LLM_MAX_TOKENS:-1024}
+      - EMILY_LLM_AGENT_LOOP_MAX_TOKENS=${EMILY_LLM_AGENT_LOOP_MAX_TOKENS:-8192}
+      - EMILY_LLM_CONTEXT_WINDOW_OVERRIDE=${EMILY_LLM_CONTEXT_WINDOW_OVERRIDE:-0}
+      # ── 运行形态与日志（emy-config 补入口）──
+      - EMILY_TAKEOVER_MODE=${EMILY_TAKEOVER_MODE:-monitor}
+      - EMILY_BOT_NAME=${EMILY_BOT_NAME:-Emy}
+      - EMILY_LOG_LEVEL=${EMILY_LOG_LEVEL:-INFO}
+      - EMILY_SCHEDULER_ENABLED=${EMILY_SCHEDULER_ENABLED:-true}
+      - EMILY_SESSION_ARCHIVE_ENABLED=${EMILY_SESSION_ARCHIVE_ENABLED:-true}
       # ── RAG 关闭（无 embed 服务）──
       - EMILY_KB_ENABLED=false
       # ── VLM OCR ──
@@ -48,14 +48,13 @@ services:
       - EMILY_EMAIL_IDKEY=${EMILY_EMAIL_IDKEY:-}
       - EMILY_EMAIL_PASSWORD=${EMILY_EMAIL_PASSWORD:-}
     volumes:
+      # ── 配置写回（可写；emy-config 页面唯一可写的文件）──
+      - ./.env:/app/host/.env                               # 宿主机声明面；容器环境仍由 environment 段决定，不参与启动
       # ── 人类编辑（只读）──
       - ./emily-data/sops:/app/sops
       - ./emily-data/skills:/app/skills:ro
       - ./emily-data/prompts:/app/prompts:ro
       - ./emily-data/config:/app/config:ro
-      # ── 配置中心（emy-config，/config）── 宿主机 .env 只读挂载，仅用于页面的
-      # 「声明值」三方对照；不参与容器启动（容器环境仍由 environment 段决定）
-      - ./.env:/app/host/.env:ro
       - ./emily-data/baseknowledge:/app/baseknowledge:ro
       - ./emily-data/tools:/app/tools:ro
       - ./emily-data/rules:/app/rules:ro

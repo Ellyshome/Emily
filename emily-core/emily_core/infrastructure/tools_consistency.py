@@ -113,6 +113,8 @@ TOOL_WRITE_MODE_MAP: dict[str, str] = {
     "record_task": "append",
     "record_meeting": "append",
     "record_file": "append",
+    # 高危（不进 LLM 自由工具集，只经 SOP + 人工确认执行）
+    "delete_file": "delete",
 }
 
 # ── 工具名 → (模块路径, schema 变量名) ─────────────────────────────
