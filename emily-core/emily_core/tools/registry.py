@@ -304,7 +304,8 @@ def _register_business(core, reg):
     _buc += _reg_biz(reg, "delete_file", "软删除文件",
                      partial(_h("file_tool", "handle_delete_file"),
                              file_manager=core._file_manager),
-                     params=_DELETE_FILE_SCHEMA, category="business", permission_flag="write")
+                     params=_DELETE_FILE_SCHEMA, category="business", permission_flag="write",
+                     write_mode="delete")
     _buc += _reg_biz(reg, "list_file_versions", "列出文件版本",
                      partial(_h("file_tool", "handle_list_file_versions"),
                              file_manager=core._file_manager),
