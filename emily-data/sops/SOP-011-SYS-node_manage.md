@@ -5,10 +5,10 @@
 | 字段 | 值 |
 |------|-----|
 | 业务流编号 | SOP-011-SYS-node_manage |
-| 版本 | v1.3 |
+| 版本 | v1.4 |
 | 业务名称 | 全景节点管理 |
 | 业务类型 | SYS |
-| 权限控制 | `admin`（仅管理员 L5+；成果提交等子流程为 L3+，见 §3.5） |
+| 权限控制 | `admin`（仅管理员 L5+；成果提交等子流程为 L2/L3+，参与单位维护仅 L5+，见 §3.5） |
 
 ## 2. 触发条件
 
@@ -80,15 +80,21 @@
 | `acknowledge_nodes` | 批量签认节点 | `node_ids`*、`remark` |
 | `discard_nodes` | 批量废弃节点（**软删除**，非物理删除） | `node_ids`* |
 
-**② 任务 / 成果子流程工具（5 个；`category=business` / `permission_flag=write` → L3+ 可见）**
+**② 任务 / 成果子流程工具（5 个；`category=business`）**
 
 | 工具名 | 用途 | 关键参数（`*` = 必填） |
 |--------|------|----------------------|
-| `create_task_node` | 创建 TASK 类型叶子节点（挂载到父节点） | `project_id`*、`title`*、`target_amount`*（目标量，必填）、`unit`、`parent_node_id`、`executor_id`/`responsible_user_id`、`deadline_at`、`deliverable_name`、`description` |
+| `create_task_node` | 创建 TASK 类型叶子节点（挂载到父节点）。`permission_flag=admin` → **L5+ 可见**（缺口 G-10：与 SOP-011 准入同口径） | `project_id`*、`title`*、`target_amount`*（目标量，必填）、`unit`、`parent_node_id`、`executor_id`/`responsible_user_id`、`deadline_at`、`deliverable_name`、`description` |
 | `submit_node_deliverable` | 提交节点成果（PENDING → SUBMITTED） | `content`*、`deliverable_id`、`file_url` / `attachment_file_id` |
 | `confirm_node_deliverable` | 确认成果（SUBMITTED → CONFIRMED，触发进度重算） | `deliverable_id`*、`reason` |
 | `return_node_deliverable` | 退回成果（SUBMITTED → RETURNED） | `deliverable_id`*、`reason`* |
 | `query_my_nodes` | 查询我负责 / 参与的节点 | `project_id`、`node_type`、`limit` |
+
+**③ 节点参与单位维护（1 个；`category=project` / `permission_flag=admin` → 仅 L5+ 可见）**
+
+| 工具名 | 用途 | 关键参数（`*` = 必填） |
+|--------|------|----------------------|
+| `manage_node_participant` | 维护节点参与单位 / 参与人（决定该节点数据与共享文件的可见范围） | `action`*（add/remove）、`node_id`*、`company` / `user_id`（二选一）、`role` |
 
 ### 3.4 状态流转规则
 
@@ -120,7 +126,10 @@
 |------|------|------------|
 | 创建 / 查询（全量）/ 更新进度 / 添加依赖 / 挂载子节点 / 批量更新 / 签认 / 废弃 | 8 个核心节点工具（`category=project`） | **L5+（管理员）** |
 | **提交节点成果（上传）** | `submit_node_deliverable` | **L2 参建执行及以上**（`permission_flag=write_l2`，线性 >=2，排除 L1 访客）；真正授权在服务层二次校验：**节点责任人 / L5+ / 节点参与单位人员**才放行（`node_service._check_submission_permission`） |
-| 创建任务节点 / 确认·退回成果 / 查询我的节点 | 其余任务工具（`category=business`） | **L3+** |
+| 创建任务节点 | `create_task_node` | **L5+**（`permission_flag=admin`，缺口 G-10：与承载 SOP 准入同口径） |
+| 确认 / 退回成果 / 查询我的节点 | 其余任务工具（`category=business`） | **L3+** |
+| **维护节点参与单位 / 参与人** | `manage_node_participant` | **L5+（管理员）**；handler 内判定（无操作人或取不到等级即拒绝，fail-closed），L4 及以下一律拒绝 |
+| **维护节点共享文件** | `manage_node_file` | 可见性 **L3+**（`category=business` / `permission_flag=write`，经 SOP-004 声明放行）；真正授权在服务层：**新增**＝节点责任人 / L5+ / 节点参与单位人员，**移除**＝仅 L5+（`node_service._check_node_file_permission`） |
 
 **B. 经 REST / CLI 调用（不受工具可见性约束，受服务层校验）**
 

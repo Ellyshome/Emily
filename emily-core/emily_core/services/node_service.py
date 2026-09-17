@@ -882,6 +882,47 @@ class NodeService:
 
     # ── 节点共享文件增删 ──
 
+    async def _check_node_file_permission(self, node_id: str, operator_id: str,
+                                          action: str = "add") -> tuple[bool, str]:
+        """节点共享文件增删授权（缺口 G-6/G-7：服务层单一判定点）。
+
+        - `add`：节点责任人 / L5+ 管理员 / 节点参与单位人员（与成果提交同口径）
+        - `remove`：仅 L5+（删除属高危操作，不对一线开放）
+        - fail-closed：无操作人信息、用户或节点不存在、权限服务不可用一律拒绝
+        """
+        if not operator_id:
+            return False, "缺少操作人信息，已拒绝（fail-closed）"
+        if self._user_repo is None:
+            return False, "权限服务未就绪，已拒绝（fail-closed）"
+
+        user = await asyncio.to_thread(self._user_repo.get_user, operator_id)
+        if user is None:
+            return False, "操作人不存在，已拒绝"
+
+        level = getattr(user, "level", 0) or 0
+        if action == "remove":
+            if level >= 5:
+                return True, ""
+            return False, "仅 L5/L6 管理员可移除节点共享文件"
+
+        node = await asyncio.to_thread(self._node_repo.get_by_node_id, node_id)
+        if node is None:
+            return False, "节点不存在"
+        if getattr(node, "responsible_user_id", "") == operator_id or level >= 5:
+            return True, ""
+
+        company = getattr(user, "company", "") or ""
+        if company:
+            try:
+                participant_ids = await asyncio.to_thread(
+                    self._npc_repo.find_company_ids_by_node, node_id)
+                if company in participant_ids:
+                    return True, ""
+            except Exception:
+                logger.warning("node file permission: participant lookup failed node=%s", node_id)
+
+        return False, "仅节点责任人、L5+ 管理员或节点参与单位人员可增加节点共享文件"
+
     @audited(category="node", action="file_added", target_type="node", actor_arg="operator_id", target_arg="node_id")
     async def add_node_file(self, node_id: str, file_id: str,
                             operator_id: str) -> NodeOperationResult:
@@ -889,6 +930,11 @@ class NodeService:
         node = await asyncio.to_thread(self._node_repo.get_by_node_id, node_id)
         if node is None:
             return NodeOperationResult(success=False, node_id=node_id, message="节点不存在")
+
+        allowed, reason = await self._check_node_file_permission(node_id, operator_id, action="add")
+        if not allowed:
+            return NodeOperationResult(success=False, node_id=node_id, message=reason)
+
         file_record = await asyncio.to_thread(FileRepository.get_by_id, file_id)
         if file_record is None or file_record.is_deleted:
             return NodeOperationResult(success=False, node_id=node_id, message="文件不存在")
@@ -903,10 +949,15 @@ class NodeService:
     @audited(category="node", action="file_removed", target_type="node", actor_arg="operator_id", target_arg="node_id")
     async def remove_node_file(self, node_id: str, file_id: str,
                                operator_id: str) -> NodeOperationResult:
-        """移除节点共享文件。"""
+        """移除节点共享文件（仅 L5+）。"""
         node = await asyncio.to_thread(self._node_repo.get_by_node_id, node_id)
         if node is None:
             return NodeOperationResult(success=False, node_id=node_id, message="节点不存在")
+
+        allowed, reason = await self._check_node_file_permission(node_id, operator_id, action="remove")
+        if not allowed:
+            return NodeOperationResult(success=False, node_id=node_id, message=reason)
+
         removed = await asyncio.to_thread(self._naf_repo.remove, node_id, file_id)
         if not removed:
             return NodeOperationResult(success=False, node_id=node_id, message="该文件不是节点共享文件")

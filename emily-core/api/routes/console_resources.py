@@ -614,17 +614,26 @@ async def upload_file(
     user_id: str = Form(""),
     file: UploadFile = File(...),
     confidentiality: int = Form(1),
+    purpose: str = Form("RECORD"),
+    file_category: str = Form("OTHER"),
 ):
     """上传文件到文件库（以选定用户名义归档，默认密级内部）。
 
     动作与留痕均在 FileManager.archive_upload（service 动作层，同源同痕），
     本路由只做参数校验与转调（不自行落盘、不直调 repo）。
+    `purpose` / `file_category` 由调用方指定（缺省 RECORD / OTHER）；
+    `purpose=REFERENCE` 时按 REFERENCE 策略异步入 RAG（与 record_file 通道同源）。
     """
     if not user_id:
         return _err("请选择上传用户")
 
     if confidentiality not in (0, 1, 2):
         confidentiality = 1
+
+    from emily_core.infrastructure.database.models import FileCategory, FilePurpose
+
+    purpose = FilePurpose.validate(purpose)
+    file_category = FileCategory.validate(file_category)
 
     data = await file.read()
     if not data:
@@ -642,6 +651,8 @@ async def upload_file(
             uploaded_by=user_id,
             content_type=file.content_type or "",
             confidentiality=confidentiality,
+            file_category=file_category,
+            purpose=purpose,
         )
     except Exception as ex:
         logger.exception("console.upload failed user_id=%s", user_id)
@@ -649,9 +660,26 @@ async def upload_file(
 
     if not res.get("success"):
         return _err("上传失败：文件记录未创建")
+
+    # REFERENCE 类文件异步入通用 RAG 库（复用 record_file 通道的 _index_reference_file）
+    if purpose == FilePurpose.REFERENCE:
+        from api.server import get_core
+
+        core = get_core()
+        tei = getattr(core, "_tei_client", None)
+        kc_repo = getattr(core, "_knowledge_chunk_repo", None)
+        if tei is not None and kc_repo is not None:
+            from emily_core.tools.file_tool import _index_reference_file
+
+            asyncio.create_task(_index_reference_file(
+                res.get("file_id", ""), tei, kc_repo, file_manager=fm,
+            ))
+            logger.info("console.upload: REFERENCE file scheduled for RAG indexing: %s",
+                        res.get("file_id", ""))
+
     return _ok({k: res.get(k) for k in (
         "file_id", "file_no", "filename", "size", "confidentiality",
-    )})
+    )} | {"purpose": purpose, "file_category": file_category})
 
 
 # ══════════════════════════════════════════════════════════════════════════════
@@ -1144,10 +1172,10 @@ async def rag_backends():
 
 @router.post("/rag-delete")
 async def rag_delete_file(req: RagDeleteRequest):
-    """删除库内指定文档的全部向量分块（doc_id 锚定 files.id），以 operator_id 登记日志。
+    """删除库内指定文档的全部向量分块（doc_id 锚定 files.id）。
 
-    动作与留痕均在 KnowledgeService.remove_document（service 动作层，同源同痕），
-    本路由不再直写 business_event_logs。
+    动作、授权与留痕统一走 `rag_remove_document` 工具（缺口 G-5：console 与 IM 同源同能力）；
+    授权口径为该工具内的 L5/L6 判定（无操作人或取不到等级一律拒绝），本路由不另立判定。
     """
     doc_id = req.doc_id.strip()
     if not doc_id:
@@ -1159,17 +1187,22 @@ async def rag_delete_file(req: RagDeleteRequest):
     if repo is None:
         return _err("RAG 知识库未就绪")
 
+    from emily_core.tools.embed_tool import handle_rag_remove_document
+
     try:
-        res = await _get_knowledge_service(repo=repo).remove_document(
-            doc_id, operator_id=req.operator_id or "",
+        res = await handle_rag_remove_document(
+            {"doc_id": doc_id},
+            knowledge_service=_get_knowledge_service(repo=repo),
+            user_id=req.operator_id or "",
         )
     except Exception as ex:
         logger.exception("console.rag_delete failed doc_id=%s", doc_id)
         return _err(f"删除失败：{ex}")
 
     if not res.get("success"):
-        return _err(res.get("error", "删除失败"))
-    return _ok({"doc_id": res.get("doc_id", doc_id), "deleted": res.get("deleted", 0)})
+        return _err(res.get("reply", "删除失败"))
+    data = res.get("data") or {}
+    return _ok({"doc_id": data.get("doc_id", doc_id), "deleted": data.get("deleted", 0)})
 
 
 @router.post("/rag-search")
@@ -1243,26 +1276,34 @@ class NodeFileMutate(BaseModel):
 
 @router.post("/node-participant")
 async def mutate_node_participant(req: NodeParticipantMutate):
-    """节点参与人增删（复用 NodeService，以 operator_id 身份登记日志）。"""
+    """节点参与人增删。
+
+    动作、授权与留痕统一走 `manage_node_participant` 工具（缺口 G-6：console 与 IM 同源同能力）；
+    授权口径为该工具内的 L5/L6 判定（无操作人或取不到等级一律拒绝），本路由不另立判定。
+    """
     if req.action not in ("add", "remove"):
         return _err("action 仅支持 add / remove")
     if not req.operator_id:
         return _err("请选择操作人（用于日志登记）")
+
+    from emily_core.tools.node_tool import handle_manage_node_participant
+
     try:
-        svc = _get_node_service()
-        if req.action == "add":
-            result = await svc.add_node_participant(
-                req.node_id, req.user_id, req.operator_id, req.role or "participant",
-            )
-        else:
-            result = await svc.remove_node_participant(
-                req.node_id, req.user_id, req.operator_id,
-            )
+        res = await handle_manage_node_participant(
+            {
+                "action": req.action,
+                "node_id": req.node_id,
+                "user_id": req.user_id,
+                "role": req.role or "participant",
+            },
+            node_service=_get_node_service(),
+            user_id=req.operator_id,
+        )
     except Exception as ex:
         logger.exception("console.node_participant failed node=%s", req.node_id)
         return _err(f"操作失败：{ex}")
-    if not result.success:
-        return _err(result.message or "操作失败")
+    if not res.get("success"):
+        return _err(res.get("reply", "操作失败"))
     return _ok({
         "success": True,
         "event_type": "participant_added" if req.action == "add" else "participant_removed",
@@ -2526,3 +2567,193 @@ async def chat_send(req: ChatSendRequest):
         media_type="text/event-stream",
         headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
     )
+
+
+# ══════════════════════════════════════════════════════════════════════════════
+#  人员管理 —— 只读观察 + 写能力复用 PersonnelService（能力层，零业务逻辑）
+# ══════════════════════════════════════════════════════════════════════════════
+
+class PersonnelLevelRequest(BaseModel):
+    operator_id: str = ""
+    target_user_id: str = ""
+    new_level: int = 0
+    reason: str = ""
+
+
+class PersonnelCompanyRequest(BaseModel):
+    operator_id: str = ""
+    target_user_id: str = ""
+    company_id: str = ""
+    reason: str = ""
+
+
+class CompanyCreateRequest(BaseModel):
+    operator_id: str = ""
+    name: str = ""
+
+
+class CompanyDeleteRequest(BaseModel):
+    operator_id: str = ""
+    company_id: str = ""
+
+
+class PersonnelPromptRequest(BaseModel):
+    user_id: str = ""
+
+
+def _get_user_memory_service():
+    """复用 core 已注入的 UserMemoryService（同源同能力）。"""
+    from api.server import get_core
+
+    core = get_core()
+    mem = getattr(core, "_user_memory_service", None)
+    if mem is not None:
+        return mem
+    from emily_core.services.user_memory_service import UserMemoryService
+    return UserMemoryService()
+
+
+@router.get("/personnel/list")
+async def personnel_list(limit: int = Query(_LIST_LIMIT, ge=1, le=_LIST_LIMIT)):
+    """人员台账五列列表（只读，无副作用）。"""
+    from emily_core.services.personnel_service import PersonnelService
+
+    try:
+        rows = await asyncio.to_thread(PersonnelService.list_personnel, limit=limit)
+    except Exception as ex:
+        logger.exception("console.personnel_list failed")
+        return _err(f"读取人员列表失败：{ex}")
+    return _ok({"personnel": rows, "truncated": len(rows) >= limit})
+
+
+@router.get("/personnel/companies")
+async def personnel_companies():
+    """企业清单（含在职归属人数，只读）。"""
+    from emily_core.services.personnel_service import PersonnelService
+
+    try:
+        rows = await asyncio.to_thread(PersonnelService.list_companies)
+    except Exception as ex:
+        logger.exception("console.personnel_companies failed")
+        return _err(f"读取企业清单失败：{ex}")
+    return _ok({"companies": rows})
+
+
+@router.get("/personnel/memory")
+async def personnel_memory(user_id: str = Query("", description="目标人员 ID")):
+    """按人员查看长期记忆条目（只读，与注入同源）。"""
+    if not user_id:
+        return _err("缺少 user_id")
+    from emily_core.services.personnel_service import PersonnelService
+
+    try:
+        username = await asyncio.to_thread(PersonnelService.get_username, user_id)
+        if not username:
+            return _err("人员不存在或无用户名")
+        mem = _get_user_memory_service()
+        result = await asyncio.to_thread(mem.list_entries, username)
+    except Exception as ex:
+        logger.exception("console.personnel_memory failed user=%s", user_id)
+        return _err(f"读取记忆失败：{ex}")
+    return _ok(result)
+
+
+@router.post("/personnel/level")
+async def personnel_level(req: PersonnelLevelRequest):
+    """人员等级调整（复用 PersonnelService，授权/校验/留痕均在能力层）。"""
+    if not req.operator_id:
+        return _err("请选择操作人")
+    if not req.target_user_id:
+        return _err("缺少目标人员")
+    from emily_core.services.personnel_service import PersonnelService
+
+    try:
+        res = await asyncio.to_thread(
+            PersonnelService.adjust_user_level,
+            req.operator_id, req.target_user_id, req.new_level, req.reason,
+        )
+    except Exception as ex:
+        logger.exception("console.personnel_level failed target=%s", req.target_user_id)
+        return _err(f"操作失败：{ex}")
+    if not res.get("success"):
+        return _err(res.get("message") or "操作失败")
+    return _ok(res.get("data") or {})
+
+
+@router.post("/personnel/company")
+async def personnel_company(req: PersonnelCompanyRequest):
+    """人员企业归属调整（复用 PersonnelService）。"""
+    if not req.operator_id:
+        return _err("请选择操作人")
+    if not req.target_user_id:
+        return _err("缺少目标人员")
+    from emily_core.services.personnel_service import PersonnelService
+
+    try:
+        res = await asyncio.to_thread(
+            PersonnelService.adjust_user_company,
+            req.operator_id, req.target_user_id, req.company_id, req.reason,
+        )
+    except Exception as ex:
+        logger.exception("console.personnel_company failed target=%s", req.target_user_id)
+        return _err(f"操作失败：{ex}")
+    if not res.get("success"):
+        return _err(res.get("message") or "操作失败")
+    return _ok(res.get("data") or {})
+
+
+@router.post("/personnel/company-create")
+async def personnel_company_create(req: CompanyCreateRequest):
+    """新增企业（复用 PersonnelService）。"""
+    if not req.operator_id:
+        return _err("请选择操作人")
+    from emily_core.services.personnel_service import PersonnelService
+
+    try:
+        res = await asyncio.to_thread(
+            PersonnelService.create_company, req.operator_id, req.name,
+        )
+    except Exception as ex:
+        logger.exception("console.personnel_company_create failed")
+        return _err(f"操作失败：{ex}")
+    if not res.get("success"):
+        return _err(res.get("message") or "操作失败")
+    return _ok(res.get("data") or {})
+
+
+@router.post("/personnel/company-delete")
+async def personnel_company_delete(req: CompanyDeleteRequest):
+    """删除企业（复用 PersonnelService，含在职人数前置判定）。"""
+    if not req.operator_id:
+        return _err("请选择操作人")
+    from emily_core.services.personnel_service import PersonnelService
+
+    try:
+        res = await asyncio.to_thread(
+            PersonnelService.delete_company, req.operator_id, req.company_id,
+        )
+    except Exception as ex:
+        logger.exception("console.personnel_company_delete failed company=%s", req.company_id)
+        return _err(f"操作失败：{ex}")
+    if not res.get("success"):
+        return _err(res.get("message") or "操作失败")
+    return _ok(res.get("data") or {})
+
+
+@router.post("/personnel/prompt")
+async def personnel_prompt(req: PersonnelPromptRequest):
+    """一键生成会话拉起提示词（只读，无副作用）。"""
+    if not req.user_id:
+        return _err("缺少 user_id")
+    from api.server import get_core
+    from emily_core.services.session_prompt_service import SessionPromptService
+
+    try:
+        core = get_core()
+        res = await asyncio.to_thread(SessionPromptService.generate, req.user_id, core)
+    except Exception as ex:
+        logger.exception("console.personnel_prompt failed user=%s", req.user_id)
+        return _err(f"生成失败：{ex}")
+    if not res.get("success"):
+        return _err(res.get("reason_code") or "生成失败")
+    return _ok({"prompt": res.get("prompt", ""), "meta": res.get("meta", {})})

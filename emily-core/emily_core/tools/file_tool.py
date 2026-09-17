@@ -702,6 +702,73 @@ async def handle_delete_file(
     }
 
 
+# ── update_file_confidentiality ──
+
+_UPDATE_CONFIDENTIALITY_SCHEMA = {
+    "type": "object",
+    "properties": {
+        "file_no": {
+            "type": "string",
+            "description": "文件编号（如 FIL-20260709-0001）",
+        },
+        "confidentiality": {
+            "type": "integer",
+            "enum": [0, 1, 2],
+            "description": "目标密级：0=公开 / 1=内部 / 2=机密",
+        },
+    },
+    "required": ["file_no", "confidentiality"],
+}
+
+_UPDATE_CONFIDENTIALITY_DESCRIPTION = (
+    "调整文件的密级（0 公开 / 1 内部 / 2 机密），调整后可见范围即时重算。\n"
+    "\n"
+    "必填字段：\n"
+    "  file_no — 文件编号\n"
+    "  confidentiality — 目标密级（0 / 1 / 2）\n"
+    "\n"
+    "授权口径：仅上传人本人或 L5/L6 管理员可调整；降级（改小密级）同样留痕。"
+)
+
+
+async def handle_update_file_confidentiality(
+    params: dict,
+    file_app: FileApplication,
+    user_id: str = "",
+    **kwargs,
+) -> dict:
+    """调整文件密级（授权判定与留痕在 FileApplication/FileService，同源同痕）。"""
+    file_no = (params.get("file_no") or "").strip()
+    if not file_no:
+        return {"success": False, "reply": "请提供文件编号 (file_no)", "error_code": "missing_file_no"}
+
+    try:
+        confidentiality = int(params.get("confidentiality"))
+    except (TypeError, ValueError):
+        return {"success": False, "reply": "密级值域非法：仅允许 0=公开 / 1=内部 / 2=机密",
+                "error_code": "invalid_confidentiality"}
+
+    if confidentiality not in (0, 1, 2):
+        return {"success": False, "reply": "密级值域非法：仅允许 0=公开 / 1=内部 / 2=机密",
+                "error_code": "invalid_confidentiality"}
+
+    if file_app is None:
+        return {"success": False, "reply": "文件服务未就绪", "error_code": "service_unavailable"}
+
+    result = await file_app.handle_update_confidentiality(
+        file_no=file_no,
+        confidentiality=confidentiality,
+        user_id=user_id,
+    )
+
+    return {
+        "success": result.success,
+        "reply": result.reply,
+        "data": getattr(result, "data", {}),
+        "error_code": result.error_code,
+    }
+
+
 # ── list_file_versions ──
 
 _LIST_FILE_VERSIONS_SCHEMA = {

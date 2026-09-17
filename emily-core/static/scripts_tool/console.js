@@ -130,6 +130,8 @@ function bindListClicks(el) {
                 selectChannels();
             } else if (item.dataset.name === CHAT_ENTRY_NAME) {
                 selectChat();
+            } else if (item.dataset.name === PERSONNEL_ENTRY_NAME) {
+                selectPersonnel();
             } else {
                 selectScript(item.dataset.name);
             }
@@ -848,6 +850,7 @@ const TEST_CASES_ENTRY_NAME = '__test_cases__';           // 左侧脚本列表�
 const LANGGRAPH_TOOLS_ENTRY_NAME = '__langgraph_tools__'; // 左侧脚本列表里的「LangGraph 工具」条目
 const CHANNEL_ENTRY_NAME = '__channels__';                // 左侧脚本列表里的「渠道连通性」条目
 const CHAT_ENTRY_NAME = '__chat__';                       // 左侧脚本列表里的「与 Emily 对话」条目
+const PERSONNEL_ENTRY_NAME = '__personnel__';             // 左侧脚本列表里的「人员管理」条目
 
 // 右侧所有「模块能力」面板：切换条目时先全部隐藏，再显示目标面板。
 // 新增模块面板需同时登记到此处，避免切换时残留旧面板。
@@ -858,6 +861,7 @@ const MODULE_PANEL_SELECTORS = [
     '#mcp-panel', '#sop-display-panel', '#panorama-nodes-panel',
     '#project-events-panel', '#test-cases-panel',
     '#session-archive-panel', '#langgraph-tools-panel', '#channels-panel',
+    '#personnel-panel',
 ];
 
 function hideModulePanels() {
@@ -960,6 +964,9 @@ function reloadActiveModule() {
             renderChatPending();
             renderChat();
             break;
+        case PERSONNEL_ENTRY_NAME:
+            loadPersonnel();
+            break;
         case LOG_ENTRY_NAME:
             loadLogs(q('#logs-module-select').value, getGlobalOperator());
             break;
@@ -1009,6 +1016,8 @@ const MODULE_ITEMS = [
       cmd: 'GET  /api/v1/console/langgraph-tools\n# emily-core/api/routes/console_resources.py::get_langgraph_tools' },
     { name: CHANNEL_ENTRY_NAME, cls: 'channel-entry', func: '渠道连通性', sub: 'QQ · 企业微信 · 微信小程序',
       cmd: 'GET  /api/v1/console/channels\n# emily-core/api/routes/console_resources.py::get_channels' },
+    { name: PERSONNEL_ENTRY_NAME, cls: 'personnel-entry', func: '人员管理', sub: '台账 · 等级 · 归属 · 企业 · 记忆 · 提示词',
+      cmd: 'GET  /api/v1/console/personnel/list\nGET  /api/v1/console/personnel/companies\nGET  /api/v1/console/personnel/memory\nPOST /api/v1/console/personnel/level\nPOST /api/v1/console/personnel/company\nPOST /api/v1/console/personnel/company-create\nPOST /api/v1/console/personnel/company-delete\nPOST /api/v1/console/personnel/prompt\n# emily-core/api/routes/console_resources.py' },
 ];
 
 const RESOURCE_GROUPS = ['files', 'nodes', 'sops', 'rag_files'];
@@ -1297,6 +1306,8 @@ async function doUpload() {
     form.append('user_id', userId);
     form.append('file', file);
     form.append('confidentiality', q('#upload-conf-select').value);
+    form.append('purpose', q('#upload-purpose-select').value);
+    form.append('file_category', q('#upload-category-select').value);
 
     btn.disabled = true;
     status.textContent = '上传中…';
@@ -4309,3 +4320,327 @@ function applyChatFrame(frame, bot) {
         renderChat();
     }
 }
+
+// ── 人员管理（台账 · 等级 · 归属 · 企业 · 记忆 · 提示词）──
+// 写操作复用 PersonnelService（能力层授权/校验/留痕），本处仅接线 + 二次确认。
+const PERSONNEL_ENABLED = true;   // US-10.3：置 false 即整模块停用，不影响其它模块
+
+let _personnelRows = [];
+let _personnelCompanies = [];
+let _personnelSort = { key: null, dir: 1 };
+
+function selectPersonnel() {
+    _selectedName = PERSONNEL_ENTRY_NAME;
+    _schema = null;
+    _pendingValues = null;
+
+    setActiveEntry(PERSONNEL_ENTRY_NAME);
+
+    q('#empty-state').hidden = true;
+    q('#runner').hidden = true;
+    q('#personnel-panel').hidden = false;
+
+    ensureGlobalUsers();
+    if (!PERSONNEL_ENABLED) {
+        q('#personnel-tbody').innerHTML = '<tr><td colspan="8" class="hint">该模块暂未开放</td></tr>';
+        q('#personnel-empty').hidden = true;
+        return;
+    }
+    loadPersonnel();
+}
+
+function personnelSetStatus(msg, isError = false) {
+    const el = q('#personnel-status');
+    el.textContent = msg;
+    el.style.color = isError ? '#ff6b6b' : '#4caf50';
+}
+
+async function loadPersonnel() {
+    personnelSetStatus('加载中…');
+    q('#personnel-tbody').innerHTML = '<tr><td colspan="8" class="hint">加载中…</td></tr>';
+    try {
+        const [pl, cl] = await Promise.all([
+            fetch(API_CONSOLE + '/personnel/list').then(r => r.json()),
+            fetch(API_CONSOLE + '/personnel/companies').then(r => r.json()),
+        ]);
+        if (pl.code !== 0 || !pl.data) {
+            q('#personnel-tbody').innerHTML = `<tr><td colspan="8" class="hint">加载失败：${escapeHtml(pl.message || 'unknown')}</td></tr>`;
+            personnelSetStatus('加载失败', true);
+            return;
+        }
+        _personnelRows = pl.data.personnel || [];
+        q('#personnel-truncated').hidden = !pl.data.truncated;
+        _personnelCompanies = (cl.code === 0 && cl.data) ? (cl.data.companies || []) : [];
+        renderPersonnel();
+        renderCompanies();
+        renderPromptUserOptions();
+        personnelSetStatus('');
+    } catch (e) {
+        q('#personnel-tbody').innerHTML = `<tr><td colspan="8" class="hint">网络错误：${escapeHtml(e.message)}</td></tr>`;
+        personnelSetStatus('网络错误', true);
+    }
+}
+
+function personnelSortValue(row, key) {
+    if (key === 'created_at') {
+        const t = Date.parse(row.created_at || '');
+        return Number.isFinite(t) ? t : 0;
+    }
+    return row[key] || '';
+}
+
+function personnelCompare(a, b) {
+    const { key, dir } = _personnelSort;
+    if (!key) return 0;
+    const va = personnelSortValue(a, key);
+    const vb = personnelSortValue(b, key);
+    let cmp;
+    if (typeof va === 'number' && typeof vb === 'number') {
+        cmp = va - vb;
+    } else {
+        cmp = String(va).localeCompare(String(vb), 'zh-CN');
+    }
+    return cmp * dir;
+}
+
+function updatePersonnelSortIndicators() {
+    document.querySelectorAll('#personnel-panel th.sortable').forEach(th => {
+        const ind = th.querySelector('.sort-ind');
+        if (!ind) return;
+        ind.textContent = (th.getAttribute('data-sort-key') === _personnelSort.key)
+            ? (_personnelSort.dir === 1 ? ' ▲' : ' ▼')
+            : '';
+    });
+}
+
+function companyNameById(id) {
+    const c = _personnelCompanies.find(x => x.company_id === id);
+    return c ? c.company_name : '';
+}
+
+function renderPersonnel() {
+    const tbody = q('#personnel-tbody');
+    const empty = q('#personnel-empty');
+    q('#personnel-count').textContent = `${_personnelRows.length} 人`;
+
+    const list = _personnelRows.slice();
+    if (_personnelSort.key) list.sort(personnelCompare);
+    updatePersonnelSortIndicators();
+
+    if (!list.length) {
+        tbody.innerHTML = '';
+        empty.hidden = false;
+        return;
+    }
+    empty.hidden = true;
+
+    tbody.innerHTML = list.map(r => {
+        const uid = escapeAttr(r.user_id || '');
+        const name = escapeAttr(r.username || '');
+        const cname = r.company_name || (r.company_id ? '未知' : '未归属');
+        const companyCell = r.company_name
+            ? escapeHtml(cname)
+            : `<span class="muted">${escapeHtml(cname)}</span>`;
+        const creatorCell = r.creator_name
+            ? escapeHtml(r.creator_name)
+            : '<span class="muted">未知</span>';
+        const level = Number(r.level) || 0;
+        const levelOpts = [1, 2, 3, 4, 5, 6].map(lv =>
+            `<option value="${lv}"${lv === level ? ' selected' : ''}>${userLevelLabel(lv)}</option>`).join('');
+        const companyOpts = '<option value="">（未归属）</option>' + _personnelCompanies.map(c =>
+            `<option value="${escapeAttr(c.company_id)}"${c.company_id === r.company_id ? ' selected' : ''}>${escapeHtml(c.company_name)}</option>`).join('');
+
+        return `<tr data-user="${uid}" data-name="${name}">
+            <td class="mono personnel-id" title="${uid}">${escapeHtml(r.user_id || '')}</td>
+            <td>${escapeHtml(r.username || '')}</td>
+            <td>${companyCell}</td>
+            <td class="mono">${escapeHtml(r.created_at || '')}</td>
+            <td>${creatorCell}</td>
+            <td><button class="btn" data-action="memory" data-user="${uid}" data-name="${name}">查看记忆</button></td>
+            <td>
+                <select class="personnel-level-select">${levelOpts}</select>
+                <button class="btn" data-action="level" data-user="${uid}" data-name="${name}">调整</button>
+            </td>
+            <td>
+                <select class="personnel-company-select">${companyOpts}</select>
+                <button class="btn" data-action="company" data-user="${uid}" data-name="${name}">调整</button>
+            </td>
+        </tr>`;
+    }).join('');
+}
+
+function renderCompanies() {
+    q('#company-count').textContent = `${_personnelCompanies.length} 家`;
+    const list = q('#company-list');
+    if (!_personnelCompanies.length) {
+        list.innerHTML = '<div class="hint">暂无企业</div>';
+        return;
+    }
+    list.innerHTML = _personnelCompanies.map(c => `<div class="company-item">
+        <span class="company-name">${escapeHtml(c.company_name)}</span>
+        <span class="muted">在职 ${c.member_count || 0} 人</span>
+        <button class="btn danger" data-action="company-delete" data-id="${escapeAttr(c.company_id)}" data-name="${escapeAttr(c.company_name)}">删除</button>
+    </div>`).join('');
+}
+
+function renderPromptUserOptions() {
+    q('#personnel-prompt-user').innerHTML = _personnelRows.map(r =>
+        `<option value="${escapeAttr(r.user_id)}">${escapeHtml(r.username || r.user_id)}</option>`).join('');
+}
+
+async function showPersonnelMemory(userId, name) {
+    const frame = q('#personnel-memory-detail');
+    frame.hidden = false;
+    frame.innerHTML = '<div class="hint">加载中…</div>';
+    try {
+        const resp = await fetch(`${API_CONSOLE}/personnel/memory?user_id=${encodeURIComponent(userId)}`);
+        const json = await resp.json();
+        if (json.code !== 0 || !json.data) {
+            frame.innerHTML = `<div class="hint">加载失败：${escapeHtml(json.message || 'unknown')}</div>`;
+            return;
+        }
+        const d = json.data;
+        if (!d.enabled) {
+            frame.innerHTML = '<div class="hint">长期记忆功能未启用</div>';
+            return;
+        }
+        if (!d.count) {
+            frame.innerHTML = '<div class="hint">无长期记忆</div>';
+            return;
+        }
+        const items = (d.entries || []).map(e => `<div class="memory-entry">
+            <div class="memory-entry-head">
+                <span class="memory-entry-time">${escapeHtml(e.time || '')}</span>
+                <span class="memory-entry-title">${escapeHtml(e.title || '')}</span>
+            </div>
+            <div class="memory-entry-content">${escapeHtml(e.content || '').replace(/\n/g, '<br>')}</div>
+        </div>`).join('');
+        frame.innerHTML = `<div class="detail-frame-head">
+            <h4>${escapeHtml(name)} · 长期记忆（${d.count} 条）</h4>
+            <button class="btn" data-action="close-memory">关闭</button>
+        </div>${items}`;
+    } catch (e) {
+        frame.innerHTML = `<div class="hint">网络错误：${escapeHtml(e.message)}</div>`;
+    }
+}
+
+async function personnelPost(path, body) {
+    personnelSetStatus('提交中…');
+    try {
+        const resp = await fetch(API_CONSOLE + path, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(body),
+        });
+        const json = await resp.json();
+        if (json.code !== 0) {
+            personnelSetStatus('操作失败：' + (json.message || 'unknown'), true);
+            return;
+        }
+        personnelSetStatus('操作成功');
+        loadPersonnel();
+    } catch (e) {
+        personnelSetStatus('网络错误：' + e.message, true);
+    }
+}
+
+function doPersonnelLevel(rowEl) {
+    const userId = rowEl.dataset.user;
+    const name = rowEl.dataset.name || userId;
+    const newLevel = Number(rowEl.querySelector('.personnel-level-select').value);
+    const operator = getGlobalOperator();
+    if (!operator) { personnelSetStatus('请先选择操作人', true); return; }
+    if (!confirm(`确认将「${name}」的等级调整为 ${userLevelLabel(newLevel)}？`)) return;
+    personnelPost('/personnel/level', {
+        operator_id: operator, target_user_id: userId, new_level: newLevel, reason: 'console 调整',
+    });
+}
+
+function doPersonnelCompany(rowEl) {
+    const userId = rowEl.dataset.user;
+    const name = rowEl.dataset.name || userId;
+    const companyId = rowEl.querySelector('.personnel-company-select').value || '';
+    const operator = getGlobalOperator();
+    if (!operator) { personnelSetStatus('请先选择操作人', true); return; }
+    const label = companyId ? (companyNameById(companyId) || companyId) : '未归属';
+    if (!confirm(`确认将「${name}」的所属企业调整为「${label}」？`)) return;
+    personnelPost('/personnel/company', {
+        operator_id: operator, target_user_id: userId, company_id: companyId, reason: 'console 调整',
+    });
+}
+
+async function doCompanyAdd() {
+    const name = (q('#company-new-name').value || '').trim();
+    if (!name) { personnelSetStatus('请输入企业名称', true); return; }
+    const operator = getGlobalOperator();
+    if (!operator) { personnelSetStatus('请先选择操作人', true); return; }
+    if (!confirm(`确认新增企业「${name}」？`)) return;
+    await personnelPost('/personnel/company-create', { operator_id: operator, name });
+    q('#company-new-name').value = '';
+}
+
+async function doCompanyDelete(companyId, companyName) {
+    const operator = getGlobalOperator();
+    if (!operator) { personnelSetStatus('请先选择操作人', true); return; }
+    if (!confirm(`确认删除企业「${companyName}」？（逻辑删除；企业下仍有在职归属人员时将被拒绝）`)) return;
+    await personnelPost('/personnel/company-delete', { operator_id: operator, company_id: companyId });
+}
+
+async function doPersonnelPrompt() {
+    const userId = q('#personnel-prompt-user').value;
+    const statusEl = q('#personnel-prompt-status');
+    if (!userId) { statusEl.textContent = '请先选择人员'; return; }
+    statusEl.textContent = '生成中…';
+    q('#personnel-prompt-body').textContent = '';
+    q('#personnel-prompt-meta').textContent = '';
+    try {
+        const resp = await fetch(API_CONSOLE + '/personnel/prompt', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ user_id: userId }),
+        });
+        const json = await resp.json();
+        if (json.code !== 0 || !json.data) {
+            statusEl.textContent = '生成失败：' + (json.message || 'unknown');
+            return;
+        }
+        const meta = json.data.meta || {};
+        q('#personnel-prompt-meta').textContent =
+            `人员：${meta.username || ''} · 生成时间：${meta.generated_at || ''} · ${meta.char_count || 0} 字符 · ${meta.capability_count || 0} 项能力`;
+        q('#personnel-prompt-body').textContent = json.data.prompt || '';
+        statusEl.textContent = '';
+    } catch (e) {
+        statusEl.textContent = '网络错误：' + e.message;
+    }
+}
+
+q('#personnel-refresh-btn').addEventListener('click', () => loadPersonnel());
+q('#company-add-btn').addEventListener('click', doCompanyAdd);
+q('#personnel-prompt-btn').addEventListener('click', doPersonnelPrompt);
+q('#personnel-tbody').addEventListener('click', ev => {
+    const btn = ev.target.closest('[data-action]');
+    if (!btn) return;
+    const rowEl = btn.closest('tr');
+    const action = btn.dataset.action;
+    if (action === 'memory') showPersonnelMemory(btn.dataset.user, btn.dataset.name || btn.dataset.user);
+    else if (action === 'level') doPersonnelLevel(rowEl);
+    else if (action === 'company') doPersonnelCompany(rowEl);
+});
+q('#company-list').addEventListener('click', ev => {
+    const btn = ev.target.closest('[data-action="company-delete"]');
+    if (!btn) return;
+    doCompanyDelete(btn.dataset.id, btn.dataset.name || btn.dataset.id);
+});
+q('#personnel-memory-detail').addEventListener('click', ev => {
+    if (ev.target.closest('[data-action="close-memory"]')) {
+        q('#personnel-memory-detail').hidden = true;
+    }
+});
+document.querySelectorAll('#personnel-panel th.sortable').forEach(th => {
+    th.addEventListener('click', () => {
+        const key = th.getAttribute('data-sort-key');
+        if (_personnelSort.key === key) _personnelSort.dir *= -1;
+        else _personnelSort = { key, dir: 1 };
+        renderPersonnel();
+    });
+});

@@ -46,12 +46,15 @@ REGISTERED_TOOLS: set[str] = {
     "query_files", "update_file_category", "send_file", "write_user_memory",
     "link_file", "new_file_version", "delete_file", "list_file_versions",
     "link_to_master", "unlink_attachment", "list_attachments",
-    "update_file_purpose",
+    "update_file_purpose", "update_file_confidentiality", "rag_remove_document",
     "create_task_node", "submit_node_deliverable", "confirm_node_deliverable",
     "return_node_deliverable", "query_my_nodes",
+    "manage_node_file",
+    "update_user_level", "update_user_company", "manage_company",
     # project
     "create_node", "query_node", "update_node_progress", "add_node_dependency",
     "mount_child_node", "update_nodes", "acknowledge_nodes", "discard_nodes",
+    "manage_node_participant",
     "send_email", "fetch_inbox", "chat_archive", "manage_pending_issues",
 }
 
@@ -86,7 +89,11 @@ TOOL_META_MAP: dict[str, tuple[str, str, str, str]] = {
     "link_to_master":     ("挂载附件到主文件",   "business", "write", "sop_only"),
     "unlink_attachment":  ("卸载附件为独立文件", "business", "write", "sop_only"),
     "update_file_purpose": ("校正文件的业务意图", "business", "write", "sop_only"),
-    "create_task_node":        ("创建TASK类型叶子节点", "business", "write", "sop_only"),
+    "update_file_confidentiality": ("调整文件密级", "business", "write", "sop_only"),
+    # 出库为破坏性操作：permission_flag=admin（L5+），exposure_mode=sop_only
+    "rag_remove_document": ("知识库出库（删向量分块）", "business", "admin", "sop_only"),
+    # 缺口 G-10：与承载 SOP（SOP-011 准入 L5+）同口径（原 write=L3+ 会让 L3/L4 看得到工具却进不了 SOP）
+    "create_task_node":        ("创建TASK类型叶子节点", "business", "admin", "sop_only"),
     # 上传类：放开到 L2 参建执行及以上（一线可在参与节点内上报成果）；授权由服务层按
     # 「节点责任人 / L5+ / 节点参与单位人员」二次校验（node_service._check_submission_permission）。
     # exposure_mode 保持 sop_only：不进入 SOP-999 直调白名单，避免写操作绕过确认。
@@ -94,6 +101,12 @@ TOOL_META_MAP: dict[str, tuple[str, str, str, str]] = {
     "confirm_node_deliverable":("确认节点成果",   "business", "write", "sop_only"),
     "return_node_deliverable": ("退回节点成果",   "business", "write", "sop_only"),
     "query_my_nodes":          ("查询我负责的节点","business", "write", "sop_only"),
+    # 节点共享文件：新增按「责任人 / L5+ / 参与单位人员」服务层判定，移除仅 L5+
+    "manage_node_file":        ("维护节点共享文件", "business", "write", "sop_only"),
+    # 人员管理写能力：授权判定在 PersonnelService 服务层，工具层 admin 粗闸
+    "update_user_level":       ("调整人员权限等级", "business", "admin", "sop_only"),
+    "update_user_company":     ("调整人员所属企业", "business", "admin", "sop_only"),
+    "manage_company":          ("新增或删除企业",   "business", "admin", "sop_only"),
     # project — permission_flag=admin → exposure_mode=sop_only
     "create_node":           ("创建全景节点",   "project", "admin", "sop_only"),
     "query_node":            ("查询全景节点",   "project", "admin", "sop_only"),
@@ -103,6 +116,7 @@ TOOL_META_MAP: dict[str, tuple[str, str, str, str]] = {
     "update_nodes":          ("批量更新节点",   "project", "admin", "sop_only"),
     "acknowledge_nodes":     ("批量签认节点",   "project", "admin", "sop_only"),
     "discard_nodes":         ("批量废弃节点",   "project", "admin", "sop_only"),
+    "manage_node_participant": ("维护节点参与单位/参与人", "project", "admin", "sop_only"),
 }
 
 # ── 工具名 → write_mode（M2 静态参考，供 scripts/check_fallback_tools.py 交叉校验）──
@@ -115,15 +129,47 @@ TOOL_WRITE_MODE_MAP: dict[str, str] = {
     "record_file": "append",
     # 高危（不进 LLM 自由工具集，只经 SOP + 人工确认执行）
     "delete_file": "delete",
+    # 密级调整为覆盖既有字段（改小密级亦留痕）
+    "update_file_confidentiality": "overwrite",
+    # 出库为破坏性删除（文档全部分块）
+    "rag_remove_document": "delete",
+    # 节点参与单位/参与人、节点共享文件均为覆盖既有关系
+    "manage_node_participant": "overwrite",
+    "manage_node_file": "overwrite",
+    # ── 缺口 G-9：补标其余写工具的语义（标注后退出 LLM 自由工具集，经匹配 SOP 执行）──
+    # 文件维护类
+    "update_file_category": "overwrite",
+    "update_file_purpose": "overwrite",
+    "unlink_attachment": "overwrite",
+    "link_file": "append",
+    "new_file_version": "append",
+    "link_to_master": "append",
+    "embed_and_index": "append",
+    # 节点 / 任务 / 成果类
+    "create_node": "append",
+    "add_node_dependency": "append",
+    "mount_child_node": "append",
+    "update_node_progress": "overwrite",
+    "update_nodes": "overwrite",
+    "acknowledge_nodes": "transition",
+    "discard_nodes": "transition",
+    "create_task_node": "append",
+    "submit_node_deliverable": "transition",
+    "confirm_node_deliverable": "transition",
+    "return_node_deliverable": "transition",
+    # 人员管理写能力
+    "update_user_level": "transition",
+    "update_user_company": "transition",
+    "manage_company": "delete",
 }
 
 # ── 工具名 → (模块路径, schema 变量名) ─────────────────────────────
 # 所有需要 LLM 填参的工具必须在此映射中有条目。V14 会检测缺失。
-# write_user_memory 的 schema 由 create_memory_tool() 动态生成，不在此静态映射。
 TOOL_SCHEMA_MAP: dict[str, tuple[str, str]] = {
     "query_data": ("emily_core.tools.query_tool", "_QUERY_TOOL_SCHEMA"),
     "knowledge_search": ("emily_core.tools.knowledge_search_tool", "_KNOWLEDGE_SEARCH_SCHEMA"),
     "meta_cognition_read": ("emily_core.tools.meta_cognition_tool", "_META_COG_SCHEMA"),
+    "write_user_memory": ("emily_core.tools.memory_tool", "_MEMORY_TOOL_SCHEMA"),
     "record_event": ("emily_core.tools.event_tool", "_EVENT_TOOL_SCHEMA"),
     "record_task": ("emily_core.tools.task_tool", "_TASK_TOOL_SCHEMA"),
     "record_meeting": ("emily_core.tools.meeting_tool", "_MEETING_TOOL_SCHEMA"),
@@ -139,11 +185,18 @@ TOOL_SCHEMA_MAP: dict[str, tuple[str, str]] = {
     "unlink_attachment": ("emily_core.tools.file_tool", "_UNLINK_ATTACHMENT_SCHEMA"),
     "list_attachments": ("emily_core.tools.file_tool", "_LIST_ATTACHMENTS_SCHEMA"),
     "update_file_purpose": ("emily_core.tools.file_tool", "_UPDATE_PURPOSE_SCHEMA"),
+    "update_file_confidentiality": ("emily_core.tools.file_tool", "_UPDATE_CONFIDENTIALITY_SCHEMA"),
+    "rag_remove_document": ("emily_core.tools.embed_tool", "_RAG_REMOVE_SCHEMA"),
     "create_task_node": ("emily_core.tools.node_task_tool", "_CREATE_TASK_NODE_SCHEMA"),
     "submit_node_deliverable": ("emily_core.tools.node_task_tool", "_SUBMIT_DELIVERABLE_SCHEMA"),
     "confirm_node_deliverable": ("emily_core.tools.node_task_tool", "_CONFIRM_DELIVERABLE_SCHEMA"),
     "return_node_deliverable": ("emily_core.tools.node_task_tool", "_RETURN_DELIVERABLE_SCHEMA"),
     "query_my_nodes": ("emily_core.tools.node_task_tool", "_QUERY_MY_NODES_SCHEMA"),
+    "manage_node_participant": ("emily_core.tools.node_tool", "_MANAGE_NODE_PARTICIPANT_SCHEMA"),
+    "manage_node_file": ("emily_core.tools.node_tool", "_MANAGE_NODE_FILE_SCHEMA"),
+    "update_user_level": ("emily_core.tools.personnel_tool", "_UPDATE_USER_LEVEL_SCHEMA"),
+    "update_user_company": ("emily_core.tools.personnel_tool", "_UPDATE_USER_COMPANY_SCHEMA"),
+    "manage_company": ("emily_core.tools.personnel_tool", "_MANAGE_COMPANY_SCHEMA"),
     "create_node": ("emily_core.tools.node_tool", "_CREATE_NODE_SCHEMA"),
     "query_node": ("emily_core.tools.node_tool", "_QUERY_NODE_SCHEMA"),
     "update_node_progress": ("emily_core.tools.node_tool", "_UPDATE_PROGRESS_SCHEMA"),
@@ -238,13 +291,12 @@ def _check_v14_schema_map_coverage(
     tool_schemas: dict[str, set[str] | None],
     issues: list[dict],
 ) -> None:
-    """V14: REGISTERED_TOOLS 中的工具（write_user_memory 除外）必须出现在 TOOL_SCHEMA_MAP。
+    """V14: REGISTERED_TOOLS 中的工具必须出现在 TOOL_SCHEMA_MAP。
 
     防止新增工具时忘记将 schema 映射加到 TOOL_SCHEMA_MAP 和 TOOL_META_MAP。
-    write_user_memory 的 schema 由 create_memory_tool() 动态生成，是唯一的例外。
     """
     for tool in sorted(REGISTERED_TOOLS):
-        if tool in TOOL_SCHEMA_MAP or tool == "write_user_memory":
+        if tool in TOOL_SCHEMA_MAP:
             continue
         issues.append({
             "severity": "error",
@@ -298,9 +350,8 @@ def check_all(check_tool_registry: bool = True) -> dict:
         or len(tool_schemas.get(tool) or set()) == 0
     ]
     for tool in empty_or_missing:
-        severity = "error" if tool != "write_user_memory" else "warning"
         issues.append({
-            "severity": severity, "check": "V5_empty_schema",
+            "severity": "error", "check": "V5_empty_schema",
             "tool": tool, "detail": (
                 f"工具 {tool} 缺少参数 schema —— LLM 规划时将看不到该工具的参数约束。"
                 f"请在源文件中定义 schema 常量并在注册时传入。"

@@ -142,6 +142,24 @@
                             <option value="0">公开</option>
                             <option value="2">机密</option>
                         </select>
+                        <label for="upload-purpose-select" class="muted">意图</label>
+                        <select id="upload-purpose-select">
+                            <option value="RECORD" selected>工作记录</option>
+                            <option value="EVIDENCE">凭证证据</option>
+                            <option value="DESIGN">设计图纸</option>
+                            <option value="REFERENCE">参考样例（入 RAG）</option>
+                        </select>
+                        <label for="upload-category-select" class="muted">分类</label>
+                        <select id="upload-category-select">
+                            <option value="OTHER" selected>其他文件</option>
+                            <option value="PROJECT_LICENSE">项目证照</option>
+                            <option value="CONTRACT">承包合同</option>
+                            <option value="WORK_RECORD">工作记录</option>
+                            <option value="PHASE_DELIVERABLE">阶段成果</option>
+                            <option value="PROCESS_DOC">过程文件</option>
+                            <option value="MANAGEMENT_SPEC">管理规程</option>
+                            <option value="PUBLICITY">外宣资料</option>
+                        </select>
                         <button type="button" id="upload-btn" class="btn">上传文件</button>
                         <span id="upload-status" class="upload-status"></span>
                     </div>
@@ -597,6 +615,71 @@
             </div>
             <!-- 点「接入渠道」名称后展示的渠道细节框架 -->
             <div id="channels-detail" class="detail-frame" hidden></div>
+        </section>
+
+        <!-- 人员管理（点左侧「人员管理」条目后显示）：台账 · 等级 · 归属 · 企业 · 记忆 · 提示词 -->
+        <section id="personnel-panel" class="upload-panel" hidden>
+            <div class="upload-panel-head">
+                <h2>人员管理</h2>
+                <code class="module-cmd"></code>
+                <button type="button" id="personnel-refresh-btn" class="btn">刷新</button>
+                <span id="personnel-status" class="upload-status"></span>
+            </div>
+
+            <div class="personnel-body">
+                <div class="personnel-main">
+                    <div class="personnel-table-head">
+                        <h3>人员台账</h3>
+                        <span id="personnel-count" class="resource-count"></span>
+                        <span id="personnel-truncated" class="upload-status" hidden>已截断（达到上限）</span>
+                    </div>
+                    <div class="node-table-body">
+                        <table class="node-table personnel-table">
+                            <thead>
+                                <tr>
+                                    <th>人员标识</th>
+                                    <th class="sortable" data-sort-key="username">姓名<span class="sort-ind"></span></th>
+                                    <th class="sortable" data-sort-key="company_name">所属企业<span class="sort-ind"></span></th>
+                                    <th class="sortable" data-sort-key="created_at">登记时间<span class="sort-ind"></span></th>
+                                    <th class="sortable" data-sort-key="creator_name">录入人<span class="sort-ind"></span></th>
+                                    <th>记忆</th>
+                                    <th>等级</th>
+                                    <th>归属调整</th>
+                                </tr>
+                            </thead>
+                            <tbody id="personnel-tbody"></tbody>
+                        </table>
+                        <div id="personnel-empty" class="resource-empty" hidden>暂无人员数据</div>
+                    </div>
+                </div>
+
+                <div class="personnel-companies">
+                    <div class="personnel-table-head">
+                        <h3>企业清单</h3>
+                        <span id="company-count" class="resource-count"></span>
+                    </div>
+                    <div id="company-list" class="company-list"></div>
+                    <div class="company-add">
+                        <input type="text" id="company-new-name" placeholder="新企业名称">
+                        <button type="button" id="company-add-btn" class="btn">新增企业</button>
+                    </div>
+                </div>
+            </div>
+
+            <!-- 长期记忆条目详情 -->
+            <div id="personnel-memory-detail" class="detail-frame" hidden></div>
+
+            <!-- 会话拉起提示词生成 -->
+            <div class="personnel-prompt">
+                <div class="personnel-table-head">
+                    <h3>会话拉起提示词</h3>
+                    <select id="personnel-prompt-user" class="panel-user-select" title="选择要生成提示词的人员"></select>
+                    <button type="button" id="personnel-prompt-btn" class="btn">生成</button>
+                    <span id="personnel-prompt-status" class="upload-status"></span>
+                </div>
+                <div class="result-meta" id="personnel-prompt-meta"></div>
+                <pre id="personnel-prompt-body" class="result-body">尚未生成。</pre>
+            </div>
         </section>
 
         <div id="empty-state" class="empty-state">

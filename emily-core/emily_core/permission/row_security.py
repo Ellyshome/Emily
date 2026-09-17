@@ -6,6 +6,15 @@
   - JOIN/UNION/子查询仅处理 leftmost 主表（安全范围）
   - 无法安全注入的复杂查询：fail-open + WARNING 日志
 
+⚠ **当前状态：拦截器实际不生效（2026-09-17 排查，缺口 G-13）**
+  白名单声明的 `events/tasks/files/messages.company_id` 四列在库中**并不存在**
+  （实际归属列为 `project_id` / `user_id` / `sender_user_id` / `related_company_ids`），
+  且 SQLAlchemy 2.0 的 `ORMExecuteState` 无 `select_statement` 属性 —— 注入必然抛错，
+  被 fail-open 分支吞掉。**行的可见性实际由服务层承担**（`VisibleFileSetResolver`、
+  `query_service` 的项目/参与关系过滤、能力层 fail-closed 门禁）。
+  本模块的注入逻辑按设计无法落地，需单独立项（决策项见缺口清单 G-13），
+  在此之前保持"不生效但可见"——启动时经 `_probe_filterable_columns()` 显式告警。
+
 实现要点（设计文档 §5.3.1）：
   - Thread-local 标记位 _skip_auth_injection 防重复注入
   - 可过滤表清单白名单声明
@@ -74,6 +83,30 @@ def _is_skip() -> bool:
 _auth_listener_registered = False
 
 
+def _probe_filterable_columns() -> list[str]:
+    """启动自检：白名单声明的归属列是否真实存在于对应表上。
+
+    Returns:
+        缺失的 "表.列" 描述列表（空列表 = 白名单与库结构一致，拦截器可生效）。
+    """
+    missing: list[str] = []
+    try:
+        from ..infrastructure.database.models import Event, File, Message, Task
+
+        for model in (Event, File, Message, Task):
+            table = getattr(model, "__table__", None)
+            if table is None:
+                continue
+            col_name = _FILTERABLE_TABLES.get(table.name)
+            if col_name is None:
+                continue
+            if col_name not in table.columns:
+                missing.append(f"{table.name}.{col_name}")
+    except Exception as e:  # noqa: BLE001 — 自检失败不阻断启动
+        logger.warning("row_security probe failed: %s", e)
+    return missing
+
+
 def register_row_security_listener() -> None:
     """注册 SQLAlchemy before_execute 行级安全拦截器。
 
@@ -84,6 +117,15 @@ def register_row_security_listener() -> None:
     if _auth_listener_registered:
         return
     _auth_listener_registered = True
+
+    missing = _probe_filterable_columns()
+    if missing:
+        logger.error(
+            "row_security 白名单列不存在，行级安全拦截器实际不生效（缺口 G-13）：%s —— "
+            "行可见性由服务层承担（VisibleFileSetResolver / query_service / 能力层门禁）；"
+            "如需真正的行级隔离，须先补归属列或改用 project_id/user_id 推导并单独立项",
+            ", ".join(missing),
+        )
 
     @event.listens_for(Session, "do_orm_execute")
     def _inject_company_filter(orm_execute_state):
@@ -156,6 +198,10 @@ def _try_inject_orm_filter(orm_execute_state, allowed_ids: list[str]):
 
     通过修改 orm_execute_state.session 对应查询的 WHERE 条件实现。
     仅对白名单中的表注入。
+
+    ⚠ 见模块头说明：SQLAlchemy 2.0 的 ORMExecuteState 无 select_statement 属性，
+    且白名单列在库中不存在 —— 本函数当前必然抛错并由调用方 fail-open 兜住。
+    保留原实现以待 G-13 立项后重写（改为以 project_id / user_id 推导归属）。
     """
     from sqlalchemy import and_
 

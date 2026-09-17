@@ -214,6 +214,57 @@ class UserMemoryService:
 
         return "用户长期工作要求：\n" + "\n".join(entries)
 
+    def list_entries(self, user_name: str) -> dict:
+        """按用户名返回长期记忆条目列表（只读，与注入同源）。
+
+        复用 load_memory() 读出的原文，按 `## ` 前缀界定条目，与
+        load_memory_context() 同一取值来源；单条格式异常时跳过该条，
+        不中断整体（PRD 风险 5）。
+
+        Returns:
+            {
+                "enabled": bool,   # 服务是否启用
+                "count": int,      # 成功解析的条目数
+                "entries": [{"time": str, "title": str, "content": str}, ...],
+            }
+        """
+        if not self.enabled or not user_name:
+            return {"enabled": bool(self.enabled), "count": 0, "entries": []}
+
+        full = self.load_memory(user_name)
+        if not full:
+            return {"enabled": True, "count": 0, "entries": []}
+
+        entries: list[dict] = []
+        current_title = ""
+        current_content: list[str] = []
+
+        def _flush() -> None:
+            if not current_title:
+                return
+            title = current_title.strip()
+            time_part = ""
+            if title.startswith("[") and "] " in title:
+                time_part, title = title.split("] ", 1)
+                time_part = time_part[1:].strip()
+            entries.append({
+                "time": time_part,
+                "title": title,
+                "content": "\n".join(current_content).strip(),
+            })
+
+        for line in full.split("\n"):
+            if line.startswith("## "):
+                _flush()
+                current_title = line[3:].strip()
+                current_content = []
+            elif current_title and line.strip():
+                current_content.append(line.strip())
+
+        _flush()
+
+        return {"enabled": True, "count": len(entries), "entries": entries}
+
     def _trim_if_needed(self, filepath: str) -> None:
         """如果条目数超过 max_entries，裁剪最旧的条目。"""
         try:

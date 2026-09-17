@@ -12,11 +12,12 @@
 | 项目 | 内容 |
 | --- | --- |
 | 业务流编号 | SOP-004-FILE |
-| 版本 | v1.2 |
+| 版本 | v1.5 |
 | 权限控制 | `all` |
+| 准入判定 | **以 DB `sop_business_flows.min_level` 为准**（本 SOP 当前为 L2 参建执行及以上）；上行的角色描述仅为业务可读说明，不作为准入依据 |
 | 参与编辑人 | admin |
 | 最后编辑人 | admin |
-| 最后编辑时间 | 2026-09-16 |
+| 最后编辑时间 | 2026-09-17 |
 | 关联系统模块 | emily_core → FileApplication / record_file Tool |
 
 ---
@@ -68,6 +69,16 @@
 | `query_files` | 文件查询 | 查看已有文件避免重复 |
 | `query_my_nodes` | 查询本人负责 / 参与的全景节点 | 确定文件归属节点时使用 |
 | `delete_file` | 软删除文件（**高危：仅经本 SOP + 人工确认执行**） | 用户明确要求删除/作废某份文件时；授权口径见 §3.6 |
+| `update_file_confidentiality` | 调整文件密级（0 公开 / 1 内部 / 2 机密） | 用户要求提高/降低某份文件的密级时；授权口径见 §3.6 |
+| `rag_remove_document` | 知识库出库（删除该文档全部向量分块） | 用户要求把某份文件从知识库撤下、检索不再命中时；**仅 L5/L6**，授权口径见 §3.6 |
+| `manage_node_file` | 维护节点共享文件关联（挂上/解除） | 用户要求把某份文件挂到某节点作为共享文件（或解除）时；授权口径见 §3.6 |
+| `update_file_category` | 修改文件分类归属 | 归档时判错分类、或用户要求改分类时 |
+| `update_file_purpose` | 校正文件业务意图（RECORD / REFERENCE 等） | 用户指出「这份不是参考文件 / 是参考文件」时 |
+| `new_file_version` | 创建文件新版本 | 同一文件有新版本待归档时 |
+| `link_file` | 关联文件到业务对象（事件/任务/节点等） | 文件需挂到某业务对象上时 |
+| `link_to_master` | 挂载附件到主文件 | 附件应归入某主文件时 |
+| `unlink_attachment` | 卸载附件为独立文件 | 附件需独立成文时 |
+| `embed_and_index` | 文本分块入知识库（pgvector） | REFERENCE 类文件解析后的入库环（多为自动触发，手工补入时用） |
 
 ### 3.3 处理流程
 
@@ -120,18 +131,23 @@
 - 归属节点必须与文件所属项目一致，跨项目节点不得采用
 - 用户明确说不知道时不要反复追问
 
-### 3.6 权限映射（删除类高危操作）
+### 3.6 权限映射（高危写操作）
 
-> 口径来源：`emily-core/emily_core/tools/file_tool.py`（`handle_delete_file`）+ 缺口清单决策 D2。
+> 口径来源：`emily-core/emily_core/tools/file_tool.py`（`handle_delete_file` / `handle_update_file_confidentiality`）+ `emily-core/emily_core/tools/embed_tool.py`（`handle_rag_remove_document`）+ 缺口清单决策 D1/D2。
 
 | 操作 | 工具 | 授权口径 |
 |------|------|----------|
 | 文件归档（新增） | `record_file` | 本 SOP 准入级别（L2 参建执行及以上） |
 | **文件软删除** | `delete_file` | **仅「上传人本人」或「L5/L6 管理员」**；其余一律拒绝。该工具 `write_mode=delete`，**不进 LLM 自由工具集**，只能经本 SOP 在人工二次确认后执行 |
+| **文件密级调整** | `update_file_confidentiality` | **仅「上传人本人」或「L5/L6 管理员」**；值域 0=公开 / 1=内部 / 2=机密。该工具 `write_mode=overwrite`，**不进 LLM 自由工具集**，经本 SOP 人工确认后执行；**降级（改小密级）同样留痕**，调整后可见范围即时重算 |
+| **知识库出库** | `rag_remove_document` | **仅 L5/L6 管理员**（handler 内判定，无操作人或取不到等级一律拒绝）；该工具 `write_mode=delete`，**不进 LLM 自由工具集**；删除后同一检索不再命中 |
+| **节点共享文件关联** | `manage_node_file` | **新增**＝节点责任人 / L5+ / 节点参与单位人员；**移除**＝仅 L5+（服务层 `node_service._check_node_file_permission` 判定，fail-closed）；`write_mode=overwrite`，不进 LLM 自由工具集；挂上后该节点参与单位可见此文件 |
+| **文件维护（分类 / 意图 / 版本 / 关联 / 附件链 / 入库）** | `update_file_category`、`update_file_purpose`、`new_file_version`、`link_file`、`link_to_master`、`unlink_attachment`、`embed_and_index` | 本 SOP 准入级别（L2 参建执行及以上）；工具层 `permission_flag=write`（L3+），经本 SOP §3.2 声明放行；`write_mode` 为 append/overwrite，**不进 LLM 自由工具集**，只经匹配 SOP 执行 |
 
 注意事项：
 
 - 软删除为可追溯删除（`is_deleted=true`），当前**无恢复入口**（恢复属"纠错补救类"，本期不做，见缺口清单 D7）
+- 知识库出库只删向量分块，**不删文件记录与物理文件**；如需一并作废文件，须另行发起软删除
 - 越权尝试不写库，但会返回明确拒绝话术，便于用户改走"联系上传人或管理员"
 
 ---
@@ -191,3 +207,6 @@
 | v1.0 | 2026-06-14 | 系统管理员 | 初版发布 |
 | v1.1 | 2026-07-09 | 文档管理 | 增加 file_category 字段与分类决策规则 |
 | v1.2 | 2026-09-16 | 系统管理员 | 新增[节点归属确认]步骤与 §3.5 节点归属规则：归档时确定归属节点并绑定到节点可见范围 |
+| v1.3 | 2026-09-17 | 系统管理员 | 声明 `delete_file`（缺口 G-8/D2）；§3.6 改为「高危写操作」并补密级调整 `update_file_confidentiality`（G-4/D1）与知识库出库 `rag_remove_document`（G-5）的授权口径 |
+| v1.4 | 2026-09-17 | 系统管理员 | 声明 `manage_node_file`（缺口 G-7）：节点共享文件关联的 IM 入口，授权走服务层 `_check_node_file_permission` |
+| v1.5 | 2026-09-17 | 系统管理员 | 补标文件维护类写工具的写语义（缺口 G-9）并在 §3.2/§3.6 声明：`update_file_category` / `update_file_purpose` / `new_file_version` / `link_file` / `link_to_master` / `unlink_attachment` / `embed_and_index`（标注后退出 LLM 自由工具集，只经匹配 SOP 执行） |
