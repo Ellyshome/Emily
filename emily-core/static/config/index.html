@@ -1,0 +1,58 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>emy-config · Emily 配置中心</title>
+    <link rel="stylesheet" href="/config/config.css">
+</head>
+<body>
+<header class="topbar">
+    <div class="brand">emy-config · Emily 配置中心</div>
+    <div class="badges" id="badges"><span class="badge">加载中…</span></div>
+    <div class="topbar-right">
+        <input type="search" id="filter" placeholder="筛选配置项 / 环境变量 / 说明…" autocomplete="off">
+        <a class="crosslink" id="crosslink-console" href="/console/" target="_blank" rel="noopener">emy-console ↗</a>
+    </div>
+</header>
+<div class="layout">
+    <aside class="sidebar">
+        <nav id="nav" class="nav" aria-label="配置视图导航">
+            <div class="hint">加载中…</div>
+        </nav>
+        <div class="sidebar-foot" id="generated-at"></div>
+    </aside>
+    <main class="main" id="main">
+        <div class="hint">正在加载配置清单…</div>
+    </main>
+</div>
+
+<!-- 底部草稿条：草稿仅在页面内存；保存后写入宿主机 .env -->
+<div class="draftbar" id="draftbar" hidden>
+    <span class="draft-count" id="draft-count">草稿 0 项</span>
+    <span class="draft-note">保存写入宿主机 .env，需重建容器才生效</span>
+    <button type="button" class="btn btn-primary" id="draft-save">保存到 .env</button>
+    <button type="button" class="btn" id="draft-export">生成片段</button>
+    <button type="button" class="btn" id="draft-clear">清空草稿</button>
+</div>
+
+<!-- 通用弹窗（导出片段 / 文件内容） -->
+<div class="modal-mask" id="modal" hidden>
+    <div class="modal" role="dialog" aria-modal="true" aria-labelledby="modal-title">
+        <div class="modal-head">
+            <h2 id="modal-title">标题</h2>
+            <div class="modal-actions">
+                <button type="button" class="btn" id="modal-copy">复制</button>
+                <button type="button" class="btn" id="modal-close">关闭</button>
+            </div>
+        </div>
+        <div class="modal-body">
+            <p class="modal-note" id="modal-note"></p>
+            <pre class="modal-pre" id="modal-pre"></pre>
+        </div>
+    </div>
+</div>
+
+<script src="/config/config.js"></script>
+</body>
+</html>

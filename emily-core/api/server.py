@@ -124,3 +124,14 @@ if _console_static.exists():
 from .routes import groups  # noqa: E402
 
 app.include_router(groups.router, prefix="/api/v1")
+
+# emy-config — 配置中心（只读清单 API + 独立前端页面）
+from .routes import config as config_routes  # noqa: E402
+
+app.include_router(config_routes.router, prefix="/api/v1")
+
+# emy-config 静态文件（挂 /config 前缀，已加入 AuthMiddleware 白名单）
+_config_static = Path(__file__).resolve().parent.parent / "static" / "config"
+if _config_static.exists():
+    from fastapi.staticfiles import StaticFiles
+    app.mount("/config", StaticFiles(directory=str(_config_static), html=True), name="config")
