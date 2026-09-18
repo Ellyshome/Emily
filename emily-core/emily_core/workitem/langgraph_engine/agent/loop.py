@@ -61,6 +61,10 @@ def _inject_runtime_params(tool_params: dict, ctx) -> dict:
             first = raw[0] if isinstance(raw[0], dict) else {}
             p["_attachment_url"] = first.get("url", "")
             p["_attachment_type"] = first.get("type", 0)
+    # 数据边界（项目范围 + 表级权限）：会话侧唯一出口，工具层（query_data 等）据此过滤
+    session_ctx = ctx.get_session_context()
+    if session_ctx is not None:
+        p["_session_scope"] = session_ctx.build_tool_scope()
     return p
 
 

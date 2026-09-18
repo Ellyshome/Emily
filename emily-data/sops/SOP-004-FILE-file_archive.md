@@ -142,7 +142,7 @@
 | **文件密级调整** | `update_file_confidentiality` | **仅「上传人本人」或「L5/L6 管理员」**；值域 0=公开 / 1=内部 / 2=机密。该工具 `write_mode=overwrite`，**不进 LLM 自由工具集**，经本 SOP 人工确认后执行；**降级（改小密级）同样留痕**，调整后可见范围即时重算 |
 | **知识库出库** | `rag_remove_document` | **仅 L5/L6 管理员**（handler 内判定，无操作人或取不到等级一律拒绝）；该工具 `write_mode=delete`，**不进 LLM 自由工具集**；删除后同一检索不再命中 |
 | **节点共享文件关联** | `manage_node_file` | **新增**＝节点责任人 / L5+ / 节点参与单位人员；**移除**＝仅 L5+（服务层 `node_service._check_node_file_permission` 判定，fail-closed）；`write_mode=overwrite`，不进 LLM 自由工具集；挂上后该节点参与单位可见此文件 |
-| **文件维护（分类 / 意图 / 版本 / 关联 / 附件链 / 入库）** | `update_file_category`、`update_file_purpose`、`new_file_version`、`link_file`、`link_to_master`、`unlink_attachment`、`embed_and_index` | 本 SOP 准入级别（L2 参建执行及以上）；工具层 `permission_flag=write`（L3+），经本 SOP §3.2 声明放行；`write_mode` 为 append/overwrite，**不进 LLM 自由工具集**，只经匹配 SOP 执行 |
+| **文件维护（分类 / 意图 / 版本 / 关联 / 附件链 / 入库）** | `update_file_category`、`update_file_purpose`、`new_file_version`、`link_file`、`link_to_master`、`unlink_attachment`、`embed_and_index` | 可见性 L3+（工具层 `permission_flag=write`，经本 SOP §3.2 声明放行）；**调用方须 L3+**——handler 内等级门禁（`file_tool.check_min_level` / `FILE_MAINTENANCE_MIN_LEVEL=3`，无操作人或取不到等级一律拒绝，fail-closed，Q10）：**L2 参建执行仅可上传（`record_file`），不得维护文件元数据**；`write_mode` 为 append/overwrite，**不进 LLM 自由工具集**，只经匹配 SOP 执行 |
 
 注意事项：
 
@@ -210,3 +210,4 @@
 | v1.3 | 2026-09-17 | 系统管理员 | 声明 `delete_file`（缺口 G-8/D2）；§3.6 改为「高危写操作」并补密级调整 `update_file_confidentiality`（G-4/D1）与知识库出库 `rag_remove_document`（G-5）的授权口径 |
 | v1.4 | 2026-09-17 | 系统管理员 | 声明 `manage_node_file`（缺口 G-7）：节点共享文件关联的 IM 入口，授权走服务层 `_check_node_file_permission` |
 | v1.5 | 2026-09-17 | 系统管理员 | 补标文件维护类写工具的写语义（缺口 G-9）并在 §3.2/§3.6 声明：`update_file_category` / `update_file_purpose` / `new_file_version` / `link_file` / `link_to_master` / `unlink_attachment` / `embed_and_index`（标注后退出 LLM 自由工具集，只经匹配 SOP 执行） |
+| v1.6 | 2026-09-18 | 系统管理员 | §3.6 文件维护类补「调用方须 L3+」的 handler 内等级门禁（决策 Q10）：L2 参建执行仅可上传，不得维护文件元数据；覆盖分类 / 意图 / 版本 / 关联 / 附件链 / 入库 7 个工具 |

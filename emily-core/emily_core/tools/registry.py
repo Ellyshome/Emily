@@ -401,15 +401,17 @@ def _register_business(core, reg):
                       category="business", permission_flag="all"))
     _buc += 1
 
-    # embed_and_index
+    # embed_and_index —— 无条件注册（2026-09-18）：原实现仅在 TEI 客户端与分块仓储都就绪时
+    # 才注册，导致「SOP-004 已声明 + tool_registry 有行」但内存无此工具（一致性检查 V13b），
+    # 且 TEI 不可用的环境下该能力静默消失。改为始终注册，就绪性判断下沉到 handler
+    # （tei/repo 缺失 → service_unavailable，fail-closed）。
+    from .embed_tool import handle_embed_and_index, _EMBED_SCHEMA as _ES, _EMBED_DESCRIPTION as _ED
     tei = getattr(core, "_tei_client", None)
     kc_repo = getattr(core, "_knowledge_chunk_repo", None)
-    if tei is not None and kc_repo is not None:
-        from .embed_tool import handle_embed_and_index, _EMBED_SCHEMA as _ES, _EMBED_DESCRIPTION as _ED
-        reg.register(_tool("embed_and_index", _ED, _ES,
-                          partial(handle_embed_and_index, tei=tei, repo=kc_repo),
-                          category="business", permission_flag="write", write_mode="append"))
-        _buc += 1
+    reg.register(_tool("embed_and_index", _ED, _ES,
+                      partial(handle_embed_and_index, tei=tei, repo=kc_repo),
+                      category="business", permission_flag="write", write_mode="append"))
+    _buc += 1
 
     # rag_remove_document（缺口 G-5：IM 侧出库入口）—— 授权在 handler（仅 L5/L6，fail-closed），
     # write_mode=delete → 不进 LLM 自由工具集；console /rag-delete 改调本 handler（同源）。
@@ -427,19 +429,21 @@ def _register_business(core, reg):
                          write_mode="delete")
 
     # 人员管理写能力（等级调整 / 归属调整 / 企业增删）—— 授权判定在 PersonnelService
-    # 服务层（fail-closed），工具层仅作 admin 粗闸；manage_company 含删除，标 delete 高危。
+    # 服务层（fail-closed，按操作人实际等级），工具层为 write（L3+）粗筛（Q11 选项 a：
+    # 工具准入不得低于该能力实际可操作的最低等级 L3）；承载 SOP-012-SYS（准入 L3）。
+    # manage_company 含删除，标 delete 高危。
     _buc += _reg_biz(reg, "update_user_level", "调整人员权限等级",
                      _h("personnel_tool", "handle_update_user_level"),
                      params=_UPDATE_USER_LEVEL_SCHEMA, category="business",
-                     permission_flag="admin", write_mode="transition")
+                     permission_flag="write", write_mode="transition")
     _buc += _reg_biz(reg, "update_user_company", "调整人员所属企业",
                      _h("personnel_tool", "handle_update_user_company"),
                      params=_UPDATE_USER_COMPANY_SCHEMA, category="business",
-                     permission_flag="admin", write_mode="transition")
+                     permission_flag="write", write_mode="transition")
     _buc += _reg_biz(reg, "manage_company", "新增或删除企业",
                      _h("personnel_tool", "handle_manage_company"),
                      params=_MANAGE_COMPANY_SCHEMA, category="business",
-                     permission_flag="admin", write_mode="delete")
+                     permission_flag="write", write_mode="delete")
 
 
 def _reg_biz(reg, name, desc, handler, params=None,

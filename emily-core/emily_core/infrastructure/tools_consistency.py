@@ -47,6 +47,7 @@ REGISTERED_TOOLS: set[str] = {
     "link_file", "new_file_version", "delete_file", "list_file_versions",
     "link_to_master", "unlink_attachment", "list_attachments",
     "update_file_purpose", "update_file_confidentiality", "rag_remove_document",
+    "embed_and_index",
     "create_task_node", "submit_node_deliverable", "confirm_node_deliverable",
     "return_node_deliverable", "query_my_nodes",
     "manage_node_file",
@@ -90,6 +91,8 @@ TOOL_META_MAP: dict[str, tuple[str, str, str, str]] = {
     "unlink_attachment":  ("卸载附件为独立文件", "business", "write", "sop_only"),
     "update_file_purpose": ("校正文件的业务意图", "business", "write", "sop_only"),
     "update_file_confidentiality": ("调整文件密级", "business", "write", "sop_only"),
+    # 入库：无条件注册（就绪性判断在 handler，TEI/仓储缺失 → service_unavailable）
+    "embed_and_index":    ("知识库入库（embedding + 入 pgvector）", "business", "write", "sop_only"),
     # 出库为破坏性操作：permission_flag=admin（L5+），exposure_mode=sop_only
     "rag_remove_document": ("知识库出库（删向量分块）", "business", "admin", "sop_only"),
     # 缺口 G-10：与承载 SOP（SOP-011 准入 L5+）同口径（原 write=L3+ 会让 L3/L4 看得到工具却进不了 SOP）
@@ -103,10 +106,10 @@ TOOL_META_MAP: dict[str, tuple[str, str, str, str]] = {
     "query_my_nodes":          ("查询我负责的节点","business", "write", "sop_only"),
     # 节点共享文件：新增按「责任人 / L5+ / 参与单位人员」服务层判定，移除仅 L5+
     "manage_node_file":        ("维护节点共享文件", "business", "write", "sop_only"),
-    # 人员管理写能力：授权判定在 PersonnelService 服务层，工具层 admin 粗闸
-    "update_user_level":       ("调整人员权限等级", "business", "admin", "sop_only"),
-    "update_user_company":     ("调整人员所属企业", "business", "admin", "sop_only"),
-    "manage_company":          ("新增或删除企业",   "business", "admin", "sop_only"),
+    # 人员管理写能力：授权判定在 PersonnelService 服务层，工具层 write（L3+）粗筛（Q11 选项 a）
+    "update_user_level":       ("调整人员权限等级", "business", "write", "sop_only"),
+    "update_user_company":     ("调整人员所属企业", "business", "write", "sop_only"),
+    "manage_company":          ("新增或删除企业",   "business", "write", "sop_only"),
     # project — permission_flag=admin → exposure_mode=sop_only
     "create_node":           ("创建全景节点",   "project", "admin", "sop_only"),
     "query_node":            ("查询全景节点",   "project", "admin", "sop_only"),
@@ -187,6 +190,7 @@ TOOL_SCHEMA_MAP: dict[str, tuple[str, str]] = {
     "update_file_purpose": ("emily_core.tools.file_tool", "_UPDATE_PURPOSE_SCHEMA"),
     "update_file_confidentiality": ("emily_core.tools.file_tool", "_UPDATE_CONFIDENTIALITY_SCHEMA"),
     "rag_remove_document": ("emily_core.tools.embed_tool", "_RAG_REMOVE_SCHEMA"),
+    "embed_and_index": ("emily_core.tools.embed_tool", "_EMBED_SCHEMA"),
     "create_task_node": ("emily_core.tools.node_task_tool", "_CREATE_TASK_NODE_SCHEMA"),
     "submit_node_deliverable": ("emily_core.tools.node_task_tool", "_SUBMIT_DELIVERABLE_SCHEMA"),
     "confirm_node_deliverable": ("emily_core.tools.node_task_tool", "_CONFIRM_DELIVERABLE_SCHEMA"),

@@ -245,6 +245,8 @@ class SessionLoop:
         p["_user_id"] = (self._last_actor or {}).get("user_id") or self.context.user_id
         p["_message_id"] = db_message_id
         p["_conversation_id"] = self.conversation_id
+        # 数据边界（项目范围 + 表级权限）：取当前操作者快照，缺省回落会话权限字段
+        p["_session_scope"] = self.context.build_tool_scope(self._last_actor)
         return p
 
     # ══════════════════════════════════════════════════════════════════════

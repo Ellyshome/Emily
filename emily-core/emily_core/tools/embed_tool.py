@@ -43,6 +43,7 @@ async def handle_embed_and_index(
     params: dict,
     tei: "EmbeddingClient",
     repo: "KnowledgeChunkRepo",
+    user_id: str = "",
 ) -> dict:
     """M14 handler：embedding + 入 pgvector（委托 KnowledgeService）。
 
@@ -50,9 +51,21 @@ async def handle_embed_and_index(
         params: {chunks[{text, index?}], doc_metadata?}
         tei: EmbeddingClient 实例（本地 TEI / 远程 API / auto 组合）。
         repo: KnowledgeChunkRepo 实例。
+        user_id: 操作人（等级门禁用；取不到即拒绝 —— Q10：L2 不得维护文件元数据/入库）。
     Returns:
         {success, indexed_ids[], count, doc_id, elapsed_ms}
     """
+    from .file_tool import FILE_MAINTENANCE_MIN_LEVEL, check_min_level
+
+    denied = check_min_level(user_id or params.get("_user_id", ""),
+                             FILE_MAINTENANCE_MIN_LEVEL, "知识库入库")
+    if denied:
+        return denied
+
+    if tei is None or repo is None:
+        return {"success": False, "reply": "知识库服务未就绪（embedding 后端或分块仓储不可用）",
+                "error_code": "service_unavailable"}
+
     from ..services.knowledge_service import KnowledgeService
 
     return await KnowledgeService(tei=tei, repo=repo).index_chunks(

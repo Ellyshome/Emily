@@ -499,6 +499,24 @@ class SessionContext:
         from ..permission.level import can_access
         return can_access(self.level, required_level)
 
+    def build_tool_scope(self, actor: dict | None = None) -> dict:
+        """构建注入业务工具的数据边界（工具参数 `_session_scope`）。
+
+        工具层（`query_data` 等）据此按「项目范围 + 表级权限」收敛结果：
+        `project_ids` → 只查参与项目；`db_perms` → 表级读写门禁。
+
+        多主体会话优先取当前操作者快照（`actor`），缺省回落到本会话权限字段；
+        部门维度已移除，不携带。
+        """
+        a = actor or {}
+        return {
+            "project_ids": list(a.get("project_ids") or self.project_ids or []),
+            "db_perms": dict(a.get("db_perms") or self.db_perms or {}),
+            "info_level": a.get("info_level") or self.info_level,
+            "company_type": a.get("company_type") or self.company_type,
+            "level": a.get("level") if a.get("level") is not None else self.level,
+        }
+
 
     # ══════════════════════════════════════════════════════════════════════════
     #  操作台方法
