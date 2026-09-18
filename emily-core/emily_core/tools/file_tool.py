@@ -16,6 +16,45 @@ from ..application.file_app import FileApplication
 logger = logging.getLogger("emily.tool.file")
 
 # ══════════════════════════════════════════════════════════════════════════════
+# 文件维护类写操作的最低等级门禁（Q10：L2 参建执行不得维护文件元数据）
+# 覆盖：分类 / 意图 / 版本 / 关联 / 附件链 / RAG 入库
+# ══════════════════════════════════════════════════════════════════════════════
+
+FILE_MAINTENANCE_MIN_LEVEL = 3
+
+
+def resolve_operator_level(user_id: str) -> int:
+    """解析操作人权限等级；无操作人或取不到一律返回 0（判定侧即 fail-closed）。"""
+    if not user_id:
+        return 0
+    try:
+        from ..repositories.permission_repo import PermissionRepository
+
+        operator = PermissionRepository.get_user(user_id)
+        return getattr(operator, "level", 0) or 0
+    except Exception as e:  # noqa: BLE001
+        logger.warning("resolve_operator_level failed user=%s: %s", user_id, e)
+        return 0
+
+
+def check_min_level(user_id: str, min_level: int, action_label: str) -> dict | None:
+    """最低等级门禁（fail-closed）。
+
+    Returns:
+        None = 放行；dict = 拒绝应答。
+    """
+    if resolve_operator_level(user_id) >= min_level:
+        return None
+    from ..permission.level import level_label
+
+    return {
+        "success": False,
+        "reply": f"「{action_label}」需要{level_label(min_level)}及以上权限",
+        "error_code": "permission_denied",
+    }
+
+
+# ══════════════════════════════════════════════════════════════════════════════
 # M14: 业务流工具 handler — record_file（框架直接调用）
 # ══════════════════════════════════════════════════════════════════════════════
 
@@ -378,6 +417,9 @@ async def handle_update_file_category(
     **kwargs,
 ) -> dict:
     """处理文件分类修改。"""
+    denied = check_min_level(user_id, FILE_MAINTENANCE_MIN_LEVEL, "修改文件分类")
+    if denied:
+        return denied
     file_no = params.get("file_no", "")
     file_category = params.get("file_category", "OTHER")
 
@@ -520,6 +562,9 @@ async def handle_link_file(
     **kwargs,
 ) -> dict:
     """关联文件到业务对象。"""
+    denied = check_min_level(user_id, FILE_MAINTENANCE_MIN_LEVEL, "关联文件到业务对象")
+    if denied:
+        return denied
     file_no = params.get("file_no", "")
     module_id = params.get("module_id", "")
     module_type = params.get("module_type", "")
@@ -593,6 +638,9 @@ async def handle_new_file_version(
     **kwargs,
 ) -> dict:
     """创建文件新版本。"""
+    denied = check_min_level(user_id, FILE_MAINTENANCE_MIN_LEVEL, "创建文件新版本")
+    if denied:
+        return denied
     parent_file_no = params.get("parent_file_no", "")
     version_label = params.get("version_label", "")
     new_filename = params.get("new_filename", "")
@@ -678,14 +726,7 @@ async def handle_delete_file(
         return {"success": False, "reply": "您无权访问该文件", "error_code": "permission_denied"}
 
     # 删除授权（口径 D2：仅上传人本人或 L5/L6，与密级调整一致；无操作人信息 fail-closed）
-    operator_level = 0
-    if user_id:
-        try:
-            from emily_core.repositories.permission_repo import PermissionRepository
-            operator = PermissionRepository.get_user(user_id)
-            operator_level = getattr(operator, "level", 0) or 0
-        except Exception:
-            operator_level = 0
+    operator_level = resolve_operator_level(user_id)
     is_uploader = bool(user_id) and (file_record.uploaded_by == user_id)
     is_admin = operator_level >= 5
     if not (is_uploader or is_admin):
@@ -876,6 +917,9 @@ async def handle_link_to_master(
     **kwargs,
 ) -> dict:
     """挂载附件到主文件。"""
+    denied = check_min_level(user_id, FILE_MAINTENANCE_MIN_LEVEL, "挂载附件到主文件")
+    if denied:
+        return denied
     file_no = params.get("file_no", "")
     master_no = params.get("master_file_no", "")
 
@@ -935,6 +979,9 @@ async def handle_unlink_attachment(
     **kwargs,
 ) -> dict:
     """卸载附件为独立文件。"""
+    denied = check_min_level(user_id, FILE_MAINTENANCE_MIN_LEVEL, "卸载附件")
+    if denied:
+        return denied
     file_no = params.get("file_no", "")
 
     if not file_no:
@@ -1064,6 +1111,9 @@ async def handle_update_file_purpose(
     **kwargs,
 ) -> dict:
     """校正文件的 purpose。"""
+    denied = check_min_level(user_id, FILE_MAINTENANCE_MIN_LEVEL, "校正文件业务意图")
+    if denied:
+        return denied
     file_no = params.get("file_no", "")
     purpose = params.get("purpose", "RECORD")
 

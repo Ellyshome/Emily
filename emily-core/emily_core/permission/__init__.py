@@ -4,7 +4,7 @@
   - level.py: PermissionLevel 枚举 + INHERITANCE_CHAIN 树形继承 + can_access()
   - code_compiler.py: PermissionCodeCompiler 权限编码解析/匹配
   - auth_engine.py: PermissionAuthEngine 三维树形鉴权
-  - row_security.py: SQLAlchemy before_execute 行级安全拦截器 + PermissionAuditLogRepository
+  - row_security.py: PermissionAuditLogRepository 权限审计日志（行级安全拦截器已于 2026-09-18 按决策 Q9 删除）
   - cache.py: PermissionCache 两级缓存（L1 矩阵 + L2 用户白名单）
 
 实施计划见 需求文件/权限管理系统/权限管理系统-实施计划.md
@@ -36,11 +36,6 @@ from .cache import (
 )
 from .row_security import (
     PermissionAuditLogRepository,
-    get_current_permission_snapshot,
-    register_row_security_listener,
-    restore_auth_injection,
-    set_current_permission_snapshot,
-    skip_auth_injection,
 )
 
 __all__ = [
@@ -65,11 +60,6 @@ __all__ = [
     # cache
     "PermissionCache",
     "PermissionMatrix",
-    # row_security
+    # row_security（仅审计日志；行级安全拦截器已删除）
     "PermissionAuditLogRepository",
-    "set_current_permission_snapshot",
-    "get_current_permission_snapshot",
-    "skip_auth_injection",
-    "restore_auth_injection",
-    "register_row_security_listener",
 ]

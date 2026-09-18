@@ -16,6 +16,7 @@
 --   SOP-001/002/003/004/007（会议/事件/任务/文件/长期记忆）→ L2 参建执行及以上
 --   SOP-005-QRY（信息查询）                                → L1 访客及以上
 --   SOP-000/008/011（SYS 系统类）                          → L5 管理员及以上
+--   SOP-012-SYS（人员与企业维护，2026-09-18 新增）          → L3 参建管理及以上
 --   SOP-999-SYS（通用兜底）                                → is_public，全员可用
 --
 -- Precondition: 006 must be run first (sop_business_flows 已播种)
@@ -32,6 +33,10 @@ UPDATE sop_business_flows SET min_level = 1
 
 UPDATE sop_business_flows SET min_level = 5
  WHERE sop_id IN ('SOP-000-SYS', 'SOP-008-SYS', 'SOP-011-SYS');
+
+-- 人员与企业维护：L3 参建管理及以上（实际分级由服务层 PersonnelService 判定）
+UPDATE sop_business_flows SET min_level = 3
+ WHERE sop_id = 'SOP-012-SYS';
 
 -- 通用兜底对全员开放（含访客），与 SOP-999-SYS 的定位一致
 UPDATE sop_business_flows SET is_public = TRUE

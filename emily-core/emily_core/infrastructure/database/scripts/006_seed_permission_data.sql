@@ -257,6 +257,21 @@ SELECT uuid_generate_v4()::text,
     u.id, NOW()::text, NOW()::text
 FROM _su u, permission_groups pg WHERE u.username = '王建国' AND pg.code = 'OWNER-EXEC' LIMIT 1;
 
+-- SOP-012（人员与企业维护，2026-09-18 新增）：承载 Q11 选项 a 的三个人事工具
+-- 注意：min_level 直接写入，不留 NULL 窗口（NULL 会被白名单计算跳过级别检查、无条件放行，见 008 头注）
+INSERT INTO sop_business_flows (id, sop_id, sop_file_name, display_name, description,
+    sop_type, category, security_level, required_node_ids, default_permission_group_id,
+    min_level, is_public, require_company_match, version, is_active, creator_id, created_at, updated_at)
+SELECT uuid_generate_v4()::text,
+    'SOP-012-SYS', 'SOP-012-SYS-personnel_org.md', '人员与企业维护',
+    '人员权限等级调整、企业归属调整、企业档案增删（授权由服务层 PersonnelService 按操作人等级判定）',
+    'SYS', '系统管理',
+    'PRIVATE', '[]', pg.id,
+    3, false, false,
+    'V1.0', true,
+    u.id, NOW()::text, NOW()::text
+FROM _su u, permission_groups pg WHERE u.username = '王建国' AND pg.code = 'OWNER-EXEC' LIMIT 1;
+
 INSERT INTO sop_business_flows (id, sop_id, sop_file_name, display_name, description,
     sop_type, category, security_level, required_node_ids, default_permission_group_id,
     version, is_active, creator_id, created_at, updated_at)

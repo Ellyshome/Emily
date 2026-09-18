@@ -683,7 +683,6 @@ class EmilyCore:
             from .permission.auth_engine import PermissionAuthEngine
             from .permission.row_security import (
                 PermissionAuditLogRepository,
-                register_row_security_listener,
             )
             from .application.permission_app import PermissionApplication
 
@@ -726,14 +725,8 @@ class EmilyCore:
             except Exception as e:
                 logger.debug("permission route registration skipped: %s", e, exc_info=True)
 
-            # 注册行级安全拦截器
-            try:
-                register_row_security_listener()
-            except Exception as e:
-                logger.warning("Row security listener registration failed: %s", e)
-
             logger.info(
-                "Permission module initialized: service + cache + auth_engine + app + row_security"
+                "Permission module initialized: service + cache + auth_engine + app"
             )
         except Exception as e:
             logger.warning("Permission module init failed: %s", e)

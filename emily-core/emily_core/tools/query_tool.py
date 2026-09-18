@@ -126,8 +126,20 @@ async def handle_query_data(
             logger.info("query_data: db_perms denied perm_key=%s for query_type=%s", perm_key, query_type)
             return {"success": False, "reply": f"无权限查询{query_type}", "total": 0}
 
-        # 2. project_ids 自动注入
+        # 2. 数据边界 fail-closed：无可见项目 → 拒绝
+        # 口径（权限表注1）：无企业/无参与 → 空集；L5/L6 不受项目范围限制（空集=看全部）。
+        # 仅当调用方下发了 _session_scope（有真实用户上下文）时判定。
         project_ids = session_scope.get("project_ids", [])
+        level = session_scope.get("level") or 0
+        if session_scope and level < 5 and not project_ids:
+            logger.info("query_data: no visible project scope, denied (fail-closed) query_type=%s", query_type)
+            return {
+                "success": False,
+                "reply": "暂无可查询的项目数据（当前账号未关联任何参建项目）",
+                "total": 0,
+            }
+
+        # 3. project_ids 自动注入
         if project_ids and not params.get("project_id"):
             params["project_ids"] = project_ids
 

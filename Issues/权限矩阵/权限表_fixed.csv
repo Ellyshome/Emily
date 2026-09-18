@@ -14,6 +14,7 @@
 ,节点文件增删,增+删（注6）,增+删（注6）,仅增（注6）,仅增（注6）,仅增（注6）,否
 ,,,,,,
 文件类,上传文件,是,是,是,是,是,否
+,文件元数据维护（分类/意图/版本/关联/附件链）,是（注14）,是（注14）,是（注14）,是（注14）,否（注14）,否
 ,可见文件密级修改,是（注12）,是（注12）,仅本人上传的（注12）,仅本人上传的（注12）,仅本人上传的（注12）,否
 ,文件删除（软删）,是（注11）,是（注11）,仅本人上传的（注11）,仅本人上传的（注11）,仅本人上传的（注11）,否
 ,文件可见,全局（公开/内部/机密）,自传+公开+参与节点共享(≤内部)+显式授权,同 L5,同 L5,同 L5,仅公开
@@ -26,9 +27,10 @@
 注5,密级 3 级：0 公开 / 1 内部 / 2 机密；机密为白名单制（L6 原生可见 + 上传人自有 + 显式授权）。,,,,,,
 注6,节点文件：新增＝submit_node_deliverable（L2+）或 manage_node_file（L3+ 工具、经 SOP-004 放行），两者服务层均限「节点责任人 / L5+ / 节点参与单位人员」（node_service._check_node_file_permission，fail-closed）；解除共享＝manage_node_file 的 remove（仅 L5+）；console /console/node-file 与 IM 同源同判定。,,,,,,
 注7,已收口（2026-09-17）：create_task_node 工具口径由 L3+ 收为 admin（L5+），与承载它的 SOP-011 准入（L5）一致；L3/L4 既不可见也不可达，原「L3+ 可见」口径作废。,,,,,,
-注8,RAG：入库工具 embed_and_index（L3+；未在任何 SOP 声明，实际多为文件解析后自动入库，仅 REFERENCE 类）；出库工具 rag_remove_document（仅 L5/L6，IM 与 console /rag-delete 同源同判定）。,,,,,,
-注9,人员与企业已落地：服务层 PersonnelService（等级调整：L6 任意 / L5 最高 L4 / L4 最高 L3 / L3 仅低于自身 / L2·L1 不可；企业归属：L4+ 任意、L3 限本企业、L2·L1 不可；企业增删：L4+，且删除须无在职归属人员）+ IM 工具 update_user_level / update_user_company / manage_company（工具层 admin 粗闸、sop_only）+ console /console/personnel/* 端点；全部 fail-closed、被拒也留痕。,,,,,,
+注8,RAG：入库工具 embed_and_index（L3+；经 SOP-004 §3.2 声明，handler 内 L3 门禁 fail-closed；REFERENCE 类文件解析后亦自动入库）；出库工具 rag_remove_document（仅 L5/L6，IM 与 console /rag-delete 同源同判定）。,,,,,,
+注9,人员与企业已落地：服务层 PersonnelService（等级调整：L6 任意 / L5 最高 L4 / L4 最高 L3 / L3 仅低于自身 / L2·L1 不可；企业归属：L4+ 任意、L3 限本企业、L2·L1 不可；企业增删：L4+，且删除须无在职归属人员）+ IM 工具 update_user_level / update_user_company / manage_company（工具层 write＝L3+ 粗筛、sop_only，**承载 SOP-012-SYS 准入 L3**；实际分级由服务层按操作人等级判定——故 L3 可见 manage_company 但调用被拒，2026-09-18 决策 Q11 选项 a）+ console /console/personnel/* 端点；全部 fail-closed、被拒也留痕。,,,,,,
 注10,节点参与单位维护：manage_node_participant（project/admin，L5+），company（单位名或 ID）与 user_id 二选一；变更直接改变该节点数据与共享文件的可见范围，必留痕（node_participant_* 事件）。,,,,,,
 注11,文件删除（软删）：delete_file（write_mode=delete，不进 LLM 自由工具集）；授权＝上传人本人 或 L5/L6（服务层 fail-closed）；IM 经 SOP-004 声明可达（故 L2 上传人本人亦可删自传文件，见缺口清单 Q8）；当前无恢复入口（纠错类本期不做）。,,,,,,
 注12,密级调整：update_file_confidentiality（write_mode=overwrite）；授权＝上传人本人 或 L5/L6；值域 0 公开 / 1 内部 / 2 机密；降级同样留痕，调整后可见范围即时重算。,,,,,,
 注13,本表更新时间 2026-09-17（对应缺口清单 V1.4 批次②③④ + 人员管理落地）。判定以代码与 DB 为准：等级 permission/level.py；工具可见性 tool_registry 表（all 全员 / write_l2 L2+ / write L3+ / admin L5+）；SOP 准入 sop_business_flows.min_level。修复记录：核查发现 min_level/is_public 全为 NULL（008 补丁丢失）→ sop_allow 对所有用户（含 L1）等于全部 SOP、访客可见写工具，已重跑 008_set_sop_min_level.sql 收敛回设计口径。,,,,,,
+注14,文件元数据维护与 RAG 入库（2026-09-18 决策 Q10 落地）：覆盖 update_file_category / update_file_purpose / new_file_version / link_file / link_to_master / unlink_attachment / embed_and_index；可见性 L3+（工具层 permission_flag=write，经 SOP-004 §3.2 声明放行），handler 内另加 L3 等级门禁（file_tool.check_min_level，无操作人/取不到等级一律拒绝，fail-closed）；L2 参建执行仅可上传文件（record_file），不得维护文件元数据。同批（Q9/Q12）：删除从未生效的行级安全拦截器、恢复项目范围数据边界、空 project_ids 改为拒绝（见缺口清单 V1.6）。,,,,,,
