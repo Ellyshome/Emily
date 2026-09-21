@@ -472,6 +472,7 @@ class EmilyCore:
                 file_service=self._file_app.file_service,
                 storage_service=file_storage,
                 accessible_repo=SessionAccessibleFileRepo(),
+                outbound_bus=self.outbound_bus,
             )
             self._file_app.set_file_manager(file_manager)
             self._file_manager = file_manager
@@ -1012,6 +1013,7 @@ class EmilyCore:
 
         # 用户解析：BUG-001 修复 — 增加 UUID 直查路径
         user_id = ""
+        _actor_name = ""
         try:
             # ① 如果 sender_id 看起来像 UUID，先直接查 users 表
             if self._looks_like_uuid(message.sender_id):
@@ -1019,6 +1021,7 @@ class EmilyCore:
                 direct_user = UserRepository.get_by_id(message.sender_id)
                 if direct_user:
                     user_id = direct_user.id
+                    _actor_name = direct_user.username or ""
                     logger.debug(
                         "handle_message: sender_id resolved as UUID -> user %s (%s)",
                         user_id, direct_user.username,
@@ -1032,6 +1035,7 @@ class EmilyCore:
                     im_display_name=message.sender_name,
                 )
                 user_id = user.id if user else ""
+                _actor_name = (getattr(user, "username", "") or "") if user else ""
         except Exception as e:
             # UserNotAllowedError 不应吞掉——记录但继续（返回无用户回复）
             logger.warning("user binding failed (continuing): %s", e)
@@ -1041,7 +1045,10 @@ class EmilyCore:
             try:
                 from .infrastructure.logging.audit import bind_audit_context
 
-                bind_audit_context(actor_id=user_id)
+                bind_audit_context(
+                    actor_id=user_id,
+                    actor_name=_actor_name or message.sender_name,
+                )
             except Exception as e:
                 logger.debug("audit actor bind failed: %s", e)
 

@@ -472,7 +472,6 @@ _SEND_FILE_DESCRIPTION = (
 async def handle_send_file(
     params: dict,
     file_manager=None,      # FileManager 注入
-    outbound_bus=None,      # OutboundEventBus 注入
     user_id: str = "",
     message_id: str = "",
     conversation_id: str = "",
@@ -480,10 +479,13 @@ async def handle_send_file(
 ) -> dict:
     """处理 send_file 工具调用。
 
-    流程：权限校验 → 解析本地路径 → publish file_send 出站事件。
+    动作与留痕均在 FileManager.send_to_user（service 动作层，同源同痕），
+    本 handler 只做参数兜底与转调。
     """
     file_no = params.get("file_no", "")
     caption = params.get("caption", "")
+    # 分发层未注入具名 conversation_id，回退取运行时参数（否则收件方为空、无法投递）
+    conversation_id = conversation_id or params.get("_conversation_id", "")
 
     if not file_no:
         return {"success": False, "reply": "请提供文件编号 (file_no)", "error_code": "missing_file_no"}
@@ -491,32 +493,19 @@ async def handle_send_file(
     if file_manager is None:
         return {"success": False, "reply": "文件服务未就绪", "error_code": "service_unavailable"}
 
-    # 1. 解析 file_no → file_id
-    file_record = file_manager.get_by_file_no(file_no)
-    if file_record is None:
-        return {"success": False, "reply": f"找不到文件编号 {file_no}", "error_code": "file_not_found"}
-
-    # 2. 权限校验（fail-closed）
-    if not file_manager.can_access(user_id, file_record.id):
-        return {"success": False, "reply": "您无权访问该文件", "error_code": "permission_denied"}
-
-    # 3. 解析本地路径
-    local_path = file_manager.resolve_local_path(file_no)
-    if not local_path:
-        return {"success": False, "reply": f"文件 {file_no} 未在本地存储", "error_code": "file_not_stored"}
-
-    # 4. publish file_send 出站事件
-    if outbound_bus is not None:
-        outbound_bus.publish("file_send", {
-            "conversation_id": conversation_id,
-            "file_paths": [{"path": local_path, "name": file_record.filename}],
-            "caption": caption,
-        })
-        logger.info("file_send event published: %s → %s", file_no, conversation_id)
+    result = file_manager.send_to_user(
+        file_no=file_no, user_id=user_id, recipient=conversation_id, caption=caption,
+    )
+    if not result.get("success"):
+        return {
+            "success": False,
+            "reply": result.get("error", "文件发送失败"),
+            "error_code": result.get("reason_code", "send_failed"),
+        }
 
     return {
         "success": True,
-        "reply": f"已发送文件：{file_record.filename}（{file_no}）",
+        "reply": f"已发送文件：{result.get('filename', '')}（{file_no}）",
     }
 
 

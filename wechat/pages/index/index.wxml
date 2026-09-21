@@ -53,9 +53,12 @@
             </view>
           </block>
           <block wx:elif="{{item.type === 'file'}}">
-            <view class="bubble msg-file">
+            <view class="bubble msg-file" data-id="{{item.id}}" bindtap="onFileTap">
               <image class="file-ic" src="/assets/icons/file.png" mode="aspectFit" />
-              <text class="file-name">{{item.name}}</text>
+              <view class="file-meta">
+                <text class="file-name">{{item.name}}</text>
+                <text wx:if="{{item.stateText}}" class="file-state">{{item.stateText}}</text>
+              </view>
             </view>
           </block>
           <block wx:else>

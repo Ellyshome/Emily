@@ -1,0 +1,20 @@
+# 留空分三种情况，
+# 一种是需要根据系统规则自动生成补全，比如project_id，
+# 二种是根据材料内容抄录，如deadline，
+# 三种是可能无数据源，确实需要留空，如parent_node_id。
+
+project_id: ""
+creator_id: ""
+
+nodes:
+  - node_id: ""
+    node_name: "全景计划上线"
+    node_type: "TASK"
+    parent_node_id: ""          # 留空 + TASK → 先暂放「临时节点」，签认后迁正
+    deadline: ""
+    remark: "每个项目都需要有一份全景计划"
+    deliverables:
+      - deliverable_name: "全景计划清单"
+        target_amount: 1
+        unit: "份"
+        is_required: true

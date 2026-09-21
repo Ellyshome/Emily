@@ -77,6 +77,7 @@ app.add_middleware(AuditContextMiddleware)
 
 # 注册路由
 from .routes import health, message, session, permission, skills  # noqa: E402
+from .routes import file_download  # noqa: E402
 from .sse import outbound  # noqa: E402
 
 app.include_router(health.router, prefix="/api/v1")
@@ -85,6 +86,8 @@ app.include_router(session.router, prefix="/api/v1")
 app.include_router(permission.router, prefix="/api/v1")
 app.include_router(skills.router, prefix="/api/v1")
 app.include_router(outbound.router, prefix="/api/v1")
+# 渠道网关按 file_no 拉取归档文件（受 X-Emily-Token 约束，勿挪入 /console 白名单前缀）
+app.include_router(file_download.router, prefix="/api/v1")
 
 # 全景节点图 V2 路由 + SSE 事件端点（Phase 1-3）
 from .routes import node as node_routes  # noqa: E402

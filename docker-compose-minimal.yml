@@ -92,6 +92,8 @@ services:
       - TZ=Asia/Shanghai
       - WXMP_CORE_URL=http://emily-core:18080
       - WXMP_REPLY_TIMEOUT=55
+      # Core 回拉暂存附件所用的网关地址（容器内走 compose 服务名）
+      - WXMP_SELF_URL=${WXMP_SELF_URL:-http://wechat-gateway:18090}
     volumes:
       - ./.env:/app/.env:ro              # core_client 从 /app/.env 读取 EMILY_API_TOKEN
     networks:

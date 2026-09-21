@@ -33,6 +33,8 @@ attachments/
 user_memory/
 journal/
 emily-data/napcat_qq/
+# 微信小程序网关的入站附件暂存目录（运行期临时文件，Core 拉走后可清理）
+wechat-gateway/uploads/
 # PostgreSQL 数据目录（含重命名备份，如 postgres_data_broken_20260914）
 emily-data/postgres_data*/
 
