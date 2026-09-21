@@ -49,7 +49,6 @@ from .node_state_machine import (
     NodeSnapshot,
     DependencySnapshot,
     DeliverableSnapshot,
-    ChildSnapshot,
     calc_dependency_satisfaction,
     determine_node_status,
     detect_cycle,
@@ -114,9 +113,44 @@ def _derive_related_company_from_participants(
 
 # 单父节点子节点数量上限（需求 §3.4 父子节点层级）
 MAX_CHILDREN_PER_PARENT = 100
-# 树深度安全上限（仅防止脏数据导致无限递归/成环；两层制下里程碑可任意嵌套，
-# 结构约束由"有子节点即里程碑、无子节点即任务"的派生规则自动保证）
+# 树深度安全上限（仅防止脏数据导致无限递归/成环；节点类型由声明决定，不由结构派生）
 MAX_TREE_DEPTH = 10
+
+#: 创建节点时缺少必需成果的错误码（节点状态自证化 US-04 / R4）
+ERR_DELIVERABLE_REQUIRED = "40003"
+#: 层级不合法（里程碑挂在任务之下）的错误码（节点状态自证化 US-03 / R3）
+ERR_INVALID_HIERARCHY = "40004"
+
+
+def _normalize_declared_deliverables(raw) -> list[dict]:
+    """归一化"随节点创建一并声明的成果"。
+
+    节点创建必须携带至少一条必需成果（节点状态自证化 R4）。各入口字段写法不一，
+    此处统一收口：兼容 deliverable_name/name、target_amount/target。
+    无名称的条目直接丢弃（不产生无名成果）。
+    """
+    if not raw or not isinstance(raw, (list, tuple)):
+        return []
+
+    result: list[dict] = []
+    for item in raw:
+        if not isinstance(item, dict):
+            continue
+        name = str(item.get("deliverable_name") or item.get("name") or "").strip()
+        if not name:
+            continue
+        try:
+            target = float(item.get("target_amount", item.get("target", 1)) or 1)
+        except (TypeError, ValueError):
+            target = 1.0
+        unit = str(item.get("unit") or "份").strip() or "份"
+        result.append({
+            "deliverable_name": name,
+            "target_amount": target,
+            "unit": unit,
+            "is_required": bool(item.get("is_required", True)),
+        })
+    return result
 
 
 class NodeService:
@@ -189,8 +223,10 @@ class NodeService:
         """创建节点（入库即生效，无审批阻断）。
 
         权限要求：仅建设单位（company_type == "建设单位"）人员可创建（管理员不限）。
-        所有节点创建后即为 CONDITIONS_NOT_MET（信息先记录、后认可，PRD US-04），
-        不再存在"待审批才生效"的阻断态。
+
+        成果必备（节点状态自证化 US-04 / R4）：命令必须携带至少一条**必需成果**，
+        否则拒绝创建（error_code=40003）——节点是否完结只由自身必需成果决定，
+        无成果的节点没有任何完成判据。放行后成果随节点一并落库。
         """
         # ── 责任人默认值 + FK 校验 ──
         responsible_user_id = getattr(cmd, 'responsible_user_id', '') or cmd.creator_id
@@ -222,6 +258,21 @@ class NodeService:
 
         # 入库即生效：所有节点初始状态均为 CONDITIONS_NOT_MET（不再阻断）
         initial_status = CONDITIONS_NOT_MET
+
+        # ── 成果必备把关（节点状态自证化 US-04 / R4）──
+        # 节点状态只由自身必需成果决定，故"无成果的节点"等于"永远无法完结的节点"。
+        # 把关收口在这一处，即可保证全部创建入口（对话/批量/调度）口径一致。
+        declared = _normalize_declared_deliverables(getattr(cmd, "deliverables", None))
+        if not any(d["is_required"] for d in declared):
+            return NodeOperationResult(
+                success=False, node_id=cmd.node_id,
+                message=(
+                    "创建节点必须携带至少一条必需成果（成果名 + 目标量 + 量纲）。"
+                    "节点是否完结只由自身必需成果决定，无成果的节点没有任何完成判据，"
+                    "将永远无法完结——请先确认该节点的成果要求。"
+                ),
+                error_code=ERR_DELIVERABLE_REQUIRED,
+            )
 
         # ── 单位引用统一解析（口径见 docs/Spec/项目归属与可见范围_Spec.md）──
         # 中文单位名/类型只是输入写法，必须解析为 company_info.id 后才落库。
@@ -272,6 +323,23 @@ class NodeService:
                 cmd.node_id, participant_company_ids, cmd.creator_id,
             )
 
+        # ── 成果与节点一并落库（成果必备把关已在上方放行）──
+        created_deliverables = 0
+        for d in declared:
+            created = await self.create_deliverable(CreateDeliverableCommand(
+                node_id=cmd.node_id,
+                deliverable_name=d["deliverable_name"],
+                target_amount=d["target_amount"],
+                unit=d["unit"],
+                is_required=d["is_required"],
+                operator_id=cmd.creator_id,
+            ))
+            if created.success:
+                created_deliverables += 1
+            else:
+                logger.error("Declared deliverable create failed: node=%s name=%s msg=%s",
+                             cmd.node_id, d["deliverable_name"], created.message)
+
         self._record_event(
             node_id=cmd.node_id,
             event_type="node_created",
@@ -285,14 +353,15 @@ class NodeService:
             remark="节点创建（入库即生效，无需审批）",
         )
 
-        logger.info("Node created: %s (project=%s, status=%s)",
-                    cmd.node_id, cmd.project_id, initial_status)
+        logger.info("Node created: %s (project=%s, status=%s, deliverables=%d)",
+                    cmd.node_id, cmd.project_id, initial_status, created_deliverables)
         return NodeOperationResult(
             success=True,
             node_id=cmd.node_id,
             status=initial_status,
             progress=_parse_decimal(node.progress),
-            message=f"节点「{cmd.node_name}」已创建并入库（状态：条件未满足）",
+            message=(f"节点「{cmd.node_name}」已创建并入库"
+                     f"（状态：条件未满足；已登记 {created_deliverables} 项成果）"),
         )
 
     @audited(category="node", action="updated", target_type="node", actor_arg="cmd.operator_id", target_arg="cmd.node_id")
@@ -458,9 +527,8 @@ class NodeService:
             remark=f"新增成果：{cmd.deliverable_name}",
         )
 
-        # 新增成果可能改变完成度，触发状态重算
+        # 新增成果可能改变完成度，触发本节点状态重算（自证口径：不向上传播）
         await self._recalc_node_status(cmd.node_id)
-        await self._recalc_ancestors(cmd.node_id)
 
         return NodeOperationResult(
             success=True,
@@ -497,9 +565,8 @@ class NodeService:
             remark=f"成果进度更新：{old_amount} → {amount_str}",
         )
 
-        # 关键：成果进度更新 → 触发状态重算（并向上传播到父级里程碑）
+        # 关键：成果进度更新 → 触发本节点状态重算（自证口径：不向上传播到父级）
         result = await self._recalc_node_status(deliv.node_id)
-        await self._recalc_ancestors(deliv.node_id)
         return result
 
     # ── 依赖管理 ──
@@ -577,9 +644,8 @@ class NodeService:
                 remark="人工阻塞条件",
             )
 
-        # 6. 依赖变更 → 重新计算状态
+        # 6. 依赖变更 → 重新计算本节点状态
         await self._recalc_node_status(cmd.node_id)
-        await self._recalc_ancestors(cmd.node_id)
 
         return NodeOperationResult(
             success=True,
@@ -615,9 +681,8 @@ class NodeService:
                 remark="解除阻塞条件",
             )
 
-        # 依赖移除 → 重新计算状态
+        # 依赖移除 → 重新计算本节点状态
         await self._recalc_node_status(node_id)
-        await self._recalc_ancestors(node_id)
 
         return NodeOperationResult(success=True, node_id=node_id, message="依赖已移除")
 
@@ -681,6 +746,27 @@ class NodeService:
                 error_code="40001",
             )
 
+        # 3d. 层级类型校验：里程碑不得挂在任务之下（任务之下只能挂任务）
+        #     置于所有写入之前，保证拒绝是原子的——被拒时既有关系与类型概不改动。
+        parent_node = await asyncio.to_thread(self._node_repo.get_by_node_id, cmd.parent_node_id)
+        child_node = await asyncio.to_thread(self._node_repo.get_by_node_id, cmd.child_node_id)
+        if parent_node is None or child_node is None:
+            return NodeOperationResult(
+                success=False, node_id=cmd.parent_node_id,
+                message="父节点或子节点不存在（或已废弃）",
+                error_code="40002",
+            )
+        if (getattr(child_node, "node_type", "") == NODE_TYPE_MILESTONE
+                and getattr(parent_node, "node_type", "") == NODE_TYPE_TASK):
+            return NodeOperationResult(
+                success=False, node_id=cmd.parent_node_id,
+                message=(
+                    f"层级不合法：里程碑「{child_node.node_name}」不能挂在任务"
+                    f"「{parent_node.node_name}」之下（任务之下只能挂任务）"
+                ),
+                error_code=ERR_INVALID_HIERARCHY,
+            )
+
         # 4. 更新子节点的 parent_node_id + child_weight
         weight_str = _to_decimal_str(cmd.child_weight, precision=4)
         await asyncio.to_thread(
@@ -698,11 +784,8 @@ class NodeService:
             remark=f"挂载到父节点 {cmd.parent_node_id}",
         )
 
-        # 父子关系变更 → 刷新两端类型（父因有子节点变为里程碑），并自底向上重算状态
-        await self._refresh_node_type(cmd.parent_node_id)
-        await self._refresh_node_type(cmd.child_node_id)
-        await self._recalc_node_status(cmd.parent_node_id)
-        await self._recalc_ancestors(cmd.parent_node_id)
+        # 父子关系变更不改类型（类型由声明决定），父子状态也互不影响
+        # （双方状态均由各自成果决定），故此处无需刷新类型、无需重算状态。
 
         logger.info("Node %s mounted under %s (weight=%s)",
                     cmd.child_node_id, cmd.parent_node_id, weight_str)
@@ -730,10 +813,7 @@ class NodeService:
             remark=f"从父节点 {cmd.parent_node_id} 移除",
         )
 
-        await self._recalc_node_status(cmd.parent_node_id)
-        await self._refresh_node_type(cmd.parent_node_id)
-        await self._recalc_ancestors(cmd.parent_node_id)
-
+        # 解除挂载不改类型，也不影响父节点状态（父状态只由自身成果决定）
         return NodeOperationResult(
             success=True,
             node_id=cmd.child_node_id,
@@ -1050,9 +1130,8 @@ class NodeService:
             remark="成果确认",
         )
 
-        # 触发状态重算（并向上传播到父级里程碑）
+        # 触发本节点状态重算（自证口径：不向上传播到父级）
         await self._recalc_node_status(deliv.node_id)
-        await self._recalc_ancestors(deliv.node_id)
 
         return NodeOperationResult(success=True, node_id=deliv.node_id, message="成果确认成功")
 
@@ -1147,11 +1226,11 @@ class NodeService:
         deps = await asyncio.to_thread(self._dep_repo.find_by_node, node_id)
         participant_company_ids = await asyncio.to_thread(self._npc_repo.find_company_ids_by_node, node_id)
 
-        ack_by = getattr(node, "acknowledged_by", "") or ""
         return {
             "node_id": node.node_id,
             "node_name": node.node_name,
             "project_id": node.project_id,
+            "node_type": getattr(node, "node_type", ""),
             "status": node.status,
             "deadline": node.deadline,
             "related_company_id": _derive_related_company_from_participants(participant_company_ids, default=node.related_company_id),
@@ -1159,11 +1238,6 @@ class NodeService:
             "remark": node.remark,
             "is_discarded": node.is_discarded,
             "created_at": node.created_at,
-            # 签认状态（替代原审批，PRD US-05/US-06）
-            "acknowledged": bool(ack_by),
-            "acknowledged_by": ack_by,
-            "acknowledged_at": getattr(node, "acknowledged_at", "") or "",
-            "acknowledged_level": getattr(node, "acknowledged_level", 0) or 0,
             "deliverables": [
                 {
                     "deliverable_id": d.deliverable_id,
@@ -1225,9 +1299,9 @@ class NodeService:
 
         old_status = snap.status
 
-        # 调用引擎
+        # 调用引擎（自证口径：只传本节点自身的事实，子节点不参与）
         new_status = determine_node_status(
-            snap.dependencies, snap.deliverables, file_status, snap.children,
+            snap.dependencies, snap.deliverables, file_status,
         )
 
         if new_status == old_status:
@@ -1265,10 +1339,9 @@ class NodeService:
         )
 
     async def recalc_all_statuses(self, project_id: str = "", limit: int = 5000) -> dict:
-        """自底向上重算全部节点状态（维护用途）。
+        """重算全部节点状态（维护用途）。
 
-        用于批量导入、状态语义变更后的存量对齐：按树深度从深到浅逐层重算，
-        保证父节点聚合时其子节点状态已是新值。
+        自证口径下各节点互不影响，**无需按树深度排序**（原排序是为父节点聚合服务）。
 
         Returns:
             {"total": 节点总数, "changed": 状态发生变化的节点数}
@@ -1280,75 +1353,14 @@ class NodeService:
         else:
             nodes = await asyncio.to_thread(self._node_repo.find_all, limit)
 
-        id_to_parent = {n.node_id: (getattr(n, "parent_node_id", "") or "") for n in nodes}
-        ids = set(id_to_parent)
-
-        def _depth(node_id: str) -> int:
-            d, cur = 0, id_to_parent.get(node_id, "")
-            while cur and cur in ids and d < MAX_TREE_DEPTH:
-                d += 1
-                cur = id_to_parent.get(cur, "")
-            return d
-
         changed = 0
-        for node_id in sorted(ids, key=_depth, reverse=True):
-            result = await self._recalc_node_status(node_id)
+        for node in nodes:
+            result = await self._recalc_node_status(node.node_id)
             if result.success and result.message.startswith("状态重算完成"):
                 changed += 1
 
-        logger.info("recalc_all_statuses: total=%d changed=%d", len(ids), changed)
-        return {"total": len(ids), "changed": changed}
-
-    async def _recalc_ancestors(self, node_id: str) -> None:
-        """自底向上重算祖先链状态。
-
-        里程碑状态由直接子节点聚合而来，因此子节点状态变化必须向上传播；
-        某层状态未变化时，其上游也必然不变，可提前终止。
-        """
-        current = node_id
-        for _ in range(MAX_TREE_DEPTH):
-            node = await asyncio.to_thread(self._node_repo.get_by_node_id, current)
-            parent_id = getattr(node, "parent_node_id", "") if node else ""
-            if not parent_id:
-                return
-
-            parent = await asyncio.to_thread(self._node_repo.get_by_node_id, parent_id)
-            if parent is None:
-                return
-            old_status = parent.status
-
-            await self._recalc_node_status(parent_id)
-
-            parent_after = await asyncio.to_thread(self._node_repo.get_by_node_id, parent_id)
-            current = parent_id
-            if parent_after is None or parent_after.status == old_status:
-                return
-
-    async def _refresh_node_type(self, node_id: str) -> None:
-        """按结构刷新节点类型（单向提升）。
-
-        - 有子节点 → 必为里程碑（自动提升）
-        - 无子节点 → 任务，或"尚未分解的里程碑"（由创建时显式声明，不下沉）
-
-        保留"无子节点的里程碑"是业务必需：里程碑登记后可能尚未分解任务，
-        其状态即为「未启动」。"已退场类型 WORK_PACKAGE"在此一并修正为任务。
-        """
-        node = await asyncio.to_thread(self._node_repo.get_by_node_id, node_id)
-        if node is None:
-            return
-
-        current = getattr(node, "node_type", "")
-        child_count = await asyncio.to_thread(self._node_repo.count_children, node_id)
-        if child_count > 0:
-            expected = NODE_TYPE_MILESTONE
-        else:
-            expected = current if current in (NODE_TYPE_MILESTONE, NODE_TYPE_TASK) else NODE_TYPE_TASK
-
-        if current == expected:
-            return
-
-        await asyncio.to_thread(self._node_repo.update_fields, node_id, node_type=expected)
-        logger.info("Node %s type refreshed: %s -> %s", node_id, current, expected)
+        logger.info("recalc_all_statuses: total=%d changed=%d", len(nodes), changed)
+        return {"total": len(nodes), "changed": changed}
 
     async def _build_snapshot(self, node_id: str) -> NodeSnapshot | None:
         """构建节点快照（供引擎计算）。"""
@@ -1385,17 +1397,6 @@ class NodeService:
                 file_id=d.file_id,
             )
             for d in delivs
-        ]
-
-        # 加载直接子节点（里程碑状态由其聚合而来）
-        children = await asyncio.to_thread(self._node_repo.find_children, node_id)
-        snap.children = [
-            ChildSnapshot(
-                node_id=c.node_id,
-                status=c.status,
-                progress=_parse_decimal(c.progress),
-            )
-            for c in children
         ]
 
         return snap

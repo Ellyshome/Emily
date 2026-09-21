@@ -29,7 +29,7 @@
       "name": "节点台账",
       "tools": ["query_my_nodes", "query_node"],
       "domain": "SYS",
-      "answers": "节点状态、进度、成果签认情况（不含文档内容）",
+      "answers": "节点状态、进度、成果齐备情况（不含文档内容）",
       "params": "node_id 或 project_id",
       "permission": "归属 + 节点范围",
       "has_text": false,

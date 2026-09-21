@@ -115,8 +115,9 @@ class ProjectNodeRepo:
     def update_fields(node_id: str, **kwargs) -> ProjectNode | None:
         """更新节点字段。自动设置 updated_at。
 
-        可更新字段：node_name, deadline, related_company_id, remark,
-        acknowledged_by, acknowledged_at, acknowledged_level
+        可更新字段：node_name, deadline, related_company_id, remark, node_type,
+        responsible_user_id, parent_node_id, child_weight
+        （signoff 三字段 acknowledged_* 已废弃，不再作为可更新字段）
         """
         with get_session() as session:
             node = (

@@ -23,8 +23,12 @@ class CreateNodeCommand:
     creator_id: str = ""
     remark: str = ""
     responsible_user_id: str = ""   # 责任人（为空时自动取 creator_id），需求 §3.1.2
-    node_type: str = NODE_TYPE_TASK    # 节点类型：MILESTONE / TASK（两层制，由结构派生）
+    node_type: str = NODE_TYPE_TASK    # 节点类型：MILESTONE / TASK（**由声明决定**，不随结构变化）
     participant_company_ids: list[str] = field(default_factory=list)  # 参与单位ID列表
+    # 随节点一并声明的必需成果（节点状态自证化 US-04 / R4）：
+    # 至少一条 is_required=True，否则创建被拒。字段兼容 deliverable_name/name、
+    # target_amount/target、unit、is_required。
+    deliverables: list[dict] = field(default_factory=list)
 
 
 @dataclass
@@ -35,17 +39,6 @@ class UpdateNodeCommand:
     node_name: str | None = None
     deadline: str | None = None
     remark: str | None = None
-
-
-@dataclass
-class AcknowledgeNodeCommand:
-    """签认节点命令 —— 替代原"审批"（PRD US-04/US-06）。
-
-    签认表达"被谁认可"，不阻断入库；等级不足时明确拒绝。
-    """
-    node_id: str
-    user_id: str = ""
-    remark: str = ""
 
 
 @dataclass

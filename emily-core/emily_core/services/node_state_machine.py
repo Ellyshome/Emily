@@ -6,7 +6,11 @@
   - 三态流转判定（CONDITIONS_NOT_MET / IN_PROGRESS / COMPLETED）
   - 循环依赖检测（BFS）
 
-基于需求文档 §2.1（四态模型：未启用→条件不足→进行中→已完成）和 §4.1（状态自动流转计算）。
+**判定口径（节点状态自证化，2026-09-21）**：节点是否完结只由**该节点自身的
+必需成果**决定，与子节点、祖先、人工签认均无关。里程碑与任务使用同一套判定，
+不再有"父节点由子节点集体决定"的聚合分支。
+
+基于需求文档 §2.1（四态模型：未启用→条件不足→进行中→已完成）和 §4.1。
 """
 
 from __future__ import annotations
@@ -33,8 +37,8 @@ VALID_STATUSES = frozenset({CONDITIONS_NOT_MET, IN_PROGRESS, COMPLETED})
 # 节点类型（两层制：里程碑 / 任务）
 # ══════════════════════════════════════════════════════════════════════════════
 
-NODE_TYPE_MILESTONE = "MILESTONE"   # 有子节点（可嵌套里程碑）
-NODE_TYPE_TASK = "TASK"             # 叶子节点（承载可计量成果）
+NODE_TYPE_MILESTONE = "MILESTONE"   # 里程碑（对外可见重大节点）；可嵌套，也可再挂子节点
+NODE_TYPE_TASK = "TASK"             # 任务（承载可计量成果）；可为叶子，也可再分解出子任务
 # 已退场类型：仅存量迁移脚本读取，新写入路径不再产生
 NODE_TYPE_WORK_PACKAGE = "WORK_PACKAGE"
 
@@ -56,8 +60,12 @@ VALID_TRANSITIONS: dict[str, frozenset[str]] = {
 # ══════════════════════════════════════════════════════════════════════════════
 
 class NodeSnapshot:
-    """节点快照 —— 引擎计算的输入单元。"""
-    __slots__ = ("node_id", "status", "progress", "dependencies", "deliverables", "children")
+    """节点快照 —— 引擎计算的输入单元。
+
+    只承载**本节点自身**的事实（状态/进度/前置依赖/成果），不含子节点：
+    判定入口不再需要子节点，子节点状态不影响本节点。
+    """
+    __slots__ = ("node_id", "status", "progress", "dependencies", "deliverables")
 
     def __init__(self, node_id: str, status: str = CONDITIONS_NOT_MET, progress: float = 0.0):
         self.node_id = node_id
@@ -65,7 +73,6 @@ class NodeSnapshot:
         self.progress = progress
         self.dependencies: list[DependencySnapshot] = []
         self.deliverables: list[DeliverableSnapshot] = []
-        self.children: list[ChildSnapshot] = []
 
 
 class DependencySnapshot:
@@ -89,15 +96,6 @@ class DeliverableSnapshot:
         self.current_amount = current_amount
         self.is_required = is_required
         self.file_id = file_id
-
-
-class ChildSnapshot:
-    """子节点快照（仅含状态和进度，不展开嵌套）。"""
-    __slots__ = ("node_id", "status", "progress")
-    def __init__(self, node_id: str, status: str, progress: float):
-        self.node_id = node_id
-        self.status = status
-        self.progress = progress
 
 
 # ══════════════════════════════════════════════════════════════════════════════
@@ -152,25 +150,16 @@ def calc_deliverable_completion(deliverables: list[DeliverableSnapshot]) -> floa
 
 def determine_node_status(dependencies: list[DependencySnapshot],
                           deliverables: list[DeliverableSnapshot],
-                          deliverable_file_status: dict[str, bool],
-                          children: list[ChildSnapshot]) -> str:
-    """判定节点应处于的状态。
+                          deliverable_file_status: dict[str, bool]) -> str:
+    """判定节点应处于的状态（**自证口径**：只由本节点自身的事实决定）。
 
-    任务（叶子，无子节点）：由自身前置条件 + 成果完成量决定
+    里程碑与任务**同一套判定**，不再有"父节点由子节点集体决定"的聚合分支：
       - 前置依赖未满足 / 无成果定义 / 完成量为 0 → CONDITIONS_NOT_MET（未启动）
       - 0 < 完成量 < 目标 → IN_PROGRESS（运行中）
       - 完成量 >= 目标 → COMPLETED（已完结）
 
-    里程碑（有子节点）：由所有直接子节点集体决定（逐层递归）
-      - 所有子节点 CONDITIONS_NOT_MET → CONDITIONS_NOT_MET
-      - 所有子节点 COMPLETED → COMPLETED
-      - 其余 → IN_PROGRESS
+    子节点状态不参与：节点是否完结取决于它自己的必需成果是否齐备。
     """
-    if children:
-        # 里程碑模式：由子节点集体决定，自身成果不参与判定
-        return _determine_parent_status(children)
-
-    # 任务模式
     dep_satisfaction = calc_dependency_satisfaction(dependencies, deliverable_file_status)
     if dep_satisfaction < 1.0:
         return CONDITIONS_NOT_MET
@@ -186,22 +175,6 @@ def determine_node_status(dependencies: list[DependencySnapshot],
     # 已完成量为 0 → 尚未开工（首报即开工）
     if completion <= 0.0:
         return CONDITIONS_NOT_MET
-
-    return IN_PROGRESS
-
-
-def _determine_parent_status(children: list[ChildSnapshot]) -> str:
-    """根据子节点集体状态判定父节点状态。"""
-    if not children:
-        return CONDITIONS_NOT_MET
-
-    statuses = [c.status for c in children]
-
-    if all(s == CONDITIONS_NOT_MET for s in statuses):
-        return CONDITIONS_NOT_MET
-
-    if all(s == COMPLETED for s in statuses):
-        return COMPLETED
 
     return IN_PROGRESS
 
