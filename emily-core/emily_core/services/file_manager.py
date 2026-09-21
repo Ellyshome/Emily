@@ -26,10 +26,11 @@ class FileManager:
       - SessionAccessibleFileRepo: 可见性（权限过滤）
     """
 
-    def __init__(self, file_service, storage_service, accessible_repo):
+    def __init__(self, file_service, storage_service, accessible_repo, outbound_bus=None):
         self._file_svc = file_service          # FileService
         self._storage = storage_service        # FileStorageService
         self._accessible = accessible_repo     # SessionAccessibleFileRepo
+        self._outbound_bus = outbound_bus      # OutboundEventBus（发送文件出站用）
 
     # ── 检索（权限统一出口）──
 
@@ -90,6 +91,63 @@ class FileManager:
     def resolve_local_path(self, file_no: str) -> str | None:
         """file_no → 本地绝对路径（M2 send_file 用）。"""
         return self._storage.get_local_path(file_no)
+
+    # ── 发送给用户（M2）──
+
+    @audited(
+        category="file",
+        action="sent_to_user",
+        target_type="file",
+        actor_arg="user_id",
+        target_no_arg="file_no",
+        summary_arg="recipient",
+        summary="发送文件给 {summary}：{target}",
+    )
+    def send_to_user(
+        self,
+        file_no: str,
+        user_id: str,
+        recipient: str = "",
+        caption: str = "",
+    ) -> dict:
+        """把已有文件投递给当前会话（权限校验 + 路径解析 + 出站事件）。
+
+        留痕由本方法的挂载点产生：actor=user_id，target_no=file_no，
+        recipient=接收会话（conversation_id）；三者合起来即「谁把什么文件发给了谁」。
+
+        Args:
+            file_no: 文件编号
+            user_id: 发起发送的用户 ID
+            recipient: 接收会话 ID（conversation_id）
+            caption: 附带文字说明
+
+        Returns:
+            {"success": bool, "reason_code"?: str, "error"?: str, "filename"?: str}
+        """
+        record = self.get_by_file_no(file_no)
+        if record is None:
+            return {"success": False, "reason_code": "file_not_found",
+                    "error": f"找不到文件编号 {file_no}"}
+
+        if not self.can_access(user_id, record.id):
+            return {"success": False, "reason_code": "permission_denied",
+                    "error": "您无权访问该文件"}
+
+        local_path = self.resolve_local_path(file_no)
+        if not local_path:
+            return {"success": False, "reason_code": "file_not_stored",
+                    "error": f"文件 {file_no} 未在本地存储"}
+
+        if self._outbound_bus is not None:
+            self._outbound_bus.publish("file_send", {
+                "conversation_id": recipient,
+                # file_no 供渠道侧按编号回取文件（小程序网关等）；path 仅供同宿主渠道直读
+                "file_paths": [{"path": local_path, "name": record.filename, "file_no": file_no}],
+                "caption": caption,
+            })
+            logger.info("file_send event published: %s → %s", file_no, recipient)
+
+        return {"success": True, "filename": record.filename}
 
     # ── 归档 ──
 

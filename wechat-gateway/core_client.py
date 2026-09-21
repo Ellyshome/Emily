@@ -51,6 +51,14 @@ class CoreApiClient:
             headers["X-Emily-Token"] = self.api_token
         return headers
 
+    def auth_headers(self) -> dict:
+        """Core 鉴权头（供网关自行发起流式请求复用，不下发到端上）。"""
+        return self._headers()
+
+    def file_download_url(self, file_no: str) -> str:
+        """Core 侧按文件编号下载归档文件的端点地址。"""
+        return f"{self.base_url}/api/v1/files/{file_no}/download"
+
     async def send_message(self, payload: dict) -> tuple[int, dict]:
         """转发入站消息到 core。
 

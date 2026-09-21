@@ -314,8 +314,7 @@ def _register_business(core, reg):
     # M2: send_file — Emily 主动发送文件
     _buc += _reg_biz(reg, "send_file", "向用户发送已有文件",
                      partial(_h("file_tool", "handle_send_file"),
-                             file_manager=core._file_manager,
-                             outbound_bus=core.outbound_bus),
+                             file_manager=core._file_manager),
                      params=_SEND_FILE_SCHEMA, category="business", permission_flag="all")
 
     # M4: 文件关联与版本 (4 tools)

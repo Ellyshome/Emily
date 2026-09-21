@@ -229,6 +229,12 @@ page {
   margin-right: 16rpx;
 }
 
+.file-meta {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+
 .file-name {
   font-size: 28rpx;
   color: #111;
@@ -236,6 +242,13 @@ page {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+/* 文件状态提示（待发送 / 点击下载 / 下载中… 等） */
+.file-state {
+  margin-top: 6rpx;
+  font-size: 22rpx;
+  color: #888;
 }
 
 .msg-tail {
