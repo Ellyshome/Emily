@@ -26,6 +26,7 @@ WHERE deliverable_id IN (
     'EMR-SG-01-05-02-DELV-002',   -- 园路面层铺装
     'EMR-SG-01-05-02-DELV-003',   -- 人行步道基层
     'EMR-SG-01-05-01-DELV-002',   -- 乔木灌木种植
+    'EMR-SG-01-11-DELV-001',      -- 景观水景工程验收报告（里程碑汇总级，2026-09-21 新增）
     'EMR-SG-01-11-01-DELV-001'    -- 水景池壁石材铺装
 );
 
@@ -73,7 +74,8 @@ SELECT
     (SELECT count(*) FROM project_nodes WHERE node_id IN ('EMR-SG-01-11', 'EMR-SG-01-11-01')) AS 残留新节点,
     (SELECT count(*) FROM node_deliverables WHERE deliverable_id IN (
         'EMR-SG-01-05-02-DELV-002', 'EMR-SG-01-05-02-DELV-003',
-        'EMR-SG-01-05-01-DELV-002', 'EMR-SG-01-11-01-DELV-001')) AS 残留新成果,
+        'EMR-SG-01-05-01-DELV-002', 'EMR-SG-01-11-DELV-001',
+        'EMR-SG-01-11-01-DELV-001')) AS 残留新成果,
     (SELECT count(*) FROM node_participant_companies
         WHERE node_id IN ('EMR-SG-01-11', 'EMR-SG-01-11-01')) AS 残留新参与单位;
 

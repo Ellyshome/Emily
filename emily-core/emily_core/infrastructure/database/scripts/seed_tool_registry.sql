@@ -47,7 +47,6 @@ INSERT INTO tool_registry (id, signature, display_name, category, permission_fla
 ('add_node_dependency', '{}', '添加节点依赖',     'project', 'admin', 'sop_only', '', true, '2026-07-24T00:00:00', '2026-07-24T00:00:00'),
 ('mount_child_node',    '{}', '挂载子节点',       'project', 'admin', 'sop_only', '', true, '2026-07-24T00:00:00', '2026-07-24T00:00:00'),
 ('update_nodes',        '{}', '批量更新节点',     'project', 'admin', 'sop_only', '', true, '2026-07-24T00:00:00', '2026-07-24T00:00:00'),
-('acknowledge_nodes',   '{}', '批量签认节点',     'project', 'admin', 'sop_only', '', true, '2026-07-24T00:00:00', '2026-07-24T00:00:00'),
 ('discard_nodes',       '{}', '废弃节点',         'project', 'admin', 'sop_only', '', true, '2026-07-24T00:00:00', '2026-07-24T00:00:00'),
 ('manage_node_participant','{}','维护节点参与单位/参与人','project','admin','sop_only','', true, '2026-09-17T00:00:00', '2026-09-17T00:00:00'),
 ('send_email',          '{}', '发送邮件',         'base', 'all',   'meta', '', true, '2026-07-24T00:00:00', '2026-07-24T00:00:00'),

@@ -279,8 +279,6 @@ class ProjectWorldBookBuilder:
                         "status": n.status or "",
                         "progress": round(progress, 1),
                         "milestone": (getattr(n, "node_type", "") == "MILESTONE"),
-                        # 签认状态（PRD US-05：未签认信息在使用时须标注）
-                        "acknowledged": bool(getattr(n, "acknowledged_by", "") or ""),
                     }
 
                 return {
@@ -511,10 +509,11 @@ class ProjectWorldBookBuilder:
         if s.get("total_nodes", 0) > 0:
             lines.append(
                 "项目工作以“全景节点”树组织，节点分两类："
-                "里程碑（MILESTONE，有子节点，可嵌套，关键节点/阶段性成果）、"
-                "任务（TASK，叶子节点，承载可计量成果，如“乔木种植 100 棵”）；"
+                "里程碑（MILESTONE，对外可见重大节点，可嵌套）、"
+                "任务（TASK，承载可计量成果，如“乔木种植 100 棵”）；"
                 "节点按三态流转（未启动 / 运行中 / 已完结），"
-                "里程碑状态由其下任务逐层聚合，用户通过加入节点参与协作。"
+                "**每个节点的完结只由它自己的必需成果是否齐备决定**（子节点状态不影响父节点），"
+                "用户通过加入节点参与协作。"
             )
             lines.append(
                 f"📊 {s['total_nodes']}节点：{s.get('completed', 0)}完成 / "

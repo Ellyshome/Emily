@@ -32,9 +32,19 @@ _CREATE_NODE_SCHEMA = {
         "node_name": {"type": "string", "description": "节点名称/工作项描述。单节点模式必填"},
         "deadline": {"type": "string", "description": "截止时间（ISO8601格式）。单节点模式必填"},
         "remark": {"type": "string", "description": "备注/说明"},
+        "node_type": {
+            "type": "string",
+            "description": "节点类型：MILESTONE（里程碑）/ TASK（任务）。由声明决定，不随结构变化；缺省 TASK",
+        },
+        "deliverables": {
+            "type": "array",
+            "description": "必需成果清单（**单节点模式必填**，至少一项 is_required=true）。"
+                           "每项含 deliverable_name / target_amount / unit / is_required",
+            "items": {"type": "object"},
+        },
         "nodes": {
             "type": "array",
-            "description": "批量创建模式：节点树列表。每项含 node_id/node_name/deadline/deliverables/dependencies/children",
+            "description": "批量创建模式：节点树列表。每项含 node_id/node_name/deadline/node_type/deliverables/dependencies/children",
             "items": {"type": "object"},
         },
     },
@@ -43,10 +53,11 @@ _CREATE_NODE_SCHEMA = {
 
 _CREATE_NODE_DESCRIPTION = (
     "创建项目全景节点。支持两种模式："
-    "1) 单节点：提供 node_id+node_name+deadline 创建单个节点；"
+    "1) 单节点：提供 node_id+node_name+deadline+deliverables 创建单个节点；"
     "2) 批量创建：提供 nodes 列表，一次性创建节点树（含成果、依赖、子节点）。"
-    "批量模式下 nodes 中每个节点可含 deliverables/dependencies/children 字段。"
-    "创建后节点初始状态为 CONDITIONS_NOT_MET（条件不足），需进一步添加成果和依赖。"
+    "**成果必备**：任何节点都必须携带至少一条必需成果，否则创建被拒——"
+    "节点是否完结只由自身必需成果决定，无成果的节点没有完成判据。"
+    "创建后节点初始状态为 CONDITIONS_NOT_MET（条件不足）；节点类型由 node_type 声明决定。"
 )
 
 _QUERY_NODE_SCHEMA = {
@@ -151,6 +162,7 @@ async def handle_create_node(
     # ── 单节点创建路径（原逻辑）──
     from emily_core.services.node_commands import CreateNodeCommand
     from emily_core.services.node_service import NodeService
+    from emily_core.services.node_state_machine import NODE_TYPE_TASK
     from emily_core.repositories.permission_repo import PermissionRepository
 
     svc = NodeService(user_repo=PermissionRepository())
@@ -161,6 +173,8 @@ async def handle_create_node(
         deadline=params.get("deadline", ""),
         remark=params.get("remark", ""),
         creator_id=user_id,
+        node_type=params.get("node_type", "") or NODE_TYPE_TASK,
+        deliverables=params.get("deliverables", []) or [],
     )
     result = await svc.create_node(cmd)
     return {
@@ -186,11 +200,10 @@ async def handle_query_node(
     detail = await svc.get_node_detail(node_id)
     if detail is None:
         return {"success": False, "message": f"节点 {node_id} 不存在"}
-    ack_note = "" if detail.get("acknowledged") else "（未签认）"
     return {
         "success": True,
         "data": detail,
-        "message": f"节点「{detail['node_name']}」当前状态: {detail['status']}{ack_note}",
+        "message": f"节点「{detail['node_name']}」当前状态: {detail['status']}",
     }
 
 
@@ -295,25 +308,6 @@ _UPDATE_NODES_DESCRIPTION = (
     "支持：node_name/deadline/related_company_id/remark。"
 )
 
-_ACK_NODES_SCHEMA = {
-    "type": "object",
-    "properties": {
-        "node_ids": {
-            "type": "array",
-            "description": "要签认的节点编号列表",
-            "items": {"type": "string"},
-        },
-        "remark": {"type": "string", "description": "签认备注"},
-    },
-    "required": ["node_ids"],
-}
-
-_ACK_NODES_DESCRIPTION = (
-    "批量签认节点（替代原'审批'）。签认不阻断入库，仅表达'被谁认可'，"
-    "并记录签认人/签认时间/签认等级。需达到该业务对象的签认等级要求（节点为 L4+），"
-    "等级不足会明确拒绝。"
-)
-
 _DISCARD_NODES_SCHEMA = {
     "type": "object",
     "properties": {
@@ -360,36 +354,6 @@ async def handle_update_nodes(
         "fail_count": fail_count,
         "results": results,
         "message": f"批量更新完成：{success_count} 成功，{fail_count} 失败",
-    }
-
-
-async def handle_acknowledge_nodes(
-    params: dict[str, Any],
-    user_id: str = "",
-    message_id: str = "",
-    **kw,
-) -> dict[str, Any]:
-    """批量签认节点（替代原'审批'）。"""
-    from emily_core.services.node_batch_update import batch_acknowledge_nodes
-
-    node_ids = params.get("node_ids", [])
-    if not node_ids:
-        return {"success": False, "message": "node_ids 列表为空"}
-
-    results = await batch_acknowledge_nodes(
-        node_ids=node_ids,
-        user_id=user_id,
-        remark=params.get("remark", ""),
-    )
-    success_count = sum(1 for r in results if r.get("success"))
-    fail_count = sum(1 for r in results if not r.get("success"))
-    return {
-        "success": fail_count == 0,
-        "total": len(results),
-        "success_count": success_count,
-        "fail_count": fail_count,
-        "results": results,
-        "message": f"批量签认完成：{success_count} 成功，{fail_count} 失败",
     }
 
 

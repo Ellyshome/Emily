@@ -67,17 +67,16 @@
 
 ### 3.3 可调用工具
 
-**① 节点管理核心工具（8 个；`category=project` / `permission_flag=admin` → 仅 L5+ 可见）**
+**① 节点管理核心工具（7 个；`category=project` / `permission_flag=admin` → 仅 L5+ 可见）**
 
 | 工具名 | 用途 | 关键参数（`*` = 必填） |
 |--------|------|----------------------|
-| `create_node` | 创建全景节点（单节点 / 批量） | `project_id`*、`node_id`*、`node_name`*、`deadline`*、`remark`、`nodes[]`（批量模式） |
+| `create_node` | 创建全景节点（单节点 / 批量） | `project_id`*、`node_id`*、`node_name`*、`deadline`*、`remark`、`node_type`、`deliverables[]`*（**至少一条必需成果**）、`nodes[]`（批量模式） |
 | `query_node` | 查询节点详情（状态/进度/成果/依赖） | `node_id`* |
 | `update_node_progress` | 更新成果进度（**自动触发状态机重算**） | `deliverable_id`*、`current_amount`*、`file_id` |
 | `add_node_dependency` | 添加前置依赖（BFS 循环检测 + 权重阻塞） | `node_id`*、`depends_on_deliverable_id`*、`weight` |
-| `mount_child_node` | 挂载父子节点关系（深度上限 3 层检测） | `parent_node_id`*、`child_node_id`*、`child_weight` |
+| `mount_child_node` | 挂载父子节点关系（**里程碑不得挂任务之下**；深度安全上限检测） | `parent_node_id`*、`child_node_id`*、`child_weight` |
 | `update_nodes` | 批量更新节点字段 | `updates`* |
-| `acknowledge_nodes` | 批量签认节点 | `node_ids`*、`remark` |
 | `discard_nodes` | 批量废弃节点（**软删除**，非物理删除） | `node_ids`* |
 
 **② 任务 / 成果子流程工具（5 个；`category=business`）**
@@ -124,7 +123,7 @@
 
 | 操作 | 工具 | 最低可见级别 |
 |------|------|------------|
-| 创建 / 查询（全量）/ 更新进度 / 添加依赖 / 挂载子节点 / 批量更新 / 签认 / 废弃 | 8 个核心节点工具（`category=project`） | **L5+（管理员）** |
+| 创建 / 查询（全量）/ 更新进度 / 添加依赖 / 挂载子节点 / 批量更新 / 废弃 | 7 个核心节点工具（`category=project`） | **L5+（管理员）** |
 | **提交节点成果（上传）** | `submit_node_deliverable` | **L2 参建执行及以上**（`permission_flag=write_l2`，线性 >=2，排除 L1 访客）；真正授权在服务层二次校验：**节点责任人 / L5+ / 节点参与单位人员**才放行（`node_service._check_submission_permission`） |
 | 创建任务节点 | `create_task_node` | **L5+**（`permission_flag=admin`，缺口 G-10：与承载 SOP 准入同口径） |
 | 确认 / 退回成果 / 查询我的节点 | 其余任务工具（`category=business`） | **L3+** |
@@ -142,7 +141,7 @@
 
 **C. 调用通道差异（兜底白名单）**
 
-核心节点工具中，`query_node` / `query_my_nodes` 在兜底只读白名单内，可被**直接调用**；而 `create_node` / `update_nodes` / `acknowledge_nodes` / `discard_nodes` 等**不在**兜底白名单——**直接调用会被"该操作在当前档位不可用，请走对应标准流程或联系管理员"拦截**，必须经本 SOP 能力（`SOP-011-SYS`）执行。这正是"走对应标准流程"的含义，排障时勿误判为权限不足。
+核心节点工具中，`query_node` / `query_my_nodes` 在兜底只读白名单内，可被**直接调用**；而 `create_node` / `update_nodes` / `discard_nodes` 等**不在**兜底白名单——**直接调用会被"该操作在当前档位不可用，请走对应标准流程或联系管理员"拦截**，必须经本 SOP 能力（`SOP-011-SYS`）执行。这正是"走对应标准流程"的含义，排障时勿误判为权限不足。
 
 ### 3.6 Agent 调用指引（L3 agent loop）
 

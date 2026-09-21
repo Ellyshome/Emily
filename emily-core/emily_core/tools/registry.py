@@ -44,14 +44,14 @@ _NODE_TASK_WRITE_MODES: dict[str, str] = {
     "return_node_deliverable": "transition",
 }
 
-# 8 个核心节点工具的写语义（M2/G-9）；query_node 为只读，不在此列。
+# 核心节点工具的写语义（M2/G-9）；query_node 为只读，不在此列。
+# 签认已退役（节点状态自证化 US-05），故不含 acknowledge_nodes。
 _NODE_CORE_WRITE_MODES: dict[str, str] = {
     "create_node": "append",
     "update_node_progress": "overwrite",
     "add_node_dependency": "append",
     "mount_child_node": "append",
     "update_nodes": "overwrite",
-    "acknowledge_nodes": "transition",
     "discard_nodes": "transition",
 }
 
@@ -516,21 +516,20 @@ def _register_project(core, reg):
     global _pjc
     _pjc = 0
 
-    # 全景节点 (8 tools)
+    # 全景节点 (7 tools)
     na = getattr(core, "_node_app", None)
     if na is not None:
         try:
             from .node_tool import (
                 handle_create_node, handle_query_node, handle_update_node_progress,
                 handle_add_node_dependency, handle_mount_child_node,
-                handle_update_nodes, handle_acknowledge_nodes, handle_discard_nodes,
+                handle_update_nodes, handle_discard_nodes,
                 _CREATE_NODE_SCHEMA, _CREATE_NODE_DESCRIPTION,
                 _QUERY_NODE_SCHEMA, _QUERY_NODE_DESCRIPTION,
                 _UPDATE_PROGRESS_SCHEMA, _UPDATE_PROGRESS_DESCRIPTION,
                 _ADD_DEPENDENCY_SCHEMA, _ADD_DEPENDENCY_DESCRIPTION,
                 _MOUNT_CHILD_SCHEMA, _MOUNT_CHILD_DESCRIPTION,
                 _UPDATE_NODES_SCHEMA, _UPDATE_NODES_DESCRIPTION,
-                _ACK_NODES_SCHEMA, _ACK_NODES_DESCRIPTION,
                 _DISCARD_NODES_SCHEMA, _DISCARD_NODES_DESCRIPTION,
             )
             for name, desc, schema, handler in [
@@ -540,7 +539,6 @@ def _register_project(core, reg):
                 ("add_node_dependency", _ADD_DEPENDENCY_DESCRIPTION, _ADD_DEPENDENCY_SCHEMA, handle_add_node_dependency),
                 ("mount_child_node", _MOUNT_CHILD_DESCRIPTION, _MOUNT_CHILD_SCHEMA, handle_mount_child_node),
                 ("update_nodes", _UPDATE_NODES_DESCRIPTION, _UPDATE_NODES_SCHEMA, handle_update_nodes),
-                ("acknowledge_nodes", _ACK_NODES_DESCRIPTION, _ACK_NODES_SCHEMA, handle_acknowledge_nodes),
                 ("discard_nodes", _DISCARD_NODES_DESCRIPTION, _DISCARD_NODES_SCHEMA, handle_discard_nodes),
             ]:
                 if not reg.has(name):
