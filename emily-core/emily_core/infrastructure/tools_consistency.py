@@ -50,7 +50,7 @@ REGISTERED_TOOLS: set[str] = {
     "embed_and_index",
     "create_task_node", "submit_node_deliverable", "confirm_node_deliverable",
     "return_node_deliverable", "query_my_nodes",
-    "manage_node_file",
+    "manage_node_file", "read_node_template", "build_node_draft",
     "update_user_level", "update_user_company", "manage_company",
     # project
     "create_node", "query_node", "update_node_progress", "add_node_dependency",
@@ -119,6 +119,9 @@ TOOL_META_MAP: dict[str, tuple[str, str, str, str]] = {
     "update_nodes":          ("批量更新节点",   "project", "admin", "sop_only"),
     "discard_nodes":         ("批量废弃节点",   "project", "admin", "sop_only"),
     "manage_node_participant": ("维护节点参与单位/参与人", "project", "admin", "sop_only"),
+    # read_l4 → L4 条线负责人及以上可读（模板库读取门槛）
+    "read_node_template":    ("读取参考模板库",  "business", "read_l4", "sop_only"),
+    "build_node_draft":      ("按模板装配草稿",  "business", "read_l4", "sop_only"),
 }
 
 # ── 工具名 → write_mode（M2 静态参考，供 scripts/check_fallback_tools.py 交叉校验）──
@@ -210,6 +213,8 @@ TOOL_SCHEMA_MAP: dict[str, tuple[str, str]] = {
     "fetch_inbox": ("emily_core.tools.project", "_FETCH_INBOX_SCHEMA"),
     "chat_archive": ("emily_core.tools.project", "_CHAT_ARCHIVE_SCHEMA"),
     "manage_pending_issues": ("emily_core.tools.project", "_PENDING_ISSUE_SCHEMA"),
+    "read_node_template": ("emily_core.tools.node_template_tool", "_READ_NODE_TEMPLATE_SCHEMA"),
+    "build_node_draft": ("emily_core.tools.node_template_tool", "_BUILD_NODE_DRAFT_SCHEMA"),
 }
 
 

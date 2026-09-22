@@ -624,6 +624,14 @@ class EmilyCore:
             if self._business_flow_tools is not None:
                 self._register_node_tools()
 
+            # 归档后处理器注册点（C11）：门禁 / 归属判定 / 整树装配经此接入归档链路
+            try:
+                from .services.archive_handlers import register_archive_handlers
+
+                logger.info("Archive handlers registered: %s", register_archive_handlers())
+            except Exception as e:
+                logger.warning("Archive handlers registration failed: %s", e)
+
             logger.info("Node graph V2 module initialized")
         except Exception:
             logger.warning("Node graph V2 module initialization failed", exc_info=True)

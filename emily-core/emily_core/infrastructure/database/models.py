@@ -1107,12 +1107,21 @@ class ProjectNode(Base):
     acknowledged_level = Column(Integer, default=0, comment="【已废弃】签认时的等级")
     completed_at = Column(String(50), default="", comment="完成时间（ISO8601）")
     is_discarded = Column(Boolean, default=False, comment="是否被废弃")
-    status = Column(String(20), default="CONDITIONS_NOT_MET", comment="当前状态：CONDITIONS_NOT_MET / IN_PROGRESS / COMPLETED")
+    status = Column(String(20), default="CONDITIONS_NOT_MET", comment="当前状态：CONDITIONS_NOT_MET / IN_PROGRESS / COMPLETED / DISABLED（停用：退出管控、不计完成度、不提醒、不可挂新任务；非终态可恢复）")
     responsible_user_id = Column(String(100), nullable=False, default="", comment="责任人（FK→users.id，创建时默认取 creator_id）")
     node_type = Column(String(20), nullable=False, default="TASK", comment="节点类型：MILESTONE（里程碑）/ TASK（任务）；由声明决定，不随结构变化")
     template_ref_id = Column(
         String(100), nullable=False, default="",
         comment="来源参考模板 ref_id（emily-data/node_templates），空=非模板创建"
+    )
+    node_role = Column(
+        String(30), nullable=False, default="BUSINESS",
+        comment="节点角色（容器识别唯一键）：BUSINESS 业务节点 / TEMP_MILESTONE 根图下临时里程碑（项目唯一，收容层）/ "
+                "TEMP_TASK 临时任务（待认领，可挂正式里程碑或临时里程碑下）/ UNCLASSIFIED_SINK 未归类收容节点（项目唯一）"
+    )
+    planned_start_at = Column(
+        String(50), nullable=False, default="",
+        comment="计划启动时间（ISO8601，空=未设置）：激活条件之一（到点即至少进入 IN_PROGRESS）"
     )
     visibility_mode = Column(
         String(30), nullable=False, default="specific",
@@ -1716,7 +1725,9 @@ class GroupMemory(Base):
 # ══════════════════════════════════════════════════════════════════════════════
 
 
-# 临时节点：暂不知去向的事件统一挂到这里（后续可改挂到具体节点）
+# 【历史值，仅存量迁移读取】早期把"暂不知去向的事件"挂到一条全局假项目节点上。
+# 现口径（US-15.7 / PRD §4.4-16）：归属必须指向**真实存在的节点**——未归类业务事件
+# 落到**本项目唯一的未归类收容节点**（node_role='UNCLASSIFIED_SINK'，懒创建）。
 UNASSIGNED_NODE_ID = "UNASSIGNED"
 UNASSIGNED_NODE_NAME = "待归类事件（临时节点）"
 
@@ -1762,7 +1773,7 @@ class ProjectEvent(Base):
     event_no = Column(String(50), unique=True, nullable=False, comment="统一编号 PE-YYYYMMDD-NNNN")
     event_kind = Column(String(30), nullable=False, index=True, comment="事件判别类型（ProjectEventKind）")
     project_id = Column(String, ForeignKey("projects.id"), nullable=True, index=True, comment="归属项目")
-    node_id = Column(String(100), nullable=True, index=True, default=UNASSIGNED_NODE_ID, comment="归属全景节点，空/UNASSIGNED=待归类")
+    node_id = Column(String(100), nullable=True, index=True, default="", comment="归属全景节点（**必须是真实存在的节点**）；未归类业务事件由写入侧落到本项目「未归类收容节点」，空值不应出现")
     event_type = Column(String(100), default="", comment="事件子类型（事件记录/节点事件共用；会议/任务等留空）")
     title = Column(String(500), nullable=False, comment="标题")
     summary = Column(Text, default="", comment="统一描述/摘要")

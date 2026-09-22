@@ -578,20 +578,130 @@ scripts:
         help: 默认只输出统计，勾选后打印世界书全文
 
   maintain_node_template_index:
-    description: "扫描 node_templates/*.md 模板，生成/更新 index.yaml 索引"
+    description: "扫描 node_templates/ 模板单元目录，生成/更新 index.yaml 索引（含附件清单）"
     category: system_maintenance
     source_path: scripts/maintain_node_template_index.py
     invocation: uv run python scripts/maintain_node_template_index.py {args}
     check_arg: --check
     run_args: []
-    auto_run: bootstrap
-    auto_run_args: ['--auto']
+    auto_run: null
+    auto_run_args: []
     writes_db: false
     aggregation_parent: null
     status: active
     entrypoint: null
     timeout_seconds: 30
-    scheduling_note: "bootstrap 自动"
+    scheduling_note: "宿主机手动；容器内模板目录只读，仅 --check 可执行"
+    params:
+      - name: check
+        type: flag
+        label: 只读校验
+        help: 只报告索引与模板单元的差异，不写盘（容器内可执行）；不勾选则为更新模式（须宿主机执行）
+
+  migrate_node_templates:
+    description: "存量模板形态迁移：顶层单文件 md → 模板单元目录（template.yaml + 附件）"
+    category: system_maintenance
+    source_path: scripts/migrate_node_templates.py
+    invocation: uv run python scripts/migrate_node_templates.py {args}
+    check_arg: --verify
+    run_args: []
+    auto_run: null
+    auto_run_args: []
+    writes_db: false
+    aggregation_parent: null
+    status: active
+    entrypoint: null
+    timeout_seconds: 60
+    scheduling_note: "模板库形态上线时执行一次（宿主机）"
+    params:
+      - name: dry-run
+        type: flag
+        label: 预览模式
+        help: 只打印迁移动作，不落盘
+      - name: verify
+        type: flag
+        label: 四项一致性断言
+        help: 校验编号/名称/类型/摘要与迁移前是否完全一致（AC-US-01.5）
+      - name: ref-id
+        type: str
+        label: 模板编号
+        help: 只迁移指定模板编号（留空 = 全部）
+
+  node_template_release:
+    description: "模板库上线聚合薄壳：迁移 → 索引重建 → 一致性校验"
+    category: system_maintenance
+    source_path: scripts/node_template_release.py
+    invocation: uv run python scripts/node_template_release.py {args}
+    check_arg: --dry-run
+    run_args: []
+    auto_run: null
+    auto_run_args: []
+    writes_db: false
+    aggregation_parent: null
+    status: active
+    entrypoint: null
+    timeout_seconds: 120
+    scheduling_note: "模板库变更后宿主机执行"
+    params:
+      - name: dry-run
+        type: flag
+        label: 预览模式
+        help: 只预览迁移与差异，不落盘
+
+  check_company_types:
+    description: "企业类型 / 范围字段质量巡检（只读，不改数据；装配召回质量的前置体检）"
+    category: system_maintenance
+    source_path: scripts/check_company_types.py
+    invocation: uv run python scripts/check_company_types.py {args}
+    check_arg: --json
+    run_args: []
+    auto_run: null
+    auto_run_args: []
+    writes_db: false
+    aggregation_parent: null
+    status: active
+    entrypoint: null
+    timeout_seconds: 60
+    scheduling_note: "按需巡检"
+    params:
+      - name: json
+        type: flag
+        label: JSON 输出
+        help: 勾选后以 JSON 输出（供程序消费）
+
+  align_unclassified_events:
+    description: "存量未归类事件归属对齐：按项目懒建收容节点 + 改挂 + 全量扫描（可回滚）"
+    category: system_maintenance
+    source_path: scripts/align_unclassified_events.py
+    invocation: uv run python scripts/align_unclassified_events.py {args}
+    check_arg: --scan
+    run_args: []
+    auto_run: null
+    auto_run_args: []
+    writes_db: true
+    aggregation_parent: null
+    status: active
+    entrypoint: null
+    timeout_seconds: 300
+    scheduling_note: "一次性迁移（US-15.10）；执行前自动写备份"
+    params:
+      - name: scan
+        type: flag
+        label: 只扫描
+        help: 报告"归属指向非节点"的记录数，不修改
+      - name: dry-run
+        type: flag
+        label: 预览模式
+        help: 只预览将对齐哪些记录
+      - name: project-id
+        type: str
+        label: 项目
+        help: 留空 = 全部项目
+        options_source: projects
+      - name: discard-fake-node
+        type: flag
+        label: 弃用历史假节点行
+        help: 仅当已无事件引用时生效（可回滚）
 
   manage_nodes:
     description: "manage_nodes.py — 全景节点图管理 CLI 脚本（创建 + 更新 + 查询）。"
@@ -658,6 +768,82 @@ scripts:
           - name: dry-run
             type: flag
             label: 预览模式
+      - name: disable
+        label: 批量停用节点
+        help: 退出管控（L4+，非终态可恢复）：不计完成度、不提醒、不可挂新任务
+        params:
+          - name: node-ids
+            type: str
+            label: 节点编号
+            help: 多个用英文逗号分隔
+            required: true
+          - name: operator-id
+            type: str
+            label: 操作人
+            help: 须 L4 及以上（服务层判定，低于 L4 拒绝）
+            required: true
+            options_source: users
+          - name: reason
+            type: str
+            label: 停用原因
+            help: 记入节点留痕（谁/何时/为何）
+          - name: dry-run
+            type: flag
+            label: 预览模式
+      - name: enable
+        label: 批量恢复节点
+        help: 恢复被停用的节点，回到真实三态
+        params:
+          - name: node-ids
+            type: str
+            label: 节点编号
+            help: 多个用英文逗号分隔
+            required: true
+          - name: operator-id
+            type: str
+            label: 操作人
+            required: true
+            options_source: users
+          - name: remark
+            type: str
+            label: 恢复备注
+          - name: dry-run
+            type: flag
+            label: 预览模式
+      - name: recalc
+        label: 批量重算节点状态
+        help: 含「计划启动时间到点」激活判定；系统无周期机制，建议由宿主机调度
+        params:
+          - name: project-id
+            type: str
+            label: 项目
+            help: 留空 = 全部项目
+            options_source: projects
+          - name: limit
+            type: int
+            label: 处理上限
+            min: 1
+            max: 20000
+      - name: sink
+        label: 查询收容容器
+        help: 临时里程碑层 / 未归类收容节点及其待归类记录数
+        params:
+          - name: project-id
+            type: str
+            label: 项目
+            required: true
+            options_source: projects
+          - name: viewer-id
+            type: str
+            label: 查看人
+            help: 留空 = 不按人过滤（脚本口径）
+            options_source: users
+          - name: level
+            type: int
+            label: 查看人等级
+            help: 须 >=4 才可见全部容器节点
+            min: 1
+            max: 6
       - name: progress
         label: 更新成果进度
         params:

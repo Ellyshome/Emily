@@ -83,7 +83,8 @@ class ProjectEventRepository:
             event_kind: ProjectEventKind 之一
             title: 事件标题
             project_id: 归属项目
-            node_id: 归属全景节点（默认临时节点 UNASSIGNED）
+            node_id: 归属全景节点（写入侧须解析为真实节点；未归类事件由
+                ProjectEventAccumulator 兜底到本项目「未归类收容节点」）
             kind_fields: 子类专属字段（如 meeting_type / submission_status / flow_type）
         """
         cls = _KIND_CLASS.get(event_kind)
@@ -95,7 +96,7 @@ class ProjectEventRepository:
                 event_no=ProjectEventRepository.generate_event_no(),
                 event_kind=event_kind,
                 project_id=project_id,
-                node_id=node_id or UNASSIGNED_NODE_ID,
+                node_id=node_id or "",
                 title=title,
                 summary=summary,
                 status=status,
@@ -169,13 +170,45 @@ class ProjectEventRepository:
                         evt.confirmed_by = confirmed_by
 
     @staticmethod
-    def reassign_node(event_id: str, node_id: str) -> None:
-        """改挂事件到指定全景节点（临时节点事件归类到具体节点）。"""
+    def reassign_node(event_id: str, node_id: str, operator_id: str = "",
+                      remark: str = "") -> dict:
+        """事件归位：改挂到指定全景节点，并留下改挂痕迹（US-16.6）。
+
+        留痕内容：改挂前归属 / 改挂后归属 / 操作人 / 操作时间 / 备注，
+        追加进事件自身 payload 的 `reassign_history`（事件维度可查，与节点迁正留痕分列）。
+
+        Returns:
+            {"ok": bool, "before": str, "after": str, "reason": str}
+        """
         with get_session() as session:
             evt = session.query(ProjectEvent).filter(ProjectEvent.id == event_id).first()
-            if evt:
-                evt.node_id = node_id
-                logger.info("ProjectEvent reassigned: %s -> node %s", event_id, node_id)
+            if evt is None:
+                return {"ok": False, "before": "", "after": "", "reason": "事件不存在"}
+            before = evt.node_id or ""
+            if before == node_id:
+                return {"ok": False, "before": before, "after": node_id, "reason": "事件已归属该节点"}
+            evt.node_id = node_id
+            try:
+                payload = json.loads(evt.payload or "{}")
+                if not isinstance(payload, dict):
+                    payload = {"_raw_payload": payload}
+            except Exception:
+                payload = {}
+            history = payload.get("reassign_history")
+            if not isinstance(history, list):
+                history = []
+            history.append({
+                "from_node_id": before,
+                "to_node_id": node_id,
+                "operator_id": operator_id,
+                "at": datetime.now(timezone.utc).isoformat(),
+                "remark": remark,
+            })
+            payload["reassign_history"] = history
+            evt.payload = json.dumps(payload, ensure_ascii=False)
+            logger.info("ProjectEvent reassigned: %s %s -> node %s (by %s)",
+                        event_id, before, node_id, operator_id)
+            return {"ok": True, "before": before, "after": node_id, "reason": ""}
 
     @staticmethod
     def count_by_kind(project_id: Optional[str] = None) -> dict[str, int]:

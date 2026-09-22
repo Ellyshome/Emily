@@ -287,6 +287,34 @@ def main():
     p.add_argument("--db-url", default=db_url_default, help="PostgreSQL 连接 URL")
     p.add_argument("--dry-run", action="store_true", help="预览模式")
 
+    # ── disable / enable 子命令（US-17 停用态）──
+    p = sub.add_parser("disable", help="批量停用节点（L4+，退出管控，非终态）")
+    p.add_argument("--node-ids", required=True, help="节点编号，逗号分隔")
+    p.add_argument("--operator-id", required=True, help="操作人 UUID")
+    p.add_argument("--reason", default="", help="停用原因（留痕）")
+    p.add_argument("--db-url", default=db_url_default, help="PostgreSQL 连接 URL")
+    p.add_argument("--dry-run", action="store_true", help="预览模式")
+
+    p = sub.add_parser("enable", help="批量恢复被停用的节点（回到真实三态）")
+    p.add_argument("--node-ids", required=True, help="节点编号，逗号分隔")
+    p.add_argument("--operator-id", required=True, help="操作人 UUID")
+    p.add_argument("--remark", default="", help="恢复备注（留痕）")
+    p.add_argument("--db-url", default=db_url_default, help="PostgreSQL 连接 URL")
+    p.add_argument("--dry-run", action="store_true", help="预览模式")
+
+    # ── recalc 子命令（计划启动时间到点的批量惰性重算；无周期机制，由宿主机调度）──
+    p = sub.add_parser("recalc", help="批量重算节点状态（含计划启动时间到点激活）")
+    p.add_argument("--project-id", default="", help="项目 ID（留空 = 全部项目）")
+    p.add_argument("--limit", type=int, default=5000, help="单次处理上限")
+    p.add_argument("--db-url", default=db_url_default, help="PostgreSQL 连接 URL")
+
+    # ── sink 子命令（收容节点查询；US-15）──
+    p = sub.add_parser("sink", help="查询项目的收容容器（临时里程碑层 / 未归类收容节点）")
+    p.add_argument("--project-id", required=True, help="项目 ID")
+    p.add_argument("--viewer-id", default="", help="查看人 UUID（可见范围判定）")
+    p.add_argument("--level", type=int, default=5, help="查看人等级（>=4 可见全部容器）")
+    p.add_argument("--db-url", default=db_url_default, help="PostgreSQL 连接 URL")
+
     # ── query 子命令 ──
     p = sub.add_parser("query", help="查询项目节点概览")
     p.add_argument("--project-id", required=True, help="项目 ID")
@@ -309,6 +337,10 @@ def main():
         "progress": _run_progress,
         "link-files": _run_link_files,
         "query": _run_query,
+        "disable": _run_disable,
+        "enable": _run_enable,
+        "recalc": _run_recalc,
+        "sink": _run_sink,
     }
     handlers[args.command](args)
 
@@ -544,6 +576,92 @@ def _run_query(args) -> None:
         progress = float(n.progress) if n.progress else 0.0
         node_type = getattr(n, "node_type", "") or ""
         print(f"{n.node_id:<20} {n.node_name:<20} {node_type:<12} {n.status:<20} {progress:>5.1f}%")
+
+
+# ══════════════════════════════════════════════════════════════════════════════
+# disable / enable 子命令（US-17）
+# ══════════════════════════════════════════════════════════════════════════════
+
+def _run_disable(args) -> None:
+    node_ids = [n.strip() for n in args.node_ids.split(",") if n.strip()]
+    if not node_ids:
+        print("错误：--node-ids 不能为空")
+        sys.exit(1)
+    _init_db(args.db_url)
+    logger.info("批量停用: %s | 操作人: %s | 原因: %s", node_ids, args.operator_id, args.reason)
+
+    from emily_core.services.node_batch_update import batch_disable_nodes
+    results = asyncio.run(batch_disable_nodes(
+        node_ids=node_ids, operator_id=args.operator_id,
+        reason=args.reason, dry_run=args.dry_run,
+    ))
+    _print_report(results, dry_run=args.dry_run)
+    if any(not r.get("success") for r in results):
+        sys.exit(1)
+
+
+def _run_enable(args) -> None:
+    node_ids = [n.strip() for n in args.node_ids.split(",") if n.strip()]
+    if not node_ids:
+        print("错误：--node-ids 不能为空")
+        sys.exit(1)
+    _init_db(args.db_url)
+    logger.info("批量恢复: %s | 操作人: %s", node_ids, args.operator_id)
+
+    from emily_core.services.node_batch_update import batch_enable_nodes
+    results = asyncio.run(batch_enable_nodes(
+        node_ids=node_ids, operator_id=args.operator_id,
+        remark=args.remark, dry_run=args.dry_run,
+    ))
+    _print_report(results, dry_run=args.dry_run)
+    if any(not r.get("success") for r in results):
+        sys.exit(1)
+
+
+# ══════════════════════════════════════════════════════════════════════════════
+# recalc 子命令（计划启动时间到点的批量惰性重算；宿主机调度入口）
+# ══════════════════════════════════════════════════════════════════════════════
+
+def _run_recalc(args) -> None:
+    _init_db(args.db_url)
+    from emily_core.repositories.node_repo import ProjectNodeRepo
+    from emily_core.services.node_service import NodeService
+
+    svc = NodeService()
+    # find_all 无项目过滤时取全部；有 project-id 时按项目取
+    if args.project_id:
+        nodes = asyncio.run(asyncio.to_thread(
+            ProjectNodeRepo.find_by_project, _resolve_project_id(args.project_id), None, args.limit))
+    else:
+        nodes = asyncio.run(asyncio.to_thread(ProjectNodeRepo.find_all, args.limit))
+
+    print(f"[重算] 候选节点 {len(nodes)} 个（含计划启动时间到点激活判定）")
+    changed = 0
+    for n in nodes:
+        r = asyncio.run(svc._recalc_node_status(n.node_id))
+        if r.success and "无变化" not in (r.message or "") and "不进行状态计算" not in (r.message or ""):
+            changed += 1
+            print(f"  - {n.node_id} {n.node_name}: {r.message}")
+    print(f"[重算] 完成，状态变更 {changed} 个")
+
+
+# ══════════════════════════════════════════════════════════════════════════════
+# sink 子命令（收容容器查询；US-15）
+# ══════════════════════════════════════════════════════════════════════════════
+
+def _run_sink(args) -> None:
+    _init_db(args.db_url)
+    from emily_core.services.node_container_service import NodeContainerService
+
+    cs = NodeContainerService()
+    r = asyncio.run(cs.list_contained(
+        _resolve_project_id(args.project_id), args.viewer_id, args.level))
+    print(f"未归类收容节点：{r['sink']['node_id'] or '(无)'}"
+          f"｜待归类记录 {r['sink']['event_count']} 条")
+    print(f"收容区条目 {len(r['nodes'])} 个：")
+    for n in r["nodes"]:
+        print(f"  - [{n['origin_label']}] {n['node_id']} {n['node_name']}"
+              f"（{n['node_role']}，父：{n['parent_node_name'] or '根图'}）")
 
 
 if __name__ == "__main__":

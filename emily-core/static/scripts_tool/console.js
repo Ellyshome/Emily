@@ -1738,11 +1738,13 @@ function collectNodeDeliverables() {
 // ── 前置依赖候选（模板「## 前置条件」→ 项目内已有成果）──
 
 let _nodeDraftDeps = [];        // 前置依赖候选（由模板「## 前置条件」匹配项目内已有成果得出，可在界面移除）
-let _nodeDraftUnresolved = [];  // 未匹配到成果的前置条件（必须回显，避免误以为模板已全部生效）
+let _nodeDraftUnresolved = [];  // 声明了但零候选的条目（必须回显，避免误以为模板已全部生效）
+let _nodeDraftWarnings = [];    // 声明校验告警（语法错 / 类型越出词表 / 来源单位不存在）
 
-function setNodeDependencies(deps, unresolved) {
+function setNodeDependencies(deps, unresolved, warnings) {
     _nodeDraftDeps = deps || [];
     _nodeDraftUnresolved = unresolved || [];
+    _nodeDraftWarnings = warnings || [];
     renderNodeDependencies();
 }
 
@@ -1753,11 +1755,19 @@ function renderNodeDependencies() {
             <span class="ndp-from">来自节点：${escapeHtml(d.node_name || d.node_id || '—')}</span>
             <button type="button" class="cell-del" data-dep-del title="移除该依赖">×</button>
         </div>`).join('');
-    const box = q('#node-form-unresolved');
+    // 未解析项与声明告警必须回显（不得静默丢弃）
+    const msgs = [];
     if (_nodeDraftUnresolved.length) {
+        msgs.push('未解析到候选的声明：'
+            + _nodeDraftUnresolved.map(u => `${u.description || u.object_type}（${u.reason}）`).join('；'));
+    }
+    if (_nodeDraftWarnings.length) {
+        msgs.push('声明告警：' + _nodeDraftWarnings.join('；'));
+    }
+    const box = q('#node-form-unresolved');
+    if (msgs.length) {
         box.hidden = false;
-        box.textContent = '未匹配到成果的前置条件（需人工处理）：'
-            + _nodeDraftUnresolved.map(u => u.desc).join('；');
+        box.textContent = msgs.join('　｜　');
     } else {
         box.hidden = true;
         box.textContent = '';
@@ -1772,7 +1782,7 @@ async function refreshNodeDraft() {
     const projectId = q('#node-form-project').value;
     const tpl = _nodeTemplates.find(t => t.ref_id === refId);
     if (!tpl) {
-        setNodeDependencies([], []);
+        setNodeDependencies([], [], []);
         hint.textContent = nodeTemplateHint();
         return;
     }
@@ -1781,7 +1791,7 @@ async function refreshNodeDraft() {
     q('#node-form-type').value = tpl.node_type === 'MILESTONE' ? 'MILESTONE' : 'TASK';
     if (tpl.summary) q('#node-form-remark').value = tpl.summary;
     if (!projectId) {
-        setNodeDependencies([], []);
+        setNodeDependencies([], [], []);
         hint.textContent = `已按模板 ${refId} 填写名称 / 类型 / 备注；`
             + '选择所属项目后，将检索项目内已有成果作为前置依赖候选';
         return;
@@ -1799,14 +1809,28 @@ async function refreshNodeDraft() {
         const d = json.data;
         if (d.node_name) q('#node-form-name').value = d.node_name;
         q('#node-form-type').value = d.node_type === 'MILESTONE' ? 'MILESTONE' : 'TASK';
-        if (d.remark) q('#node-form-remark').value = d.remark;
         setNodeDeliverables(d.deliverables || []);
-        setNodeDependencies(d.dependencies || [], d.unresolved || []);
+        // 能力层草稿：四类候选在 candidates（每条候选带 basis 依据），未解析项在 unresolved
+        const cand = d.candidates || {};
+        const deps = ((cand.pre_conditions || {}).items || []).map(c => ({
+            depends_on_deliverable_id: c.ref_id,
+            deliverable_name: c.display_name,
+            node_name: (c.extra || {}).node_name || (c.extra || {}).node_id || '',
+            basis: c.basis,
+        }));
+        setNodeDependencies(deps, d.unresolved || [], d.warnings || []);
+        const counts = [
+            `参与单位 ${((cand.participant_companies || {}).total || 0)}`,
+            `成员 ${((cand.participant_users || {}).total || 0)}`,
+            `共享文件 ${((cand.shared_files || {}).total || 0)}`,
+            `前置成果 ${deps.length}`,
+        ];
         const parts = [
             `已按模板 ${refId} 预填：成果 ${(d.deliverables || []).length} 条`,
-            `前置依赖候选 ${(d.dependencies || []).length} 条`,
+            `候选：${counts.join(' / ')}`,
         ];
-        if (_nodeDraftUnresolved.length) parts.push(`${_nodeDraftUnresolved.length} 条前置条件未匹配到成果`);
+        if (_nodeDraftUnresolved.length) parts.push(`${_nodeDraftUnresolved.length} 条声明未解析到候选`);
+        if (_nodeDraftWarnings.length) parts.push(`${_nodeDraftWarnings.length} 条声明告警`);
         hint.textContent = parts.join('，') + '。可直接修改后保存。';
     } catch (e) {
         hint.textContent = `装配失败：${e.message}（可手工录入）`;
@@ -1841,7 +1865,7 @@ async function openNodeCreateModal() {
     q('#node-form-deadline').value = '';
     q('#node-form-remark').value = '';
     setNodeDeliverables([]);
-    setNodeDependencies([], []);
+    setNodeDependencies([], [], []);
 
     const projects = await ensureNodeProjects();
     q('#node-form-project').innerHTML = projects.length

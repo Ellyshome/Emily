@@ -22,8 +22,15 @@ from ..infrastructure.database.models import (
     NodeParticipantCompany,
 )
 from ..infrastructure.database.session import get_session
+from sqlalchemy import or_
 
 logger = logging.getLogger("emily.node_repo")
+
+# 汇总/提醒口径：容器角色与停用态排除
+# （判定口径唯一定义见 services/node_state_machine.excluded_from_rollup；
+#  仓储层按既有约定内联字面量，不反向依赖服务层）
+_ROLLUP_EXCLUDED_ROLES = ("TEMP_MILESTONE", "TEMP_TASK", "UNCLASSIFIED_SINK")
+_ROLLUP_EXCLUDED_STATUS = "DISABLED"
 
 BEIJING_TZ = timezone(timedelta(hours=8))
 
@@ -112,11 +119,71 @@ class ProjectNodeRepo:
             return q.order_by(ProjectNode.created_at.desc()).limit(limit).all()
 
     @staticmethod
+    def find_container_ids(roles, project_ids: list[str] | None = None,
+                           creator_id: str = "") -> list[str]:
+        """容器节点 node_id 集合（US-15.5 可见范围判定的数据来源）。
+
+        · `project_ids` 非空 → 这些项目下的全部容器（L4+ 可见）
+        · `creator_id` 非空 → 该用户创建的全部容器（创建者本人始终可见，即使低于 L4）
+        · `roles` 由调用方（服务层）注入容器角色集合，仓储层不承载领域常量
+        """
+        role_list = [r for r in (roles or ()) if r]
+        pids = [p for p in (project_ids or []) if p]
+        cid = (creator_id or "").strip()
+        if not role_list or (not pids and not cid):
+            return []
+        with get_session() as session:
+            q = session.query(ProjectNode.node_id).filter(
+                ProjectNode.node_role.in_(tuple(role_list)),
+                ProjectNode.is_discarded == False,
+            )
+            if pids and cid:
+                q = q.filter(or_(ProjectNode.project_id.in_(pids),
+                                 ProjectNode.creator_id == cid))
+            elif pids:
+                q = q.filter(ProjectNode.project_id.in_(pids))
+            else:
+                q = q.filter(ProjectNode.creator_id == cid)
+            return [r[0] for r in q.all() if r[0]]
+
+    @staticmethod
+    def find_container(project_id: str, node_role: str) -> ProjectNode | None:
+        """查项目内指定角色的容器节点（每项目唯一，懒创建时用于幂等判定）。"""
+        if not project_id or not node_role:
+            return None
+        with get_session() as session:
+            return (
+                session.query(ProjectNode)
+                .filter(
+                    ProjectNode.project_id == project_id,
+                    ProjectNode.node_role == node_role,
+                    ProjectNode.is_discarded == False,
+                )
+                .first()
+            )
+
+    @staticmethod
+    def find_by_project_role(project_id: str, node_role: str = "",
+                            limit: int = 500) -> list[ProjectNode]:
+        """按项目 + 节点角色查询（node_role 留空 = 全部角色）。"""
+        if not project_id:
+            return []
+        with get_session() as session:
+            q = session.query(ProjectNode).filter(
+                ProjectNode.project_id == project_id,
+                ProjectNode.is_discarded == False,
+            )
+            if node_role:
+                q = q.filter(ProjectNode.node_role == node_role)
+            return q.order_by(ProjectNode.created_at.desc()).limit(limit).all()
+
+    @staticmethod
     def update_fields(node_id: str, **kwargs) -> ProjectNode | None:
         """更新节点字段。自动设置 updated_at。
 
         可更新字段：node_name, deadline, related_company_id, remark, node_type,
-        responsible_user_id, parent_node_id, child_weight
+        responsible_user_id, parent_node_id, child_weight, node_role, planned_start_at,
+        template_ref_id, status
         （signoff 三字段 acknowledged_* 已废弃，不再作为可更新字段）
         """
         with get_session() as session:
@@ -358,6 +425,8 @@ class ProjectNodeRepo:
                     ProjectNode.deadline <= window_end,
                     ProjectNode.deadline > now.isoformat(),
                     ProjectNode.status != "COMPLETED",
+                    ProjectNode.status != _ROLLUP_EXCLUDED_STATUS,
+                    ProjectNode.node_role.notin_(_ROLLUP_EXCLUDED_ROLES),
                     ProjectNode.is_discarded == False,
                 )
                 .order_by(ProjectNode.deadline.asc())
@@ -377,6 +446,8 @@ class ProjectNodeRepo:
                     ProjectNode.deadline.isnot(None),
                     ProjectNode.deadline < now_iso,
                     ProjectNode.status != "COMPLETED",
+                    ProjectNode.status != _ROLLUP_EXCLUDED_STATUS,
+                    ProjectNode.node_role.notin_(_ROLLUP_EXCLUDED_ROLES),
                     ProjectNode.is_discarded == False,
                 )
                 .order_by(ProjectNode.deadline.asc())
@@ -498,6 +569,15 @@ class NodeDeliverableRepo:
             session.flush()
             logger.info("NodeDeliverable created: %s for node %s", deliv.deliverable_id, deliv.node_id)
             return deliv
+
+    @staticmethod
+    def count_by_node(node_id: str) -> int:
+        """节点下成果条数（收容区呈现用：判断临时节点是否已带成果）。"""
+        if not node_id:
+            return 0
+        with get_session() as session:
+            return int(session.query(NodeDeliverable).filter(
+                NodeDeliverable.node_id == node_id).count())
 
     @staticmethod
     def get_by_deliverable_id(deliverable_id: str) -> NodeDeliverable | None:

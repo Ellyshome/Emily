@@ -1,0 +1,53 @@
+# 全景节点参考模板 —— 结构化清单入口（机器可读）
+#
+# 维护约定：
+#   · 本文件是模板单元的**唯一结构化入口**，字段口径见 node_templates/README.md
+#   · 附件（参考范例 / 成果约定 / 说明文档等）放同目录，索引只登记不解析
+#   · 对象声明区 declarations 由人工维护（系统不自动生成模板内容）：
+#
+#       declarations:
+#         participant_companies:              # 参与单位候选
+#           - desc: 本项目建设单位
+#             match: {type_norm: 建设单位, scope_keywords: [], name_keywords: []}
+#             required: true
+#         participant_users:                  # 成员候选（来源单位须已在上节声明）
+#           - desc: 建设单位项目负责人
+#             match: {from_company: 建设单位, role: participant}
+#             required: false
+#         shared_files:                       # 共享文件候选（受操作人可见范围约束）
+#           - desc: 参考范例清单
+#             match: {name_keywords: [全景计划], type_keywords: [xlsx]}
+#             required: false
+#         pre_conditions:                     # 前置成果候选（只指向项目内已有成果）
+#           - desc: 立项批复文件
+#             match: {deliverable_name_keywords: [立项批复]}
+#             required: true
+#
+# 索引生成: uv run python scripts/maintain_node_template_index.py
+
+ref_id: REF-CONST-DG-001
+node_name: 施工图设计完成（含审查合格证）
+node_type: MILESTONE
+stage_id: 1
+summary: 施工图设计完成是项目从设计阶段转入施工阶段的核心里程碑
+deliverables:
+- name: 全套施工图设计文件
+  target_amount: 1.0
+  unit: 套
+  is_required: true
+  typical_filenames: 含"施工图""建施""结施""水施""电施""暖施""送审图""蓝图"等关键词
+- name: 施工图设计文件审查合格证
+  target_amount: 1.0
+  unit: 份
+  is_required: true
+  typical_filenames: 含"审查合格证""施工图审查""审图合格""合字第"等关键词
+- name: 评审通过文件（可选）
+  target_amount: 1.0
+  unit: 份
+  is_required: false
+  typical_filenames: ''
+preconditions:
+- 建设工程规划许可证已取得
+- 方案设计已获甲方批复
+- 设计合同已签订（设计单位已确定）
+- 勘察报告已完成

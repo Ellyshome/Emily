@@ -35,6 +35,13 @@ from emily_core.infrastructure.database.models import (
 )
 from emily_core.infrastructure.database.session import get_session
 
+
+# 汇总/提醒口径：容器角色与停用态排除
+# （判定口径唯一定义见 services/node_state_machine.excluded_from_rollup；
+#  仓储层按既有约定内联字面量，不反向依赖服务层）
+_ROLLUP_EXCLUDED_ROLES = ("TEMP_MILESTONE", "TEMP_TASK", "UNCLASSIFIED_SINK")
+_ROLLUP_EXCLUDED_STATUS = "DISABLED"
+
 logger = logging.getLogger("emily.evolution_repo")
 
 
@@ -747,19 +754,21 @@ class EvolutionRepo:
     def aggregate_project_nodes(date_str: str = "", *, session: Optional[Session] = None) -> dict:
         """数据源 I：项目节点聚合。date_str 仅用于当日进度变化过滤，为空时跳过。"""
         def _impl(sess: Session) -> dict:
+            # 统计口径排除容器与停用节点（US-15.11 / AC-US-17.2 / 17.5）
+            base_filter = (
+                ProjectNode.is_discarded == False,
+                ProjectNode.node_role.notin_(_ROLLUP_EXCLUDED_ROLES),
+                ProjectNode.status != _ROLLUP_EXCLUDED_STATUS,
+            )
             status_rows = sess.query(
                 ProjectNode.status,
                 func.count(ProjectNode.id).label("cnt"),
-            ).filter(
-                ProjectNode.is_discarded == False,
-            ).group_by(ProjectNode.status).all()
+            ).filter(*base_filter).group_by(ProjectNode.status).all()
 
             type_rows = sess.query(
                 ProjectNode.node_type,
                 func.count(ProjectNode.id).label("cnt"),
-            ).filter(
-                ProjectNode.is_discarded == False,
-            ).group_by(ProjectNode.node_type).all()
+            ).filter(*base_filter).group_by(ProjectNode.node_type).all()
 
             now_str = datetime.now(BEIJING_TZ).strftime("%Y-%m-%d")
             future_str = (datetime.now(BEIJING_TZ) + timedelta(days=7)).strftime("%Y-%m-%d")
@@ -767,12 +776,14 @@ class EvolutionRepo:
             overdue = sess.query(ProjectNode).filter(
                 ProjectNode.status == "IN_PROGRESS",
                 ProjectNode.is_discarded == False,
+                ProjectNode.node_role.notin_(_ROLLUP_EXCLUDED_ROLES),
                 ProjectNode.deadline < now_str,
             ).all()
 
             upcoming = sess.query(ProjectNode).filter(
                 ProjectNode.status == "IN_PROGRESS",
                 ProjectNode.is_discarded == False,
+                ProjectNode.node_role.notin_(_ROLLUP_EXCLUDED_ROLES),
                 ProjectNode.deadline >= now_str,
                 ProjectNode.deadline < future_str,
             ).all()
@@ -925,10 +936,12 @@ class EvolutionRepo:
     @staticmethod
     def get_user_nodes(user_id: str, *, session: Optional[Session] = None) -> list[ProjectNode]:
         def _impl(sess: Session):
+            # 停用态已天然被状态过滤排除；容器节点不进入个人待办（US-15.11）
             return sess.query(ProjectNode).filter(
                 ProjectNode.responsible_user_id == user_id,
                 ProjectNode.status.in_(["IN_PROGRESS", "CONDITIONS_NOT_MET"]),
                 ProjectNode.is_discarded == False,
+                ProjectNode.node_role.notin_(_ROLLUP_EXCLUDED_ROLES),
             ).all()
 
         if session is not None:

@@ -7,6 +7,11 @@ from __future__ import annotations
 
 import asyncio
 import logging
+
+# 汇总/提醒口径：容器角色与停用态排除
+# （判定口径唯一定义见 services/node_state_machine.excluded_from_rollup）
+_ROLLUP_EXCLUDED_ROLES = ("TEMP_MILESTONE", "TEMP_TASK", "UNCLASSIFIED_SINK")
+_ROLLUP_EXCLUDED_STATUS = "DISABLED"
 from datetime import datetime, timedelta
 
 logger = logging.getLogger("emily.morning_report_builder")
@@ -106,9 +111,12 @@ class MorningReportBuilder:
                 lines.append(f"\u2022 {e.event_action}: {e.summary}")
             lines.append("")
 
-        # 截止临近
-        overdue_nodes = [n for n in nodes if n.deadline and n.deadline < date]
-        upcoming = [n for n in nodes if n.deadline and date <= n.deadline <= (datetime.fromisoformat(date) + timedelta(days=7)).strftime("%Y-%m-%d")]
+        # 截止临近（排除停用节点与容器：退出管控 / 承载容器不产生到期提醒，US-15.11 / AC-US-17.2）
+        alertable = [n for n in nodes
+                     if (getattr(n, "status", "") or "") != _ROLLUP_EXCLUDED_STATUS
+                     and (getattr(n, "node_role", "") or "BUSINESS") not in _ROLLUP_EXCLUDED_ROLES]
+        overdue_nodes = [n for n in alertable if n.deadline and n.deadline < date]
+        upcoming = [n for n in alertable if n.deadline and date <= n.deadline <= (datetime.fromisoformat(date) + timedelta(days=7)).strftime("%Y-%m-%d")]
 
         if overdue_nodes or upcoming:
             lines.append("\u26a0\ufe0f 注意")

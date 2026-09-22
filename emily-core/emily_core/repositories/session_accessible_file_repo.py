@@ -20,6 +20,35 @@ class SessionAccessibleFileRepo:
     """Session 可见文件 Repository。"""
 
     @staticmethod
+    def list_visible(user_id: str, limit: int = 500) -> list[File]:
+        """列出用户当前可见的文件（快照表口径：project_scope / node_linked / explicit）。
+
+        供装配链路采集「共享文件」候选——越权文件不得出现在候选中（规格约束）。
+        """
+        if not user_id:
+            return []
+        try:
+            from sqlalchemy import select
+
+            with get_session() as session:
+                accessible = select(SessionAccessibleFile.file_id).where(
+                    SessionAccessibleFile.user_id == user_id,
+                )
+                return (
+                    session.query(File)
+                    .filter(
+                        File.id.in_(accessible),
+                        File.is_deleted == False,
+                    )
+                    .order_by(File.created_at.desc())
+                    .limit(limit)
+                    .all()
+                )
+        except Exception as e:
+            logger.error("list_visible(%s) failed: %s", user_id, e)
+            return []
+
+    @staticmethod
     def sync_for_user(
         user_id: str,
         project_ids: list[str],

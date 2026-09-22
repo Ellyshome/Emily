@@ -290,234 +290,28 @@ def _list_node_table() -> list[dict]:
         for n in nodes
     ]
 
-
 # ══════════════════════════════════════════════════════════════════════════════
-#  全景节点参考模板（容器内 /app/data/node_templates）—— 建节点时可选模板
+#  全景节点参考模板 / 装配 / 收容 —— **全部经能力层**（C13 观察窗口，不在此复刻业务逻辑）
 #
-#  发现入口唯一：index.yaml（由 scripts/maintain_node_template_index.py 在宿主机生成）。
-#    ① 下拉列表读 index.yaml 的 templates 记录（ref_id / node_name / node_type /
-#       stage_id / summary / file）——summary 即「## 节点说明」首句，直接可用作备注预填；
-#    ② 选定后再按该记录的 file 去读对应 md，解析「## 产物清单」得到成果清单。
-#  解析口径与 emily-data/node_templates/README.md 的映射约定一致；文件识别特征 /
-#  典型文件名 / 流程位置 属 LLM 专用，不入库、不经此接口下发。
+#  模板发现入口唯一：index.yaml（由 scripts/maintain_node_template_index.py 在宿主机生成）。
+#  解析/装配/判定/迁正/停用一律调用能力层：
+#    · NodeTemplateLoader        —— 清单与详情（只读检索能力同源）
+#    · NodeAssemblyService       —— 对象声明解析 + 四类采集器 → 只读草稿
+#    · NodeContainerService      —— 收容区查询 / 认领迁正 / 事件归位
+#    · NodeService               —— 创建期一次性落库 / 停用恢复
 # ══════════════════════════════════════════════════════════════════════════════
 
-_TEMPLATE_SECTION_RE = re.compile(r"##\s+产物清单\s*\n(.*?)(?=\n##\s|\Z)", re.DOTALL)
-_TEMPLATE_ITEM_RE = re.compile(r"###\s+([^\n]+)\n(.*?)(?=\n###\s|\Z)", re.DOTALL)
-_TEMPLATE_TARGET_RE = re.compile(r"目标\s*([\d.]+)\s*([^\s，。、；)）]*)")
+def _template_loader():
+    from emily_core.services.node_template_loader import NodeTemplateLoader
+
+    return NodeTemplateLoader()
 
 
-def _templates_dir() -> Path:
-    """参考模板目录：容器内 /app/data/node_templates，开发环境回退 emily-data/node_templates。"""
-    from emily_core.infrastructure.paths import resolve_data_path
+def _assembly_service():
+    from emily_core.services.node_assembly_service import NodeAssemblyService
 
-    return Path(resolve_data_path("", "/app/data/node_templates", "emily-data/node_templates"))
+    return NodeAssemblyService()
 
-
-def _template_index_path() -> Path:
-    """模板索引文件路径（发现入口）。"""
-    return _templates_dir() / "index.yaml"
-
-
-def _read_template_index() -> dict:
-    """读取模板索引 index.yaml；缺失或不可解析时返回空 dict。"""
-    index_path = _template_index_path()
-    if not index_path.exists():
-        logger.warning("node template index not found: %s", index_path)
-        return {}
-    try:
-        import yaml
-        with open(index_path, "r", encoding="utf-8") as f:
-            return yaml.safe_load(f) or {}
-    except Exception as ex:
-        logger.warning("read node template index failed: %s", ex)
-        return {}
-
-
-def _list_node_templates() -> list[dict]:
-    """索引中的模板记录（供下拉列表 + 名称/类型/备注预填）。"""
-    out: list[dict] = []
-    for t in (_read_template_index().get("templates") or []):
-        if not isinstance(t, dict):
-            continue
-        ref_id = str(t.get("ref_id") or "").strip()
-        if not ref_id:
-            continue
-        out.append({
-            "ref_id": ref_id,
-            "node_name": str(t.get("node_name") or "").strip(),
-            "node_type": str(t.get("node_type") or "TASK").strip() or "TASK",
-            "stage_id": t.get("stage_id", 0),
-            "summary": str(t.get("summary") or "").strip(),
-            "file": str(t.get("file") or "").strip(),
-        })
-    return out
-
-
-def _parse_template_deliverables(body: str) -> list[dict]:
-    """解析 `## 产物清单` 下的每个 `### 名称` 为一条成果声明。"""
-    section = _TEMPLATE_SECTION_RE.search(body)
-    if not section:
-        return []
-    items: list[dict] = []
-    for name, block in _TEMPLATE_ITEM_RE.findall(section.group(1)):
-        plain = re.sub(r"[*`]", "", block)
-        m = _TEMPLATE_TARGET_RE.search(plain)
-        target = float(m.group(1)) if m else 1.0
-        unit = ((m.group(2) or "").strip(" ，。、；") if m else "") or "份"
-        items.append({
-            "deliverable_name": re.sub(r"\s+", " ", name).strip(),
-            "target_amount": target,
-            "unit": unit,
-            # 「非必需」含「必需」二字，故先排除再判必需
-            "is_required": ("非必需" not in plain) and ("必需" in plain),
-        })
-    return items
-
-
-def _parse_template_preconditions(body: str) -> list[str]:
-    """取 `## 前置条件` 下的条目原文（自然语言，后面据此匹配项目内已有成果）。"""
-    m = re.search(r"##\s+前置条件\s*\n(.*?)(?=\n##\s|\Z)", body, re.DOTALL)
-    if not m:
-        return []
-    out: list[str] = []
-    for line in m.group(1).splitlines():
-        s = line.strip()
-        if not s.startswith(("-", "*")):
-            continue
-        text = re.sub(r"\s+", " ", s.lstrip("-*").strip())
-        if text:
-            out.append(text)
-    return out
-
-
-# 前置条件描述里成果名往往嵌在句子中（如「建设工程规划许可证已取得」内含成果名
-# 「建设工程规划许可证」），故用双向子串匹配；成果名过短不参与，避免噪声命中。
-_DEP_MIN_NAME_LEN = 4
-
-# 成果名的通用尾词：剥离后再比对以提高召回（如「立项批复文件」→「立项批复」）
-_DELIV_SUFFIXES = (
-    "文件", "文本", "报告", "汇总", "记录", "清单", "说明书", "材料", "文档",
-)
-
-
-def _squash(s: str) -> str:
-    """去掉空白与换行，便于子串比较。"""
-    return re.sub(r"\s+", "", s or "")
-
-
-def _match_keys(desc: str) -> list[str]:
-    """从描述产出匹配键：整句 + 去掉「已…」状态尾句后的主体。
-
-    「建设工程规划许可证已取得」→〔整句, 建设工程规划许可证〕
-    「方案设计已获甲方批复」    →〔整句, 方案设计〕（成果名常是描述的主体部分）
-    """
-    key = _squash(desc)
-    if not key:
-        return []
-    keys = [key]
-    head = key.split("已", 1)[0]
-    if head and head != key:
-        keys.append(head)
-    return keys
-
-
-def _name_variants(name: str) -> list[str]:
-    """成果名的比对变体：原名 + 去掉通用尾词后的核心词。"""
-    out = [name]
-    for suf in _DELIV_SUFFIXES:
-        if name.endswith(suf) and len(name) - len(suf) >= _DEP_MIN_NAME_LEN:
-            out.append(name[: -len(suf)])
-    return out
-
-
-def _match_precondition(desc: str, pool: list[dict]) -> dict | None:
-    """为一条前置条件描述在项目已有成果中找最合适的对应成果。
-
-    整句优先（更具体），整句无命中再退到主体词；每轮按命中的名称长度取最长者。
-    """
-    for key in _match_keys(desc):
-        if len(key) < _DEP_MIN_NAME_LEN:
-            continue
-        best: dict | None = None
-        best_len = 0
-        for it in pool:
-            for name in _name_variants(_squash(it.get("deliverable_name"))):
-                if len(name) < _DEP_MIN_NAME_LEN:
-                    continue
-                if name in key or key in name:
-                    if len(name) > best_len:
-                        best, best_len = it, len(name)
-                    break
-        if best is not None:
-            return best
-    return None
-
-
-def _build_node_draft(entry: dict, project_id: str) -> dict:
-    """把模板声明装配成「建节点草稿」：模板成果 + 前置依赖候选 + 未解析项。
-
-    只读、不写库；候选由界面（或 IM 对话）呈现给用户调整，确认后才随创建请求落库。
-    「未解析项」必须回传，避免用户误以为模板已全部生效。
-    """
-    from emily_core.repositories.node_repo import NodeDeliverableRepo
-
-    detail = _parse_template_detail(entry)
-    pool = NodeDeliverableRepo.find_by_project(project_id) if project_id else []
-
-    dependencies: list[dict] = []
-    unresolved: list[dict] = []
-    seen: set[str] = set()
-    for desc in detail.get("preconditions", []):
-        hit = _match_precondition(desc, pool)
-        if hit is None:
-            unresolved.append({
-                "desc": desc,
-                "reason": "项目内未找到对应成果" if project_id else "未选择项目，无法检索",
-            })
-            continue
-        if hit["deliverable_id"] in seen:
-            continue
-        seen.add(hit["deliverable_id"])
-        dependencies.append({
-            "depends_on_deliverable_id": hit["deliverable_id"],
-            "deliverable_name": hit["deliverable_name"],
-            "node_id": hit["node_id"],
-            "node_name": hit["node_name"],
-            "from_desc": desc,
-        })
-
-    return {
-        "ref_id": detail.get("ref_id", ""),
-        "node_name": detail.get("node_name", ""),
-        "node_type": detail.get("node_type", "TASK"),
-        "remark": detail.get("summary", ""),
-        "deliverables": detail.get("deliverables", []),
-        "preconditions": detail.get("preconditions", []),
-        "dependencies": dependencies,
-        "unresolved": unresolved,
-    }
-
-
-def _parse_template_detail(entry: dict) -> dict:
-    """按索引记录去检索对应的 md，补齐成果清单与前置条件。"""
-    detail = dict(entry)
-    detail["deliverables"] = []
-    detail["preconditions"] = []
-    if not entry.get("file"):
-        return detail
-    md_file = _templates_dir() / entry["file"]
-    if not md_file.exists():
-        logger.warning("template md not found: %s", md_file)
-        return detail
-    try:
-        text = md_file.read_text(encoding="utf-8")
-    except Exception as ex:
-        logger.warning("read template md failed %s: %s", md_file.name, ex)
-        return detail
-    detail["deliverables"] = _parse_template_deliverables(text)
-    detail["preconditions"] = _parse_template_preconditions(text)
-    return detail
 
 
 # ══════════════════════════════════════════════════════════════════════════════
@@ -596,36 +390,61 @@ async def get_node_table(user_id: str = Query("", description="用户 ID，空=�
 
 
 @router.get("/node-templates")
-async def get_node_templates():
-    """参考模板清单 —— 取自索引 index.yaml（选定后再按 ref_id 取 md 详情）。"""
+async def get_node_templates(node_type: str = Query(""), keyword: str = Query("")):
+    """参考模板清单 —— 经能力层 NodeTemplateLoader（与对话/脚本同源，路由不复刻解析）。"""
     try:
-        tdir = _templates_dir()
-        index_path = _template_index_path()
-        index = await asyncio.to_thread(_read_template_index)
-        templates = await asyncio.to_thread(_list_node_templates)
+        loader = _template_loader()
+        available, why = await asyncio.to_thread(loader.is_available)
+        if not available:
+            return _ok({"exists": False, "count": 0, "templates": [],
+                        "reason": why, "dir": str(getattr(loader, "templates_dir", ""))})
+        templates = await asyncio.to_thread(loader.list_templates, node_type, keyword)
         return _ok({
-            "dir": str(tdir),
-            "index_file": str(index_path),
-            "exists": index_path.exists(),
-            "updated_at": str(index.get("updated_at") or ""),
+            "dir": str(getattr(loader, "templates_dir", "")),
+            "index_file": str(Path(getattr(loader, "templates_dir", "")) / "index.yaml"),
+            "exists": True,
             "count": len(templates),
-            "templates": templates,
+            "templates": [
+                {"ref_id": t.ref_id, "node_name": t.node_name, "node_type": t.node_type,
+                 "stage_id": t.stage_id, "summary": t.summary,
+                 "attachment_count": t.attachment_count}
+                for t in templates
+            ],
         })
     except Exception as ex:
         logger.exception("console.node_templates failed")
-        return _err(f"读取参考模板索引失败：{ex}")
+        return _err(f"读取参考模板库失败：{ex}")
 
 
 @router.get("/node-template")
 async def get_node_template_detail(ref_id: str = Query(..., description="模板 ref_id")):
-    """按 ref_id 检索对应 md，返回可录入信息（含「## 产物清单」解析出的成果清单）。"""
+    """按 ref_id 读模板详情（清单 / 成果 / 对象声明 / 附件清单）—— 经能力层。"""
     try:
-        templates = await asyncio.to_thread(_list_node_templates)
-        entry = next((t for t in templates if t["ref_id"] == ref_id), None)
-        if entry is None:
-            return _err(f"未在索引中找到模板 {ref_id}")
-        detail = await asyncio.to_thread(_parse_template_detail, entry)
-        return _ok(detail)
+        from emily_core.services.node_assembly_service import NodeDeclarationParser
+
+        detail = await asyncio.to_thread(_template_loader().get_template, ref_id)
+        if detail is None:
+            return _err(f"未在模板库中找到模板 {ref_id}")
+        parsed = await asyncio.to_thread(NodeDeclarationParser().parse, detail.declarations_raw)
+        return _ok({
+            "ref_id": detail.ref_id,
+            "node_name": detail.node_name,
+            "node_type": detail.node_type,
+            "stage_id": detail.stage_id,
+            "summary": detail.summary,
+            "deliverables": [
+                {"deliverable_name": d.name, "target_amount": d.target_amount,
+                 "unit": d.unit, "is_required": d.is_required,
+                 "typical_filenames": d.typical_filenames}
+                for d in detail.deliverables
+            ],
+            "declarations": parsed.to_dict(),
+            "preconditions": detail.preconditions,
+            "attachments": [
+                {"name": a.name, "size": a.size, "type": a.type} for a in detail.attachments
+            ],
+            "warnings": list(detail.warnings) + list(parsed.warnings),
+        })
     except Exception as ex:
         logger.exception("console.node_template_detail failed ref=%s", ref_id)
         return _err(f"读取模板详情失败：{ex}")
@@ -635,15 +454,15 @@ async def get_node_template_detail(ref_id: str = Query(..., description="模板 
 async def get_node_draft(
     ref_id: str = Query(..., description="模板 ref_id"),
     project_id: str = Query("", description="目标项目 ID（用于检索项目内已有成果）"),
+    user_id: str = Query("", description="操作人 UUID（共享文件候选受其可见范围约束）"),
 ):
-    """按模板装配「建节点草稿」：模板成果 + 前置依赖候选 + 未解析项。只读不写库。"""
+    """按模板装配「只读草稿」（四类候选 + 依据 + 未解析项）—— 经能力层 NodeAssemblyService。"""
     try:
-        templates = await asyncio.to_thread(_list_node_templates)
-        entry = next((t for t in templates if t["ref_id"] == ref_id), None)
-        if entry is None:
-            return _err(f"未在索引中找到模板 {ref_id}")
-        draft = await asyncio.to_thread(_build_node_draft, entry, project_id)
-        return _ok(draft)
+        draft = await asyncio.to_thread(
+            _assembly_service().build_draft, ref_id, project_id, user_id)
+        return _ok(draft.to_dict())
+    except KeyError as ex:
+        return _err(f"未在模板库中找到模板：{ex}")
     except Exception as ex:
         logger.exception("console.node_draft failed ref=%s project=%s", ref_id, project_id)
         return _err(f"装配节点草稿失败：{ex}")
@@ -822,6 +641,19 @@ async def upload_file(
             ))
             logger.info("console.upload: REFERENCE file scheduled for RAG indexing: %s",
                         res.get("file_id", ""))
+
+    # 归档后分析（门禁 → 归属判定 → 临时节点/提案）：经注册表分发，fail-open 不阻断归档
+    try:
+        from emily_core.services.archive_handler_registry import ArchiveHandlerRegistry
+
+        asyncio.create_task(ArchiveHandlerRegistry.dispatch(
+            file_id=res.get("file_id", ""),
+            project_id=project_id or "",
+            actor_id=user_id or "",
+            filename=res.get("filename", "") or "",
+        ))
+    except Exception as ex:  # 分发失败不影响归档结果
+        logger.warning("console.upload: archive dispatch skipped: %s", ex)
 
     return _ok({k: res.get(k) for k in (
         "file_id", "file_no", "filename", "size", "confidentiality",
@@ -1504,9 +1336,14 @@ class NodeCreateRequest(BaseModel):
     deliverables: list[dict] = Field(default_factory=list)
     dependencies: list[dict] = Field(
         default_factory=list,
-        description="待建前置依赖（每项含 depends_on_deliverable_id）。"
-                    "由界面确认后传入，节点落库后再逐个建立；依赖指向的是已存在的成果。",
+        description="待建前置依赖（每项含 depends_on_deliverable_id）。由界面确认后传入，"
+                    "落库编排中**最后**执行（依赖指向的是已存在的成果）。",
     )
+    planned_start_at: str = ""           # 计划启动时间（ISO8601；到点即激活）
+    participant_user_ids: list[dict] = Field(
+        default_factory=list, description="参与人候选（每项 user_id + 可选 role）")
+    shared_file_ids: list[str] = Field(
+        default_factory=list, description="共享文件候选（file_id 列表，越权项被丢弃并回报）")
     operator_id: str = ""
 
 
@@ -1521,49 +1358,6 @@ class NodeUpdateRequest(BaseModel):
 class NodeDeleteRequest(BaseModel):
     node_id: str = ""
     operator_id: str = ""
-
-
-async def _add_node_dependencies(
-    node_id: str, dependencies: list[dict], operator_id: str,
-) -> tuple[list[dict], list[dict]]:
-    """把界面确认过的前置依赖逐个落库（节点创建之后执行）。
-
-    依赖指向「已存在的成果」，故必须在节点落库后再建。单项失败不阻断建节点，
-    失败明细回传界面由用户处理。
-    """
-    from emily_core.services.node_commands import AddDependencyCommand
-
-    svc = _get_node_service()
-    added: list[dict] = []
-    failed: list[dict] = []
-    for item in dependencies or []:
-        if not isinstance(item, dict):
-            continue
-        dep_id = str(item.get("depends_on_deliverable_id") or "").strip()
-        if not dep_id:
-            continue
-        try:
-            weight = float(item.get("weight", 1.0) or 1.0)
-        except (TypeError, ValueError):
-            weight = 1.0
-        try:
-            res = await svc.add_dependency(AddDependencyCommand(
-                node_id=node_id,
-                depends_on_deliverable_id=dep_id,
-                weight=weight,
-                operator_id=operator_id,
-            ))
-        except Exception as ex:
-            failed.append({"depends_on_deliverable_id": dep_id, "message": str(ex)})
-            continue
-        if res.success:
-            added.append({
-                "depends_on_deliverable_id": dep_id,
-                "deliverable_name": str(item.get("deliverable_name") or ""),
-            })
-        else:
-            failed.append({"depends_on_deliverable_id": dep_id, "message": res.message})
-    return added, failed
 
 
 @router.post("/node-create")
@@ -1588,15 +1382,17 @@ async def create_node_from_console(req: NodeCreateRequest):
     svc = _get_node_service()
     node_id = req.node_id.strip() or generate_node_id(req.node_name.strip(), req.project_id)
 
-    # 仓库层 create 对已存在 node_id 是幂等返回（不报错），手工创建场景下会误导操作人，
-    # 故此处先行判定并明确拒绝（同名+同项目会算出同一个 node_id）。
+    # 手工创建场景下重复 node_id 会误导操作人（同名+同项目算出同一个 node_id），
+    # 故先行判定并明确拒绝——经**公开方法** `get_node_detail` 查询，不访问服务内部成员（C13）。
     try:
-        duplicated = await asyncio.to_thread(svc._node_repo.get_by_node_id, node_id)
+        duplicated = await svc.get_node_detail(node_id)
     except Exception:
         duplicated = None
     if duplicated is not None:
         return _err(f"节点ID「{node_id}」已存在，请改用其它节点名称或手工指定节点ID")
 
+    # 一次性落库六类对象（节点 → 成果 → 参与单位 → 参与人 → 共享文件 → 依赖），
+    # 顺序与失败隔离策略由能力层统一实现（M4），路由不另立判定。
     cmd = CreateNodeCommand(
         project_id=req.project_id,
         node_id=node_id,
@@ -1608,6 +1404,10 @@ async def create_node_from_console(req: NodeCreateRequest):
         node_type=req.node_type or "TASK",
         deliverables=req.deliverables,
         template_ref_id=req.template_ref_id,
+        planned_start_at=req.planned_start_at or "",
+        participant_user_ids=req.participant_user_ids or [],
+        shared_file_ids=req.shared_file_ids or [],
+        dependencies=req.dependencies or [],
     )
     try:
         result = await svc.create_node(cmd)
@@ -1617,19 +1417,14 @@ async def create_node_from_console(req: NodeCreateRequest):
     if not result.success:
         return _err(result.message or "创建失败")
 
-    # 节点落库后再建前置依赖（依赖指向的是已存在的成果）
-    added, failed = await _add_node_dependencies(
-        node_id=result.node_id,
-        dependencies=req.dependencies,
-        operator_id=req.operator_id,
-    )
     return _ok({
         "success": True,
         "node_id": result.node_id,
         "status": result.status,
         "message": result.message,
-        "dependencies_added": added,
-        "dependencies_failed": failed,
+        "created": result.created,
+        "failed": result.failed,
+        "discarded": result.discarded,
     })
 
 
@@ -1679,6 +1474,143 @@ async def delete_node_from_console(req: NodeDeleteRequest):
     if not result.success:
         return _err(result.message or "删除失败")
     return _ok({"success": True, "node_id": req.node_id, "message": result.message})
+
+
+# ══════════════════════════════════════════════════════════════════════════════
+#  收容区 / 认领迁正 / 事件归位 / 停用恢复 —— 动作一律复用能力层（C13）
+# ══════════════════════════════════════════════════════════════════════════════
+
+class NodePromoteRequest(BaseModel):
+    node_id: str = ""
+    target_parent_id: str = ""
+    operator_id: str = ""
+    remark: str = ""
+
+
+class EventReassignRequest(BaseModel):
+    event_id: str = ""
+    target_node_id: str = ""
+    operator_id: str = ""
+    remark: str = ""
+
+
+class NodeDisableRequest(BaseModel):
+    node_id: str = ""
+    operator_id: str = ""
+    reason: str = ""
+
+
+class NodeEnableRequest(BaseModel):
+    node_id: str = ""
+    operator_id: str = ""
+    remark: str = ""
+
+
+def _container_service():
+    from emily_core.services.node_container_service import NodeContainerService
+
+    return NodeContainerService(node_service=_get_node_service())
+
+
+@router.get("/node-containers")
+async def get_node_containers(
+    project_id: str = Query(..., description="项目 ID"),
+    viewer_id: str = Query("", description="查看人 UUID（可见范围判定）"),
+):
+    """收容区清单（只读）：临时节点与未归类收容节点，区分「无归属 / 待认领 / 待归类收容」。"""
+    try:
+        level = 0
+        if viewer_id:
+            from emily_core.services.permission_service import PermissionService
+
+            perms = await asyncio.to_thread(
+                PermissionService().build_permission_dict, viewer_id)
+            level = int(perms.get("level", 0) or 0)
+        data = await _container_service().list_contained(project_id, viewer_id, level)
+        return _ok(data)
+    except Exception as ex:
+        logger.exception("console.node_containers failed project=%s", project_id)
+        return _err(f"读取收容区失败：{ex}")
+
+
+@router.post("/node-promote")
+async def promote_node_from_console(req: NodePromoteRequest):
+    """认领迁正（临时节点 → 正式归属位置；编号不变，留痕）。"""
+    if not req.operator_id:
+        return _err("请选择操作人")
+    if not req.node_id:
+        return _err("缺少节点ID")
+    from emily_core.services.node_commands import PromoteNodeCommand
+
+    try:
+        res = await _container_service().promote(PromoteNodeCommand(
+            node_id=req.node_id, target_parent_id=req.target_parent_id,
+            operator_id=req.operator_id, remark=req.remark))
+    except Exception as ex:
+        logger.exception("console.node_promote failed node=%s", req.node_id)
+        return _err(f"迁正失败：{ex}")
+    if not res.success:
+        return _err(res.message or "迁正失败")
+    return _ok({"success": True, "node_id": res.node_id, "message": res.message})
+
+
+@router.post("/node-event-reassign")
+async def reassign_event_from_console(req: EventReassignRequest):
+    """事件归位（未归类收容节点 → 具体节点；事件编号不变，留痕）。"""
+    if not req.operator_id:
+        return _err("请选择操作人")
+    if not req.event_id or not req.target_node_id:
+        return _err("缺少事件ID或目标节点")
+    from emily_core.services.node_commands import ReassignEventCommand
+
+    try:
+        res = await _container_service().reassign_event(ReassignEventCommand(
+            event_id=req.event_id, target_node_id=req.target_node_id,
+            operator_id=req.operator_id, remark=req.remark))
+    except Exception as ex:
+        logger.exception("console.event_reassign failed event=%s", req.event_id)
+        return _err(f"归位失败：{ex}")
+    if not res.success:
+        return _err(res.message or "归位失败")
+    return _ok({"success": True, "node_id": res.node_id, "message": res.message})
+
+
+@router.post("/node-disable")
+async def disable_node_from_console(req: NodeDisableRequest):
+    """停用节点（L4+，退出管控，非终态可恢复）。"""
+    if not req.operator_id:
+        return _err("请选择操作人")
+    from emily_core.services.node_commands import DisableNodeCommand
+
+    try:
+        res = await _get_node_service().disable_node(DisableNodeCommand(
+            node_id=req.node_id, operator_id=req.operator_id, reason=req.reason))
+    except Exception as ex:
+        logger.exception("console.node_disable failed node=%s", req.node_id)
+        return _err(f"停用失败：{ex}")
+    if not res.success:
+        return _err(res.message or "停用失败")
+    return _ok({"success": True, "node_id": res.node_id, "status": res.status,
+                "message": res.message})
+
+
+@router.post("/node-enable")
+async def enable_node_from_console(req: NodeEnableRequest):
+    """恢复被停用的节点（回到真实三态）。"""
+    if not req.operator_id:
+        return _err("请选择操作人")
+    from emily_core.services.node_commands import EnableNodeCommand
+
+    try:
+        res = await _get_node_service().enable_node(EnableNodeCommand(
+            node_id=req.node_id, operator_id=req.operator_id, remark=req.remark))
+    except Exception as ex:
+        logger.exception("console.node_enable failed node=%s", req.node_id)
+        return _err(f"恢复失败：{ex}")
+    if not res.success:
+        return _err(res.message or "恢复失败")
+    return _ok({"success": True, "node_id": res.node_id, "status": res.status,
+                "message": res.message})
 
 
 # ══════════════════════════════════════════════════════════════════════════════

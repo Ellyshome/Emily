@@ -19,6 +19,8 @@ from ..infrastructure.database.models import (
     Project, User, CompanyInfo, ProjectNode, NodeDependency,
 )
 
+from .node_state_machine import excluded_from_rollup
+
 logger = logging.getLogger("emily.initialization_checker")
 
 BEIJING_TZ = timezone(timedelta(hours=8))
@@ -142,10 +144,14 @@ class InitializationChecker:
             # ── T3：可运转（5 项）──
             t3 = {}
 
-            nodes = session.query(ProjectNode).filter(
+            # 体检口径排除容器与停用节点（US-15.11 / AC-US-17.2）：
+            # 容器不是业务节点，不应参与「节点树/里程碑/责任人/依赖覆盖」判定
+            nodes = [n for n in session.query(ProjectNode).filter(
                 ProjectNode.project_id == project_id,
                 ProjectNode.is_discarded == False,
-            ).all()
+            ).all() if not excluded_from_rollup(
+                node_role=getattr(n, "node_role", "") or "",
+                status=getattr(n, "status", "") or "")]
 
             # T3-1: 节点树已创建（至少1个 MILESTONE）
             milestones = [n for n in nodes if getattr(n, 'node_type', '') == 'MILESTONE']

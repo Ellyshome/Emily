@@ -35,6 +35,8 @@ from .node_commands import (
     SetParticipantCompaniesCommand,
     MountChildCommand,
     UnmountChildCommand,
+    DisableNodeCommand,
+    EnableNodeCommand,
     NodeOperationResult,
     CycleCheckResult,
     StateTransitionResult,
@@ -44,14 +46,18 @@ from .node_state_machine import (
     CONDITIONS_NOT_MET,
     IN_PROGRESS,
     COMPLETED,
+    DISABLED,
     NODE_TYPE_MILESTONE,
     NODE_TYPE_TASK,
+    NODE_ROLE_BUSINESS,
+    CONTAINER_NODE_ROLES,
     NodeSnapshot,
     DependencySnapshot,
     DeliverableSnapshot,
     calc_dependency_satisfaction,
     determine_node_status,
     detect_cycle,
+    planned_start_reached as _psr,
 )
 from ..repositories.node_repo import (
     ProjectNodeRepo,
@@ -178,6 +184,143 @@ class NodeService:
         self._user_repo = user_repo
         self._outbound_bus = outbound_bus
 
+    # ── 停用 / 恢复（US-17）──
+
+    @audited(category="node", action="disabled", target_type="node", actor_arg="cmd.operator_id", target_arg="cmd.node_id")
+    async def disable_node(self, cmd: DisableNodeCommand) -> NodeOperationResult:
+        """停用节点：退出管控（**非终态**，可恢复）。
+
+        权限：仅 L4+（服务层判定，低于 L4 明确拒绝）。
+        停用后：不计入完成度汇总、不产生到期提醒、不得挂载新任务；节点仍留在全景图中。
+        留痕：节点事件记录「谁 / 何时 / 为何」（AC-US-17.4）。
+        """
+        node = await asyncio.to_thread(self._node_repo.get_by_node_id, cmd.node_id)
+        if node is None:
+            return NodeOperationResult(success=False, node_id=cmd.node_id, message="节点不存在")
+
+        allowed = await asyncio.to_thread(self._check_operator_level, cmd.operator_id, 4)
+        if not allowed:
+            return NodeOperationResult(
+                success=False, node_id=cmd.node_id,
+                message="停用节点需要 L4 条线负责人及以上权限", error_code="40301")
+
+        old_status = node.status or ""
+        if old_status == DISABLED:
+            return NodeOperationResult(success=True, node_id=cmd.node_id, status=DISABLED,
+                                       message="节点已是停用状态")
+
+        await asyncio.to_thread(self._node_repo.update_status, cmd.node_id, DISABLED)
+        self._record_event(
+            node_id=cmd.node_id,
+            event_type="node_disabled",
+            old_value=json.dumps({"status": old_status}, ensure_ascii=False),
+            new_value=json.dumps({"status": DISABLED}, ensure_ascii=False),
+            operator_id=cmd.operator_id,
+            remark=f"停用节点（退出管控，可恢复）：{cmd.reason or '未填写原因'}",
+        )
+        logger.info("Node disabled: %s (by %s, reason=%s)", cmd.node_id, cmd.operator_id, cmd.reason)
+        return NodeOperationResult(
+            success=True, node_id=cmd.node_id, status=DISABLED,
+            message=f"节点「{node.node_name}」已停用（退出管控，可随时恢复）")
+
+    @audited(category="node", action="enabled", target_type="node", actor_arg="cmd.operator_id", target_arg="cmd.node_id")
+    async def enable_node(self, cmd: EnableNodeCommand) -> NodeOperationResult:
+        """恢复节点：清除停用态并**重算**得到当前真实状态（条件不足 / 进行中 / 已完结）。"""
+        node = await asyncio.to_thread(self._node_repo.get_by_node_id, cmd.node_id)
+        if node is None:
+            return NodeOperationResult(success=False, node_id=cmd.node_id, message="节点不存在")
+
+        allowed = await asyncio.to_thread(self._check_operator_level, cmd.operator_id, 4)
+        if not allowed:
+            return NodeOperationResult(
+                success=False, node_id=cmd.node_id,
+                message="恢复节点需要 L4 条线负责人及以上权限", error_code="40301")
+
+        if (node.status or "") != DISABLED:
+            return NodeOperationResult(success=False, node_id=cmd.node_id,
+                                       message="该节点未处于停用状态")
+
+        # 先摘掉停用标记再重算：重算入口会跳过 DISABLED，故需回到可判定态
+        await asyncio.to_thread(self._node_repo.update_status, cmd.node_id, CONDITIONS_NOT_MET)
+        res = await self._recalc_node_status(cmd.node_id)
+        self._record_event(
+            node_id=cmd.node_id,
+            event_type="node_enabled",
+            new_value=json.dumps({"status": res.status}, ensure_ascii=False),
+            operator_id=cmd.operator_id,
+            remark=f"恢复管控：{cmd.remark or '回到真实状态'}",
+        )
+        logger.info("Node enabled: %s -> %s", cmd.node_id, res.status)
+        return NodeOperationResult(
+            success=True, node_id=cmd.node_id, status=res.status,
+            message=f"节点「{node.node_name}」已恢复管控（当前状态：{res.status}）")
+
+    # ── 时间锚点（US-18）──
+
+    async def resolve_relative_anchor(self, expr: str, project_id: str) -> dict:
+        """相对锚点 → 具体日期（US-18.4 / 18.5）。
+
+        输入形如「取得施工许可证后 30 天」「方案批复后 2 周」：取被锚定节点的计划时间
+        （`planned_start_at` 优先，回退 `deadline`）为基准，加 N 天/周/月 得到**具体日期**。
+        **不得凭空猜测年度 / 季度**。
+
+        被锚定节点缺计划时间 / 节点不唯一 / 表达式无法解析 → `needs_confirm=True`
+        并给出待确认项，不返回猜测值。
+
+        Returns:
+            {"ok": bool, "value": "YYYY-MM-DD", "base_node_id": str,
+             "base_node_name": str, "base_time": str,
+             "needs_confirm": bool, "reason": str}
+        """
+        import re
+        from datetime import datetime as _dt
+        from datetime import timedelta as _td
+
+        expr = (expr or "").strip()
+        out = {"ok": False, "value": "", "base_node_id": "", "base_node_name": "",
+               "base_time": "", "needs_confirm": False, "reason": ""}
+        if not expr:
+            out.update(needs_confirm=True, reason="锚点表达式为空")
+            return out
+
+        m = re.search(r"(.+?)(?:后|之后)\s*(\d+)\s*(天|日|周|月)", expr)
+        if not m:
+            out.update(needs_confirm=True,
+                       reason=f"无法解析相对锚点表达式「{expr}」（需形如「<锚点节点>后 N 天/周/月」）")
+            return out
+        anchor_name, num, unit = m.group(1).strip(), int(m.group(2)), m.group(3)
+
+        from .node_batch import _resolve_node_id_by_name
+
+        anchor_id = await _resolve_node_id_by_name(project_id, anchor_name)
+        if not anchor_id:
+            out.update(needs_confirm=True,
+                       reason=f"锚点节点「{anchor_name}」在项目内无法唯一确定（需与全量节点名称唯一匹配）")
+            return out
+
+        anchor = await asyncio.to_thread(self._node_repo.get_by_node_id, anchor_id)
+        base_time = (getattr(anchor, "planned_start_at", "") or "") or (anchor.deadline or "")
+        if not base_time:
+            out.update(base_node_id=anchor_id, base_node_name=anchor.node_name or "",
+                       needs_confirm=True,
+                       reason=f"锚点节点「{anchor.node_name}」无计划启动时间与截止时间，无法推算（不猜测）")
+            return out
+
+        try:
+            base = _dt.fromisoformat(str(base_time))
+        except (ValueError, TypeError):
+            out.update(base_node_id=anchor_id, base_node_name=anchor.node_name or "",
+                       base_time=str(base_time), needs_confirm=True,
+                       reason=f"锚点节点时间格式无法解析：{base_time}")
+            return out
+
+        days = num * {"天": 1, "日": 1, "周": 7, "月": 30}.get(unit, 1)
+        value = (base + _td(days=days)).strftime("%Y-%m-%d")
+        out.update(ok=True, value=value, base_node_id=anchor_id,
+                   base_node_name=anchor.node_name or "", base_time=str(base_time),
+                   reason=f"由「{anchor.node_name}」的 {str(base_time)[:10]} 加 {num}{unit} 推得")
+        return out
+
     # ── 辅助方法 ──
 
     @staticmethod
@@ -228,6 +371,21 @@ class NodeService:
         否则拒绝创建（error_code=40003）——节点是否完结只由自身必需成果决定，
         无成果的节点没有任何完成判据。放行后成果随节点一并落库。
         """
+        # ── 幂等（R10）：节点已存在则整体跳过，不重复写附属对象 ──
+        # 归档触发的补建 / 重复投喂 / 重复批量建树都会走到这里；若继续执行，
+        # 成果与参与人会按同一 node_id 重复追加，故在此收口。
+        existing = await asyncio.to_thread(self._node_repo.get_by_node_id, cmd.node_id)
+        if existing is not None:
+            logger.info("Node already exists (idempotent skip): %s", cmd.node_id)
+            return NodeOperationResult(
+                success=True, node_id=cmd.node_id,
+                status=getattr(existing, "status", "") or "",
+                progress=_parse_decimal(getattr(existing, "progress", 0)),
+                message=f"节点 {cmd.node_id} 已存在（幂等跳过，未重复写入附属对象）",
+                created={"node": False, "deliverables": 0, "companies": 0,
+                         "users": 0, "files": 0, "dependencies": 0},
+            )
+
         # ── 责任人默认值 + FK 校验 ──
         responsible_user_id = getattr(cmd, 'responsible_user_id', '') or cmd.creator_id
         if self._user_repo:
@@ -240,7 +398,13 @@ class NodeService:
                 )
 
         # ── 权限校验 ──
-        if cmd.creator_id and self._user_repo:
+        # 容器节点（临时里程碑 / 临时任务 / 未归类收容节点）属**系统收容路径**：
+        # 由判定链路按项目落地，不经用户建节点权限（AC-US-13.2/13.3：无建节点权限者
+        # 也落临时节点等待认领）。node_role 不出现在任何工具 schema 中，LLM 无法指定。
+        node_role = (getattr(cmd, "node_role", "") or NODE_ROLE_BUSINESS).strip() or NODE_ROLE_BUSINESS
+        is_container = node_role != NODE_ROLE_BUSINESS
+
+        if cmd.creator_id and self._user_repo and not is_container:
             user = await asyncio.to_thread(self._user_repo.get_user, cmd.creator_id)
             if user:
                 is_admin = getattr(user, "level", 0) >= 5
@@ -262,8 +426,10 @@ class NodeService:
         # ── 成果必备把关（节点状态自证化 US-04 / R4）──
         # 节点状态只由自身必需成果决定，故"无成果的节点"等于"永远无法完结的节点"。
         # 把关收口在这一处，即可保证全部创建入口（对话/批量/调度）口径一致。
+        # **容器节点豁免**（US-15.11 / AC-US-15.11）：容器是承载容器而非业务节点，
+        # 不要求必需成果、不计完成度、不产生提醒、不得作为依赖目标。
         declared = _normalize_declared_deliverables(getattr(cmd, "deliverables", None))
-        if not any(d["is_required"] for d in declared):
+        if not is_container and not any(d["is_required"] for d in declared):
             return NodeOperationResult(
                 success=False, node_id=cmd.node_id,
                 message=(
@@ -288,7 +454,9 @@ class NodeService:
 
         # 参与单位兜底顺序：显式传入 → 关联单位 → 创建人所属企业
         # （归属口径：可见范围由「企业参与节点」推导；不登记则所有人都看不到该项目态势）
-        if not participant_company_ids:
+        # **容器节点不登记参与单位**：容器可见范围由「L4+ 或创建者本人」判定
+        # （AC-US-15.5），登记企业参与会把收容内容泄露给非 L4 的该企业用户。
+        if not participant_company_ids and not is_container:
             if related_company_id:
                 participant_company_ids = [related_company_id]
             else:
@@ -315,19 +483,23 @@ class NodeService:
             responsible_user_id=responsible_user_id,
             node_type=getattr(cmd, 'node_type', NODE_TYPE_TASK),
             template_ref_id=getattr(cmd, 'template_ref_id', ''),
+            node_role=node_role,
+            planned_start_at=getattr(cmd, 'planned_start_at', '') or '',
         )
 
-        # ── 写入参与单位（多对多关联）──
-        if participant_company_ids:
-            await asyncio.to_thread(
-                self._npc_repo.replace_all,
-                cmd.node_id, participant_company_ids, cmd.creator_id,
-            )
+        # ── 创建期按依赖顺序一次性落库（US-11.1）──
+        # 顺序：节点（上）→ 成果 → 参与单位 → 参与人 → 共享文件 → 依赖
+        # 依赖必须最后：依赖只能指向**已存在**的成果（AC-US-08.4）。
+        # 节点创建为强成功；其余五类逐项隔离——单项失败不阻断节点创建，
+        # 失败项进 failed[]、越权/不存在项进 discarded[]，均随结果回报（AC-US-11.3 / 10.3）。
+        created = {"node": True, "deliverables": 0, "companies": 0,
+                   "users": 0, "files": 0, "dependencies": 0}
+        failed: list[dict] = []
+        discarded: list[dict] = []
 
-        # ── 成果与节点一并落库（成果必备把关已在上方放行）──
-        created_deliverables = 0
+        # ② 成果
         for d in declared:
-            created = await self.create_deliverable(CreateDeliverableCommand(
+            res = await self.create_deliverable(CreateDeliverableCommand(
                 node_id=cmd.node_id,
                 deliverable_name=d["deliverable_name"],
                 target_amount=d["target_amount"],
@@ -335,11 +507,94 @@ class NodeService:
                 is_required=d["is_required"],
                 operator_id=cmd.creator_id,
             ))
-            if created.success:
-                created_deliverables += 1
+            if res.success:
+                created["deliverables"] += 1
             else:
+                failed.append({"kind": "deliverable", "ref": d["deliverable_name"],
+                               "reason": res.message})
                 logger.error("Declared deliverable create failed: node=%s name=%s msg=%s",
-                             cmd.node_id, d["deliverable_name"], created.message)
+                             cmd.node_id, d["deliverable_name"], res.message)
+
+        # ③ 参与单位
+        if participant_company_ids:
+            try:
+                await asyncio.to_thread(
+                    self._npc_repo.replace_all,
+                    cmd.node_id, participant_company_ids, cmd.creator_id,
+                )
+                created["companies"] = len(participant_company_ids)
+            except Exception as e:
+                failed.append({"kind": "company",
+                               "ref": ",".join(participant_company_ids),
+                               "reason": str(e)})
+                logger.exception("Participant companies write failed: node=%s", cmd.node_id)
+
+        # ④ 参与人（逐项存在性校验；不存在 → 丢弃并回报）
+        for item in (getattr(cmd, "participant_user_ids", None) or []):
+            if isinstance(item, dict):
+                uid = str(item.get("user_id") or item.get("id") or "").strip()
+                role = str(item.get("role") or "participant").strip()
+            else:
+                uid, role = str(item or "").strip(), "participant"
+            if not uid:
+                continue
+            if self._user_repo is None:
+                discarded.append({"kind": "participant_user", "ref": uid,
+                                  "reason": "权限服务未就绪，已拒绝（fail-closed）"})
+                continue
+            user = await asyncio.to_thread(self._user_repo.get_user, uid)
+            if user is None:
+                discarded.append({"kind": "participant_user", "ref": uid, "reason": "用户不存在"})
+                continue
+            res = await self.add_node_participant(cmd.node_id, uid, cmd.creator_id, role)
+            if res.success:
+                created["users"] += 1
+            else:
+                discarded.append({"kind": "participant_user", "ref": uid, "reason": res.message})
+
+        # ⑤ 共享文件（限定存在性；越权/不存在 → 丢弃并回报，不以近似值代替）
+        for fid in (getattr(cmd, "shared_file_ids", None) or []):
+            fid = str(fid or "").strip()
+            if not fid:
+                continue
+            file_record = await asyncio.to_thread(FileRepository.get_by_id, fid)
+            if file_record is None or file_record.is_deleted:
+                discarded.append({"kind": "shared_file", "ref": fid, "reason": "文件不存在"})
+                continue
+            res = await self.add_node_file(cmd.node_id, fid, cmd.creator_id)
+            if res.success:
+                created["files"] += 1
+            else:
+                discarded.append({"kind": "shared_file", "ref": fid, "reason": res.message})
+
+        # ⑥ 依赖（最后：只指向已存在成果）
+        for dep in (getattr(cmd, "dependencies", None) or []):
+            if not isinstance(dep, dict):
+                continue
+            did = str(dep.get("depends_on_deliverable_id") or dep.get("deliverable_id") or "").strip()
+            if not did:
+                discarded.append({"kind": "dependency", "ref": "",
+                                  "reason": "缺少 depends_on_deliverable_id"})
+                continue
+            upstream = await asyncio.to_thread(self._deliv_repo.get_by_deliverable_id, did)
+            if upstream is None:
+                discarded.append({"kind": "dependency", "ref": did, "reason": "依赖的成果不存在"})
+                continue
+            try:
+                dep_weight = float(dep.get("weight", 1.0) if dep.get("weight") not in (None, "") else 1.0)
+            except (TypeError, ValueError):
+                dep_weight = 1.0
+            res = await self.add_dependency(AddDependencyCommand(
+                node_id=cmd.node_id,
+                depends_on_deliverable_id=did,
+                weight=dep_weight,
+                dependency_type=str(dep.get("dependency_type", "DELIVERABLE") or "DELIVERABLE"),
+                operator_id=cmd.creator_id,
+            ))
+            if res.success:
+                created["dependencies"] += 1
+            else:
+                failed.append({"kind": "dependency", "ref": did, "reason": res.message})
 
         self._record_event(
             node_id=cmd.node_id,
@@ -349,20 +604,40 @@ class NodeService:
                 "project_id": cmd.project_id,
                 "creator_id": cmd.creator_id,
                 "status": initial_status,
-            }),
+                "template_ref_id": getattr(cmd, "template_ref_id", ""),
+                "created": created,
+                "failed": failed,
+                "discarded": discarded,
+            }, ensure_ascii=False),
             operator_id=cmd.creator_id,
             remark="节点创建（入库即生效，无需审批）",
         )
 
-        logger.info("Node created: %s (project=%s, status=%s, deliverables=%d)",
-                    cmd.node_id, cmd.project_id, initial_status, created_deliverables)
+        logger.info("Node created: %s (project=%s, status=%s, created=%s, failed=%d, discarded=%d)",
+                    cmd.node_id, cmd.project_id, initial_status, created, len(failed), len(discarded))
+
+        # 回读最终状态：成果落库会触发状态重算（含"计划启动时间到点"激活），
+        # 入库初始值可能已被推进，回报须反映真实状态。
+        final = await asyncio.to_thread(self._node_repo.get_by_node_id, cmd.node_id)
+        final_status = (getattr(final, "status", "") or initial_status) if final else initial_status
+
+        msg = (f"节点「{cmd.node_name}」已创建并入库（状态：{final_status}）。"
+               f"已登记：成果 {created['deliverables']} 项 / 参与单位 {created['companies']} 家 / "
+               f"参与人 {created['users']} 人 / 共享文件 {created['files']} 份 / "
+               f"前置依赖 {created['dependencies']} 项。")
+        if failed:
+            msg += f" 有 {len(failed)} 项落库失败（节点已创建，可后续补录）。"
+        if discarded:
+            msg += f" 有 {len(discarded)} 项因不存在或越权被丢弃。"
         return NodeOperationResult(
             success=True,
             node_id=cmd.node_id,
-            status=initial_status,
+            status=final_status,
             progress=_parse_decimal(node.progress),
-            message=(f"节点「{cmd.node_name}」已创建并入库"
-                     f"（状态：条件未满足；已登记 {created_deliverables} 项成果）"),
+            message=msg,
+            created=created,
+            failed=failed,
+            discarded=discarded,
         )
 
     @audited(category="node", action="updated", target_type="node", actor_arg="cmd.operator_id", target_arg="cmd.node_id")
@@ -587,6 +862,18 @@ class NodeService:
 
         upstream_node_id = dep_deliv.node_id
 
+        # 1b. 容器节点不得作为依赖目标（US-15.11 / PRD §4.4-19）：
+        #     容器是承载容器而非业务节点，其成果不参与业务链路
+        upstream_node = await asyncio.to_thread(
+            self._node_repo.get_by_node_id, upstream_node_id)
+        if upstream_node is not None and (
+                upstream_node.node_role or NODE_ROLE_BUSINESS) in CONTAINER_NODE_ROLES:
+            return NodeOperationResult(
+                success=False, node_id=cmd.node_id,
+                message="容器节点（临时/收容）不得作为依赖目标",
+                error_code="40004",
+            )
+
         # 2. 禁止自己依赖自己
         if upstream_node_id == cmd.node_id:
             return NodeOperationResult(
@@ -705,6 +992,24 @@ class NodeService:
                 message=f"子节点数量已达上限（{MAX_CHILDREN_PER_PARENT}）",
                 error_code="40002",
             )
+
+        # 1b. 父节点准入（US-17.2 / US-15.11）：
+        #     停用节点不得挂载新任务；未归类收容节点不接受子节点（其为事件收容容器）
+        parent_node = await asyncio.to_thread(
+            self._node_repo.get_by_node_id, cmd.parent_node_id)
+        if parent_node is not None:
+            if (parent_node.status or "") == DISABLED:
+                return NodeOperationResult(
+                    success=False, node_id=cmd.parent_node_id,
+                    message="该节点已停用（退出管控），不得挂载新任务",
+                    error_code="ERR_DISABLED",
+                )
+            if (parent_node.node_role or NODE_ROLE_BUSINESS) == "UNCLASSIFIED_SINK":
+                return NodeOperationResult(
+                    success=False, node_id=cmd.parent_node_id,
+                    message="未归类收容节点是事件收容容器，不接受子节点",
+                    error_code="40004",
+                )
 
         # 2. 深度检查 + 循环检查共用 parent 祖先链（一次查询）
         #    深度：仅作安全上限，防止脏数据成环；两层制下里程碑可任意嵌套
@@ -1232,6 +1537,9 @@ class NodeService:
             "node_name": node.node_name,
             "project_id": node.project_id,
             "node_type": getattr(node, "node_type", ""),
+            "node_role": getattr(node, "node_role", "") or "BUSINESS",
+            "is_container": (getattr(node, "node_role", "") or "BUSINESS") != "BUSINESS",
+            "planned_start_at": getattr(node, "planned_start_at", "") or "",
             "status": node.status,
             "deadline": node.deadline,
             "related_company_id": _derive_related_company_from_participants(participant_company_ids, default=node.related_company_id),
@@ -1272,8 +1580,11 @@ class NodeService:
         流程：
         1. 加载节点快照（含成果、依赖）
         2. 构建 deliverable_file_status 映射
-        3. 调用引擎 determine_node_status
+        3. 调用引擎 determine_node_status（含"计划启动时间到点"激活判定）
         4. 如有变更，写入 DB + 记录事件
+
+        **停用态保护**（US-17.2）：`DISABLED` 节点直接返回，不参与三态流转——
+        否则任何成果变更都会把停用节点算回三态。
         """
         snap = await self._build_snapshot(node_id)
         if snap is None:
@@ -1284,6 +1595,20 @@ class NodeService:
             return NodeOperationResult(
                 success=True, node_id=node_id, status=NOT_ACTIVATED, progress=0.0,
                 message="节点尚未启用，不进行状态计算",
+            )
+
+        # 容器节点为**承载容器**而非业务节点：不参与三态流转（US-15.11）
+        if (snap.node_role or NODE_ROLE_BUSINESS) in CONTAINER_NODE_ROLES:
+            return NodeOperationResult(
+                success=True, node_id=node_id, status=snap.status, progress=snap.progress,
+                message="容器节点为承载容器，不参与状态流转",
+            )
+
+        # 停用节点不参与流转（恢复时由 enable_node 显式重算）
+        if snap.status == DISABLED:
+            return NodeOperationResult(
+                success=True, node_id=node_id, status=DISABLED, progress=snap.progress,
+                message="节点已停用（退出管控），不进行状态计算",
             )
 
         # 构建 deliverable_file_status
@@ -1300,9 +1625,13 @@ class NodeService:
 
         old_status = snap.status
 
+        # 激活路径②：计划启动时间到点（US-18.2）。无周期触发机制，故在读/重算时判定。
+        planned_start_reached = _psr(snap.planned_start_at)
+
         # 调用引擎（自证口径：只传本节点自身的事实，子节点不参与）
         new_status = determine_node_status(
             snap.dependencies, snap.deliverables, file_status,
+            planned_start_reached=planned_start_reached,
         )
 
         if new_status == old_status:
@@ -1373,6 +1702,8 @@ class NodeService:
             node_id=node.node_id,
             status=node.status,
             progress=_parse_decimal(node.progress),
+            planned_start_at=getattr(node, "planned_start_at", "") or "",
+            node_role=getattr(node, "node_role", "") or NODE_ROLE_BUSINESS,
         )
 
         # 加载依赖

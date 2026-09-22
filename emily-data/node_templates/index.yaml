@@ -1,11 +1,12 @@
 # 全景节点模板索引
 # 自动生成，勿手动编辑。
-# 维护脚本: uv run python scripts/maintain_node_template_index.py
+# 维护脚本: uv run python scripts/maintain_node_template_index.py（宿主机执行，模板目录只读）
 #
-# 用途：供 AI 工具快速了解模板库内容，选择匹配的参考节点。
-# Session 拉起时本索引可能被注入 prompt，告诉 AI 有模板库可用。
+# 用途：模板库发现入口——列出全部模板单元的编号/名称/类型/摘要与附件清单。
+# 读取方：NodeTemplateLoader（只读检索能力）、控制台模板面板。
+# 对象声明（declarations）不进索引，随模板内容按需读取。
 
-updated_at: '2026-09-22T16:12:35'
+updated_at: '2026-09-23T00:24:53'
 template_count: 3
 stage_distribution:
   1: 2
@@ -19,16 +20,34 @@ templates:
   node_type: MILESTONE
   stage_id: 1
   summary: 施工图设计完成是项目从设计阶段转入施工阶段的核心里程碑
-  file: REF-CONST-DG-001-施工图设计完成.md
+  entry: REF-CONST-DG-001/template.yaml
+  attachments:
+  - name: REF-CONST-DG-001-说明.md
+    size: 3519
+    type: md
 - ref_id: REF-CONST-LC-001
   node_name: 建设工程规划许可证
   node_type: MILESTONE
   stage_id: 1
   summary: 建设工程规划许可证是城市规划行政主管部门依法核发的行政许可文件，确认建设工程符合城市规划要求
-  file: REF-CONST-LC-001-建设工程规划许可证.md
+  entry: REF-CONST-LC-001/template.yaml
+  attachments:
+  - name: REF-CONST-LC-001-说明.md
+    size: 1746
+    type: md
 - ref_id: REF-CONST-MP-001
   node_name: 全景计划上线
   node_type: TASK
   stage_id: 0
   summary: 全景计划上线是项目立项阶段的基础节点
-  file: REF-CONST-MP-001-全景计划上线.md
+  entry: REF-CONST-MP-001/template.yaml
+  attachments:
+  - name: REF-CONST-MP-001-参考范例-全景计划节点.xlsx
+    size: 14996
+    type: xlsx
+  - name: REF-CONST-MP-001-成果约定.md
+    size: 433
+    type: md
+  - name: REF-CONST-MP-001-说明.md
+    size: 2098
+    type: md

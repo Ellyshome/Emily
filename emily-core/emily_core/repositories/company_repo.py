@@ -55,6 +55,32 @@ class CompanyRepository:
         ]
 
     @staticmethod
+    def find_for_matching(company_ids: list[str] | None = None) -> list[dict]:
+        """参与单位匹配池：按 ID 限定或全局，返回类型/范围/名称等匹配字段。
+
+        供节点模板装配的对象采集器使用（类型归一 + 范围/名称关键词包含匹配）。
+        `company_ids=None` → 全局（排除已删除）。
+        """
+        ids = [c for c in (company_ids or []) if c]
+        with get_session() as session:
+            q = session.query(CompanyInfo).filter(CompanyInfo.is_deleted.isnot(True))
+            if company_ids is not None:
+                if not ids:
+                    return []
+                q = q.filter(CompanyInfo.id.in_(ids))
+            rows = q.order_by(CompanyInfo.company_name).all()
+        return [
+            {
+                "company_id": c.id,
+                "company_name": c.company_name or "",
+                "type": c.type or "",
+                "scope": c.scope or "",
+                "is_admin": bool(c.is_admin),
+            }
+            for c in rows
+        ]
+
+    @staticmethod
     def get_by_id(company_id: str) -> CompanyInfo | None:
         """按 ID 查有效企业（归属/删除校验用）。"""
         if not company_id:

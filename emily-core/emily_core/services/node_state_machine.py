@@ -29,8 +29,52 @@ NOT_ACTIVATED = "NOT_ACTIVATED"  # 已废弃：仅存量迁移用（PRD US-04，
 CONDITIONS_NOT_MET = "CONDITIONS_NOT_MET"
 IN_PROGRESS = "IN_PROGRESS"
 COMPLETED = "COMPLETED"
+# 停用（US-17）：退出管控的人工操作，**非终态可恢复**——不计完成度、不产生到期提醒、
+# 不得挂载新任务，但节点仍留在全景图中。判定入口 `_recalc_node_status` 跳过该状态。
+DISABLED = "DISABLED"
 
-VALID_STATUSES = frozenset({CONDITIONS_NOT_MET, IN_PROGRESS, COMPLETED})
+VALID_STATUSES = frozenset({CONDITIONS_NOT_MET, IN_PROGRESS, COMPLETED, DISABLED})
+
+# 可被"排除出汇总/提醒"的状态集合（停用态退出管控口径，AC-US-17.2 / 17.5）
+EXCLUDED_FROM_ROLLUP_STATUSES = frozenset({DISABLED})
+
+
+# ══════════════════════════════════════════════════════════════════════════════
+# 节点角色（容器识别唯一键 —— US-15 / US-16）
+# ══════════════════════════════════════════════════════════════════════════════
+#
+#   BUSINESS              业务节点（默认；要求至少一条必需成果）
+#   TEMP_MILESTONE        根图下的临时里程碑层（项目唯一）：承载无归属的临时节点
+#   TEMP_TASK             临时任务（待认领）：可挂正式里程碑下（档B）或临时里程碑下（档C）
+#   UNCLASSIFIED_SINK     未归类收容节点（项目唯一，位于临时里程碑层）：承载未归类业务事件
+#
+# 容器节点为**承载容器**而非业务节点：不要求必需成果、不计完成度、不产生到期提醒、
+# 不得作为依赖目标（AC-US-15.11 / PRD §4.4-19）。
+
+NODE_ROLE_BUSINESS = "BUSINESS"
+NODE_ROLE_TEMP_MILESTONE = "TEMP_MILESTONE"
+NODE_ROLE_TEMP_TASK = "TEMP_TASK"
+NODE_ROLE_SINK = "UNCLASSIFIED_SINK"
+
+CONTAINER_NODE_ROLES = frozenset({
+    NODE_ROLE_TEMP_MILESTONE, NODE_ROLE_TEMP_TASK, NODE_ROLE_SINK,
+})
+VALID_NODE_ROLES = frozenset({NODE_ROLE_BUSINESS}) | CONTAINER_NODE_ROLES
+
+
+def excluded_from_rollup(*, node_role: str = "", status: str = "") -> bool:
+    """该节点是否从**完成度汇总 / 到期提醒**中排除（US-15.11 / AC-US-17.2）。
+
+    排除两类：
+      · 容器节点（承载容器：不要求成果、不计完成度、不产生提醒、不得作依赖目标）
+      · 停用节点（DISABLED：已退出管控）
+
+    唯一判定实现——各汇总/提醒消费方（世界书结构层与时间层、项目聚合、晨报、快照、
+    认知漂移、初始化体检、节点台账查询）统一调用本函数，避免口径分散。
+    """
+    if (node_role or NODE_ROLE_BUSINESS) in CONTAINER_NODE_ROLES:
+        return True
+    return (status or "") in EXCLUDED_FROM_ROLLUP_STATUSES
 
 
 # ══════════════════════════════════════════════════════════════════════════════
@@ -65,12 +109,16 @@ class NodeSnapshot:
     只承载**本节点自身**的事实（状态/进度/前置依赖/成果），不含子节点：
     判定入口不再需要子节点，子节点状态不影响本节点。
     """
-    __slots__ = ("node_id", "status", "progress", "dependencies", "deliverables")
+    __slots__ = ("node_id", "status", "progress", "planned_start_at", "node_role",
+                 "dependencies", "deliverables")
 
-    def __init__(self, node_id: str, status: str = CONDITIONS_NOT_MET, progress: float = 0.0):
+    def __init__(self, node_id: str, status: str = CONDITIONS_NOT_MET, progress: float = 0.0,
+                 planned_start_at: str = "", node_role: str = NODE_ROLE_BUSINESS):
         self.node_id = node_id
         self.status = status
         self.progress = progress
+        self.planned_start_at = planned_start_at   # 计划启动时间（ISO8601，空=未设置）
+        self.node_role = node_role                 # 容器识别（容器不参与三态流转）
         self.dependencies: list[DependencySnapshot] = []
         self.deliverables: list[DeliverableSnapshot] = []
 
@@ -148,15 +196,45 @@ def calc_deliverable_completion(deliverables: list[DeliverableSnapshot]) -> floa
     return total_ratio / len(required)
 
 
+def planned_start_reached(iso_str: str, now: "datetime | None" = None) -> bool:
+    """计划启动时间是否已到点（US-18.2 激活路径②）。
+
+    解析失败 / 未设置 → False（不猜测）。无周期触发机制，故由重算入口在读时判定。
+    """
+    s = (iso_str or "").strip()
+    if not s:
+        return False
+    try:
+        from datetime import datetime, timezone, timedelta
+
+        dl = datetime.fromisoformat(s)
+        tz = timezone(timedelta(hours=8))   # 与 deadline 口径一致（北京时间）
+        if dl.tzinfo is None:
+            dl = dl.replace(tzinfo=tz)
+        return dl <= (now or datetime.now(tz))
+    except (ValueError, TypeError):
+        return False
+
+
 def determine_node_status(dependencies: list[DependencySnapshot],
                           deliverables: list[DeliverableSnapshot],
-                          deliverable_file_status: dict[str, bool]) -> str:
+                          deliverable_file_status: dict[str, bool],
+                          planned_start_reached: bool = False) -> str:
     """判定节点应处于的状态（**自证口径**：只由本节点自身的事实决定）。
 
     里程碑与任务**同一套判定**，不再有"父节点由子节点集体决定"的聚合分支：
-      - 前置依赖未满足 / 无成果定义 / 完成量为 0 → CONDITIONS_NOT_MET（未启动）
+      - 前置依赖未满足 / 无成果定义 → CONDITIONS_NOT_MET（条件不足）
+      - 完成量为 0 且**计划启动时间未到** → CONDITIONS_NOT_MET
+      - 完成量为 0 但**计划启动时间已到** → IN_PROGRESS（激活的第二条路径，US-18.2）
       - 0 < 完成量 < 目标 → IN_PROGRESS（运行中）
       - 完成量 >= 目标 → COMPLETED（已完结）
+
+    激活的两条路径（US-18.2）：① 已有任务级录入（完成量 > 0）；
+    ② 计划启动时间到点（`planned_start_reached`，由 `_recalc_node_status` 依
+    `planned_start_at` 与当前时间比较得出）。完成后是否结束仍只由必需成果齐备决定。
+
+    **停用态不在此判定**：`DISABLED` 由 `_recalc_node_status` 入口跳过，
+    不经本函数翻转（AC-US-17.2）。
 
     子节点状态不参与：节点是否完结取决于它自己的必需成果是否齐备。
     """
@@ -172,9 +250,9 @@ def determine_node_status(dependencies: list[DependencySnapshot],
     if completion >= 1.0:
         return COMPLETED
 
-    # 已完成量为 0 → 尚未开工（首报即开工）
+    # 已完成量为 0 → 尚未开工；但计划启动时间到点即视为已激活
     if completion <= 0.0:
-        return CONDITIONS_NOT_MET
+        return IN_PROGRESS if planned_start_reached else CONDITIONS_NOT_MET
 
     return IN_PROGRESS
 

@@ -444,6 +444,21 @@ def _register_business(core, reg):
                      params=_MANAGE_COMPANY_SCHEMA, category="business",
                      permission_flag="write", write_mode="delete")
 
+    # 参考模板库只读检索（列清单 + 读详情）：门槛 L4+（与 SOP-011「参考模板库」节同口径）
+    from .node_template_tool import (
+        _READ_NODE_TEMPLATE_SCHEMA, _READ_NODE_TEMPLATE_DESCRIPTION,
+        _BUILD_NODE_DRAFT_SCHEMA, _BUILD_NODE_DRAFT_DESCRIPTION,
+    )
+    _buc += _reg_biz(reg, "read_node_template", _READ_NODE_TEMPLATE_DESCRIPTION,
+                     _h("node_template_tool", "handle_read_node_template"),
+                     params=_READ_NODE_TEMPLATE_SCHEMA, category="business",
+                     permission_flag="read_l4", write_mode="read")
+    # 按模板装配只读草稿（候选集合 + 依据 + 未解析项）：只读，L4+
+    _buc += _reg_biz(reg, "build_node_draft", _BUILD_NODE_DRAFT_DESCRIPTION,
+                     _h("node_template_tool", "handle_build_node_draft"),
+                     params=_BUILD_NODE_DRAFT_SCHEMA, category="business",
+                     permission_flag="read_l4", write_mode="read")
+
 
 def _reg_biz(reg, name, desc, handler, params=None,
              category="business", permission_flag="write", write_mode="read"):

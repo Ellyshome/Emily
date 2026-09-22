@@ -15,6 +15,7 @@ from typing import Optional
 
 from ..repositories.world_book_repo import ProjectWorldBookRepo
 from ..infrastructure.database.session import get_session
+from .node_state_machine import excluded_from_rollup
 from ..infrastructure.database.models import (
     Project, User, CompanyInfo, ProjectNode, NodeDependency, Event,
 )
@@ -145,10 +146,14 @@ class CognitionDriftDetector:
         stale = False
         try:
             with get_session() as session:
-                nodes = session.query(ProjectNode).filter(
+                # 与汇总口径对齐：容器与停用节点不计入（US-15.11 / AC-US-17.2）
+                all_nodes = session.query(ProjectNode).filter(
                     ProjectNode.project_id == project_id,
                     ProjectNode.is_discarded == False,
                 ).all()
+                nodes = [n for n in all_nodes if not excluded_from_rollup(
+                    node_role=getattr(n, "node_role", "") or "",
+                    status=getattr(n, "status", "") or "")]
 
                 current_total = len(nodes)
                 recorded_total = layer.get("total_nodes", 0)

@@ -49,6 +49,9 @@ class FallbackPolicy:
         "list_file_versions",
         "chat_archive",
         "fetch_inbox",
+        # 参考模板库只读检索（US-02 / US-09）：普惠只读能力，与 query_node 同档
+        "read_node_template",
+        "build_node_draft",
     })
 
     # 高级兜底追加写集（R5）：追加型（create）。覆盖/编辑/删除/批量一律不放开。
