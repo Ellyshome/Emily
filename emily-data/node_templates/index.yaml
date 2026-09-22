@@ -5,12 +5,14 @@
 # 用途：供 AI 工具快速了解模板库内容，选择匹配的参考节点。
 # Session 拉起时本索引可能被注入 prompt，告诉 AI 有模板库可用。
 
-updated_at: '2026-07-25T11:33:20'
-template_count: 2
+updated_at: '2026-09-22T16:12:35'
+template_count: 3
 stage_distribution:
   1: 2
+  0: 1
 type_distribution:
   MILESTONE: 2
+  TASK: 1
 templates:
 - ref_id: REF-CONST-DG-001
   node_name: 施工图设计完成（含审查合格证）
@@ -24,3 +26,9 @@ templates:
   stage_id: 1
   summary: 建设工程规划许可证是城市规划行政主管部门依法核发的行政许可文件，确认建设工程符合城市规划要求
   file: REF-CONST-LC-001-建设工程规划许可证.md
+- ref_id: REF-CONST-MP-001
+  node_name: 全景计划上线
+  node_type: TASK
+  stage_id: 0
+  summary: 全景计划上线是项目立项阶段的基础节点
+  file: REF-CONST-MP-001-全景计划上线.md

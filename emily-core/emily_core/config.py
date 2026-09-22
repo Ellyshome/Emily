@@ -237,13 +237,6 @@ class Config:
     checkpoint_resume_window_seconds: int = 1800
     """超时后可恢复的时间窗口（秒），默认 30 分钟"""
 
-    # ---- 计划任务系统 (Scheduled Task Module) ----
-    scheduler_enabled: bool = True
-    """调度引擎总开关"""
-
-    scheduler_tick_seconds: int = 60
-    """调度循环间隔（秒），默认 60 秒"""
-
     # ── Session 归档 md 文件 ----
     session_archive_enabled: bool = True
     """会话归档 md 文件实时追加开关"""

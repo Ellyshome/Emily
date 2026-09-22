@@ -99,6 +99,7 @@ def _ensure_columns(engine) -> list[dict]:
             ("acknowledged_by", "VARCHAR(100)", "''"),
             ("acknowledged_at", "VARCHAR(50)", "''"),
             ("acknowledged_level", "INTEGER", "0"),
+            ("template_ref_id", "VARCHAR(100)", "''"),
         ],
         "events": [
             ("confirmed_by", "VARCHAR", "NULL"),
@@ -117,10 +118,6 @@ def _ensure_columns(engine) -> list[dict]:
         ],
         "messages": [
             ("source", "VARCHAR(20)", "''"),
-        ],
-        "scheduler_job_logs": [
-            ("source", "VARCHAR(20)", "''"),
-            ("actor", "VARCHAR(200)", "''"),
         ],
     }
 
@@ -229,9 +226,6 @@ def _ensure_columns(engine) -> list[dict]:
         ],
         "messages": [
             ("idx_msg_source_created", "(source, created_at)"),
-        ],
-        "scheduler_job_logs": [
-            ("idx_sjl_source_created", "(source, created_at)"),
         ],
     }
     with engine.connect() as conn:

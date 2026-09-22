@@ -9,7 +9,7 @@
   · 非功能性：源码解析失败、.env 缺失、配置文件损坏均降级展示，不抛异常阻断页面。
 
 写盘边界：本模块只写一处 —— 宿主机 .env（save_env_values，把字段值写回唯一生效通路）。
-除此之外不写任何文件：配置文件内容接口只读，core_config.json / scheduler_config.json 等
+除此之外不写任何文件：配置文件内容接口只读，core_config.json 等
 「不被读取」的文件永远不被本模块改写。
 """
 
@@ -99,12 +99,6 @@ _CONFIG_FILES: list[dict] = [
         "loader": "",
         "note": "bootstrap.init() 只走「环境变量 → Config」，不读取本文件；改它不生效，应改 .env / compose environment",
     },
-    {
-        "name": "scheduler_config.json",
-        "loaded": False,
-        "loader": "",
-        "note": "全仓无代码读取；真实作业行来自数据库表 scheduler_jobs；改它不生效",
-    },
 ]
 
 # 宿主机侧声明（容器内默认不可读，见 C-03）
@@ -176,9 +170,6 @@ _SECTION_FIELDS: list[tuple[str, str, list[str]]] = [
     ]),
     ("email", "邮箱渠道", [
         "email_smtp_host", "email_smtp_port", "email_imap_host", "email_imap_port",
-    ]),
-    ("scheduler", "计划任务", [
-        "scheduler_enabled", "scheduler_tick_seconds",
     ]),
     ("access", "权限与准入", [
         "auto_create_user", "auto_create_whitelist",
@@ -801,7 +792,7 @@ def _restart_hints() -> list[dict]:
             "kind": "file",
             "title": "改 /app/config/* 配置文件",
             "action": "docker restart emily-core",
-            "detail": "被读取的文件在启动时加载，需重启进程；core_config.json / scheduler_config.json 无代码读取，改它无效（应改 .env）。",
+            "detail": "被读取的文件在启动时加载，需重启进程；core_config.json 无代码读取，改它无效（应改 .env）。",
         },
     ]
 

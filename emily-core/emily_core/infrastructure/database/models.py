@@ -1110,6 +1110,10 @@ class ProjectNode(Base):
     status = Column(String(20), default="CONDITIONS_NOT_MET", comment="当前状态：CONDITIONS_NOT_MET / IN_PROGRESS / COMPLETED")
     responsible_user_id = Column(String(100), nullable=False, default="", comment="责任人（FK→users.id，创建时默认取 creator_id）")
     node_type = Column(String(20), nullable=False, default="TASK", comment="节点类型：MILESTONE（里程碑）/ TASK（任务）；由声明决定，不随结构变化")
+    template_ref_id = Column(
+        String(100), nullable=False, default="",
+        comment="来源参考模板 ref_id（emily-data/node_templates），空=非模板创建"
+    )
     visibility_mode = Column(
         String(30), nullable=False, default="specific",
         comment="【已废弃，恒为 specific】历史值 all_project_files（全项目文件默认可见）已下线，文件必须经 node_accessible_files 显式绑定到节点"
@@ -1323,74 +1327,6 @@ class SessionAccessibleFile(Base):
 
 
 # ══════════════════════════════════════════════════════════════════════════════
-# 系统调度器 — 2 张表（替代 plan_task_templates / plan_task_instances / plan_task_logs）
-# ══════════════════════════════════════════════════════════════════════════════
-
-
-class SchedulerJob(Base):
-    """系统调度作业表 —— 替代 plan_task_templates。"""
-    __tablename__ = "scheduler_jobs"
-
-    id = Column(String, primary_key=True, default=_new_uuid)
-    job_no = Column(String(50), unique=True, nullable=False, comment="作业编号 JOB-YYYYMMDD-NNNN")
-    name = Column(String(200), nullable=False, comment="作业名称")
-    description = Column(String, default="", comment="作业描述")
-
-    # ── 调度规则 ──
-    job_type = Column(String(20), nullable=False, default="ONCE", comment="调度类型：ONCE / CRON / INTERVAL")
-    cron_expression = Column(String(100), default="", comment="cron 表达式（CRON 模式）")
-    interval_seconds = Column(Integer, default=0, comment="间隔秒数（INTERVAL 模式）")
-    deadline_rule = Column(String(500), default="", comment="自然语言描述（LLM 推算，CRON 补充）")
-
-    # ── 动作定义 ──
-    action_type = Column(String(50), nullable=False, comment="动作类型（对应 JobHandler.action_type）")
-    handler_module = Column(String(200), nullable=False, comment="Handler 模块路径（如 scheduler.jobs.morning_report）")
-    action_params = Column(Text, default="{}", comment="JSON 参数")
-
-    # ── 状态 ──
-    status = Column(String(20), nullable=False, default="DRAFT", comment="DRAFT / ACTIVE / INACTIVE")
-    last_executed_at = Column(String(50), default="", comment="上次执行时间")
-    next_execution_at = Column(String(50), default="", comment="下次执行时间")
-
-    # ── 审计 ──
-    creator_id = Column(String, nullable=True, comment="创建人ID")
-    created_at = Column(String, nullable=False, default=_utc_now, comment="创建时间")
-    updated_at = Column(String, nullable=False, default=_utc_now, onupdate=_utc_now, comment="更新时间")
-
-    __table_args__ = (
-        Index("idx_sj_status", "status"),
-        Index("idx_sj_next_execution", "next_execution_at"),
-        Index("idx_sj_action_type", "action_type"),
-    )
-
-
-class SchedulerExecution(Base):
-    """系统调度执行记录表 —— 替代 plan_task_instances + plan_task_logs。"""
-    __tablename__ = "scheduler_executions"
-
-    id = Column(String, primary_key=True, default=_new_uuid)
-    job_id = Column(String, ForeignKey("scheduler_jobs.id"), nullable=False, comment="关联作业ID")
-    execution_no = Column(String(50), unique=True, nullable=False, comment="执行编号 SE-YYYYMMDD-NNNN")
-    period_key = Column(String(100), default="", comment="周期标识（如 2024-W25），用于幂等和追溯")
-
-    # ── 执行状态 ──
-    status = Column(String(20), nullable=False, default="PENDING", comment="PENDING / RUNNING / SUCCESS / FAILED")
-    started_at = Column(String(50), default="", comment="开始时间")
-    finished_at = Column(String(50), default="", comment="结束时间")
-    error_message = Column(Text, default="", comment="错误信息")
-    result_summary = Column(Text, default="", comment="执行结果摘要")
-
-    # ── 审计 ──
-    created_at = Column(String, nullable=False, default=_utc_now, comment="创建时间")
-
-    __table_args__ = (
-        Index("idx_se_job_status", "job_id", "status"),
-        Index("idx_se_created_at", "created_at"),
-        Index("idx_se_period", "job_id", "period_key"),
-    )
-
-
-# ══════════════════════════════════════════════════════════════════════════════
 # 进化日志表（需求：日志系统收束）
 # ══════════════════════════════════════════════════════════════════════════════
 
@@ -1542,31 +1478,6 @@ class SessionLifecycleLog(Base):
 
     __table_args__ = (
         Index("idx_sll_conv_created", "conversation_id", "created_at"),
-    )
-
-
-class SchedulerJobLog(Base):
-    """调度器作业日志 —— 定时任务执行结果追踪。"""
-    __tablename__ = "scheduler_job_logs"
-    id = Column(String, primary_key=True, default=_new_uuid)
-    job_id = Column(String, index=True)
-    action_type = Column(String(100), default="")
-    params_json = Column(Text, default="")
-    success = Column(Boolean, default=True)
-    summary = Column(String(500), default="")
-    elapsed_ms = Column(Integer, default=0)
-    error_detail = Column(Text, default="")
-    started_at = Column(String, default="")
-    completed_at = Column(String, default="")
-    created_at = Column(String, default=_utc_now)
-
-    # ── 操作留痕治理：来源与操作人（与业务事件同处一套归因模型）──
-    source = Column(String(20), default="")        # auto / ops / ...
-    actor = Column(String(200), default="")        # "系统" 或作业标识/操作人
-
-    __table_args__ = (
-        Index("idx_sjl_action_created", "action_type", "created_at"),
-        Index("idx_sjl_source_created", "source", "created_at"),
     )
 
 
@@ -1727,7 +1638,7 @@ class ProjectWorldBook(Base):
     is_activated = Column(Boolean, default=False, comment="是否达到 T3 可运转级")
     token_count = Column(Integer, default=0, comment="估算 token 数")
     generated_at = Column(String, default=_utc_now, comment="最近生成时间")
-    generated_by = Column(String(50), default="manual", comment="生成来源：startup / scheduler_data / scheduler_llm / manual")
+    generated_by = Column(String(50), default="manual", comment="生成来源：startup / manual")
     created_at = Column(String, default=_utc_now, comment="首次创建时间")
     updated_at = Column(String, default=_utc_now, onupdate=_utc_now, comment="最近更新时间")
 
@@ -1760,7 +1671,7 @@ class SystemDescription(Base):
     file_model_hash = Column(String(64), default="", comment="FileCategory 枚举 + File 模型的 SHA-256 hash")
     token_count = Column(Integer, default=0, comment="估算 token 数")
     generated_at = Column(String, default=_utc_now, comment="最近生成时间")
-    generated_by = Column(String(50), default="manual", comment="生成来源：startup / scheduler / manual")
+    generated_by = Column(String(50), default="manual", comment="生成来源：startup / manual")
     created_at = Column(String, default=_utc_now, comment="首次创建时间")
     updated_at = Column(String, default=_utc_now, onupdate=_utc_now, comment="最近更新时间")
 

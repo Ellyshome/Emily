@@ -1,6 +1,6 @@
 -- ============================================================
--- 010_seed_runtime_data.sql —— 运行时/进化/调度种子数据
---   补全 pipeline_execution_logs / scheduler / evolution / routing /
+-- 010_seed_runtime_data.sql —— 运行时/进化种子数据
+--   补全 pipeline_execution_logs / evolution / routing /
 --   RAG / feedback / permission_runtime / attachments / node_files
 --
 -- Precondition: 002 + 002_patch + 007 + 008 + 009 + 006 must be run first
@@ -43,9 +43,6 @@ DELETE FROM permission_requests WHERE request_no LIKE 'PRQ-2026%';
 DELETE FROM user_feedback_signals WHERE signal_type IN ('repeat_request','explicit_correction','positive','abandonment');
 DELETE FROM rag_retrieval_logs WHERE query_text LIKE '【模拟】%';
 DELETE FROM sop_routing_logs WHERE message_content LIKE '【模拟】%';
-DELETE FROM scheduler_job_logs WHERE action_type IN ('create_task_node','morning_report','file_expiry_reminder','create_periodic_node','generate_morning_report','check_file_expiry');
-DELETE FROM scheduler_executions WHERE execution_no LIKE 'SEX-2026%';
-DELETE FROM scheduler_jobs WHERE job_no LIKE 'JOB-%';
 DELETE FROM evolution_patches WHERE patch_no LIKE 'EP-%';
 DELETE FROM evolution_rules WHERE rule_no LIKE 'R-%';
 DELETE FROM evolution_daily_insights WHERE insight_date LIKE '2026-%';
@@ -136,146 +133,7 @@ CREATE TEMP TABLE _spel AS
 SELECT id, pipeline_run_id, conversation_id, user_id FROM pipeline_execution_logs WHERE pipeline_run_id LIKE 'SIM-%';
 
 -- ============================================================
--- 2. Scheduler Jobs (3 records)
---    columns: id, job_no, name, description, job_type, cron_expression,
---    interval_seconds, deadline_rule, action_type, handler_module,
---    action_params, status, last_executed_at, next_execution_at,
---    creator_id, created_at, updated_at
---
---    【2026-09-21 补】JOB-001 的 action_params 增加 deliverables：
---    「节点创建必须携带至少一条必需成果」生效后，不带成果的节点不可创建
---    （见 Issues/节点状态自证化/节点状态自证化_PRD_V1.md，US-04 / R4）。
---    ⚠️ 该参数须与「定期建节点」能力对同一并把成果落库，否则属"仅写入无读取"（宪法 Q6）。
--- ============================================================
-CREATE TEMP TABLE _sjobs AS
-SELECT uuid_generate_v4()::text AS id, 'JOB-001' AS job_no,
-       '每周进度汇报任务创建' AS name,
-       '每周一09:00自动生成进度汇报待办任务' AS description,
-       'CRON' AS job_type, '0 9 * * 1' AS cron_expression,
-       0 AS interval_seconds, '' AS deadline_rule,
-       'create_periodic_node' AS action_type,
-       'scheduler.jobs.periodic_node' AS handler_module,
-       '{"project_id":"' || (SELECT id FROM _sp LIMIT 1) || '","node_name":"本周进度汇报","owner_dept_id":"项目总","creator_id":"' || (SELECT id FROM _su WHERE username = '王建国' LIMIT 1) || '","deliverables":[{"deliverable_name":"本周进度汇报单","target_amount":1,"unit":"份","is_required":true}]}' AS action_params,
-       'ACTIVE' AS status,
-       '2026-07-14T09:00:00' AS last_executed_at,
-       '2026-07-21T09:00:00' AS next_execution_at,
-       NOW()::text AS created_at
-UNION ALL
-SELECT uuid_generate_v4()::text, 'JOB-002',
-       '每日晨报',
-       '每日08:00自动汇总前一日项目动态并推送晨报',
-       'CRON', '0 8 * * *',
-       0, '',
-       'generate_morning_report',
-       'scheduler.jobs.morning_report',
-       '{"push_to_group":"项目群"}',
-       'ACTIVE',
-       '2026-07-20T08:00:00',
-       '2026-07-21T08:00:00',
-       NOW()::text
-UNION ALL
-SELECT uuid_generate_v4()::text, 'JOB-003',
-       '文件过期提醒',
-       '每24小时检查一次临近过期的许可/证照文件并发送提醒',
-       'INTERVAL', '',
-       86400, '文件有效期<30天时触发',
-       'check_file_expiry',
-       'scheduler.jobs.file_expiry',
-       '{"threshold_days":30,"check_categories":["PROJECT_LICENSE"]}',
-       'INACTIVE',
-       '2026-07-20T06:00:00',
-       '2026-07-21T06:00:00',
-       NOW()::text;
-
-INSERT INTO scheduler_jobs (id, job_no, name, description, job_type, cron_expression,
-    interval_seconds, deadline_rule, action_type, handler_module, action_params,
-    status, last_executed_at, next_execution_at, creator_id, created_at, updated_at)
-SELECT
-    s.id, s.job_no, s.name, s.description, s.job_type, s.cron_expression,
-    s.interval_seconds, s.deadline_rule, s.action_type, s.handler_module,
-    s.action_params, s.status, s.last_executed_at, s.next_execution_at,
-    u.id, s.created_at, s.created_at
-FROM _sjobs s, _su u WHERE u.username = '王建国';
-
--- ============================================================
--- 3. Scheduler Executions (14 records, ~2 weeks)
---    columns: id, job_id, execution_no, period_key, status,
---    started_at, finished_at, error_message, result_summary, created_at
--- ============================================================
-CREATE TEMP TABLE _sjobs_real AS
-SELECT id, job_no, action_type, action_params FROM scheduler_jobs WHERE job_no IN ('JOB-001','JOB-002','JOB-003');
-
-INSERT INTO scheduler_executions (id, job_id, execution_no, period_key, status,
-    started_at, finished_at, error_message, result_summary, created_at)
-SELECT
-    uuid_generate_v4()::text,
-    j.id,
-    'SEX-2026-' || TO_CHAR(CURRENT_DATE, 'MMDD') || '-' || LPAD(s.rn::text, 3, '0'),
-    '2026-07-' || LPAD((s.gs + 1)::text, 2, '0'),
-    CASE (s.gs % 10)
-        WHEN 0 THEN 'FAILED' WHEN 9 THEN 'FAILED'
-        ELSE 'SUCCESS'
-    END,
-    ('2026-07-' || LPAD((s.gs + 1)::text, 2, '0') || 'T' ||
-     CASE j.job_no
-         WHEN 'JOB-001' THEN '09:00:00'
-         WHEN 'JOB-002' THEN '08:00:00'
-         WHEN 'JOB-003' THEN '06:00:00'
-     END)::text,
-    ('2026-07-' || LPAD((s.gs + 1)::text, 2, '0') || 'T' ||
-     CASE j.job_no
-         WHEN 'JOB-001' THEN '09:00:30'
-         WHEN 'JOB-002' THEN '08:00:25'
-         WHEN 'JOB-003' THEN '06:00:10'
-     END)::text,
-    CASE (s.gs % 10) WHEN 0 THEN '数据库连接超时' WHEN 9 THEN 'handler模块加载失败' ELSE '' END,
-    CASE (s.gs % 10)
-        WHEN 0 THEN '' WHEN 9 THEN ''
-        ELSE CASE j.job_no
-            WHEN 'JOB-001' THEN '创建任务成功: TSK-自动-2026'
-            WHEN 'JOB-002' THEN '晨报已推送给2名接收人'
-            WHEN 'JOB-003' THEN '检查18个文件, 0个即将过期'
-        END
-    END,
-    NOW()::text
-FROM (
-    SELECT
-        row_number() OVER (ORDER BY job_no, gs) AS rn,
-        gs, job_no
-    FROM _sjobs_real
-    CROSS JOIN generate_series(1, 14) gs
-    WHERE (job_no = 'JOB-001' AND gs IN (1, 8))
-       OR (job_no = 'JOB-002' AND gs IN (2,3,4,5,6,7,9,10,11,12))
-       OR (job_no = 'JOB-003' AND gs IN (2, 7))
-) s
-JOIN _sjobs_real j ON j.job_no = s.job_no;
-
--- ============================================================
--- 4. Scheduler Job Logs (14 records, 1:1 with executions)
---    columns: id, job_id, action_type, params_json, success, summary,
---    elapsed_ms, error_detail, started_at, completed_at, created_at
--- ============================================================
-INSERT INTO scheduler_job_logs (id, job_id, action_type, params_json, success, summary,
-    elapsed_ms, error_detail, started_at, completed_at, created_at)
-SELECT
-    uuid_generate_v4()::text,
-    e.job_id,
-    j.action_type,
-    j.action_params,
-    (e.status = 'SUCCESS'),
-    e.result_summary,
-    CASE j.job_no
-        WHEN 'JOB-001' THEN 520 WHEN 'JOB-002' THEN 380 WHEN 'JOB-003' THEN 210
-    END,
-    e.error_message,
-    e.started_at,
-    e.finished_at,
-    NOW()::text
-FROM scheduler_executions e
-JOIN _sjobs_real j ON e.job_id = j.id;
-
--- ============================================================
--- 5. Evolution Daily Insights (5 records, 2026-02 ~ 2026-07, monthly)
+-- 2. Evolution Daily Insights (5 records, 2026-02 ~ 2026-07, monthly)
 --    columns: id, insight_date, analysis_days, total_messages, total_pipeline_runs,
 --    sop_hit_rate, fallback_rate, top_sop_ids, feedback_summary, anomaly_flags,
 --    insight_text, metrics_json, health_score, created_at
@@ -328,7 +186,7 @@ VALUES
  90, NOW()::text);
 
 -- ============================================================
--- 6. Evolution Rules (2 records)
+-- 3. Evolution Rules (2 records)
 --    columns: id, rule_no, title, description, evidence_insight_ids,
 --    category, confidence, status, superseded_by, suggested_action,
 --    impact_estimate, created_at, confirmed_at
@@ -362,7 +220,7 @@ SELECT
 FROM evolution_daily_insights WHERE insight_date = '2026-05-01' LIMIT 1;
 
 -- ============================================================
--- 7. Evolution Patches (1 record)
+-- 4. Evolution Patches (1 record)
 --    columns: id, patch_no, rule_no, target_type, target_path, patch_content,
 --    patch_type, search_anchor, risk_level, risk_reasoning, validation_criteria,
 --    expected_effect, status, applied_at, validated_at, validation_result,
@@ -394,7 +252,7 @@ SELECT
 FROM evolution_rules WHERE rule_no = 'R-001' LIMIT 1;
 
 -- ============================================================
--- 8. SOP Routing Logs (30 records, ~1 month)
+-- 5. SOP Routing Logs (30 records, ~1 month)
 --    columns: id, log_date, log_time, user_id, conversation_id, message_id,
 --    message_content, matched_sop_id, is_hit, match_confidence,
 --    fallback_action, llm_reasoning, execution_result, created_at
@@ -450,7 +308,7 @@ END
 LEFT JOIN _sm m ON m.id = (SELECT id FROM _sm ORDER BY RANDOM() LIMIT 1);
 
 -- ============================================================
--- 9. RAG Retrieval Logs (20 records)
+-- 6. RAG Retrieval Logs (20 records)
 --    columns: id, pipeline_run_id, conversation_id, user_id, query_text,
 --    provider, hit_count, top_score, avg_score, results_summary,
 --    was_used_by_llm, latency_ms, error_summary, created_at
@@ -491,7 +349,7 @@ JOIN _su u ON u.username = CASE (gs % 5)
 END;
 
 -- ============================================================
--- 10. User Feedback Signals (5 records)
+-- 7. User Feedback Signals (5 records)
 --     columns: id, pipeline_run_id, conversation_id, user_id, signal_type,
 --     signal_strength, trigger_message, context_summary, created_at
 -- ============================================================
@@ -532,7 +390,7 @@ JOIN _spel pel ON pel.pipeline_run_id = ('SIM-RUN-' || LPAD((gs + 2)::text, 4, '
 WHERE EXISTS (SELECT 1 FROM _spel WHERE pipeline_run_id = ('SIM-RUN-' || LPAD((gs + 2)::text, 4, '0')));
 
 -- ============================================================
--- 11. Permission Requests (3 records)
+-- 8. Permission Requests (3 records)
 --     columns: id, request_no, requester_id, perm_code, request_type, reason,
 --     status, current_approver_id, approval_level, priority, expire_at,
 --     approved_at, approver_id, approval_remark, source_data, agent_issue_id,
@@ -587,7 +445,7 @@ FROM _su u1, _su u2
 WHERE u1.username = '陈建华' AND u2.username = '李景利';
 
 -- ============================================================
--- 12. Permission Audit Log (10 records)
+-- 9. Permission Audit Log (10 records)
 --     columns: log_id(BIGSERIAL), event_time, grantor_id, grantee_id,
 --     perm_code, grant_type, duration, session_id, operation_type,
 --     client_ip, user_agent, remark
@@ -624,7 +482,7 @@ SELECT
 FROM generate_series(1, 10) gs;
 
 -- ============================================================
--- 13. Pending Data (1 record)
+-- 10. Pending Data (1 record)
 --     columns: id, pending_no, user_id, data_type, data_content,
 --     exception_reason, target_node_id, approver_id, status, expire_time,
 --     request_id, created_at, updated_at, is_deleted
@@ -646,7 +504,7 @@ FROM _su u1, _su u2
 WHERE u1.username = '黄志强' AND u2.username = '李景利';
 
 -- ============================================================
--- 14. Message Attachments (6 records)
+-- 11. Message Attachments (6 records)
 --     columns: id, message_id, file_id, attachment_type, file_url,
 --     local_path, file_size, mime_type, thumbnail_url, created_at
 -- ============================================================
@@ -670,7 +528,7 @@ JOIN LATERAL (SELECT id FROM _sm ORDER BY id OFFSET gs - 1 LIMIT 1) m ON true
 JOIN LATERAL (SELECT id FROM _sf ORDER BY id OFFSET gs LIMIT 1) f ON true;
 
 -- ============================================================
--- 15. Node Accessible Files (12 records)
+-- 12. Node Accessible Files (12 records)
 --     columns: id, node_id, file_id, added_by, added_at
 -- ============================================================
 -- Bind delivery files to their corresponding nodes
@@ -702,15 +560,10 @@ WHERE NOT EXISTS (
 );
 
 -- ============================================================
--- 16. Verify
+-- 13. Verify
 -- ============================================================
 SELECT '--- Pipeline Executions ---' AS section;
 SELECT COUNT(*) AS total FROM pipeline_execution_logs WHERE pipeline_run_id LIKE 'SIM-%';
-
-SELECT '--- Scheduler ---' AS section;
-SELECT 'jobs(' || COUNT(*)::text || ')' FROM scheduler_jobs
-UNION ALL SELECT 'executions(' || COUNT(*)::text || ')' FROM scheduler_executions
-UNION ALL SELECT 'logs(' || COUNT(*)::text || ')' FROM scheduler_job_logs;
 
 SELECT '--- Evolution ---' AS section;
 SELECT 'insights(' || COUNT(*)::text || ')' FROM evolution_daily_insights WHERE insight_date LIKE '2026-%'
@@ -733,7 +586,5 @@ UNION ALL SELECT 'node_accessible_files(' || COUNT(*)::text || ')' FROM node_acc
 
 -- Cleanup
 DROP TABLE IF EXISTS _spel;
-DROP TABLE IF EXISTS _sjobs_real;
-DROP TABLE IF EXISTS _sjobs;
 
 COMMIT;

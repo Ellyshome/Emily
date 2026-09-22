@@ -57,7 +57,7 @@
         </aside>
         <div class="sidebar-resizer" id="sidebar-resizer" title="拖拽调整侧栏宽度"></div>
 
-    <!-- 右侧：资源展示 + 参数表单 + 结果 -->
+    <!-- 右侧：模块面板 + 参数表单 + 结果 -->
     <main class="main">
         <!-- 与 Emily 对话（点左侧「与 Emily 对话」条目后显示）：模拟接入渠道直连对话 -->
         <section id="chat-panel" class="upload-panel" hidden>
@@ -82,44 +82,6 @@
                     <button type="button" id="chat-attach-btn" class="chat-attach-btn" title="发送文件">附件</button>
                     <textarea id="chat-input" rows="1" placeholder="输入消息，Enter 发送（Shift+Enter 换行）"></textarea>
                     <button type="button" id="chat-send-btn" class="chat-send-btn">发送</button>
-                </div>
-            </div>
-        </section>
-
-        <!-- 资源展示（点左侧「资源展示」条目后显示） -->
-        <section class="resource-display" hidden>
-            <div class="resource-display-head">
-                <h2>资源展示</h2>
-                <code class="module-cmd"></code>
-            </div>
-            <div class="resource-grid">
-                <div class="resource-group">
-                    <div class="resource-group-head">
-                        <h3>项目文件</h3>
-                        <span class="resource-count" id="count-files"></span>
-                    </div>
-                    <div class="resource-list" id="list-files"><div class="hint">加载中…</div></div>
-                </div>
-                <div class="resource-group">
-                    <div class="resource-group-head">
-                        <h3>全景节点</h3>
-                        <span class="resource-count" id="count-nodes"></span>
-                    </div>
-                    <div class="resource-list" id="list-nodes"><div class="hint">加载中…</div></div>
-                </div>
-                <div class="resource-group">
-                    <div class="resource-group-head">
-                        <h3>SOP</h3>
-                        <span class="resource-count" id="count-sops"></span>
-                    </div>
-                    <div class="resource-list" id="list-sops"><div class="hint">加载中…</div></div>
-                </div>
-                <div class="resource-group">
-                    <div class="resource-group-head">
-                        <h3>RAG文件</h3>
-                        <span class="resource-count" id="count-rag_files"></span>
-                    </div>
-                    <div class="resource-list" id="list-rag_files"><div class="hint">加载中…</div></div>
                 </div>
             </div>
         </section>
@@ -240,6 +202,7 @@
         <section id="node-table-panel" class="upload-panel" hidden>
             <div class="upload-panel-head">
                 <h2>全景节点表</h2>
+                <button type="button" id="node-add-btn" class="panel-head-btn">＋ 增加节点</button>
                 <code class="module-cmd"></code>
                 <span id="node-table-status" class="upload-status"></span>
             </div>
@@ -758,6 +721,77 @@
             <button type="button" id="ch-edit-cancel" class="btn-ghost">取消</button>
             <button type="button" id="ch-edit-clear" class="btn-ghost" hidden>清空该字段</button>
             <button type="button" id="ch-edit-ok" class="btn">确定替换</button>
+        </div>
+    </div>
+</div>
+
+<!-- 全景节点 信息交互面板（点节点ID=编辑；点「＋ 增加节点」=新建） -->
+<div class="modal-overlay" id="node-edit-overlay">
+    <div class="modal node-modal">
+        <div class="modal-header">
+            <h3 id="node-edit-title">节点信息</h3>
+        </div>
+        <div class="modal-body">
+            <div class="node-form">
+                <div class="node-form-row" id="node-row-template">
+                    <label>参考模板</label>
+                    <select id="node-form-template"><option value="">（不使用模板）</option></select>
+                </div>
+                <p class="muted" id="node-form-tpl-hint"></p>
+                <div class="node-form-row">
+                    <label>节点ID</label>
+                    <input type="text" id="node-form-node-id" readonly placeholder="留空则按名称+项目自动生成">
+                </div>
+                <div class="node-form-row">
+                    <label>所属项目 <span class="req" id="node-req-project">*</span></label>
+                    <select id="node-form-project"></select>
+                    <span id="node-form-project-text" class="muted" hidden></span>
+                </div>
+                <div class="node-form-row">
+                    <label>节点名称 <span class="req">*</span></label>
+                    <input type="text" id="node-form-name">
+                </div>
+                <div class="node-form-row">
+                    <label>类型</label>
+                    <select id="node-form-type">
+                        <option value="TASK">任务</option>
+                        <option value="MILESTONE">里程碑</option>
+                    </select>
+                    <span id="node-form-type-text" hidden></span>
+                </div>
+                <div class="node-form-row">
+                    <label>截止时间 <span class="req">*</span></label>
+                    <input type="text" id="node-form-deadline" placeholder="YYYY-MM-DD 或 ISO8601">
+                </div>
+                <div class="node-form-row" id="node-row-status">
+                    <label>状态</label>
+                    <span id="node-form-status-text" class="muted"></span>
+                </div>
+                <div class="node-form-row" id="node-row-ref">
+                    <label>来源模板</label>
+                    <span id="node-form-ref" class="muted"></span>
+                </div>
+                <div class="node-form-row">
+                    <label>备注</label>
+                    <textarea id="node-form-remark" rows="3"></textarea>
+                </div>
+                <div class="node-form-block" id="node-row-deliverables">
+                    <label>成果清单（至少一条必需成果）</label>
+                    <div id="node-form-deliverables" class="node-deliv-list"></div>
+                    <button type="button" id="node-form-deliv-add" class="cell-add">＋ 添加成果</button>
+                </div>
+                <div class="node-form-block" id="node-row-dependencies">
+                    <label>前置依赖（按模板「前置条件」检索项目内已有成果，可移除）</label>
+                    <div id="node-form-dependencies" class="node-dep-list"></div>
+                    <div id="node-form-unresolved" class="node-dep-unresolved" hidden></div>
+                </div>
+            </div>
+            <div class="upload-status" id="node-form-msg"></div>
+        </div>
+        <div class="modal-actions">
+            <button type="button" id="node-form-delete" class="btn-danger" hidden>删除节点</button>
+            <button type="button" id="node-form-cancel" class="btn-ghost">取消</button>
+            <button type="button" id="node-form-save" class="btn">保存</button>
         </div>
     </div>
 </div>

@@ -2,14 +2,13 @@
 
 供 SOP-011-SYS-node_manage 调用，在 WorkItem Pipeline 的 execute 节点中直调。
 
-8 个核心工具：
+7 个核心工具：
   - create_node: 创建全景节点（支持单节点 + 批量模式）
   - query_node: 查询节点详情
   - update_node_progress: 更新节点成果进度（触发状态流转）
   - add_node_dependency: 添加前置依赖
   - mount_child_node: 挂载子节点
   - update_nodes: 批量更新节点字段
-  - acknowledge_nodes: 批量签认节点（替代原审批）
   - discard_nodes: 批量废弃节点
 """
 

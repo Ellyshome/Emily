@@ -54,11 +54,6 @@ _CONFIG_FILES: dict[str, dict] = {
         "not_loaded_hint": "容器内运行时不读取本文件（配置只走「环境变量 → Config」）；"
                            "应改 docker-compose-*.yml 的 environment 段或宿主机 .env",
     },
-    "scheduler_config.json": {
-        "semantics": "declarative",
-        "not_loaded_hint": "容器内运行时不读取本文件；真实作业行来自数据库表 scheduler_jobs，"
-                           "经 emy-console / 调度服务维护",
-    },
     "hook_config.json": {
         "semantics": "declarative",
         "not_loaded_hint": "Hook 声明式挂载配置；预期由 emily_core 在启动时读取",
@@ -282,7 +277,6 @@ _SECTION_RULES: tuple[tuple[str, str, tuple[str, ...], tuple[str, ...]], ...] = 
         "user_memory_max_entries", "session_archive_enabled", "session_archive_dir",
     ), ("log_",)),
     ("email", "邮箱渠道", (), ("email_",)),
-    ("scheduler", "计划任务", (), ("scheduler_",)),
     ("permission", "权限与准入", (
         "permission_cache_ttl_seconds", "permission_fail_open", "auto_create_user",
         "auto_create_whitelist", "fallback_basic_tools", "fallback_advanced_write_tools",

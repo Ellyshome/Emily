@@ -29,6 +29,8 @@ class CreateNodeCommand:
     # 至少一条 is_required=True，否则创建被拒。字段兼容 deliverable_name/name、
     # target_amount/target、unit、is_required。
     deliverables: list[dict] = field(default_factory=list)
+    # 来源参考模板 ref_id（emy-console 选模板建节点时记录，用于保留与模板的溯源关系）
+    template_ref_id: str = ""
 
 
 @dataclass

@@ -93,14 +93,13 @@ ENV_CONFIG_MAP: dict[str, str] = {
     "EMILY_CAPABILITY_CALL_TIMEOUT_SECONDS": "capability_call_timeout_seconds",
     "EMILY_TEST_CONV_PREFIXES": "test_conv_prefixes",
     "EMILY_DEFAULT_INTERACTION_CHANNEL": "default_interaction_channel",
-    "EMILY_SCHEDULER_ENABLED": "scheduler_enabled",
     "EMILY_SESSION_ARCHIVE_ENABLED": "session_archive_enabled",
 }
 
 # 布尔字段：环境变量是字符串，bool("false") 为真，必须显式转换
 ENV_BOOL_FIELDS: set[str] = {
     "llm_console_trace_enabled", "kb_enabled", "expert_review_enabled",
-    "scheduler_enabled", "session_archive_enabled",
+    "session_archive_enabled",
 }
 
 # 整数字段：环境变量是字符串，需显式转换

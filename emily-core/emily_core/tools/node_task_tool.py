@@ -88,7 +88,7 @@ async def handle_create_task_node(
     """创建 TASK 类型叶子节点（含可计量成果）。
 
     两层制下任务必须带目标量：无成果的任务无法上报进度，也无法被完工上报
-    匹配。父节点挂载走 service 的 mount_child，由结构派生节点类型。
+    匹配。父节点挂载走 service 的 mount_child（不改父节点类型——类型由声明决定）。
     """
     if node_service is None:
         return {"success": False, "reply": "NodeService 未初始化"}

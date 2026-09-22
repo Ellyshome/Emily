@@ -537,6 +537,40 @@ class NodeDeliverableRepo:
         return grouped
 
     @staticmethod
+    def find_by_project(project_id: str, limit: int = 2000) -> list[dict]:
+        """查询项目下所有未废弃节点的成果，附所属节点名称。
+
+        供节点模板装配器按描述匹配「项目内已有成果」（建前置依赖的候选池）。
+        """
+        if not project_id:
+            return []
+        with get_session() as session:
+            rows = (
+                session.query(
+                    NodeDeliverable.deliverable_id,
+                    NodeDeliverable.deliverable_name,
+                    NodeDeliverable.node_id,
+                    ProjectNode.node_name.label("node_name"),
+                )
+                .join(ProjectNode, ProjectNode.node_id == NodeDeliverable.node_id)
+                .filter(
+                    ProjectNode.project_id == project_id,
+                    ProjectNode.is_discarded.isnot(True),
+                )
+                .limit(limit)
+                .all()
+            )
+        return [
+            {
+                "deliverable_id": r.deliverable_id,
+                "deliverable_name": r.deliverable_name or "",
+                "node_id": r.node_id,
+                "node_name": r.node_name or "",
+            }
+            for r in rows
+        ]
+
+    @staticmethod
     def update_progress(deliverable_id: str, current_amount: str, file_id: str = "") -> NodeDeliverable | None:
         """更新成果当前量和关联文件。"""
         with get_session() as session:

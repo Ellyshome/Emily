@@ -35,8 +35,8 @@ _TABLE_DISPLAY_NAMES = {
     "conversations": "会话表",
     "permissions": "权限表",
     "permission_grants": "授权表",
-    "scheduler_jobs": "调度作业表",
-    "scheduler_executions": "调度执行表",
+    "scheduler_jobs": "调度作业表（已退役）",
+    "scheduler_executions": "调度执行表（已退役）",
 }
 
 # ── 表描述映射 ──
@@ -55,8 +55,8 @@ _TABLE_DESCRIPTIONS = {
     "conversations": "IM 会话记录",
     "permissions": "权限规则定义",
     "permission_grants": "跨线授权记录",
-    "scheduler_jobs": "系统调度作业",
-    "scheduler_executions": "调度执行日志",
+    "scheduler_jobs": "系统调度作业（已退役）",
+    "scheduler_executions": "调度执行日志（已退役）",
 }
 
 # ── 需要提取核心字段的可见表（与 db_perms 对齐）──

@@ -22,8 +22,6 @@ UNION ALL SELECT 'project_events(' || count(*)::text || ')' FROM project_events;
 \echo ''
 \echo '--- 运行时数据统计 ---'
 SELECT 'pipeline_execution_logs(' || count(*)::text || ')' FROM pipeline_execution_logs WHERE pipeline_run_id LIKE 'SIM-%'
-UNION ALL SELECT 'scheduler_jobs(' || count(*)::text || ')' FROM scheduler_jobs
-UNION ALL SELECT 'scheduler_executions(' || count(*)::text || ')' FROM scheduler_executions
 UNION ALL SELECT 'evolution_daily_insights(' || count(*)::text || ')' FROM evolution_daily_insights WHERE insight_date LIKE '2026-%'
 UNION ALL SELECT 'evolution_rules(' || count(*)::text || ')' FROM evolution_rules WHERE rule_no LIKE 'R-%'
 UNION ALL SELECT 'evolution_patches(' || count(*)::text || ')' FROM evolution_patches WHERE patch_no LIKE 'EP-%'
