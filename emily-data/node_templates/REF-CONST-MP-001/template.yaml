@@ -1,0 +1,74 @@
+# 全景节点参考模板 —— 结构化清单入口（机器可读）
+#
+# 维护约定：
+#   · 本文件是模板单元的**唯一结构化入口**，字段口径见 node_templates/README.md
+#   · 附件（参考范例 / 成果约定 / 说明文档等）放同目录，索引只登记不解析
+#   · 对象声明区 declarations 由人工维护（系统不自动生成模板内容）：
+#
+#       declarations:
+#         participant_companies:              # 参与单位候选
+#           - desc: 本项目建设单位
+#             match: {type_norm: 建设单位, scope_keywords: [], name_keywords: []}
+#             required: true
+#         participant_users:                  # 成员候选（来源单位须已在上节声明）
+#           - desc: 建设单位项目负责人
+#             match: {from_company: 建设单位, role: participant}
+#             required: false
+#         shared_files:                       # 共享文件候选（受操作人可见范围约束）
+#           - desc: 参考范例清单
+#             match: {name_keywords: [全景计划], type_keywords: [xlsx]}
+#             required: false
+#         pre_conditions:                     # 前置成果候选（只指向项目内已有成果）
+#           - desc: 立项批复文件
+#             match: {deliverable_name_keywords: [立项批复]}
+#             required: true
+#
+# 索引生成: uv run python scripts/maintain_node_template_index.py
+
+ref_id: REF-CONST-MP-001
+node_name: 全景计划上线
+node_type: TASK
+stage_id: 0
+summary: 全景计划上线是项目立项阶段的基础节点
+deliverables:
+- name: 全景计划清单
+  target_amount: 1.0
+  unit: 份
+  is_required: true
+  typical_filenames: 含「全景计划」「节点清单」「进度计划」「里程碑」等关键词
+preconditions:
+- 项目已取得立项批复
+- 项目启动会已召开（本节点的建议父节点）
+declarations:
+  participant_companies:
+  - desc: 本项目建设单位（管理单位）
+    match:
+      type_norm: 建设单位
+      scope_keywords: []
+      name_keywords: []
+    required: true
+  participant_users:
+  - desc: 建设单位项目负责人
+    match:
+      from_company: 建设单位
+      role: participant
+    required: false
+  shared_files:
+  - desc: 全景计划参考范例（随模板附带的参考物）
+    match:
+      name_keywords:
+      - 全景计划
+      type_keywords:
+      - xlsx
+    required: false
+  pre_conditions:
+  - desc: 立项批复文件
+    match:
+      deliverable_name_keywords:
+      - 立项批复
+    required: true
+  - desc: 项目启动会成果
+    match:
+      deliverable_name_keywords:
+      - 项目启动会
+    required: false

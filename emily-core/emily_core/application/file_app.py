@@ -145,6 +145,19 @@ class FileApplication:
                 import asyncio
                 asyncio.create_task(_parse_and_update())
 
+            # ── 归档后分析分发（门禁 → 归属判定 → 临时节点/提案；fail-open，不阻断归档）──
+            try:
+                from ..services.archive_handler_registry import ArchiveHandlerRegistry
+
+                asyncio.create_task(ArchiveHandlerRegistry.dispatch(
+                    file_id=str(f.id),
+                    project_id=str(getattr(cmd, "project_id", "") or ""),
+                    actor_id=str(cmd.uploaded_by or ""),
+                    filename=filename or "",
+                ))
+            except Exception as ex:  # 分发失败不影响归档结果
+                logger.warning("archive dispatch skipped: %s", ex)
+
             reply = FileService.format_reply(f)
             if local_path:
                 reply += f"\n文件已保存到本地存储。"

@@ -49,6 +49,9 @@ INSERT INTO tool_registry (id, signature, display_name, category, permission_fla
 ('update_nodes',        '{}', '批量更新节点',     'project', 'admin', 'sop_only', '', true, '2026-07-24T00:00:00', '2026-07-24T00:00:00'),
 ('discard_nodes',       '{}', '废弃节点',         'project', 'admin', 'sop_only', '', true, '2026-07-24T00:00:00', '2026-07-24T00:00:00'),
 ('manage_node_participant','{}','维护节点参与单位/参与人','project','admin','sop_only','', true, '2026-09-17T00:00:00', '2026-09-17T00:00:00'),
+-- business（L4 条线负责人及以上可读，permission_flag=read_l4 → exposure_mode=sop_only）
+('read_node_template',  '{}', '读取参考模板库',   'business', 'read_l4', 'sop_only', '', true, '2026-09-23T00:00:00', '2026-09-23T00:00:00'),
+('build_node_draft',    '{}', '按模板装配草稿',   'business', 'read_l4', 'sop_only', '', true, '2026-09-23T00:00:00', '2026-09-23T00:00:00'),
 ('send_email',          '{}', '发送邮件',         'base', 'all',   'meta', '', true, '2026-07-24T00:00:00', '2026-07-24T00:00:00'),
 ('fetch_inbox',         '{}', '获取收件箱',       'base', 'all',   'meta', '', true, '2026-07-24T00:00:00', '2026-07-24T00:00:00'),
 ('chat_archive',        '{}', '会话归档',         'base', 'all',   'meta', '', true, '2026-07-24T00:00:00', '2026-07-24T00:00:00'),

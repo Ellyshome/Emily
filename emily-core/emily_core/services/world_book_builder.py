@@ -18,10 +18,24 @@ from ..infrastructure.database.session import get_session
 from ..infrastructure.database.models import (
     Project, User, CompanyInfo, ProjectNode, NodeDependency, Event,
 )
+from .node_state_machine import (
+    DISABLED,
+    CONTAINER_NODE_ROLES,
+    excluded_from_rollup,
+)
 
 logger = logging.getLogger("emily.world_book_builder")
 
 BEIJING_TZ = timezone(timedelta(hours=8))
+
+
+def _in_rollup(node) -> bool:
+    """该节点是否计入统计基数（容器与停用节点排除；见 node_state_machine.excluded_from_rollup）。"""
+    return not excluded_from_rollup(
+        node_role=getattr(node, "node_role", "") or "",
+        status=getattr(node, "status", "") or "",
+    )
+
 
 # 生命周期阶段标签
 LIFECYCLE_LABELS = {0: "立项", 1: "规划设计", 2: "工程施工", 3: "交付结算"}
@@ -226,14 +240,21 @@ class ProjectWorldBookBuilder:
             return {"key_personnel": [], "department_leads": [], "error": str(e)}
 
     def _build_structure(self, project_id: str) -> dict:
-        """层3：结构认知——节点树拓扑、整体进度、里程碑状态。"""
+        """层3：结构认知——节点树拓扑、整体进度、里程碑状态。
+
+        统计口径排除两类节点（US-15.11 / AC-US-17.2 / AC-US-17.5）：
+          · **容器节点**（临时里程碑 / 临时任务 / 未归类收容节点）：承载容器，不计完成度、不产生提醒
+          · **停用节点**（DISABLED）：已退出管控
+        两类节点仍保留在节点树与 `node_segments` 中（节点不消失），只从统计基数中剔除。
+        """
         try:
             with get_session() as session:
-                nodes = session.query(ProjectNode).filter(
+                all_nodes = session.query(ProjectNode).filter(
                     ProjectNode.project_id == project_id,
                     ProjectNode.is_discarded == False,
                 ).all()
 
+                nodes = [n for n in all_nodes if _in_rollup(n)]
                 total = len(nodes)
                 completed = sum(1 for n in nodes if n.status == "COMPLETED")
                 in_progress = sum(1 for n in nodes if n.status == "IN_PROGRESS")
@@ -252,7 +273,7 @@ class ProjectWorldBookBuilder:
                         except (ValueError, TypeError):
                             pass
 
-                # 里程碑
+                # 里程碑（容器不算里程碑，即使其 node_type 声明为 MILESTONE）
                 milestones = []
                 for n in nodes:
                     if getattr(n, 'node_type', '') == 'MILESTONE':
@@ -268,17 +289,21 @@ class ProjectWorldBookBuilder:
                     total_progress = (completed / total) * 100
 
                 # M1a: 按节点分段的骨架（供会话侧按 authorized_node_ids 裁剪）
+                # 容器节点同样入段（可见范围内可见），但带 role 标记供呈现区分
                 node_segments: dict[str, dict] = {}
-                for n in nodes:
+                for n in all_nodes:
                     try:
                         progress = float(n.progress or 0)
                     except (TypeError, ValueError):
                         progress = 0.0
+                    role = getattr(n, "node_role", "") or "BUSINESS"
                     node_segments[n.node_id] = {
                         "name": n.node_name or "",
                         "status": n.status or "",
                         "progress": round(progress, 1),
                         "milestone": (getattr(n, "node_type", "") == "MILESTONE"),
+                        "container": role != "BUSINESS",
+                        "node_role": role,
                     }
 
                 return {
@@ -316,11 +341,13 @@ class ProjectWorldBookBuilder:
                         "type": e.event_type or "",
                     })
 
-                # 即将到期 + 已逾期节点
+                # 即将到期 + 已逾期节点（容器与停用节点不产生到期提醒）
                 nodes = session.query(ProjectNode).filter(
                     ProjectNode.project_id == project_id,
                     ProjectNode.is_discarded == False,
                     ProjectNode.status != "COMPLETED",
+                    ProjectNode.status != DISABLED,
+                    ProjectNode.node_role.notin_(tuple(CONTAINER_NODE_ROLES)),
                 ).all()
 
                 upcoming_deadlines = []

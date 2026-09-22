@@ -174,3 +174,28 @@ class ParticipationRepo:
         except Exception as e:
             logger.error("users_of_projects failed projects=%s: %s", pids, e)
             return []
+
+    @staticmethod
+    def users_of_companies(company_ids: Optional[list[str]]) -> list[User]:
+        """指定企业的在职人员（去重、排除已删除与停用；供「成员候选」采集）。
+
+        口径：默认候选集为该企业**全员**，不做岗位过滤（岗位细化由人增删）。
+        """
+        cids = [c for c in (company_ids or []) if c]
+        if not cids:
+            return []
+        try:
+            with get_session() as session:
+                return (
+                    session.query(User)
+                    .filter(
+                        User.company.in_(cids),
+                        User.is_deleted == False,
+                        User.status == "active",
+                    )
+                    .order_by(User.username)
+                    .all()
+                )
+        except Exception as e:
+            logger.error("users_of_companies failed companies=%s: %s", cids, e)
+            return []

@@ -31,6 +31,54 @@ class CreateNodeCommand:
     deliverables: list[dict] = field(default_factory=list)
     # 来源参考模板 ref_id（emy-console 选模板建节点时记录，用于保留与模板的溯源关系）
     template_ref_id: str = ""
+    # ── 创建期一次性落库编排（US-11）：确认装配草稿后随节点一并落库 ──
+    # 参与人候选（每项 user_id + 可选 role），服务端逐项校验存在性后落库
+    participant_user_ids: list[dict] = field(default_factory=list)
+    # 共享文件候选（file_id 列表），越权/不存在项丢弃并回报
+    shared_file_ids: list[str] = field(default_factory=list)
+    # 前置依赖候选（每项 depends_on_deliverable_id + 可选 weight / dependency_type）。
+    # **必须最后落库**：依赖只能指向已存在的成果。
+    dependencies: list[dict] = field(default_factory=list)
+    # 节点角色（容器识别唯一键，默认 BUSINESS）。容器角色仅由 NodeContainerService
+    # 内部设置；**不出现在工具 schema 中**，故 LLM 无法经工具指定。
+    node_role: str = "BUSINESS"
+    # 计划启动时间（ISO8601，空=未设置）：激活条件之一（US-18.1/18.2）。
+    # 相对锚点（如"取得施工许可证后 30 天"）由服务端换算为具体日期后落库。
+    planned_start_at: str = ""
+
+
+@dataclass
+class PromoteNodeCommand:
+    """认领迁正命令（临时节点 → 正式归属位置）。"""
+    node_id: str                              # 待迁正的临时节点
+    target_parent_id: str = ""                # 转入的正式父节点（空 = 挂到根图）
+    operator_id: str = ""
+    remark: str = ""
+
+
+@dataclass
+class ReassignEventCommand:
+    """事件归位命令（未归类收容节点 → 具体节点）。"""
+    event_id: str
+    target_node_id: str
+    operator_id: str = ""
+    remark: str = ""
+
+
+@dataclass
+class DisableNodeCommand:
+    """停用节点命令（US-17）：退出管控，非终态可恢复。"""
+    node_id: str
+    operator_id: str = ""
+    reason: str = ""
+
+
+@dataclass
+class EnableNodeCommand:
+    """恢复节点命令（US-17）：回到真实三态。"""
+    node_id: str
+    operator_id: str = ""
+    remark: str = ""
 
 
 @dataclass
@@ -41,6 +89,8 @@ class UpdateNodeCommand:
     node_name: str | None = None
     deadline: str | None = None
     remark: str | None = None
+    # 关联单位（中文名或 company_info.id，服务层经 CompanyResolver 解析）
+    related_company_id: str | None = None
 
 
 @dataclass
@@ -134,6 +184,11 @@ class NodeOperationResult:
     message: str = ""
     error_code: str = ""
     affected_downstream: list[str] = field(default_factory=list)
+    # 创建期一次性落库的回报（US-11）：节点必成功，其余逐项计数；
+    # failed = 落库失败项（附原因），discarded = 越权/不存在被丢弃项（附原因）
+    created: dict = field(default_factory=dict)
+    failed: list[dict] = field(default_factory=list)
+    discarded: list[dict] = field(default_factory=list)
 
 
 @dataclass

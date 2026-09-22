@@ -72,6 +72,7 @@ class ToolRegistryRepo:
           - category=base     → 全部用户可用
           - category=business → 检查 permission_flag vs 6 级权限
               all      → 全部用户（含 L1 访客）
+              read_l4  → L4 条线负责人及以上（线性 >=4；用于"模板库读取"等 L4 门槛的只读能力）
               write_l2 → L2 参建执行及以上（线性 >=2；用于"一线可上传"的追加型写工具）
               write    → L3 参建管理及以上
               admin    → L5 管理员及以上
@@ -105,6 +106,8 @@ class ToolRegistryRepo:
                     if row.permission_flag == "all":
                         available.append(_row_to_dict(row))
                     elif row.permission_flag == "admin" and level >= 5:
+                        available.append(_row_to_dict(row))
+                    elif row.permission_flag == "read_l4" and level >= 4:
                         available.append(_row_to_dict(row))
                     elif row.permission_flag == "write_l2" and level >= 2:
                         available.append(_row_to_dict(row))

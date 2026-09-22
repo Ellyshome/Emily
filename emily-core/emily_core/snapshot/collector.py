@@ -21,6 +21,12 @@
 
 from __future__ import annotations
 
+# 汇总/提醒口径：容器角色与停用态排除
+# （判定口径唯一定义见 services/node_state_machine.excluded_from_rollup；
+#  本模块在方法内局部 import 数据库层，故常量置于模块级）
+_ROLLUP_EXCLUDED_ROLES = ("TEMP_MILESTONE", "TEMP_TASK", "UNCLASSIFIED_SINK")
+_ROLLUP_EXCLUDED_STATUS = "DISABLED"
+
 import logging
 import os
 import re
@@ -189,9 +195,12 @@ class SnapshotCollector:
             # 按项目拆分的节点详情
             per_project_nodes = {}
             for proj in projects:
+                # 容器与停用节点不计入快照统计（US-15.11 / AC-US-17.2 / 17.5）
                 nodes = sess.query(ProjectNode).filter(
                     ProjectNode.project_id == proj.id,
                     ProjectNode.is_discarded == False,
+                    ProjectNode.node_role.notin_(_ROLLUP_EXCLUDED_ROLES),
+                    ProjectNode.status != _ROLLUP_EXCLUDED_STATUS,
                 ).all()
                 per_project_nodes[proj.id] = {
                     "project_name": proj.name or "",

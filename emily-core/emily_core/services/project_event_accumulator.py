@@ -13,6 +13,7 @@ from ..infrastructure.database.models import (
     ProjectEvent,
     ProjectEventKind,
     ProjectNode,
+    UNASSIGNED_NODE_ID,
 )
 from ..repositories.project_event_repo import ProjectEventRepository
 
@@ -33,12 +34,41 @@ def _resolve_project_id(node_id: Optional[str]) -> Optional[str]:
         return node.project_id if node else None
 
 
+def _resolve_sink_node_id(node_id: Optional[str], project_id: Optional[str]) -> str:
+    """归属兜底：未指定或为历史常量 → 本项目「未归类收容节点」（懒创建的**真实节点**）。
+
+    口径（US-15.7 / US-15.9 / PRD §4.4-16）：归属必须指向真实存在且在项目内可解析的
+    节点；不再使用无节点承载的 `UNASSIGNED` 标记。解析失败时保持原值并告警（由存量
+    扫描与巡检兜底发现），不静默改写为近似值。
+    """
+    nid = (node_id or "").strip()
+    if nid and nid != UNASSIGNED_NODE_ID:
+        return nid
+    if not project_id:
+        logger.warning("事件归属兜底失败：缺少 project_id（node_id=%r）", node_id)
+        return nid or ""
+    try:
+        from .node_container_service import NodeContainerService
+
+        return NodeContainerService().ensure_container_sync(
+            project_id, "UNCLASSIFIED_SINK")
+    except Exception as e:
+        logger.warning("未归类收容节点解析失败 project=%s: %s", project_id, e)
+        return nid or ""
+
+
 class ProjectEventAccumulator:
     """统一事件积累写入器。"""
 
     @staticmethod
     def accumulate(*, event_kind: str, title: str, **kwargs) -> ProjectEvent:
-        """通用累积入口（薄封装 Repository.create）。"""
+        """通用累积入口（薄封装 Repository.create）。
+
+        归属兜底在此**统一**完成——全部 record_* 均经本方法落库，保证
+        「任何事件的归属都指向真实节点」（§4.4-16）。
+        """
+        kwargs["node_id"] = _resolve_sink_node_id(
+            kwargs.get("node_id"), kwargs.get("project_id"))
         return ProjectEventRepository.create(event_kind=event_kind, title=title, **kwargs)
 
     @staticmethod
@@ -65,7 +95,7 @@ class ProjectEventAccumulator:
             "related_event_ids": related_event_ids,
             "conversation_id": conversation_id or "",
         }
-        return ProjectEventRepository.create(
+        return ProjectEventAccumulator.accumulate(
             event_kind=ProjectEventKind.EVENT,
             title=title,
             project_id=project_id,
@@ -96,7 +126,7 @@ class ProjectEventAccumulator:
         source_message_id: Optional[str] = None,
     ) -> ProjectEvent:
         payload = {"owner_text": owner_text or "", "due_text": due_text or ""}
-        return ProjectEventRepository.create(
+        return ProjectEventAccumulator.accumulate(
             event_kind=ProjectEventKind.TASK,
             title=title,
             project_id=project_id,
@@ -137,7 +167,7 @@ class ProjectEventAccumulator:
             "action_items": json.dumps(action_items, ensure_ascii=False) if action_items else "[]",
             "related_file_ids": json.dumps(related_file_ids, ensure_ascii=False) if related_file_ids else "[]",
         }
-        return ProjectEventRepository.create(
+        return ProjectEventAccumulator.accumulate(
             event_kind=ProjectEventKind.MEETING,
             title=title,
             project_id=project_id,
@@ -181,7 +211,7 @@ class ProjectEventAccumulator:
             "confidentiality": confidentiality,
             "version": version,
         }
-        return ProjectEventRepository.create(
+        return ProjectEventAccumulator.accumulate(
             event_kind=ProjectEventKind.FILE,
             title=title,
             project_id=project_id,
@@ -223,7 +253,7 @@ class ProjectEventAccumulator:
             "current_handler_id": current_handler_id,
             "actual_finish_time": actual_finish_time or "",
         }
-        return ProjectEventRepository.create(
+        return ProjectEventAccumulator.accumulate(
             event_kind=ProjectEventKind.BUSINESS_FLOW,
             title=title,
             project_id=project_id,
@@ -267,7 +297,7 @@ class ProjectEventAccumulator:
             "attachment_file_id": attachment_file_id,
             "completed_at": completed_at or "",
         }
-        return ProjectEventRepository.create(
+        return ProjectEventAccumulator.accumulate(
             event_kind=ProjectEventKind.DELIVERABLE,
             title=title,
             project_id=project_id,
@@ -302,7 +332,7 @@ class ProjectEventAccumulator:
         if project_id is None:
             project_id = _resolve_project_id(node_id)
         payload = {"remark": remark}
-        return ProjectEventRepository.create(
+        return ProjectEventAccumulator.accumulate(
             event_kind=ProjectEventKind.NODE_EVENT,
             title=title,
             project_id=project_id,

@@ -208,6 +208,61 @@ async def batch_discard_nodes(
 
 
 # ══════════════════════════════════════════════════════════════════════════════
+# 批量停用 / 恢复（US-17）
+# ══════════════════════════════════════════════════════════════════════════════
+
+async def batch_disable_nodes(
+    node_ids: list[str],
+    *,
+    operator_id: str = "",
+    reason: str = "",
+    dry_run: bool = False,
+) -> list[dict]:
+    """批量停用节点（L4+；非终态可恢复）。"""
+    from .node_service import NodeService
+    from .node_commands import DisableNodeCommand
+    from ..repositories.permission_repo import PermissionRepository
+
+    svc = NodeService(user_repo=PermissionRepository())
+    results: list[dict] = []
+    for node_id in (node_ids or []):
+        if dry_run:
+            results.append({"node_id": node_id, "success": True, "dry_run": True,
+                            "message": "将置为 DISABLED"})
+            continue
+        r = await svc.disable_node(DisableNodeCommand(
+            node_id=node_id, operator_id=operator_id, reason=reason))
+        results.append({"node_id": node_id, "success": r.success, "message": r.message})
+    return results
+
+
+async def batch_enable_nodes(
+    node_ids: list[str],
+    *,
+    operator_id: str = "",
+    remark: str = "",
+    dry_run: bool = False,
+) -> list[dict]:
+    """批量恢复被停用的节点（回到真实三态）。"""
+    from .node_service import NodeService
+    from .node_commands import EnableNodeCommand
+    from ..repositories.permission_repo import PermissionRepository
+
+    svc = NodeService(user_repo=PermissionRepository())
+    results: list[dict] = []
+    for node_id in (node_ids or []):
+        if dry_run:
+            results.append({"node_id": node_id, "success": True, "dry_run": True,
+                            "message": "将恢复管控"})
+            continue
+        r = await svc.enable_node(EnableNodeCommand(
+            node_id=node_id, operator_id=operator_id, remark=remark))
+        results.append({"node_id": node_id, "success": r.success,
+                        "status": r.status, "message": r.message})
+    return results
+
+
+# ══════════════════════════════════════════════════════════════════════════════
 # 批量更新成果进度
 # ══════════════════════════════════════════════════════════════════════════════
 

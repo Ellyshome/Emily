@@ -330,14 +330,40 @@ class PermissionService:
           - 管理单位（company_info.is_admin=True）→ 本项目全部节点
           - 其他单位 → 企业参与节点
           - 无企业 / 无参与 → 空集（fail-closed）
+
+        **容器节点可见范围（US-15.5，唯一插入点）**：收容容器不属于任何参建单位，
+        故一律从「企业参与」结果中剔除，改由容器规则单独判定——
+          · L4+ → 其所属项目下**全部容器节点**
+          · 创建者本人 → 其本人创建的容器节点（即使低于 L4）
+        不改 `fetch_world_book._visible` 的 fail-closed 语义，只扩充集合。
         """
         if not company:
             return []
         from ..repositories.participation_repo import ParticipationRepo
+
+        project_ids = ParticipationRepo.project_ids_of_company(company.id)
         if getattr(company, "is_admin", False):
-            project_ids = ParticipationRepo.project_ids_of_company(company.id)
-            return ParticipationRepo.all_node_ids_of_projects(project_ids)
-        return ParticipationRepo.node_ids_of_company(company.id)
+            base = ParticipationRepo.all_node_ids_of_projects(project_ids)
+        else:
+            base = ParticipationRepo.node_ids_of_company(company.id)
+
+        try:
+            from ..repositories.node_repo import ProjectNodeRepo
+            from .node_state_machine import CONTAINER_NODE_ROLES
+
+            role_list = tuple(CONTAINER_NODE_ROLES)
+            all_containers = set(ProjectNodeRepo.find_container_ids(
+                role_list, project_ids=project_ids))
+            level = int(getattr(user, "level", 0) or 0)
+            visible_containers = ProjectNodeRepo.find_container_ids(
+                role_list,
+                project_ids=project_ids if level >= 4 else [],
+                creator_id=str(getattr(user, "id", "") or ""),
+            )
+            return [n for n in base if n not in all_containers] + visible_containers
+        except Exception as e:
+            logger.warning("容器可见范围扩展失败，按企业参与口径返回: %s", e)
+            return base
 
     @staticmethod
     def _derive_project_ids(user: User, company: Optional[CompanyInfo]) -> list[str]:

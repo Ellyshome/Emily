@@ -100,6 +100,9 @@ def _ensure_columns(engine) -> list[dict]:
             ("acknowledged_at", "VARCHAR(50)", "''"),
             ("acknowledged_level", "INTEGER", "0"),
             ("template_ref_id", "VARCHAR(100)", "''"),
+            # 全景节点 US-15/16/18：容器角色（容器识别唯一键）+ 计划启动时间
+            ("node_role", "VARCHAR(30)", "'BUSINESS'"),
+            ("planned_start_at", "VARCHAR(50)", "''"),
         ],
         "events": [
             ("confirmed_by", "VARCHAR", "NULL"),
@@ -227,6 +230,14 @@ def _ensure_columns(engine) -> list[dict]:
         "messages": [
             ("idx_msg_source_created", "(source, created_at)"),
         ],
+        # 全景节点 US-15：容器的「每项目唯一」由部分唯一索引保证
+        # （定义以 "UNIQUE " 前缀标识 → 生成 CREATE UNIQUE INDEX）
+        "project_nodes": [
+            ("uq_pn_project_temp_milestone",
+             "UNIQUE (project_id) WHERE node_role = 'TEMP_MILESTONE' AND is_discarded = false"),
+            ("uq_pn_project_sink",
+             "UNIQUE (project_id) WHERE node_role = 'UNCLASSIFIED_SINK' AND is_discarded = false"),
+        ],
     }
     with engine.connect() as conn:
         for table_name, indexes in _PENDING_INDEXES.items():
@@ -254,10 +265,16 @@ def _ensure_columns(engine) -> list[dict]:
                 if already:
                     continue
                 try:
+                    # 定义串以 "UNIQUE " 前缀标识部分唯一索引（如容器「每项目唯一」）
+                    kind = "CREATE INDEX"
+                    body = definition
+                    if definition.strip().upper().startswith("UNIQUE "):
+                        kind = "CREATE UNIQUE INDEX"
+                        body = definition.strip()[len("UNIQUE "):]
                     conn.execute(
                         sa_text(
-                            f"CREATE INDEX IF NOT EXISTS {iname} "
-                            f"ON {table_name} {definition}"
+                            f"{kind} IF NOT EXISTS {iname} "
+                            f"ON {table_name} {body}"
                         )
                     )
                     conn.commit()

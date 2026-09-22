@@ -52,6 +52,19 @@ def _init_db(db_url: str = "") -> None:
                     pg_password=os.environ.get("EMILY_PG_PASSWORD", "emily_secret_2026"))
 
 
+def _check_template_library() -> dict:
+    """模板库自检：索引与模板单元目录一致性（只读，不写盘）。
+
+    索引写入只在宿主机执行（容器内模板目录 :ro 挂载），故容器侧以本项巡检
+    替代已摘除的 bootstrap 自动刷新——索引是否新鲜可被观测。
+    """
+    try:
+        from emily_core.services.node_template_loader import NodeTemplateLoader
+        return NodeTemplateLoader().check_consistency()
+    except Exception as e:
+        return {"ok": False, "error": str(e), "template_count": 0}
+
+
 def self_check(*, db_url: str = "", dry_run: bool = False,
                mode: str = "quick", check_tool_registry: bool = False,
                operator_id: str = "") -> dict:
@@ -142,6 +155,9 @@ def self_check(*, db_url: str = "", dry_run: bool = False,
     except Exception as e:
         result["tools_consistency"] = {"ok": False, "error": str(e)}
 
+    # 模板库一致性：索引与模板单元目录是否同步（只读巡检，不写盘）
+    result["template_library"] = _check_template_library()
+
     # 留痕：自检动作由本层（动作层）记录，入口只传操作人（约束「挂载点唯一」）
     if operator_id:
         try:
@@ -205,6 +221,15 @@ def _format_self_check(result: dict) -> str:
     if tc:
         status = "✅" if tc.get("ok") else "❌"
         lines.append(f"工具一致性：{status} Skill {tc.get('skills', 0)} 个，问题 {tc.get('issues', 0)} 处 (fatal {tc.get('fatal', 0)})")
+
+    tl = result.get("template_library", {})
+    if tl:
+        status = "✅" if tl.get("ok") else "❌"
+        detail = tl.get("error") or (
+            f"新增 {tl.get('added', [])} / 删除 {tl.get('removed', [])} / 缺清单 {tl.get('missing_manifest', [])}"
+            if not tl.get("ok") else "索引与模板单元同步"
+        )
+        lines.append(f"模板库：{status} {tl.get('template_count', 0)} 个模板 —— {detail}")
 
     return "\n".join(lines)
 
