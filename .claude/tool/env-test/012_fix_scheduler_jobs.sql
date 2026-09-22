@@ -16,10 +16,13 @@
 BEGIN;
 
 -- JOB-001: 每周进度汇报任务创建 → create_periodic_node
+--   【2026-09-21 补】action_params 增加 deliverables：节点创建必须携带至少一条必需成果
+--   （见 Issues/节点状态自证化/节点状态自证化_PRD_V1.md，US-04 / R4）。
+--   ⚠️ 该参数须与「定期建节点」能力对同一并把成果落库，否则属"仅写入无读取"（宪法 Q6）。
 UPDATE scheduler_jobs
 SET action_type = 'create_periodic_node',
     handler_module = 'scheduler.jobs.periodic_node',
-    action_params = '{"project_id":"' || (SELECT id FROM projects WHERE is_deleted = false ORDER BY created_at LIMIT 1) || '","node_name":"本周进度汇报","owner_dept_id":"项目总","creator_id":"' || (SELECT id FROM users WHERE username = '王建国' AND is_deleted = false LIMIT 1) || '"}',
+    action_params = '{"project_id":"' || (SELECT id FROM projects WHERE is_deleted = false ORDER BY created_at LIMIT 1) || '","node_name":"本周进度汇报","owner_dept_id":"项目总","creator_id":"' || (SELECT id FROM users WHERE username = '王建国' AND is_deleted = false LIMIT 1) || '","deliverables":[{"deliverable_name":"本周进度汇报单","target_amount":1,"unit":"份","is_required":true}]}',
     updated_at = NOW()::text
 WHERE action_type = 'create_task_node';
 

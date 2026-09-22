@@ -141,6 +141,11 @@ SELECT id, pipeline_run_id, conversation_id, user_id FROM pipeline_execution_log
 --    interval_seconds, deadline_rule, action_type, handler_module,
 --    action_params, status, last_executed_at, next_execution_at,
 --    creator_id, created_at, updated_at
+--
+--    【2026-09-21 补】JOB-001 的 action_params 增加 deliverables：
+--    「节点创建必须携带至少一条必需成果」生效后，不带成果的节点不可创建
+--    （见 Issues/节点状态自证化/节点状态自证化_PRD_V1.md，US-04 / R4）。
+--    ⚠️ 该参数须与「定期建节点」能力对同一并把成果落库，否则属"仅写入无读取"（宪法 Q6）。
 -- ============================================================
 CREATE TEMP TABLE _sjobs AS
 SELECT uuid_generate_v4()::text AS id, 'JOB-001' AS job_no,
@@ -150,7 +155,7 @@ SELECT uuid_generate_v4()::text AS id, 'JOB-001' AS job_no,
        0 AS interval_seconds, '' AS deadline_rule,
        'create_periodic_node' AS action_type,
        'scheduler.jobs.periodic_node' AS handler_module,
-       '{"project_id":"' || (SELECT id FROM _sp LIMIT 1) || '","node_name":"本周进度汇报","owner_dept_id":"项目总","creator_id":"' || (SELECT id FROM _su WHERE username = '王建国' LIMIT 1) || '"}' AS action_params,
+       '{"project_id":"' || (SELECT id FROM _sp LIMIT 1) || '","node_name":"本周进度汇报","owner_dept_id":"项目总","creator_id":"' || (SELECT id FROM _su WHERE username = '王建国' LIMIT 1) || '","deliverables":[{"deliverable_name":"本周进度汇报单","target_amount":1,"unit":"份","is_required":true}]}' AS action_params,
        'ACTIVE' AS status,
        '2026-07-14T09:00:00' AS last_executed_at,
        '2026-07-21T09:00:00' AS next_execution_at,

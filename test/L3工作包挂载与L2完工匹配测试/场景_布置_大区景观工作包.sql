@@ -100,6 +100,10 @@ ON CONFLICT (node_id) DO NOTHING;
 -- 3. 工作包成果（带量纲与目标量）—— L2 上报匹配的唯一依据
 --    说明：create_task_node 工具没有成果参数，L3 用对话建的工作包**可能没有成果**，
 --          那样下半场的匹配就无从谈起。本节是匹配能力可测的前提。
+--    【2026-09-21 补】里程碑状态已改为「以自身成果判定」，不再由子节点聚合
+--          （见 Issues/节点状态自证化/节点状态自证化_需求基线_V1.md）。
+--          无自有成果的里程碑会永远停在「条件不足」，故为 EMR-LG-01 补一条
+--          汇总级必需成果。⚠️ 新增候选后需重跑 U2/U3/U4，确认归属未被父节点抢走。
 -- ============================================================
 INSERT INTO node_deliverables (
     id, deliverable_id, node_id, deliverable_name, target_amount, current_amount,
@@ -109,6 +113,7 @@ SELECT
     uuid_generate_v4()::text, v.deliverable_id, v.node_id, v.deliverable_name,
     v.target_amount, '0.00', v.unit, true, NOW()::text, 'PENDING'
 FROM (VALUES
+    ('EMR-LG-01-DELV-001',    'EMR-LG-01',    '大区景观工程验收报告', '1',   '份'),
     ('EMR-LG-01-01-DELV-001', 'EMR-LG-01-01', '铺装面层',       '500', '平方米'),
     ('EMR-LG-01-02-DELV-001', 'EMR-LG-01-02', '车行路基础垫层', '300', '平方米'),
     ('EMR-LG-01-03-DELV-001', 'EMR-LG-01-03', '人行路基础垫层', '200', '平方米')

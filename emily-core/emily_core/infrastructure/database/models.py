@@ -1100,15 +1100,16 @@ class ProjectNode(Base):
     created_at = Column(String(50), nullable=False, default=_utc_now, comment="录入时间（ISO8601）")
     approver_id = Column(String(100), default="", comment="批准人ID（已废弃：审批改为签认，改用 acknowledged_by）")
     approved_at = Column(String(50), default="", comment="批准时间（已废弃：审批改为签认，改用 acknowledged_at）")
-    # ── 签认承载字段（替代审批，PRD US-06）──
-    acknowledged_by = Column(String(100), default="", comment="签认人ID（空=未签认）")
-    acknowledged_at = Column(String(50), default="", comment="签认时间（ISO8601）")
-    acknowledged_level = Column(Integer, default=0, comment="签认时的等级")
+    # ── 签认承载字段（2026-09-21 已废弃：签认机制整体退役，节点完结只由自身必需成果决定）──
+    #    保留列与默认值以兼容存量数据，新写入路径不再使用（同 approver_id/approved_at 处理）。
+    acknowledged_by = Column(String(100), default="", comment="【已废弃】签认人ID（签认机制已退役）")
+    acknowledged_at = Column(String(50), default="", comment="【已废弃】签认时间（ISO8601）")
+    acknowledged_level = Column(Integer, default=0, comment="【已废弃】签认时的等级")
     completed_at = Column(String(50), default="", comment="完成时间（ISO8601）")
     is_discarded = Column(Boolean, default=False, comment="是否被废弃")
     status = Column(String(20), default="CONDITIONS_NOT_MET", comment="当前状态：CONDITIONS_NOT_MET / IN_PROGRESS / COMPLETED")
     responsible_user_id = Column(String(100), nullable=False, default="", comment="责任人（FK→users.id，创建时默认取 creator_id）")
-    node_type = Column(String(20), nullable=False, default="TASK", comment="节点类型：MILESTONE（有子节点）/ TASK（叶子）")
+    node_type = Column(String(20), nullable=False, default="TASK", comment="节点类型：MILESTONE（里程碑）/ TASK（任务）；由声明决定，不随结构变化")
     visibility_mode = Column(
         String(30), nullable=False, default="specific",
         comment="【已废弃，恒为 specific】历史值 all_project_files（全项目文件默认可见）已下线，文件必须经 node_accessible_files 显式绑定到节点"

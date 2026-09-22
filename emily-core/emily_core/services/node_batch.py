@@ -41,9 +41,9 @@ def flatten_nodes(
 
     YAML 中 children 嵌套 → 展平后按层级顺序排列。
     node_id 为空时自动生成：NODE-{hash4}（基于 node_name + project_id）。
-    节点类型（单向派生）：有子节点 → 里程碑；无子节点 → 取声明值（仅接受
-    MILESTONE / TASK，其余含已退场的 WORK_PACKAGE 一律视为任务）。
-    保留"无子节点的里程碑"用于尚未分解的重大节点。
+    节点类型**由声明决定**（节点状态自证化 US-02 / R2）：**不再**因有无 children
+    而改写类型；仅接受 MILESTONE / TASK，未声明或非法值（含已退场的 WORK_PACKAGE）
+    一律视为 TASK。
     同时保留 child_weight / parent_node_id，供后续挂载使用。
     """
     flat: list[dict] = []
@@ -66,8 +66,7 @@ def flatten_nodes(
             "related_company_id": node_def.get("related_company_id", "建设单位"),
             "remark": node_def.get("remark", ""),
             "node_type": (
-                NODE_TYPE_MILESTONE if children
-                else declared_type if declared_type in (NODE_TYPE_MILESTONE, NODE_TYPE_TASK)
+                declared_type if declared_type in (NODE_TYPE_MILESTONE, NODE_TYPE_TASK)
                 else NODE_TYPE_TASK
             ),
             "child_weight": node_def.get("child_weight", 1.0),
@@ -186,7 +185,6 @@ async def create_node_tree(
     from .node_service import NodeService
     from .node_commands import (
         CreateNodeCommand,
-        CreateDeliverableCommand,
         AddDependencyCommand,
         MountChildCommand,
     )
@@ -223,7 +221,8 @@ async def create_node_tree(
                 "node_id": node_id,
                 "success": True,
                 "phase": "create_node",
-                "message": f"[DRY-RUN] 将创建节点「{fn['node_name']}」",
+                "message": (f"[DRY-RUN] 将创建节点「{fn['node_name']}」"
+                            f"及其 {len(fn.get('deliverables', []))} 项成果"),
                 "dry_run": True,
             })
             continue
@@ -237,6 +236,7 @@ async def create_node_tree(
             creator_id=creator_id,
             remark=fn.get("remark", ""),
             node_type=fn.get("node_type", NODE_TYPE_TASK),
+            deliverables=fn.get("deliverables", []),
         )
 
         try:
@@ -261,57 +261,9 @@ async def create_node_tree(
             })
             logger.error("  ✗ 节点 %s 创建异常: %s", node_id, e)
 
-    # ── Phase 2: 为每个节点添加成果 ──
-    deliverable_specs: list[dict] = []
-    for fn in flat_nodes:
-        for d in fn.get("deliverables", []):
-            deliverable_specs.append({"node_id": fn["node_id"], **d})
-
-    if deliverable_specs:
-        logger.info("Phase 2: 添加 %d 个成果", len(deliverable_specs))
-    for ds in deliverable_specs:
-        node_id = ds["node_id"]
-        deliv_name = ds.get("name", ds.get("deliverable_name", "未命名成果"))
-
-        if dry_run:
-            results.append({
-                "node_id": node_id,
-                "success": True,
-                "phase": "create_deliverable",
-                "message": f"[DRY-RUN] 将为节点 {node_id} 添加成果「{deliv_name}」",
-                "dry_run": True,
-            })
-            continue
-
-        cmd = CreateDeliverableCommand(
-            node_id=node_id,
-            deliverable_name=deliv_name,
-            target_amount=float(ds.get("target", ds.get("target_amount", 1))),
-            unit=ds.get("unit", "份"),
-            is_required=ds.get("is_required", True),
-            operator_id=creator_id,
-        )
-
-        try:
-            r = await svc.create_deliverable(cmd)
-            results.append({
-                "node_id": node_id,
-                "success": r.success,
-                "phase": "create_deliverable",
-                "message": r.message,
-            })
-            if r.success:
-                logger.info("  ✓ 成果「%s」→ %s", deliv_name, node_id)
-            else:
-                logger.error("  ✗ 成果「%s」→ %s: %s", deliv_name, node_id, r.message)
-        except Exception as e:
-            results.append({
-                "node_id": node_id,
-                "success": False,
-                "phase": "create_deliverable",
-                "message": str(e),
-            })
-            logger.error("  ✗ 成果「%s」异常: %s", deliv_name, e)
+    # ── Phase 2 已移除（成果随节点创建一并落库）──
+    # 节点状态自证化 US-04：`create_node` 要求命令携带必需成果，并在同一次调用内落库，
+    # 故此处不再单独创建成果（否则会重复创建）。
 
     # ── Phase 3: 挂载父子关系 ──
     mount_specs: list[dict] = []

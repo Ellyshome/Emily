@@ -37,7 +37,12 @@ class CreateNodeRequest(BaseModel):
     remark: str = Field(default="", description="备注")
     creator_id: str = Field(default="", description="创建人ID")
     responsible_user_id: str = Field(default="", description="责任人ID（为空时取creator_id）")
-    node_type: str = Field(default="TASK", description="节点类型：MILESTONE（有子节点）/ TASK（叶子），由结构派生")
+    node_type: str = Field(default="TASK", description="节点类型：MILESTONE（里程碑）/ TASK（任务）。由声明决定，不随结构变化")
+    deliverables: list[dict] = Field(
+        default_factory=list,
+        description="必需成果清单（至少一项 is_required=true，否则创建被拒）。"
+                    "每项含 deliverable_name / target_amount / unit / is_required",
+    )
 
 
 class UpdateNodeRequest(BaseModel):
@@ -45,15 +50,6 @@ class UpdateNodeRequest(BaseModel):
     deadline: str | None = Field(default=None, description="截止时间")
     remark: str | None = Field(default=None, description="备注")
     operator_id: str = Field(default="", description="操作人ID")
-
-
-# ══════════════════════════════════════════════════════════════════════════════
-# 节点签认（替代原审批）
-# ══════════════════════════════════════════════════════════════════════════════
-
-class AcknowledgeNodeRequest(BaseModel):
-    user_id: str = Field(..., description="签认人ID")
-    remark: str = Field(default="", description="签认备注")
 
 
 # ══════════════════════════════════════════════════════════════════════════════

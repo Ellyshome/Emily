@@ -91,8 +91,7 @@ def render_brief(content_json: str, authorized_node_ids: list[str], max_chars: i
             if visible:
                 names = [
                     f"{seg.get('name', '')}"
-                    f"[{_STATUS_CN.get(seg.get('status', ''), seg.get('status', ''))}"
-                    f"{'·未签认' if not seg.get('acknowledged', False) else ''}]"
+                    f"[{_STATUS_CN.get(seg.get('status', ''), seg.get('status', ''))}]"
                     for _, seg in visible[:3]
                 ]
                 lines.append(f"🔖 我可见节点（{len(visible)}）：" + " / ".join(names))
@@ -134,7 +133,6 @@ def render_full(content_json: str, authorized_node_ids: list[str],
                 f"[{_STATUS_CN.get(seg.get('status', ''), seg.get('status', ''))}]"
                 f" 进度{seg.get('progress', 0)}%"
                 + ("（里程碑）" if seg.get("milestone") else "")
-                + ("（未签认）" if not seg.get("acknowledged", False) else "")
             )
         if rows:
             lines.append("")

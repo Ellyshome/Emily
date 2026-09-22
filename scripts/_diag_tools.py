@@ -14,7 +14,7 @@ REGISTERED_TOOLS = {
     "create_task_node", "submit_node_deliverable", "confirm_node_deliverable",
     "return_node_deliverable", "query_my_nodes",
     "create_node", "query_node", "update_node_progress", "add_node_dependency",
-    "mount_child_node", "update_nodes", "acknowledge_nodes", "discard_nodes",
+    "mount_child_node", "update_nodes", "discard_nodes",
     "send_email", "fetch_inbox", "chat_archive", "manage_pending_issues",
 }
 
@@ -34,7 +34,6 @@ TOOL_SCHEMA_MAP = {
     "add_node_dependency": ("emily_core.tools.node_tool", "_ADD_DEPENDENCY_SCHEMA"),
     "mount_child_node": ("emily_core.tools.node_tool", "_MOUNT_CHILD_SCHEMA"),
     "update_nodes": ("emily_core.tools.node_tool", "_UPDATE_NODES_SCHEMA"),
-    "acknowledge_nodes": ("emily_core.tools.node_tool", "_ACK_NODES_SCHEMA"),
     "discard_nodes": ("emily_core.tools.node_tool", "_DISCARD_NODES_SCHEMA"),
     "send_email": ("emily_core.tools.project", "_SEND_EMAIL_SCHEMA"),
     "fetch_inbox": ("emily_core.tools.project", "_FETCH_INBOX_SCHEMA"),
