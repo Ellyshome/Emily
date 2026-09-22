@@ -71,9 +71,6 @@ LOG_MODULES = [
          id_field="id", time="last_active_at", user="user_id",
          summary="CONCAT_WS(' | ', NULLIF(archive_reason, ''), '轮次' || turn_count, "
                  "user_name, CASE WHEN is_guest THEN '访客' ELSE '' END)"),
-    dict(key="scheduler_job_logs", label="调度器作业", table="scheduler_job_logs",
-         id_field="id", time="created_at", user=None, source="source",
-         summary="CONCAT_WS(' | ', action_type, CASE WHEN success THEN '成功' ELSE '失败' END, summary)"),
     dict(key="permission_audit_log", label="权限审计", table="permission_audit_log",
          id_field="log_id", time="event_time", user="grantor_id",
          summary="CONCAT_WS(' | ', operation_type, perm_code, grant_type, remark)"),

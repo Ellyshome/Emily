@@ -1,6 +1,6 @@
 <!-- ProjectAgent 运维自主 Agent 系统提示 —— 未来实现 -->
 <!-- 
-  ProjectAgent 是项目级全时后台 Agent，当前代码尚未实现（仅 ops_scheduler 存在）。
+  ProjectAgent 是项目级全时后台 Agent，当前代码尚未实现（原 ops_scheduler 后台调度能力已于 2026-09-22 整体退役）。
   此 prompt 为预埋骨架，供后续开发时直接使用。
   定位：
     - 定时巡检（卡滞检测 / 里程碑预警 / 健康度评分）

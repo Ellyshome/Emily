@@ -111,10 +111,11 @@ RAG 相关关键列：
 ### 4.2 三条入库链路
 1. **文件工具自动入库**：[tools/file_tool.py](d:/app/Emily/emily-core/emily_core/tools/file_tool.py) `handle_record_file` 当 `purpose=="REFERENCE"` 异步 `_index_reference_file` → 读文件文本按段落切分 → `handle_embed_and_index` → `FileManager.set_rag_indexed(file_id, True, "general_reference")`。
 2. **原子工具流水线**：[tools/parse_document_tool.py](d:/app/Emily/emily-core/emily_core/tools/parse_document_tool.py)（docling/MarkItDown）→ [tools/chunk_tool.py](d:/app/Emily/emily-core/emily_core/tools/chunk_tool.py)（langchain 分块）→ [tools/embed_tool.py](d:/app/Emily/emily-core/emily_core/tools/embed_tool.py) `handle_embed_and_index` → `repo.batch_insert`。
-3. **调度状态机（M7）**：[scheduler/jobs/ingest.py](d:/app/Emily/emily-core/emily_core/scheduler/jobs/ingest.py)（action_type=rag_ingest）：failed→pending 恢复 → 逐 chunk parsing→embedding→indexed，失败置 failed。
+3. ~~**调度状态机（M7）**：`scheduler/jobs/ingest.py`（action_type=rag_ingest）~~ **已退役**（2026-09-22 定时任务模块整体移除）。原设计：failed→pending 恢复 → 逐 chunk parsing→embedding→indexed，失败置 failed。现如需补偿重试，走链路 2（原子工具流水线）或链路 4（CLI/脚本批量）。
 4. **CLI/脚本批量**（非运行时）：见 §7。
 
-> 线上另有每日文件解析 `daily_file_parse`（生成 content_summary 摘要，**不写 knowledge_chunks**）—— 与向量入库是两条独立流水线，勿混淆。
+> ~~线上另有每日文件解析 `daily_file_parse`（生成 content_summary 摘要，**不写 knowledge_chunks**）—— 与向量入库是两条独立流水线，勿混淆。~~
+> **已退役**：`daily_file_parse` 作业与 `scripts/run_daily_file_parse.py` 已于 2026-09-22 随定时任务模块一并移除。
 
 ---
 
@@ -239,7 +240,7 @@ search(query):
 - 解析/分块/去重：services/{document_parser,structural_chunker,dedup_checker}.py
 - Embedding：infrastructure/embedding/{tei_client,remote_client}.py
 - 装配：bootstrap.py、config.py
-- 调度入库：scheduler/jobs/ingest.py
+- ~~调度入库：scheduler/jobs/ingest.py~~（已退役，2026-09-22）
 - 文件 REFERENCE 入库：tools/file_tool.py、services/file_manager.py
 - 会话灌注：adapters/session/session_factory.py、session/session_context.py、session/session_data_fetcher.py
 - 测试脚本：scripts/rag_*.py、scripts/ingest_knowledge.py

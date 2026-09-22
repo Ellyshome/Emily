@@ -91,7 +91,7 @@ def flatten_nodes(
 def generate_node_id(node_name: str, project_id: str) -> str:
     """根据节点名称+项目ID生成 node_id（4位哈希）。
 
-    公开供 PeriodicNodeHandler 等调度 handler 复用，保证 node_id 生成规则一致。
+    公开供节点批量创建与 node_task_tool 复用，保证 node_id 生成规则一致。
     """
     clean = re.sub(r'[^一-龥a-zA-Z0-9]', '', node_name)
     hash_part = hashlib.md5(f"{clean}:{project_id}".encode()).hexdigest()[:4].upper()

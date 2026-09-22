@@ -8,11 +8,12 @@
 # 说明：
 #   - node_id 为业务编号，统一前缀 EMR（EMERALD 缩写）
 #   - stage_id: 0=立项 1=规划设计 2=工程施工 3=交付结算
-#   - node_type: MILESTONE / TASK（两层制，类型由系统按结构派生：有子节点=里程碑，无子节点=任务）
+#   - node_type: MILESTONE / TASK（类型由**声明**决定，不随结构变化：挂入子节点不会把 TASK 改写成 MILESTONE）
+#     层级约束：里程碑不得挂在任务之下（任务之下只能挂任务）
 #   - owner_dept_id 用中文部门名（现状口径）；related_company_id 可写中文单位名称/类型，
 #     入口由 CompanyResolver 解析为 company_info.id 落库，并自动登记为该节点的参与单位
 #   - children 嵌套自动展平并设 parent_node_id
-#   - deliverables 为节点需产出的成果清单
+#   - deliverables 为节点需产出的成果清单（**必填**：每个节点至少 1 条 is_required=true 的成果，否则创建被拒）
 #   - dependencies 为前置依赖（按 deliverable_name 模糊匹配）
 #   - status 字段不在 YAML 中指定，已完成节点的 deliverables 中 current_amount = target_amount 即可体现完成状态
 # ============================================================

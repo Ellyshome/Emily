@@ -840,22 +840,6 @@ scripts:
     timeout_seconds: 120
     scheduling_note: "一次性"
 
-  run_daily_file_parse:
-    description: "run_daily_file_parse.py — 每日文件解析盘点手动触发脚本。"
-    category: system_maintenance
-    source_path: scripts/run_daily_file_parse.py
-    invocation: uv run python scripts/run_daily_file_parse.py {args}
-    check_arg: --dry-run
-    run_args: []
-    auto_run: null
-    auto_run_args: []
-    writes_db: true
-    aggregation_parent: null
-    status: active
-    entrypoint: null
-    timeout_seconds: 300
-    scheduling_note: "纯手动（对应调度任务 DailyFileParseHandler 的 CLI 版）"
-
   ingest_knowledge:
     description: "ingest_knowledge.py — 知识库文档向量化入库脚本。"
     category: system_maintenance

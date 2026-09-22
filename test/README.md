@@ -90,7 +90,7 @@
 
 1. **容器健康**：`emily-core` running；`GET /api/v1/health` 返回 `{"status":"ok","initialized":true,...}`；`emily-postgres` `accepting connections`。
 2. **真实用户**（**禁止伪造 sender_id**，伪造会被自动建号并降级为访客，测试结果不可信）。
-3. **基线快照**：记录 `messages` / `events` / `tasks` / `scheduler_jobs` 行数，测试后比对；写库类用例执行前登记，执行后清理。
+3. **基线快照**：记录 `messages` / `events` / `tasks` 行数（`scheduler_jobs` 随定时任务模块于 2026-09-22 退役，不再纳入），测试后比对；写库类用例执行前登记，执行后清理。
 4. **写操作窗口**：涉及节点写操作、规则演进、热加载的用例需单独窗口，避免与其它测试互相干扰。
 
 ### 5.1 测试用户（执行前重新查询，用例正文中的 UUID 仅为历史参考）

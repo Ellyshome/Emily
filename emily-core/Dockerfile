@@ -29,9 +29,11 @@ COPY emily_core/ ./emily_core/
 COPY static/ ./static/
 
 # 数据目录挂载点
+# /app/data 需预先存在：resolve_data_path 以 container_path.parent.exists() 判定容器态，
+# 缺失会静默回退到开发路径，导致容器内读不到 /app/data/node_templates 等挂载目录。
 RUN mkdir -p /app/sops /app/prompts /app/config /app/baseknowledge /app/tools \
              /app/notebooks /app/logs /app/attachments /app/user_memory \
-             /app/journal /app/db_seeds
+             /app/journal /app/db_seeds /app/data
 
 EXPOSE 18080
 

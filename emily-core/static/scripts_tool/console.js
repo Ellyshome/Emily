@@ -96,9 +96,7 @@ function bindListClicks(el) {
     // 点击选择：模块条目走 selectXxx，其余脚本走 selectScript
     el.querySelectorAll('.script-item').forEach(item => {
         item.addEventListener('click', () => {
-            if (item.dataset.name === RESOURCE_ENTRY_NAME) {
-                selectResource();
-            } else if (item.dataset.name === UPLOAD_ENTRY_NAME) {
+            if (item.dataset.name === UPLOAD_ENTRY_NAME) {
                 selectUpload();
             } else if (item.dataset.name === RAG_ENTRY_NAME) {
                 selectRag();
@@ -172,7 +170,6 @@ async function selectScript(name) {
     setActiveEntry(name);
 
     showEmpty(false);
-    q('.resource-display').hidden = true;
     q('#upload-panel').hidden = true;
     q('#rag-panel').hidden = true;
     q('#node-table-panel').hidden = true;
@@ -828,10 +825,9 @@ function formatUptime(seconds) {
     return minutes ? `${hours}h${minutes}m` : `${hours}h`;
 }
 
-// ── 资源展示 ──
+// ── 控制台 API 与左侧特殊条目 ──
 
 const API_CONSOLE = '/api/v1/console';
-const RESOURCE_ENTRY_NAME = '__resource_display__';  // 左侧脚本列表里的特殊条目
 const UPLOAD_ENTRY_NAME = '__upload__';              // 左侧脚本列表里的文件上传条目
 const RAG_ENTRY_NAME = '__rag_index__';              // 左侧脚本列表里的 RAG 入库条目
 const NODE_TABLE_ENTRY_NAME = '__node_table__';      // 左侧脚本列表里的全景节点表条目
@@ -856,7 +852,7 @@ const PERSONNEL_ENTRY_NAME = '__personnel__';             // 左侧脚本列表�
 // 新增模块面板需同时登记到此处，避免切换时残留旧面板。
 const MODULE_PANEL_SELECTORS = [
     '#chat-panel',
-    '.resource-display', '#upload-panel', '#rag-panel', '#node-table-panel',
+    '#upload-panel', '#rag-panel', '#node-table-panel',
     '#logs-panel', '#self-check-panel', '#prompt-panel', '#llm-trace-panel',
     '#mcp-panel', '#sop-display-panel', '#panorama-nodes-panel',
     '#project-events-panel', '#test-cases-panel',
@@ -924,9 +920,6 @@ async function ensureGlobalUsers() {
 
 function reloadActiveModule() {
     switch (_selectedName) {
-        case RESOURCE_ENTRY_NAME:
-            loadResources(getGlobalOperator());
-            break;
         case UPLOAD_ENTRY_NAME:
             loadFileMgrFiles();
             loadFileMgrNodes();
@@ -980,18 +973,16 @@ q('#global-operator-select').addEventListener('change', () => {
 });
 
 
-// 左侧「模块能力」分组（序号 1-7）
+// 左侧「模块能力」分组（序号按数组顺序自动递增）
 const MODULE_ITEMS = [
     { name: CHAT_ENTRY_NAME, cls: 'chat-entry', func: '与 Emily 对话', sub: 'QQ · 微信客服 · 微信小程序',
       cmd: 'POST /api/v1/console/chat/upload\nPOST /api/v1/console/chat/send\nGET  /api/v1/console/chat/attachment/{token}\n# emily-core/api/routes/console_resources.py' },
-    { name: RESOURCE_ENTRY_NAME, cls: 'resource-entry', func: '资源展示', sub: '四组资源清单',
-      cmd: 'GET  /api/v1/console/resources\n# emily-core/api/routes/console_resources.py::get_resources' },
     { name: UPLOAD_ENTRY_NAME, cls: 'upload-entry', func: '文件管理', sub: '上传 · 删除 · 节点/RAG 进出',
       cmd: 'GET  /api/v1/console/files\nPOST /api/v1/console/upload\nPOST /api/v1/console/file-delete\nPOST /api/v1/console/node-file\nPOST /api/v1/console/rag-index\nPOST /api/v1/console/rag-delete\n# emily-core/api/routes/console_resources.py' },
     { name: RAG_ENTRY_NAME, cls: 'rag-entry', func: 'RAG 模块', sub: '查库',
       cmd: 'POST /api/v1/console/rag-search\n# emily-core/api/routes/console_resources.py' },
-    { name: NODE_TABLE_ENTRY_NAME, cls: 'node-table-entry', func: '全景节点表', sub: '节点 · 参与人 · 共享文件',
-      cmd: 'GET  /api/v1/console/node-table\nPOST /api/v1/console/node-participant\nPOST /api/v1/console/node-file\n# emily-core/api/routes/console_resources.py' },
+    { name: NODE_TABLE_ENTRY_NAME, cls: 'node-table-entry', func: '全景节点表', sub: '节点增删改 · 参与人 · 共享文件',
+      cmd: 'GET  /api/v1/console/node-table\nGET  /api/v1/console/node-templates\nGET  /api/v1/console/node-template?ref_id=...\nGET  /api/v1/console/node-draft?ref_id=...&project_id=...\nPOST /api/v1/console/node-create\nPOST /api/v1/console/node-update\nPOST /api/v1/console/node-delete\nPOST /api/v1/console/node-participant\nPOST /api/v1/console/node-file\n# emily-core/api/routes/console_resources.py' },
     { name: LOG_ENTRY_NAME, cls: 'logs-entry', func: '日志聚合', sub: '按人 · 按模块查看日志',
       cmd: 'GET  /api/v1/console/logs\n# emily-core/api/routes/console_resources.py::get_aggregated_logs' },
     { name: SELF_CHECK_ENTRY_NAME, cls: 'self-check-entry', func: '系统自检', sub: '统计 · 工具一致性检查',
@@ -1019,45 +1010,6 @@ const MODULE_ITEMS = [
     { name: PERSONNEL_ENTRY_NAME, cls: 'personnel-entry', func: '人员管理', sub: '台账 · 等级 · 归属 · 企业 · 记忆 · 提示词',
       cmd: 'GET  /api/v1/console/personnel/list\nGET  /api/v1/console/personnel/companies\nGET  /api/v1/console/personnel/memory\nPOST /api/v1/console/personnel/level\nPOST /api/v1/console/personnel/company\nPOST /api/v1/console/personnel/company-create\nPOST /api/v1/console/personnel/company-delete\nPOST /api/v1/console/personnel/prompt\n# emily-core/api/routes/console_resources.py' },
 ];
-
-const RESOURCE_GROUPS = ['files', 'nodes', 'sops', 'rag_files'];
-const GROUP_CONF = {
-    files:     { listId: 'list-files',     countId: 'count-files' },
-    nodes:     { listId: 'list-nodes',     countId: 'count-nodes' },
-    sops:      { listId: 'list-sops',      countId: 'count-sops' },
-    rag_files: { listId: 'list-rag_files', countId: 'count-rag_files' },
-};
-
-let _resources = { files: [], nodes: [], sops: [], rag_files: [] };
-
-// 选中左侧「资源展示」条目：右侧显示四组资源，隐藏脚本执行区
-function selectResource() {
-    _selectedName = RESOURCE_ENTRY_NAME;
-    _schema = null;
-    _pendingValues = null;
-
-    setActiveEntry(RESOURCE_ENTRY_NAME);
-
-    q('#empty-state').hidden = true;
-    q('#runner').hidden = true;
-    q('#upload-panel').hidden = true;
-    q('#rag-panel').hidden = true;
-    q('#node-table-panel').hidden = true;
-    q('#logs-panel').hidden = true;
-    q('#self-check-panel').hidden = true;
-    q('#prompt-panel').hidden = true;
-    q('#llm-trace-panel').hidden = true;
-    q('#mcp-panel').hidden = true;
-    q('#sop-display-panel').hidden = true;
-    q('#panorama-nodes-panel').hidden = true;
-    q('#project-events-panel').hidden = true;
-    q('#test-cases-panel').hidden = true;
-    q('#session-archive-panel').hidden = true;
-    q('.resource-display').hidden = false;
-
-    ensureGlobalUsers();
-    loadResources(getGlobalOperator());
-}
 
 // ── 文件管理（上传 / 删除 / 节点与 RAG 进出）──
 
@@ -1105,7 +1057,6 @@ function selectUpload() {
 
     q('#empty-state').hidden = true;
     q('#runner').hidden = true;
-    q('.resource-display').hidden = true;
     q('#rag-panel').hidden = true;
     q('#node-table-panel').hidden = true;
     q('#logs-panel').hidden = true;
@@ -1473,7 +1424,6 @@ function selectRag() {
 
     q('#empty-state').hidden = true;
     q('#runner').hidden = true;
-    q('.resource-display').hidden = true;
     q('#upload-panel').hidden = true;
     q('#node-table-panel').hidden = true;
     q('#logs-panel').hidden = true;
@@ -1619,7 +1569,6 @@ function selectNodeTable() {
 
     q('#empty-state').hidden = true;
     q('#runner').hidden = true;
-    q('.resource-display').hidden = true;
     q('#upload-panel').hidden = true;
     q('#rag-panel').hidden = true;
     q('#logs-panel').hidden = true;
@@ -1680,6 +1629,378 @@ function requireOperator() {
     return true;
 }
 
+// ── 节点信息交互面板：新增 / 编辑 / 删除 ──
+// 数据来源：点节点ID → 编辑（名称 / 截止时间 / 备注，复用现有 PATCH 能力）；
+//           点「＋ 增加节点」→ 新建（可选参考模板，按模板预填名称/类型/备注/成果清单）。
+
+let _nodeTableRows = [];        // 最近一次加载的节点行（编辑面板据此预填）
+let _nodeTemplates = [];        // 参考模板索引记录（来自 index.yaml）
+let _nodeTemplatesMeta = null;  // 索引元信息（目录 / 索引文件 / 错误）
+let _nodeTemplatesLoaded = false;
+let _nodeModalMode = 'create';  // create | edit
+let _nodeModalNodeId = '';
+
+function setNodeFormMsg(msg, isError = false) {
+    const el = q('#node-form-msg');
+    el.textContent = msg || '';
+    el.style.color = isError ? '#ff6b6b' : '#4caf50';
+}
+
+function showNodeModal() {
+    q('#node-edit-overlay').classList.add('active');
+}
+
+function hideNodeModal() {
+    q('#node-edit-overlay').classList.remove('active');
+}
+
+// 参考模板索引（容器内 /app/data/node_templates/index.yaml）：不可用时不阻断手工录入
+async function ensureNodeTemplates() {
+    if (_nodeTemplatesLoaded) return _nodeTemplates;
+    try {
+        const resp = await fetch(API_CONSOLE + '/node-templates');
+        const json = await resp.json();
+        if (json.code === 0 && json.data) {
+            _nodeTemplates = json.data.templates || [];
+            _nodeTemplatesMeta = json.data;
+            _nodeTemplatesLoaded = true;
+        } else {
+            _nodeTemplatesMeta = { error: json.message || 'unknown' };
+        }
+    } catch (e) {
+        _nodeTemplatesMeta = { error: e.message };
+    }
+    return _nodeTemplates;
+}
+
+// 模板状态提示：用后端返回的实际索引路径，避免与容器内路径不一致造成误判
+function nodeTemplateHint() {
+    const meta = _nodeTemplatesMeta || {};
+    if (_nodeTemplates.length) {
+        const where = meta.index_file || meta.dir || 'index.yaml';
+        return `模板索引：${where}（${_nodeTemplates.length} 个）· 选定后按索引记录的 md 读取成果清单`;
+    }
+    if (meta.error) return `未读取到模板索引：${meta.error}，请手动录入`;
+    const where = meta.index_file || '/app/data/node_templates/index.yaml';
+    return `未读取到模板索引 ${where}（容器内需挂载 node_templates），请手动录入`;
+}
+
+// 项目候选：与脚本参数候选同源（/api/v1/scripts/options/projects），复用同一缓存
+async function ensureNodeProjects() {
+    if (_optionsCache.projects) return _optionsCache.projects;
+    try {
+        const resp = await fetch(`${API}/options/projects`);
+        const json = await resp.json();
+        if (json.code === 0 && json.data) {
+            _optionsCache.projects = json.data.options || [];
+        }
+    } catch (e) {
+        // 失败不缓存，下次打开再试；保存前仍会校验项目必选
+    }
+    return _optionsCache.projects || [];
+}
+
+// ── 成果清单编辑（创建节点强制要求至少一条必需成果）──
+
+function deliverableRowHtml(d) {
+    const name = escapeAttr(d.deliverable_name || '');
+    const target = escapeAttr(String(d.target_amount == null ? 1 : d.target_amount));
+    const unit = escapeAttr(d.unit || '份');
+    const req = d.is_required ? ' checked' : '';
+    return `<div class="node-deliv-row">
+        <input type="text" class="nd-name" value="${name}" placeholder="成果名称">
+        <input type="text" class="nd-target" value="${target}" placeholder="量">
+        <input type="text" class="nd-unit" value="${unit}" placeholder="单位">
+        <label class="nd-req"><input type="checkbox" class="nd-required"${req}>必需</label>
+        <button type="button" class="cell-del" data-deliv-del title="移除该成果">×</button>
+    </div>`;
+}
+
+function setNodeDeliverables(items) {
+    q('#node-form-deliverables').innerHTML = (items || []).map(deliverableRowHtml).join('');
+}
+
+function collectNodeDeliverables() {
+    const out = [];
+    q('#node-form-deliverables').querySelectorAll('.node-deliv-row').forEach(row => {
+        const name = row.querySelector('.nd-name').value.trim();
+        if (!name) return;  // 无名称的条目后端也会丢弃，这里先行忽略
+        out.push({
+            deliverable_name: name,
+            target_amount: parseFloat(row.querySelector('.nd-target').value) || 1,
+            unit: row.querySelector('.nd-unit').value.trim() || '份',
+            is_required: row.querySelector('.nd-required').checked,
+        });
+    });
+    return out;
+}
+
+// ── 前置依赖候选（模板「## 前置条件」→ 项目内已有成果）──
+
+let _nodeDraftDeps = [];        // 前置依赖候选（由模板「## 前置条件」匹配项目内已有成果得出，可在界面移除）
+let _nodeDraftUnresolved = [];  // 未匹配到成果的前置条件（必须回显，避免误以为模板已全部生效）
+
+function setNodeDependencies(deps, unresolved) {
+    _nodeDraftDeps = deps || [];
+    _nodeDraftUnresolved = unresolved || [];
+    renderNodeDependencies();
+}
+
+function renderNodeDependencies() {
+    q('#node-form-dependencies').innerHTML = _nodeDraftDeps.map(d => `
+        <div class="node-dep-row" data-dep-id="${escapeAttr(d.depends_on_deliverable_id)}">
+            <span class="ndp-name">${escapeHtml(d.deliverable_name || d.depends_on_deliverable_id)}</span>
+            <span class="ndp-from">来自节点：${escapeHtml(d.node_name || d.node_id || '—')}</span>
+            <button type="button" class="cell-del" data-dep-del title="移除该依赖">×</button>
+        </div>`).join('');
+    const box = q('#node-form-unresolved');
+    if (_nodeDraftUnresolved.length) {
+        box.hidden = false;
+        box.textContent = '未匹配到成果的前置条件（需人工处理）：'
+            + _nodeDraftUnresolved.map(u => u.desc).join('；');
+    } else {
+        box.hidden = true;
+        box.textContent = '';
+    }
+}
+
+// 选模板 / 切项目后装配草稿：模板名称·类型·备注·成果清单 + 前置依赖候选
+async function refreshNodeDraft() {
+    if (_nodeModalMode !== 'create') return;
+    const hint = q('#node-form-tpl-hint');
+    const refId = q('#node-form-template').value;
+    const projectId = q('#node-form-project').value;
+    const tpl = _nodeTemplates.find(t => t.ref_id === refId);
+    if (!tpl) {
+        setNodeDependencies([], []);
+        hint.textContent = nodeTemplateHint();
+        return;
+    }
+    // 索引记录里已有名称 / 类型 / 摘要，先立即填入，不必等后端装配
+    if (tpl.node_name) q('#node-form-name').value = tpl.node_name;
+    q('#node-form-type').value = tpl.node_type === 'MILESTONE' ? 'MILESTONE' : 'TASK';
+    if (tpl.summary) q('#node-form-remark').value = tpl.summary;
+    if (!projectId) {
+        setNodeDependencies([], []);
+        hint.textContent = `已按模板 ${refId} 填写名称 / 类型 / 备注；`
+            + '选择所属项目后，将检索项目内已有成果作为前置依赖候选';
+        return;
+    }
+    hint.textContent = '正在按模板装配（读取成果清单与前置依赖）…';
+    try {
+        const url = `${API_CONSOLE}/node-draft?ref_id=${encodeURIComponent(refId)}`
+            + `&project_id=${encodeURIComponent(projectId)}`;
+        const resp = await fetch(url);
+        const json = await resp.json();
+        if (json.code !== 0 || !json.data) {
+            hint.textContent = `装配失败：${json.message || 'unknown'}（可手工录入）`;
+            return;
+        }
+        const d = json.data;
+        if (d.node_name) q('#node-form-name').value = d.node_name;
+        q('#node-form-type').value = d.node_type === 'MILESTONE' ? 'MILESTONE' : 'TASK';
+        if (d.remark) q('#node-form-remark').value = d.remark;
+        setNodeDeliverables(d.deliverables || []);
+        setNodeDependencies(d.dependencies || [], d.unresolved || []);
+        const parts = [
+            `已按模板 ${refId} 预填：成果 ${(d.deliverables || []).length} 条`,
+            `前置依赖候选 ${(d.dependencies || []).length} 条`,
+        ];
+        if (_nodeDraftUnresolved.length) parts.push(`${_nodeDraftUnresolved.length} 条前置条件未匹配到成果`);
+        hint.textContent = parts.join('，') + '。可直接修改后保存。';
+    } catch (e) {
+        hint.textContent = `装配失败：${e.message}（可手工录入）`;
+    }
+}
+
+// ── 打开面板 ──
+
+async function openNodeCreateModal() {
+    if (!requireOperator()) return;
+    _nodeModalMode = 'create';
+    _nodeModalNodeId = '';
+    q('#node-edit-title').textContent = '增加节点';
+    setNodeFormMsg('');
+
+    // 新建专有：模板选择 + 成果清单编辑 + 必选项目
+    q('#node-row-template').hidden = false;
+    q('#node-form-tpl-hint').hidden = false;
+    q('#node-row-deliverables').hidden = false;
+    q('#node-row-dependencies').hidden = false;
+    q('#node-row-status').hidden = true;
+    q('#node-row-ref').hidden = true;
+    q('#node-form-project').hidden = false;
+    q('#node-form-project-text').hidden = true;
+    q('#node-form-type').hidden = false;
+    q('#node-form-type-text').hidden = true;
+    q('#node-form-delete').hidden = true;
+
+    q('#node-form-node-id').value = '';
+    q('#node-form-name').value = '';
+    q('#node-form-type').value = 'TASK';
+    q('#node-form-deadline').value = '';
+    q('#node-form-remark').value = '';
+    setNodeDeliverables([]);
+    setNodeDependencies([], []);
+
+    const projects = await ensureNodeProjects();
+    q('#node-form-project').innerHTML = projects.length
+        ? projects.map(p => `<option value="${escapeAttr(p.value)}">${escapeHtml(p.label)}</option>`).join('')
+        : '<option value="">（无可用项目）</option>';
+
+    const templates = await ensureNodeTemplates();
+    q('#node-form-template').innerHTML = '<option value="">（不使用模板）</option>'
+        + templates.map(t => {
+            const typeLabel = NODE_TYPE_LABEL[t.node_type] || t.node_type || '';
+            const label = `${t.ref_id} · ${t.node_name}${typeLabel ? '（' + typeLabel + '）' : ''}`;
+            return `<option value="${escapeAttr(t.ref_id)}">${escapeHtml(label)}</option>`;
+        }).join('');
+    q('#node-form-tpl-hint').textContent = nodeTemplateHint();
+
+    showNodeModal();
+}
+
+function openNodeEditModal(nodeId) {
+    const row = _nodeTableRows.find(r => r.node_id === nodeId);
+    if (!row) return;
+    _nodeModalMode = 'edit';
+    _nodeModalNodeId = nodeId;
+    q('#node-edit-title').textContent = '节点信息';
+    setNodeFormMsg('');
+
+    // 编辑：隐藏新建专有区，展示只读信息
+    q('#node-row-template').hidden = true;
+    q('#node-form-tpl-hint').hidden = true;
+    q('#node-row-deliverables').hidden = true;
+    q('#node-row-dependencies').hidden = true;
+    q('#node-row-status').hidden = false;
+    q('#node-row-ref').hidden = false;
+    q('#node-form-project').hidden = true;
+    q('#node-form-project-text').hidden = false;
+    q('#node-form-type').hidden = true;
+    q('#node-form-type-text').hidden = false;
+    q('#node-form-delete').hidden = false;
+
+    q('#node-form-node-id').value = row.node_id;
+    q('#node-form-project-text').textContent = row.project_name || row.project_id || '—';
+    q('#node-form-name').value = row.node_name || '';
+    q('#node-form-type-text').innerHTML = nodeTypeHtml(row.node_type);
+    q('#node-form-deadline').value = row.deadline || '';
+    q('#node-form-remark').value = row.remark || '';
+    q('#node-form-status-text').textContent = row.status || '—';
+    q('#node-form-ref').textContent = row.template_ref_id || '—';
+
+    showNodeModal();
+}
+
+// ── 保存 / 删除 ──
+
+async function postNodeApi(path, payload, okMsg) {
+    try {
+        const resp = await fetch(API_CONSOLE + path, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(payload),
+        });
+        const json = await resp.json();
+        if (json.code !== 0) {
+            setNodeFormMsg(json.message || '操作失败', true);
+            return;
+        }
+        hideNodeModal();
+        const d = json.data || {};
+        const nid = d.node_id ? `（${d.node_id}）` : '';
+        const added = d.dependencies_added || [];
+        const failed = d.dependencies_failed || [];
+        let msg = okMsg + nid + (added.length ? `，已建前置依赖 ${added.length} 条` : '');
+        if (failed.length) {
+            msg += `；${failed.length} 条依赖未建立：`
+                + failed.map(f => f.message || f.depends_on_deliverable_id).join('；');
+        }
+        setNodeTableStatus(msg, failed.length > 0);
+        await loadNodeTable(getGlobalOperator());
+    } catch (e) {
+        setNodeFormMsg('网络错误：' + e.message, true);
+    }
+}
+
+async function saveNodeModal() {
+    if (!requireOperator()) return;
+    const name = q('#node-form-name').value.trim();
+    const deadline = q('#node-form-deadline').value.trim();
+    if (!name) { setNodeFormMsg('请填写节点名称', true); return; }
+    if (!deadline) { setNodeFormMsg('请填写截止时间', true); return; }
+
+    if (_nodeModalMode === 'create') {
+        const projectId = q('#node-form-project').value;
+        if (!projectId) { setNodeFormMsg('请选择所属项目', true); return; }
+        const deliverables = collectNodeDeliverables();
+        if (!deliverables.some(d => d.is_required)) {
+            setNodeFormMsg('至少需要一条「必需成果」——无必需成果的节点永远无法完结', true);
+            return;
+        }
+        await postNodeApi('/node-create', {
+            project_id: projectId,
+            node_id: q('#node-form-node-id').value.trim(),
+            node_name: name,
+            node_type: q('#node-form-type').value,
+            deadline,
+            remark: q('#node-form-remark').value,
+            template_ref_id: q('#node-form-template').value,
+            deliverables,
+            dependencies: _nodeDraftDeps,
+            operator_id: currentOperatorId(),
+        }, '节点已创建');
+    } else {
+        await postNodeApi('/node-update', {
+            node_id: _nodeModalNodeId,
+            node_name: name,
+            deadline,
+            remark: q('#node-form-remark').value,
+            operator_id: currentOperatorId(),
+        }, '节点已保存');
+    }
+}
+
+async function deleteNodeFromModal() {
+    if (!requireOperator()) return;
+    const nodeId = _nodeModalNodeId;
+    if (!nodeId) return;
+    if (!confirm(`确认删除节点「${nodeId}」？\n删除为软删（置废弃标记），成果/依赖/事件等关联记录保留，表内不再显示。`)) return;
+    await postNodeApi('/node-delete', {
+        node_id: nodeId,
+        operator_id: currentOperatorId(),
+    }, '节点已删除');
+}
+
+// ── 面板事件绑定 ──
+
+q('#node-add-btn').addEventListener('click', openNodeCreateModal);
+// 模板或项目任一变化都要重新装配（前置依赖要在目标项目内检索，两个入参都影响结果）
+q('#node-form-template').addEventListener('change', refreshNodeDraft);
+q('#node-form-project').addEventListener('change', refreshNodeDraft);
+q('#node-form-save').addEventListener('click', saveNodeModal);
+q('#node-form-cancel').addEventListener('click', hideNodeModal);
+q('#node-form-delete').addEventListener('click', deleteNodeFromModal);
+q('#node-edit-overlay').addEventListener('click', ev => {
+    if (ev.target === q('#node-edit-overlay')) hideNodeModal();
+});
+q('#node-form-deliv-add').addEventListener('click', () => {
+    q('#node-form-deliverables').insertAdjacentHTML('beforeend', deliverableRowHtml({ is_required: true }));
+});
+q('#node-form-deliverables').addEventListener('click', ev => {
+    const del = ev.target.closest('[data-deliv-del]');
+    if (del) del.closest('.node-deliv-row').remove();
+});
+q('#node-form-dependencies').addEventListener('click', ev => {
+    const del = ev.target.closest('[data-dep-del]');
+    if (!del) return;
+    const row = del.closest('.node-dep-row');
+    const depId = row.dataset.depId;
+    _nodeDraftDeps = _nodeDraftDeps.filter(d => d.depends_on_deliverable_id !== depId);
+    row.remove();
+});
+
 async function loadNodeTable(userId) {
     const tbody = q('#node-table-tbody');
     const empty = q('#node-table-empty');
@@ -1704,6 +2025,7 @@ async function loadNodeTable(userId) {
 function renderNodeTable(rows) {
     const tbody = q('#node-table-tbody');
     const empty = q('#node-table-empty');
+    _nodeTableRows = rows || [];
     if (!rows.length) {
         tbody.innerHTML = '';
         empty.hidden = false;
@@ -1730,7 +2052,7 @@ function renderNodeTable(rows) {
         const filesHtml = fileLis
             ? `<ul class="cell-list">${fileLis}</ul>` : '<span class="muted">—</span>';
         return `<tr>
-            <td>${escapeHtml(r.node_id)}</td>
+            <td><button class="cell-link" data-action="edit-node" data-node="${nodeAttr}" title="点开节点信息面板（可改 / 可删）">${escapeHtml(r.node_id)}</button></td>
             <td>${escapeHtml(r.node_name || '')}</td>
             <td>${nodeTypeHtml(r.node_type)}</td>
             <td>${escapeHtml(r.status || '')}</td>
@@ -1751,7 +2073,6 @@ function selectSopDisplay() {
 
     q('#empty-state').hidden = true;
     q('#runner').hidden = true;
-    q('.resource-display').hidden = true;
     q('#upload-panel').hidden = true;
     q('#rag-panel').hidden = true;
     q('#node-table-panel').hidden = true;
@@ -1827,7 +2148,6 @@ function selectPanoramaNodes() {
 
     q('#empty-state').hidden = true;
     q('#runner').hidden = true;
-    q('.resource-display').hidden = true;
     q('#upload-panel').hidden = true;
     q('#rag-panel').hidden = true;
     q('#node-table-panel').hidden = true;
@@ -1904,7 +2224,6 @@ function selectSessionObservatory() {
 
     q('#empty-state').hidden = true;
     q('#runner').hidden = true;
-    q('.resource-display').hidden = true;
     q('#upload-panel').hidden = true;
     q('#rag-panel').hidden = true;
     q('#node-table-panel').hidden = true;
@@ -2124,7 +2443,6 @@ function selectTestCases() {
 
     q('#empty-state').hidden = true;
     q('#runner').hidden = true;
-    q('.resource-display').hidden = true;
     q('#upload-panel').hidden = true;
     q('#rag-panel').hidden = true;
     q('#node-table-panel').hidden = true;
@@ -2238,7 +2556,6 @@ function selectProjectEvents() {
 
     q('#empty-state').hidden = true;
     q('#runner').hidden = true;
-    q('.resource-display').hidden = true;
     q('#upload-panel').hidden = true;
     q('#rag-panel').hidden = true;
     q('#node-table-panel').hidden = true;
@@ -2513,6 +2830,8 @@ q('#node-table-tbody').addEventListener('click', async ev => {
         toggleAddForm(btn, 'participant', nodeId);
     } else if (action === 'add-file') {
         toggleAddForm(btn, 'file', nodeId);
+    } else if (action === 'edit-node') {
+        openNodeEditModal(nodeId);
     }
 });
 
@@ -2533,7 +2852,6 @@ function selectLogs() {
 
     q('#empty-state').hidden = true;
     q('#runner').hidden = true;
-    q('.resource-display').hidden = true;
     q('#upload-panel').hidden = true;
     q('#rag-panel').hidden = true;
     q('#node-table-panel').hidden = true;
@@ -2771,7 +3089,6 @@ function selectSelfCheck() {
 
     q('#empty-state').hidden = true;
     q('#runner').hidden = true;
-    q('.resource-display').hidden = true;
     q('#upload-panel').hidden = true;
     q('#rag-panel').hidden = true;
     q('#node-table-panel').hidden = true;
@@ -2800,7 +3117,6 @@ function selectPrompt() {
 
     q('#empty-state').hidden = true;
     q('#runner').hidden = true;
-    q('.resource-display').hidden = true;
     q('#upload-panel').hidden = true;
     q('#rag-panel').hidden = true;
     q('#node-table-panel').hidden = true;
@@ -2979,79 +3295,6 @@ function renderSelfCheck(report) {
 q('#self-check-run-btn').addEventListener('click', runSelfCheck);
 
 
-async function loadResources(userId) {
-    RESOURCE_GROUPS.forEach(g => {
-        const list = q('#' + GROUP_CONF[g].listId);
-        if (list) list.innerHTML = '<div class="hint">加载中…</div>';
-    });
-    try {
-        const url = userId
-            ? `${API_CONSOLE}/resources?user_id=${encodeURIComponent(userId)}`
-            : `${API_CONSOLE}/resources`;
-        const resp = await fetch(url);
-        const json = await resp.json();
-        if (json.code !== 0 || !json.data) {
-            RESOURCE_GROUPS.forEach(g => {
-                const list = q('#' + GROUP_CONF[g].listId);
-                if (list) list.innerHTML = `<div class="resource-empty">加载失败：${escapeHtml(json.message || 'unknown')}</div>`;
-            });
-            return;
-        }
-        _resources = json.data.groups || {};
-        renderResources();
-    } catch (e) {
-        RESOURCE_GROUPS.forEach(g => {
-            const list = q('#' + GROUP_CONF[g].listId);
-            if (list) list.innerHTML = `<div class="resource-empty">网络错误：${escapeHtml(e.message)}</div>`;
-        });
-    }
-}
-
-function renderResources() {
-    RESOURCE_GROUPS.forEach(g => {
-        const list = q('#' + GROUP_CONF[g].listId);
-        const countEl = q('#' + GROUP_CONF[g].countId);
-        if (!list) return;
-        const items = _resources[g] || [];
-        if (countEl) countEl.textContent = `${items.length} 项`;
-        if (!items.length) {
-            list.innerHTML = '<div class="resource-empty">（无可见项）</div>';
-            return;
-        }
-        list.innerHTML = items.map(item => renderResourceItem(g, item)).join('');
-    });
-}
-
-function renderResourceItem(group, item) {
-    let name = '';
-    let meta = '';
-    switch (group) {
-        case 'files':
-            name = item.name || '';
-            meta = [item.file_no, item.category, item.project_name].filter(Boolean).join(' · ');
-            break;
-        case 'nodes':
-            name = item.name || item.node_id || '';
-            meta = [item.node_id, item.project_name, item.status].filter(Boolean).join(' · ');
-            break;
-        case 'sops':
-            name = item.name || item.sop_id || '';
-            meta = [item.sop_id, item.category, item.sop_type].filter(Boolean).join(' · ');
-            break;
-        case 'rag_files':
-            name = item.name || item.doc_id || '';
-            meta = [item.doc_id, `${item.chunk_count} chunks`, item.status].filter(Boolean).join(' · ');
-            break;
-        default:
-            name = item.name || '';
-            meta = '';
-    }
-    return `<div class="resource-item">
-        <div class="rname">${escapeHtml(name)}</div>
-        ${meta ? `<div class="rmeta">${escapeHtml(meta)}</div>` : ''}
-    </div>`;
-}
-
 // ── LLM 流量（mitmproxy jsonl → 增量轮询 + 手动刷新 + 自动刷新开关）──
 
 const LLM_TRACE_POLL_MS = 3000;   // 增量轮询间隔
@@ -3070,7 +3313,6 @@ function selectLlmTrace() {
 
     q('#empty-state').hidden = true;
     q('#runner').hidden = true;
-    q('.resource-display').hidden = true;
     q('#upload-panel').hidden = true;
     q('#rag-panel').hidden = true;
     q('#node-table-panel').hidden = true;
@@ -3346,7 +3588,6 @@ function selectMcp() {
 
     q('#empty-state').hidden = true;
     q('#runner').hidden = true;
-    q('.resource-display').hidden = true;
     q('#upload-panel').hidden = true;
     q('#rag-panel').hidden = true;
     q('#node-table-panel').hidden = true;

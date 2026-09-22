@@ -56,7 +56,7 @@ class SystemDescriptionService:
 
         # 2. 全量重建（三域相互引用，不宜单域修补）
         result = await asyncio.to_thread(
-            self._builder.build, generated_by="scheduler", dry_run=dry_run
+            self._builder.build, generated_by="startup", dry_run=dry_run
         )
 
         result["updated_domains"] = stale_domains

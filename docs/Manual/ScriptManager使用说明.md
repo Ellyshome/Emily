@@ -257,7 +257,7 @@ aggregations:  # 聚合壳关系（供 export 附录 B）（可选）
 | `invocation` | str | ✅ | 调用模板，`{args}` 占位参数 |
 | `check_arg` | str 或 null | — | 自检 flag：`"--check"` / `"--dry-run"` / `"--preview"` / `"--probe"` / null |
 | `run_args` | list | — | 默认运行参数 |
-| `auto_run` | str 或 null | — | `"bootstrap"` → 启动时自动执行；`"scheduler:<name>"` → 调度器触发 |
+| `auto_run` | str 或 null | — | `"bootstrap"` → 启动时自动执行；null → 不自动触发（调度器触发已于 2026-09-22 随调度器模块整体退役） |
 | `auto_run_args` | list | — | 自动触发时参数 |
 | `writes_db` | bool | — | 是否写数据库 |
 | `aggregation_parent` | str 或 null | — | 归属聚合壳文件名 |
@@ -377,7 +377,7 @@ git diff docs/脚本工具目录.md
 |------|------------|---------------|
 | 管理对象 | `BusinessFlowTool`（LLM 运行时工具） | `scripts/*.py`（开发者/维护脚本） |
 | 执行模型 | 进程内 `async handler(params) → dict` | subprocess `[sys.executable, script.py, args]` |
-| 消费者 | LLM（结构化输出后框架直调） | 开发者（CLI / 调度器 / bootstrap） |
+| 消费者 | LLM（结构化输出后框架直调） | 开发者（CLI / bootstrap） |
 | 注册方式 | `register_all(core)` 命令式 | `scripts_registry.yaml` 声明式 |
 | 是否共享 service 层 | ✅ 共享 | ✅ 共享 |
 | 是否互相调用 | ❌ 互不调用 | ❌ 互不调用 |

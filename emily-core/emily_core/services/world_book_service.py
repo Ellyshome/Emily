@@ -67,7 +67,7 @@ class ProjectWorldBookService:
         # 原因：七层数据相互关联，逐层修补可能导致层间引用不一致
         import asyncio
         result = await asyncio.to_thread(
-            self._builder.build, project_id, generated_by="scheduler_data", dry_run=dry_run
+            self._builder.build, project_id, generated_by="manual", dry_run=dry_run
         )
 
         result["updated_layers"] = stale_layers

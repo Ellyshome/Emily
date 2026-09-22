@@ -314,6 +314,7 @@ class NodeService:
             status=initial_status,
             responsible_user_id=responsible_user_id,
             node_type=getattr(cmd, 'node_type', NODE_TYPE_TASK),
+            template_ref_id=getattr(cmd, 'template_ref_id', ''),
         )
 
         # ── 写入参与单位（多对多关联）──

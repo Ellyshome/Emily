@@ -32,7 +32,7 @@ services:
       - EMILY_TAKEOVER_MODE=${EMILY_TAKEOVER_MODE:-monitor}
       - EMILY_BOT_NAME=${EMILY_BOT_NAME:-Emy}
       - EMILY_LOG_LEVEL=${EMILY_LOG_LEVEL:-INFO}
-      - EMILY_SCHEDULER_ENABLED=${EMILY_SCHEDULER_ENABLED:-true}
+      # （定时任务模块已退役：原 EMILY_SCHEDULER_ENABLED 开关于 2026-09-22 移除）
       - EMILY_SESSION_ARCHIVE_ENABLED=${EMILY_SESSION_ARCHIVE_ENABLED:-true}
       # ── RAG 关闭（无 embed 服务）──
       - EMILY_KB_ENABLED=false
@@ -58,6 +58,7 @@ services:
       - ./emily-data/baseknowledge:/app/baseknowledge:ro
       - ./emily-data/tools:/app/tools:ro
       - ./emily-data/rules:/app/rules:ro
+      - ./emily-data/node_templates:/app/data/node_templates:ro   # 全景节点参考模板（emy-console 选模板建节点）
       # ── Core 写入，人类查阅 ──
       - ./emily-data/notebooks:/app/notebooks
       - ./emily-data/logs:/app/logs

@@ -86,13 +86,6 @@ class EmilyCore:
         self._script_registry = None
         self._script_manager = None
 
-        # 系统调度器
-        self._scheduler_service = None
-        self._scheduler_engine = None
-        self._scheduler_app = None
-        self._scheduler_handler_registry = None
-        self._scheduler_hook_registry = None
-
         # 权限管理模块（Permission Module，v2.0）
         self._permission_repo = None
         self._permission_grant_repo = None
@@ -139,7 +132,6 @@ class EmilyCore:
 
         # 元认知模块
         self._rule_book_loader = None
-        self._world_book_service = None
         self._system_description_service = None
 
     # ────────────────────────────────────────────────────────────────────
@@ -185,11 +177,8 @@ class EmilyCore:
         #  ── 执行 + 守护依赖 ──
         self._init_phase_c_deps()
 
-        #  ── 全景节点图 V2（须先于调度器：PeriodicNodeHandler 注册时注入 NodeService）──
+        #  ── 全景节点图 V2 ──
         self._init_node_module()
-
-        #  ── 系统调度器 ──
-        self._init_scheduler_module()
 
         #  ── 权限管理模块（v2.0：快照灌注）──
         self._init_permission_module()
@@ -394,15 +383,11 @@ class EmilyCore:
         """初始化元认知模块：规则书 + 世界书 + 系统描述。fail-open。"""
         try:
             from .services.rule_book_loader import RuleBookLoader
-            from .services.world_book_service import ProjectWorldBookService
             from .services.system_description_service import SystemDescriptionService
 
             # 规则书加载
             self._rule_book_loader = RuleBookLoader()
             self._rule_book_loader.load()
-
-            # 世界书服务
-            self._world_book_service = ProjectWorldBookService(llm_client=self._llm_client)
 
             # 系统描述服务（启动时自动检测偏差并重建）
             self._system_description_service = SystemDescriptionService(llm_client=self._llm_client)
@@ -418,12 +403,11 @@ class EmilyCore:
                 # 无事件循环，同步调用
                 asyncio.run(self._system_description_service.check_and_update())
 
-            logger.info("Meta-cognition module initialized: rule_book=%s, world_book=ready, system_description=ready",
+            logger.info("Meta-cognition module initialized: rule_book=%s, system_description=ready",
                          "loaded" if self._rule_book_loader.is_loaded else "empty")
         except Exception as e:
             logger.warning("Meta-cognition module init failed: %s", e)
             self._rule_book_loader = None
-            self._world_book_service = None
             self._system_description_service = None
 
     def reload_rule_book(self) -> dict:
@@ -537,135 +521,6 @@ class EmilyCore:
             factory=factory,
             core=self,
         )
-
-    def _init_scheduler_module(self) -> None:
-        """初始化系统调度器模块：Service + Engine + Handler + Application。"""
-        try:
-            import asyncio
-            from .scheduler.service import SchedulerService
-            from .scheduler.engine import SchedulerEngine
-            from .scheduler.handler_registry import JobHandlerRegistry
-            from .scheduler.hook_registry import SchedulerHookRegistry
-            from .scheduler.application import SchedulerApplication
-
-            # 注册表
-            self._scheduler_handler_registry = JobHandlerRegistry()
-            self._scheduler_hook_registry = SchedulerHookRegistry()
-
-            # Service
-            self._scheduler_service = SchedulerService()
-
-            # 注册内置 Handler
-            from .scheduler.jobs.morning_report import MorningReportHandler
-            from .scheduler.jobs.node_deadlines import NodeDeadlineHandler
-            from .scheduler.jobs.periodic_node import PeriodicNodeHandler
-            from .scheduler.jobs.session_cleanup import SessionCleanupHandler
-            from .scheduler.jobs.health_check import HealthCheckHandler
-            from .scheduler.jobs.data_sync import DataSyncHandler
-            from .scheduler.jobs.webhook import WebhookHandler
-
-            self._scheduler_handler_registry.register(
-                MorningReportHandler(
-                    outbound_bus=self.outbound_bus,
-                    llm_client=self._llm_client,
-                )
-            )
-            self._scheduler_handler_registry.register(
-                NodeDeadlineHandler(
-                    node_service=self._node_service,
-                    outbound_bus=self.outbound_bus,
-                )
-            )
-            self._scheduler_handler_registry.register(
-                PeriodicNodeHandler(
-                    node_service=self._node_service,
-                )
-            )
-            self._scheduler_handler_registry.register(
-                SessionCleanupHandler(
-                    session_pool=self._session_pool,
-                    outbound_bus=self.outbound_bus,
-                )
-            )
-            self._scheduler_handler_registry.register(
-                HealthCheckHandler(
-                    outbound_bus=self.outbound_bus,
-                )
-            )
-            self._scheduler_handler_registry.register(DataSyncHandler())
-            self._scheduler_handler_registry.register(WebhookHandler())
-
-            # 每日文件解析盘点 Handler
-            from .scheduler.jobs.daily_file_parse import DailyFileParseHandler
-            _file_svc = self._file_app.file_service if self._file_app else None
-            self._scheduler_handler_registry.register(
-                DailyFileParseHandler(
-                    file_service=_file_svc,
-                    outbound_bus=self.outbound_bus,
-                )
-            )
-
-            # RAG 入库状态机 Handler（M7）
-            from .scheduler.jobs.ingest import IngestJobHandler
-            self._scheduler_handler_registry.register(
-                IngestJobHandler(
-                    repo=getattr(self, "_knowledge_chunk_repo", None),
-                    embedding_client=getattr(self, "_tei_client", None),
-                )
-            )
-
-            # 元认知 Handler
-            from .scheduler.jobs.world_book_update import WorldBookUpdateHandler
-            self._scheduler_handler_registry.register(
-                WorldBookUpdateHandler(world_book_service=self._world_book_service)
-            )
-
-            # 系统描述更新 Handler（周级）
-            from .scheduler.jobs.system_description_update import SystemDescriptionUpdateHandler
-            self._scheduler_handler_registry.register(
-                SystemDescriptionUpdateHandler()
-            )
-
-            # 进化闭环 Handler
-            from .scheduler.jobs.daily_insight import DailyInsightHandler
-            from .scheduler.jobs.rule_induction import RuleInductionHandler
-            from .scheduler.jobs.patch_validator import PatchValidationHandler
-
-            self._scheduler_handler_registry.register(
-                DailyInsightHandler(llm_client=self._llm_client)
-            )
-            self._scheduler_handler_registry.register(
-                RuleInductionHandler(llm_client=self._llm_client)
-            )
-            self._scheduler_handler_registry.register(
-                PatchValidationHandler(llm_client=self._llm_client)
-            )
-
-            # Engine
-            self._scheduler_engine = SchedulerEngine(
-                service=self._scheduler_service,
-                handler_registry=self._scheduler_handler_registry,
-                hook_registry=self._scheduler_hook_registry,
-                config=self.config,
-                outbound_bus=self.outbound_bus,
-            )
-
-            # Application
-            self._scheduler_app = SchedulerApplication(
-                service=self._scheduler_service,
-                engine=self._scheduler_engine,
-            )
-
-            # 启动引擎 tick 循环
-            asyncio.ensure_future(self._scheduler_engine.start())
-
-            logger.info("Scheduler module initialized: %d handlers, %d hooks",
-                         len(self._scheduler_handler_registry),
-                         self._scheduler_hook_registry.hook_count())
-        except Exception as e:
-            logger.warning("Scheduler module init failed: %s", e)
-            self._scheduler_engine = None
-            self._scheduler_app = None
 
     def _init_permission_module(self) -> None:
         """初始化权限管理模块：三维鉴权 + 校验接口。

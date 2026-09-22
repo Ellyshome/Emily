@@ -5,7 +5,6 @@
     GET    /api/v1/project-nodes/{node_id}                — 查询节点详情
     PATCH  /api/v1/project-nodes/{node_id}                — 更新节点字段
     DELETE /api/v1/project-nodes/{node_id}                — 废弃节点
-    POST   /api/v1/project-nodes/{node_id}/acknowledge    — 签认节点（替代原审批；不阻断入库）
     POST   /api/v1/project-nodes/{node_id}/deliverables   — 新增成果
     PATCH  /api/v1/node-deliverables/{deliverable_id}     — 更新成果进度
     POST   /api/v1/project-nodes/{node_id}/dependencies   — 添加依赖

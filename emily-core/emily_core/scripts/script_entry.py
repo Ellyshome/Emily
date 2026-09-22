@@ -21,7 +21,7 @@ class ScriptEntry:
     invocation: str                     # "uv run python scripts/{name}.py {args}"
     check_arg: str | None = None        # "--check" / "--dry-run" / "--preview" / "--probe" / None
     run_args: list = field(default_factory=list)   # 默认运行参数
-    auto_run: str | None = None         # "bootstrap" / "scheduler:<name>" / None
+    auto_run: str | None = None         # "bootstrap" / None
     auto_run_args: list = field(default_factory=list)  # 自动触发时参数
     writes_db: bool = False
     aggregation_parent: str | None = None  # 归属聚合壳
