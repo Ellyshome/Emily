@@ -66,7 +66,7 @@ SOP-999 不手写 tools 列表。每次 SkillRegistry.load/reload 时，`_derive
 - permission_flag=all → exposure_mode=meta（只读工具可被 SOP-999 直调）
 - permission_flag=write/admin → exposure_mode=sop_only（写/管理工具必须走专属 SOP）
 - 破坏性工具（delete_file/discard_nodes/return_node_deliverable/unlink_attachment/rag_remove_document）显式标 sop_only
-- **G-9 补标后**：其余写工具（文件维护类 update_file_category / update_file_purpose / new_file_version / link_file / link_to_master / unlink_attachment / embed_and_index，节点类 create_node / update_node_progress / add_node_dependency / mount_child_node / update_nodes / acknowledge_nodes / discard_nodes / create_task_node / submit·confirm·return_node_deliverable，以及 manage_node_file / manage_node_participant / update_file_confidentiality）均已带 write_mode（append/transition/overwrite/delete），**一律不进 LLM 自由工具集**，只能经匹配 SOP 执行（覆盖/删除语义在兜底档位一律拒绝）
+- **G-9 补标后**：其余写工具（文件维护类 update_file_category / update_file_purpose / new_file_version / link_file / link_to_master / unlink_attachment / embed_and_index，节点类 create_node / update_node_progress / add_node_dependency / mount_child_node / update_nodes / discard_nodes / create_task_node / submit·confirm·return_node_deliverable，以及 manage_node_file / manage_node_participant / update_file_confidentiality）均已带 write_mode（append/transition/overwrite/delete），**一律不进 LLM 自由工具集**，只能经匹配 SOP 执行（覆盖/删除语义在兜底档位一律拒绝）
 
 ### 3.2 执行流程（__DYNAMIC__ 分支，M3）
 

@@ -22,13 +22,19 @@ _CREATE_TASK_NODE_SCHEMA = {
         "executor_id": {"type": "string", "description": "执行人用户ID（UUID）"},
         "responsible_user_id": {"type": "string", "description": "负责人用户ID（UUID，与executor_id二选一）"},
         "deadline_at": {"type": "string", "description": "截止日期（ISO格式）"},
-        "parent_node_id": {"type": "string", "description": "要挂载到的父节点ID（通常是里程碑；挂载后父节点即成为里程碑）"},
+        "parent_node_id": {"type": "string", "description": "要挂载到的父节点ID（通常是里程碑；挂载不改父节点类型）"},
         "description": {"type": "string", "description": "任务描述"},
         "deliverable_name": {"type": "string", "description": "可计量成果名称（如“乔木种植”“铺装面层”）；缺省取任务标题"},
-        "target_amount": {"type": "number", "description": "目标量（如 100 棵、200 平方米）。必填——无目标量的任务无法上报进度，也无法被完工上报匹配"},
+        "target_amount": {"type": "number", "description": "目标量（如 100 棵、200 平方米）。必填——无成果的节点没有任何完成判据，将永远无法完结"},
         "unit": {"type": "string", "description": "量纲（棵/平方米/米/份/项…）"},
+        "deliverables": {
+            "type": "array",
+            "description": "成果清单（可选，多成果时使用）。每项含 deliverable_name / target_amount / unit / is_required；"
+                           "提供时以本字段为准，且至少一项 is_required=true",
+            "items": {"type": "object"},
+        },
     },
-    "required": ["project_id", "title", "target_amount"],
+    "required": ["project_id", "title"],
 }
 
 _SUBMIT_DELIVERABLE_SCHEMA = {
@@ -87,9 +93,7 @@ async def handle_create_task_node(
     if node_service is None:
         return {"success": False, "reply": "NodeService 未初始化"}
 
-    from ..services.node_commands import (
-        CreateNodeCommand, CreateDeliverableCommand, MountChildCommand,
-    )
+    from ..services.node_commands import CreateNodeCommand, MountChildCommand
     from ..services.node_batch import generate_node_id
 
     project_id = params.get("project_id", "")
@@ -99,14 +103,25 @@ async def handle_create_task_node(
     if not node_name:
         return {"success": False, "reply": "缺少任务名称（title）"}
 
-    target_amount = float(params.get("target_amount") or 0)
-    unit = (params.get("unit") or "").strip()
-    if target_amount <= 0:
-        return {
-            "success": False,
-            "reply": "缺少目标量（target_amount）：任务必须携带可计量目标（如 100 棵乔木、200 平方米铺装），"
-                     "请先向用户确认数量与量纲",
-        }
+    # ── 成果声明（成果必备把关，节点状态自证化 US-04 / R4）──
+    # 优先取 deliverables 清单；未提供时由 deliverable_name/target_amount/unit 组成单条成果。
+    declared = params.get("deliverables")
+    if not (isinstance(declared, list) and declared):
+        target_amount = float(params.get("target_amount") or 0)
+        unit = (params.get("unit") or "").strip()
+        if target_amount <= 0:
+            return {
+                "success": False,
+                "reply": "缺少成果目标量（target_amount）：任务必须携带可计量成果"
+                         "（如 100 棵乔木、200 平方米铺装）——无成果的节点没有任何完成判据，"
+                         "将永远无法完结。请先向用户确认数量与量纲",
+            }
+        declared = [{
+            "deliverable_name": params.get("deliverable_name", "") or node_name,
+            "target_amount": target_amount,
+            "unit": unit or "项",
+            "is_required": True,
+        }]
 
     # 幂等：同名同项目生成确定性 node_id，已存在则跳过
     node_id = generate_node_id(node_name, project_id)
@@ -128,12 +143,13 @@ async def handle_create_task_node(
         deadline=params.get("deadline_at", ""),
         remark=params.get("description", ""),
         creator_id=user_id,
+        deliverables=declared,
     )
     result = await node_service.create_node(cmd)
     if not result.success:
         return {"success": False, "reply": result.message}
 
-    # 挂载到父节点（父节点因有子节点而成为里程碑）
+    # 挂载到父节点（不改父节点类型——类型由声明决定）
     if parent_node_id:
         mount = await node_service.mount_child(MountChildCommand(
             parent_node_id=parent_node_id,
@@ -148,23 +164,17 @@ async def handle_create_task_node(
                 "reply": f"任务「{node_name}」已创建（{node_id}），但挂载到 {parent_node_id} 失败：{mount.message}",
             }
 
-    # 落可计量成果
-    deliverable = await node_service.create_deliverable(CreateDeliverableCommand(
-        node_id=node_id,
-        deliverable_name=params.get("deliverable_name", "") or node_name,
-        target_amount=target_amount,
-        unit=unit or "项",
-        operator_id=user_id,
-    ))
-
+    summary = "；".join(
+        f"{d.get('deliverable_name', '')} 目标 {float(d.get('target_amount', 1) or 1):g}{d.get('unit', '') or ''}"
+        for d in declared
+    )
     return {
         "success": True,
         "object_type": "node",
         "object_id": node_id,
         "reply": (
-            f"任务「{node_name}」已创建（{node_id}），目标 {target_amount:g} {unit or '项'}"
+            f"任务「{node_name}」已创建（{node_id}），成果：{summary}"
             + (f"；已挂载到 {parent_node_id}" if parent_node_id else "")
-            + ("" if deliverable.success else f"（注意：成果创建失败：{deliverable.message}）")
         ),
     }
 

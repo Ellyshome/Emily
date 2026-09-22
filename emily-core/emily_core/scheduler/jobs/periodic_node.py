@@ -47,6 +47,9 @@ class PeriodicNodeHandler(SchedulerJobHandler):
             remark=params.get("description", ""),
             creator_id=params.get("creator_id", "scheduler"),
             node_type="TASK",
+            # 成果必备（节点状态自证化 US-04 / R4）：作业参数必须声明必需成果，
+            # 否则节点创建被拒——无成果的节点没有任何完成判据。
+            deliverables=params.get("deliverables", []) or [],
         )
 
         result = await self._node_service.create_node(cmd)

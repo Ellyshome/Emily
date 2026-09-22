@@ -5,7 +5,6 @@
   全景节点图的运维管理工具，支持：
     - create:      从 YAML 文件批量创建节点树
     - update:      从 YAML 文件批量更新节点字段
-    - acknowledge: 批量签认节点（替代原激活/审批）
     - discard:     批量废弃节点
     - progress:    批量更新成果进度
     - link-files:  批量管理节点文件关联（共享文件/条件文件/成果文件）
@@ -26,10 +25,6 @@
     # ── 更新节点字段 ──
     uv run python scripts/manage_nodes.py update --file updates.yaml --dry-run
     uv run python scripts/manage_nodes.py update --file updates.yaml
-
-    # ── 批量签认 ──
-    uv run python scripts/manage_nodes.py acknowledge --node-ids SG-001,SG-002 \
-        --operator-id <UUID>
 
     # ── 批量废弃 ──
     uv run python scripts/manage_nodes.py discard --node-ids SG-001,SG-002 \\
@@ -201,7 +196,6 @@ def _print_report(results: list[dict], dry_run: bool = False) -> None:
         "mount_child": "挂载子节点",
         "add_dependency": "添加依赖",
         "update_node": "更新节点",
-        "acknowledge_node": "签认节点",
         "discard_node": "废弃节点",
         "update_progress": "更新进度",
         "add_shared_file": "增加共享文件",
@@ -274,14 +268,6 @@ def main():
     p.add_argument("--db-url", default=db_url_default, help="PostgreSQL 连接 URL")
     p.add_argument("--dry-run", action="store_true", help="预览模式")
 
-    # ── acknowledge 子命令 ──
-    p = sub.add_parser("acknowledge", help="批量签认节点（替代原激活/审批）")
-    p.add_argument("--node-ids", required=True, help="节点编号，逗号分隔")
-    p.add_argument("--operator-id", required=True, help="签认人 UUID")
-    p.add_argument("--remark", default="", help="签认备注")
-    p.add_argument("--db-url", default=db_url_default, help="PostgreSQL 连接 URL")
-    p.add_argument("--dry-run", action="store_true", help="预览模式")
-
     # ── discard 子命令 ──
     p = sub.add_parser("discard", help="批量废弃节点")
     p.add_argument("--node-ids", required=True, help="节点编号，逗号分隔")
@@ -319,7 +305,6 @@ def main():
     handlers = {
         "create": _run_create,
         "update": _run_update,
-        "acknowledge": _run_acknowledge,
         "discard": _run_discard,
         "progress": _run_progress,
         "link-files": _run_link_files,
@@ -446,32 +431,6 @@ def _run_update(args) -> None:
 
 
 # ══════════════════════════════════════════════════════════════════════════════
-# acknowledge 子命令
-# ══════════════════════════════════════════════════════════════════════════════
-
-def _run_acknowledge(args) -> None:
-    node_ids = [n.strip() for n in args.node_ids.split(",") if n.strip()]
-    if not node_ids:
-        print("错误：--node-ids 不能为空")
-        sys.exit(1)
-
-    _init_db(args.db_url)
-    logger.info("批量签认: %s | 签认人: %s", node_ids, args.operator_id)
-
-    from emily_core.services.node_batch_update import batch_acknowledge_nodes
-    results = asyncio.run(batch_acknowledge_nodes(
-        node_ids=node_ids,
-        user_id=args.operator_id,
-        remark=args.remark,
-        dry_run=args.dry_run,
-    ))
-
-    _print_report(results, dry_run=args.dry_run)
-    if any(not r.get("success") for r in results):
-        sys.exit(1)
-
-
-# ══════════════════════════════════════════════════════════════════════════════
 # discard 子命令
 # ══════════════════════════════════════════════════════════════════════════════
 
@@ -579,12 +538,12 @@ def _run_query(args) -> None:
 
     print(f"\n项目 {args.project_id} 的全景节点 ({len(node_list)} 个)")
     print("=" * 80)
-    print(f"{'节点编号':<20} {'节点名称':<20} {'状态':<20} {'进度':>6} {'签认':<10}")
+    print(f"{'节点编号':<20} {'节点名称':<20} {'类型':<12} {'状态':<20} {'进度':>6}")
     print("-" * 80)
     for n in node_list:
         progress = float(n.progress) if n.progress else 0.0
-        ack = "已签认" if getattr(n, "acknowledged_by", "") else "未签认"
-        print(f"{n.node_id:<20} {n.node_name:<20} {n.status:<20} {progress:>5.1f}% {ack:<10}")
+        node_type = getattr(n, "node_type", "") or ""
+        print(f"{n.node_id:<20} {n.node_name:<20} {node_type:<12} {n.status:<20} {progress:>5.1f}%")
 
 
 if __name__ == "__main__":

@@ -642,25 +642,6 @@ scripts:
           - name: dry-run
             type: flag
             label: 预览模式
-      - name: acknowledge
-        label: 批量签认节点
-        params:
-          - name: node-ids
-            type: str
-            label: 节点编号
-            help: 多个用英文逗号分隔
-            required: true
-          - name: operator-id
-            type: str
-            label: 签认人
-            required: true
-            options_source: users
-          - name: remark
-            type: str
-            label: 签认备注
-          - name: dry-run
-            type: flag
-            label: 预览模式
       - name: discard
         label: 批量废弃节点
         params:

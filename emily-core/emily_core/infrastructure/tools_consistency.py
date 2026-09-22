@@ -54,7 +54,7 @@ REGISTERED_TOOLS: set[str] = {
     "update_user_level", "update_user_company", "manage_company",
     # project
     "create_node", "query_node", "update_node_progress", "add_node_dependency",
-    "mount_child_node", "update_nodes", "acknowledge_nodes", "discard_nodes",
+    "mount_child_node", "update_nodes", "discard_nodes",
     "manage_node_participant",
     "send_email", "fetch_inbox", "chat_archive", "manage_pending_issues",
 }
@@ -117,7 +117,6 @@ TOOL_META_MAP: dict[str, tuple[str, str, str, str]] = {
     "add_node_dependency":   ("添加节点依赖",   "project", "admin", "sop_only"),
     "mount_child_node":      ("挂载子节点",     "project", "admin", "sop_only"),
     "update_nodes":          ("批量更新节点",   "project", "admin", "sop_only"),
-    "acknowledge_nodes":     ("批量签认节点",   "project", "admin", "sop_only"),
     "discard_nodes":         ("批量废弃节点",   "project", "admin", "sop_only"),
     "manage_node_participant": ("维护节点参与单位/参与人", "project", "admin", "sop_only"),
 }
@@ -154,7 +153,6 @@ TOOL_WRITE_MODE_MAP: dict[str, str] = {
     "mount_child_node": "append",
     "update_node_progress": "overwrite",
     "update_nodes": "overwrite",
-    "acknowledge_nodes": "transition",
     "discard_nodes": "transition",
     "create_task_node": "append",
     "submit_node_deliverable": "transition",
@@ -207,7 +205,6 @@ TOOL_SCHEMA_MAP: dict[str, tuple[str, str]] = {
     "add_node_dependency": ("emily_core.tools.node_tool", "_ADD_DEPENDENCY_SCHEMA"),
     "mount_child_node": ("emily_core.tools.node_tool", "_MOUNT_CHILD_SCHEMA"),
     "update_nodes": ("emily_core.tools.node_tool", "_UPDATE_NODES_SCHEMA"),
-    "acknowledge_nodes": ("emily_core.tools.node_tool", "_ACK_NODES_SCHEMA"),
     "discard_nodes": ("emily_core.tools.node_tool", "_DISCARD_NODES_SCHEMA"),
     "send_email": ("emily_core.tools.project", "_SEND_EMAIL_SCHEMA"),
     "fetch_inbox": ("emily_core.tools.project", "_FETCH_INBOX_SCHEMA"),
@@ -222,6 +219,8 @@ TOOL_SCHEMA_MAP: dict[str, tuple[str, str]] = {
 REMOVED_TOOLS: set[str] = {
     "voice_entry",  # 2026-09 摘除：实现文件孤儿且坏导入（audit 报告 §3.1），stub 已删
     "activate_nodes",  # 2026-09 摘除：审批改签认，被 acknowledge_nodes 取代（PRD US-04/US-06）
+    # 2026-09-21 摘除：节点状态自证化，签认机制整体退役（US-05/R5-R6）
+    "acknowledge_nodes",
     # 2026-09 摘除：专家模块整线退役（含 expert_review 图节点 / experts 表 / SOP-012）
     "create_expert",
     "approve_expert",

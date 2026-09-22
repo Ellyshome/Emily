@@ -26,7 +26,6 @@ from fastapi import APIRouter, HTTPException, Query
 from .node_schemas import (
     CreateNodeRequest,
     UpdateNodeRequest,
-    AcknowledgeNodeRequest,
     CreateDeliverableRequest,
     UpdateDeliverableProgressRequest,
     AddDependencyRequest,
@@ -95,6 +94,7 @@ async def create_node(body: CreateNodeRequest):
         responsible_user_id=getattr(body, 'responsible_user_id', ''),
         node_type=getattr(body, 'node_type', 'TASK'),
         participant_company_ids=getattr(body, 'participant_company_ids', []),
+        deliverables=getattr(body, 'deliverables', []),
     )
     result = await svc.create_node(cmd)
     if not result.success:
@@ -283,32 +283,6 @@ async def discard_node(node_id: str, operator_id: str = Query(default="")):
     if not result.success:
         raise HTTPException(status_code=400, detail=result.message)
     return ApiResponse(message=result.message)
-
-
-@router.post("/{node_id}/acknowledge")
-async def acknowledge_node(node_id: str, body: AcknowledgeNodeRequest):
-    """签认节点（替代原审批，PRD US-04/US-06）。
-
-    签认不阻断入库，仅表达"被谁认可"；等级不足时返回 403 明确拒绝。
-    """
-    from emily_core.services.signoff_service import SignoffService
-
-    result = await SignoffService().acknowledge(
-        "node", node_id, body.user_id, remark=body.remark,
-    )
-    if not result.get("success"):
-        status_code = 403 if "等级不足" in result.get("message", "") else 400
-        raise HTTPException(status_code=status_code, detail=result.get("message", ""))
-    return ApiResponse(
-        message=result.get("message", ""),
-        data={
-            "node_id": node_id,
-            "acknowledged": result.get("acknowledged", False),
-            "acknowledged_by": result.get("acknowledged_by", ""),
-            "acknowledged_at": result.get("acknowledged_at", ""),
-            "acknowledged_level": result.get("acknowledged_level", 0),
-        },
-    )
 
 
 # ══════════════════════════════════════════════════════════════════════════════
