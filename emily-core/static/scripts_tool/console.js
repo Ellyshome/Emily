@@ -4308,6 +4308,255 @@ q('#channels-refresh-btn').addEventListener('click', () => loadChannels());
 
 
 // ══════════════════════════════════════════════════════════════════════════════
+//  AstrBot WebUI 凭据与部署（渠道连通性头部工具组）
+//
+//  密码在 AstrBot 侧只存 pbkdf2 哈希、无法还原，且随机初始密码只在「生成密码那一次」
+//  的启动日志里打印一次。这组工具做三件事：① 只读状态（容器/配置判定的密码状态）；
+//  ② 记录留存（把当前密码与经过写进本地运行时目录，容器重建不丢、不入 git）；
+//  ③ 登录实测（拿记录的密码打一次 AstrBot 登录接口，确认记录还有效）。
+// ══════════════════════════════════════════════════════════════════════════════
+
+const API_WEBUI_CRED = API_CONSOLE + '/webui-credentials';
+
+let _webuiCredData = null;   // 最近一次拉取的状态（含 record / reference）
+
+const WEBUI_CRED_STATE_CLASS = {
+    set: 'ch-ok',
+    initial: 'cred-warn',
+    builtin_default: 'cred-warn',
+    unset: 'ch-off',
+};
+
+function webuiCredStatus(text, cls) {
+    const el = q('#webui-cred-status');
+    if (!el) return;
+    el.textContent = text || '';
+    el.className = `upload-status${cls ? ' ' + cls : ''}`;
+}
+
+function webuiCredInput(id) { return q(id); }
+
+async function toggleWebuiCredFrame() {
+    const box = q('#webui-cred-frame');
+    const btn = q('#webui-cred-btn');
+    if (!box || !btn) return;
+    if (!box.hidden) {
+        box.hidden = true;
+        btn.setAttribute('aria-expanded', 'false');
+        return;
+    }
+    box.hidden = false;
+    btn.setAttribute('aria-expanded', 'true');
+    box.innerHTML = '<div class="muted">加载中…</div>';
+    await loadWebuiCredentials();
+}
+
+async function loadWebuiCredentials() {
+    try {
+        const json = await fetchJsonWithRetry(API_WEBUI_CRED);
+        if (json.code !== 0 || !json.data) {
+            q('#webui-cred-frame').innerHTML =
+                `<div class="muted">加载失败：${escapeHtml(json.message || 'unknown')}</div>`;
+            return;
+        }
+        _webuiCredData = json.data;
+        renderWebuiCredFrame(json.data);
+    } catch (e) {
+        q('#webui-cred-frame').innerHTML =
+            `<div class="muted">请求失败（服务可能正在重启，请稍后重试）：${escapeHtml(e.message)}</div>`;
+    }
+}
+
+function renderWebuiCredFrame(data) {
+    const box = q('#webui-cred-frame');
+    const webui = data.webui || {};
+    const ref = data.reference || {};
+    const rec = data.record || {};
+    const container = data.container || {};
+
+    const stateClass = WEBUI_CRED_STATE_CLASS[webui.password_state] || 'muted';
+    const rows = [
+        ['接入容器', `${container.name || 'astrbot'} · ${container.status || 'unknown'}`],
+        ['访问地址', `<a href="${escapeAttr(ref.access_url || '#')}" target="_blank" rel="noreferrer">${escapeHtml(ref.access_url || '—')}</a>`
+            + `<span class="muted">（容器内互访 ${escapeHtml(ref.probe_url || '—')}）</span>`],
+        ['登录账号', escapeHtml(webui.username || 'astrbot')],
+        ['密码状态', `<span class="${stateClass}">${escapeHtml(webui.password_state_label || '—')}</span>`
+            + `<span class="muted">· 存储 ${escapeHtml(webui.storage || '—')}</span>`],
+        ['WebUI 可达', escapeHtml(webui.reachable_detail || '—')],
+        ['AstrBot 配置', `<code>${escapeHtml(webui.config_path || '—')}</code>`],
+        ['留存记录', rec.updated_at
+            ? `${escapeHtml(rec.operator_label || rec.operator || '未署名')} · ${escapeHtml(rec.updated_at)}${rec.note ? ' · ' + escapeHtml(rec.note) : ''}`
+            : '<span class="cred-warn">尚无留存（建议把当前密码记到下面，下次不必再翻日志或重置）</span>'],
+    ].map(([k, v]) => `<tr><th>${escapeHtml(k)}</th><td>${v}</td></tr>`).join('');
+
+    const notes = (ref.notes || []).map(n => `<div class="cred-note">· ${escapeHtml(n)}</div>`).join('');
+
+    box.innerHTML = `
+        <div class="ch-detail-head">
+            <h3>AstrBot WebUI · 凭据与部署</h3>
+            <span class="upload-status" id="webui-cred-status"></span>
+        </div>
+        <table class="ch-detail-table"><tbody>${rows}</tbody></table>
+        <div class="ch-form">
+            <div class="ch-edit-title">留存记录<span class="ch-edit-hint-inline">只写在本地运行时目录（emily-data/runtime），不入 git</span></div>
+            <div class="cred-row">
+                <label for="webui-cred-url">访问地址</label>
+                <input type="text" id="webui-cred-url" class="cred-input"
+                       value="${escapeAttr(rec.webui_url || ref.access_url || '')}" placeholder="http://localhost:6185/">
+            </div>
+            <div class="cred-row">
+                <label for="webui-cred-user">用户名</label>
+                <input type="text" id="webui-cred-user" class="cred-input"
+                       value="${escapeAttr(rec.username || webui.username || 'astrbot')}">
+            </div>
+            <div class="cred-row">
+                <label for="webui-cred-pass">密码</label>
+                <input type="password" id="webui-cred-pass" class="cred-input"
+                       value="${escapeAttr(rec.password || '')}" placeholder="留空＝只改备注，不动已存密码">
+                <button type="button" class="btn btn-mini" data-act="toggle-pass">显示</button>
+            </div>
+            <div class="cred-row">
+                <label for="webui-cred-note">备注 / 经过</label>
+                <input type="text" id="webui-cred-note" class="cred-input"
+                       value="${escapeAttr(rec.note || '')}" placeholder="如：2026-09-23 重置为指定密码">
+            </div>
+            <div class="cred-tools">
+                <button type="button" class="btn" data-act="save">保存记录</button>
+                <button type="button" class="btn" data-act="verify">校验登录</button>
+                <button type="button" class="btn" data-act="copy-pass">复制密码</button>
+                <button type="button" class="btn" data-act="copy-deploy">复制新机部署片段</button>
+                <button type="button" class="btn" data-act="copy-reset">复制重置步骤</button>
+                <button type="button" class="btn" data-act="reload">重新读取状态</button>
+            </div>
+            <div class="cred-notes">${notes}</div>
+            <div class="ch-form-hint">密码策略：${escapeHtml(webui.password_policy || '')}；忘记后无法还原，只能按「重置步骤」重设。</div>
+        </div>`;
+}
+
+// 复制到剪贴板（navigator.clipboard 不可用时回落到临时 textarea）
+async function copyToClipboard(text) {
+    const value = text || '';
+    if (!value) return false;
+    try {
+        if (navigator.clipboard && window.isSecureContext) {
+            await navigator.clipboard.writeText(value);
+            return true;
+        }
+    } catch (e) { /* 回落到 execCommand */ }
+    try {
+        const ta = document.createElement('textarea');
+        ta.value = value;
+        ta.style.position = 'fixed';
+        ta.style.opacity = '0';
+        document.body.appendChild(ta);
+        ta.select();
+        const ok = document.execCommand('copy');
+        document.body.removeChild(ta);
+        return ok;
+    } catch (e) {
+        return false;
+    }
+}
+
+async function saveWebuiCredentials() {
+    const password = webuiCredInput('#webui-cred-pass').value;
+    const sel = q('#global-operator-select');
+    const operatorLabel = sel && sel.selectedIndex >= 0
+        ? (sel.options[sel.selectedIndex] || {}).textContent || ''
+        : '';
+    webuiCredStatus('保存中…');
+    try {
+        const resp = await fetch(API_WEBUI_CRED, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                username: webuiCredInput('#webui-cred-user').value.trim(),
+                password,
+                webui_url: webuiCredInput('#webui-cred-url').value.trim(),
+                note: webuiCredInput('#webui-cred-note').value.trim(),
+                operator: getGlobalOperator() || '',
+                // 记录里同时留一份可读署名：全局操作人的取值是用户 UUID，单看它认不出是谁
+                operator_label: operatorLabel.trim(),
+            }),
+        });
+        const json = await resp.json();
+        if (json.code !== 0 || !json.data) {
+            webuiCredStatus(`保存失败：${json.message || 'unknown'}`, 'cred-warn');
+            return;
+        }
+        await loadWebuiCredentials();
+        // 重新读取会整体重绘、清空状态行，故在重绘之后再显示结果
+        webuiCredStatus(json.data.message || '已保存', 'ch-ok');
+    } catch (e) {
+        webuiCredStatus(`请求失败：${e.message}`, 'cred-warn');
+    }
+}
+
+async function verifyWebuiCredentials() {
+    const password = webuiCredInput('#webui-cred-pass').value;
+    if (!password) {
+        webuiCredStatus('请先填密码（或先保存记录）', 'cred-warn');
+        return;
+    }
+    webuiCredStatus('正在实测登录…');
+    try {
+        const resp = await fetch(API_WEBUI_CRED + '/verify', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                username: webuiCredInput('#webui-cred-user').value.trim() || 'astrbot',
+                password,
+            }),
+        });
+        const json = await resp.json();
+        if (json.code !== 0 || !json.data) {
+            webuiCredStatus(`校验失败：${json.message || 'unknown'}`, 'cred-warn');
+            return;
+        }
+        const ok = !!json.data.verified;
+        webuiCredStatus(json.data.message || (ok ? '密码有效' : '密码无效'), ok ? 'ch-ok' : 'cred-warn');
+    } catch (e) {
+        webuiCredStatus(`请求失败：${e.message}`, 'cred-warn');
+    }
+}
+
+// 工具组点击（框架内容整体重绘，故用事件委托，避免每次重绘重新绑定）
+q('#webui-cred-frame').addEventListener('click', async (ev) => {
+    const btn = ev.target.closest('[data-act]');
+    if (!btn) return;
+    const act = btn.dataset.act;
+    const ref = (_webuiCredData && _webuiCredData.reference) || {};
+
+    if (act === 'save') return saveWebuiCredentials();
+    if (act === 'verify') return verifyWebuiCredentials();
+    if (act === 'reload') return loadWebuiCredentials();
+    if (act === 'toggle-pass') {
+        const input = webuiCredInput('#webui-cred-pass');
+        const show = input.type === 'password';
+        input.type = show ? 'text' : 'password';
+        btn.textContent = show ? '隐藏' : '显示';
+        return;
+    }
+    if (act === 'copy-pass') {
+        const ok = await copyToClipboard(webuiCredInput('#webui-cred-pass').value);
+        webuiCredStatus(ok ? '密码已复制到剪贴板' : '复制失败（浏览器未放行剪贴板）', ok ? 'ch-ok' : 'cred-warn');
+        return;
+    }
+    if (act === 'copy-deploy') {
+        const ok = await copyToClipboard(ref.deploy_snippet);
+        webuiCredStatus(ok ? '新机部署片段已复制' : '复制失败（浏览器未放行剪贴板）', ok ? 'ch-ok' : 'cred-warn');
+        return;
+    }
+    if (act === 'copy-reset') {
+        const ok = await copyToClipboard(ref.reset_steps);
+        webuiCredStatus(ok ? '重置步骤已复制' : '复制失败（浏览器未放行剪贴板）', ok ? 'ch-ok' : 'cred-warn');
+    }
+});
+
+q('#webui-cred-btn').addEventListener('click', () => toggleWebuiCredFrame());
+
+
+// ══════════════════════════════════════════════════════════════════════════════
 //  与 Emily 对话（模拟接入渠道直连）
 //
 //  发送者取左侧全局「操作人」；会话按「渠道:操作人」隔离，切换渠道即切换会话。

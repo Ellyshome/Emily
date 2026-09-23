@@ -111,9 +111,14 @@ docker exec emily-postgres psql -U emily -d emily -c "SELECT id, username, level
 ### 5.2 环境重建（需要干净的种子数据时）
 
 ```powershell
-powershell -File .claude\tool\env-test\setup_test_env.ps1      # 重置 + 种子 + mock 文件 + RAG 库
+powershell -File .claude\tool\env-test\setup_test_env.ps1      # 重置 + 种子 + mock 文件 + RAG 库 + 归属对齐
 powershell -File .claude\tool\env-test\reset_emerald.ps1       # 仅重置
 ```
+
+> 重建流程默认包含**存量未归类事件归属对齐**（可用 `-SkipAlign` 跳过）。原因：种子步骤
+> `007_migrate_project_events.sql` 按特性前口径把暂不知去向的事件挂到全局假节点
+> `node_id='UNASSIGNED'`，而现口径（全景节点 US-15.9 / 15.10）要求事件归属指向**本项目
+> 真实存在的收容节点**。不对齐则环境本身不满足验收口径。
 
 ---
 

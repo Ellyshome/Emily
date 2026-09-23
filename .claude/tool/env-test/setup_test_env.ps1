@@ -10,6 +10,13 @@
 #   powershell -File .claude\tool\env-test\setup_test_env.ps1 -SkipMockFiles   跳过磁盘空文件
 #   powershell -File .claude\tool\env-test\setup_test_env.ps1 -SkipFileMgmtTests  跳过文件管理测试数据
 #   powershell -File .claude\tool\env-test\setup_test_env.ps1 -SkipRAG         跳过 RAG 知识库阶段
+#   powershell -File .claude\tool\env-test\setup_test_env.ps1 -SkipAlign       跳过存量归属对齐阶段
+#
+# 归属对齐（为何默认开）:
+#   种子步骤 [11]（007_migrate_project_events.sql）按**特性前**口径把暂不知去向的事件
+#   挂到全局假节点 node_id='UNASSIGNED'。现口径（US-15.9 / 15.10）要求事件归属必须指向
+#   **本项目真实存在的收容节点**。故 seed 完成后统一跑一次对齐脚本（幂等、可重复执行），
+#   使布置出的环境满足验收口径；verify_data.sql 亦据此断言「归属非法 = 0」。
 #
 # 重置层级（两个正交概念，勿混淆）:
 #   数据层重置 : 默认流程 / -ResetOnly —— 跑 000_reset_all.sql 做 TRUNCATE。
@@ -22,8 +29,8 @@
 #      重新 initdb，之后再用本脚本灌种子。
 #
 # 依赖:
-#   - Docker Desktop 运行中（emily-postgres + emily-core + emily-embed 容器）
-#   - uv（Python 环境管理，用于 manage_nodes.py / rag_test_harness.py）
+#   - Docker Desktop 运行中（emily-postgres + emily-core 容器）
+#   - uv（Python 环境管理，用于 manage_nodes.py / align_unclassified_events.py / rag_test_harness.py）
 #   - PowerShell 5.1+
 # ============================================================
 param(
@@ -34,6 +41,7 @@ param(
     [switch]$SkipMockFiles,
     [switch]$SkipFileMgmtTests,
     [switch]$SkipRAG,
+    [switch]$SkipAlign,
     [string]$Project = "EMERALD-01"
 )
 
@@ -129,6 +137,36 @@ function Invoke-RecreateDatabase {
         docker logs --tail 30 emily-core 2>&1 | Select-String -Pattern "Database init failed|ERROR" | Select-Object -Last 5
     } else {
         Write-Host "  [OK] 数据库已重建并自动建表: $tableCount 张" -ForegroundColor Green
+    }
+
+    # ── 增量迁移校验（表数量达标 ≠ 增量迁移已生效）──
+    # 若 emily-core 启动时 postgres 仍在崩溃恢复，bootstrap 会记 "Database init failed"
+    # 后继续启动，session.py 的 _PENDING_COLUMNS / _PENDING_INDEXES 就不会执行——
+    # 表现为「表都在，但新增列 / 部分唯一索引缺失」。表数量检查覆盖不到这种情形，
+    # 故此处显式校验本模块依赖的两列与两个部分唯一索引。
+    if ($tableCount -gt 40) {
+        $colRaw = docker exec emily-postgres psql -U emily -d emily -t -A -c "SELECT count(*) FROM information_schema.columns WHERE table_name='project_nodes' AND column_name IN ('node_role','planned_start_at');" 2>$null
+        $colTxt = ($colRaw | Where-Object { $_ -and "$_".Trim() -ne "" } | Select-Object -First 1)
+        $colCount = if ($colTxt -and "$colTxt".Trim() -match '^\d+$') { [int]"$colTxt".Trim() } else { 0 }
+
+        if ($colCount -lt 2) {
+            Write-Host "  [WARN] project_nodes 增量列缺失（$colCount/2）——疑似 DB 初始化未完成即启动，重启 emily-core 补齐..." -ForegroundColor Yellow
+            docker compose -f $COMPOSE_FILE restart emily-core 2>$null | Out-Null
+            Start-Sleep -Seconds 12
+            $colRaw = docker exec emily-postgres psql -U emily -d emily -t -A -c "SELECT count(*) FROM information_schema.columns WHERE table_name='project_nodes' AND column_name IN ('node_role','planned_start_at');" 2>$null
+            $colTxt = ($colRaw | Where-Object { $_ -and "$_".Trim() -ne "" } | Select-Object -First 1)
+            $colCount = if ($colTxt -and "$colTxt".Trim() -match '^\d+$') { [int]"$colTxt".Trim() } else { 0 }
+        }
+
+        $idxRaw = docker exec emily-postgres psql -U emily -d emily -t -A -c "SELECT count(*) FROM pg_indexes WHERE tablename='project_nodes' AND indexname IN ('uq_pn_project_temp_milestone','uq_pn_project_sink');" 2>$null
+        $idxTxt = ($idxRaw | Where-Object { $_ -and "$_".Trim() -ne "" } | Select-Object -First 1)
+        $idxCount = if ($idxTxt -and "$idxTxt".Trim() -match '^\d+$') { [int]"$idxTxt".Trim() } else { 0 }
+
+        if ($colCount -ge 2 -and $idxCount -ge 2) {
+            Write-Host "  [OK] 增量迁移齐备（node_role / planned_start_at + 2 个部分唯一索引）" -ForegroundColor Green
+        } else {
+            Write-Host "  [ERROR] 增量迁移不完整：列 $colCount/2、部分唯一索引 $idxCount/2 —— 请检查 emily-core 启动日志（Database init failed）" -ForegroundColor Red
+        }
     }
 
     # 清附件 mock 目录（与 ResetDatabase 口径一致）
@@ -480,6 +518,42 @@ function New-TestAttachment {
 }
 
 # ============================================================
+# 功能二续：存量未归类事件归属对齐（US-15.9 / 15.10）
+#   种子步骤 [11]（007_migrate_project_events.sql）按**特性前**口径创建全局假节点
+#   node_id='UNASSIGNED' 并把暂不知去向的事件挂上去。现口径要求事件的归属必须指向
+#   **本项目真实存在且在项目内可解析的节点**（未归类事件落到本项目唯一的收容节点）。
+#   此处复用模块自带脚本做对齐：按项目懒建收容节点 → 逐条改挂 + 写归位留痕。
+#   脚本幂等，可重复执行；执行前自动写备份到 emily-data/runtime/backups/。
+# ============================================================
+function Invoke-AlignUnclassified {
+    Write-Host "[对齐] 存量未归类事件归属（US-15.9 / 15.10）..." -ForegroundColor Yellow
+
+    $alignScript = "scripts/align_unclassified_events.py"
+    if (-not (Test-Path $alignScript)) {
+        Write-Host "  [跳过] 找不到 $alignScript" -ForegroundColor DarkGray
+        Write-Host ""
+        return
+    }
+
+    # 对齐前快照（供对照；扫描为只读）
+    $before = uv run python $alignScript --scan 2>&1 | Select-String -Pattern "^\[扫描\]" | Select-Object -First 1
+    if ($before) { Write-Host "  $before" -ForegroundColor DarkGray }
+
+    # 执行对齐（--db-url 默认走宿主机映射端口，见脚本 docstring）
+    $out = uv run python $alignScript 2>&1
+    $out | Select-String -Pattern "^\[对齐\]|^\[备份\]|^\[复核\]|^\[跳过\]" | ForEach-Object {
+        Write-Host "  $_" -ForegroundColor DarkGray
+    }
+
+    if ($LASTEXITCODE -ne 0) {
+        Write-Host "  [WARN] 对齐脚本返回非零退出码（可能仍有非法归属，见上方输出）" -ForegroundColor Yellow
+    } else {
+        Write-Host "  [OK] 归属已闭合（全库无「归属指向非节点」的记录）" -ForegroundColor Green
+    }
+    Write-Host ""
+}
+
+# ============================================================
 # 功能三：验证数据完整性
 # ============================================================
 function Invoke-Verify {
@@ -658,6 +732,12 @@ if (-not $ResetOnly) {
     # ── RAG 知识库阶段（默认开，-SkipRAG 跳过）──
     if (-not $SkipRAG) {
         Invoke-SeedRAGEnv
+    }
+
+    # ── 存量未归类事件归属对齐（默认开，-SkipAlign 跳过）──
+    # 必须在全部 seed 之后（步骤 [11] 是 UNASSIGNED 事件的来源），验证之前。
+    if (-not $SkipAlign) {
+        Invoke-AlignUnclassified
     }
 
     Invoke-Verify

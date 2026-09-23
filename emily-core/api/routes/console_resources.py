@@ -2532,6 +2532,74 @@ class ChannelParamsUpdate(BaseModel):
     clear: list[str] = []
 
 
+class WebuiCredentialUpdate(BaseModel):
+    """AstrBot WebUI 凭据记录（控制台「渠道连通性」头部工具组保存）。
+
+    密码为明文，只落在运行时目录（emily-data/runtime，compose 里读写挂载、不入 git）；
+    留空表示只记录备注，不动已存的密码。
+    ``operator`` 为用户 UUID（与其他控制台动作一致），``operator_label`` 为可读署名。
+    """
+    username: str = "astrbot"
+    password: str = ""
+    webui_url: str = ""
+    note: str = ""
+    operator: str = ""
+    operator_label: str = ""
+
+
+class WebuiCredentialVerify(BaseModel):
+    """WebUI 登录实测请求体（拿记录里的账号密码打一次 AstrBot 登录接口）。"""
+    username: str = "astrbot"
+    password: str = ""
+
+
+@router.get("/webui-credentials")
+async def get_webui_credentials():
+    """AstrBot WebUI 凭据速查：实时状态 + 控制台留存记录 + 新机部署/重置文案。
+
+    客户端密码在 AstrBot 侧只存 pbkdf2（旧部署 md5）哈希，**无法从配置还原明文**，
+    且随机初始密码只在「生成密码那一次」的启动日志里打印一次。故此处只回状态：
+      - ``password_state``：unset（尚未设置）／initial（生成后未改）／
+        builtin_default（仍是内置默认密码）／set（已改过）
+      - ``record``：操作人自己留在运行时的密码与经过（read-only 回显，密码打码由前端处理）
+      - ``reference``：新机部署 env 片段与忘记后的重置步骤，供一键复制
+    """
+    try:
+        from emily_core.services.channel_status_service import get_webui_credentials as _get
+        data = await _get()
+    except Exception as ex:  # noqa: BLE001
+        return _err(f"读取 WebUI 凭据状态失败：{ex}")
+    return _ok(data)
+
+
+@router.post("/webui-credentials")
+async def set_webui_credentials(req: WebuiCredentialUpdate):
+    """保存 AstrBot WebUI 凭据记录（写入 /app/runtime/deploy_credentials.json）。"""
+    try:
+        from emily_core.services.channel_status_service import save_webui_credentials as _save
+        data = await _save(req.model_dump())
+    except ValueError as ex:
+        return _err(str(ex))
+    except Exception as ex:  # noqa: BLE001
+        return _err(f"保存 WebUI 凭据记录失败：{ex}")
+    return _ok(data)
+
+
+@router.post("/webui-credentials/verify")
+async def verify_webui_credentials(req: WebuiCredentialVerify):
+    """用给定账号密码实测一次 AstrBot WebUI 登录（只证明密码是否有效，不修改任何配置）。
+
+    失败原因可能是密码错，也可能是撞上 WebUI 限流（auth_rate_limit 默认 1 QPS / 突发 3），
+    故把 AstrBot 的原始 message 一并回给前端。
+    """
+    try:
+        from emily_core.services.channel_status_service import verify_webui_login as _verify
+        data = await _verify(req.username, req.password)
+    except Exception as ex:  # noqa: BLE001
+        return _err(f"WebUI 登录实测失败：{ex}")
+    return _ok(data)
+
+
 @router.post("/channels/wxmp-domain")
 async def set_wxmp_domain(req: ChannelParamsUpdate):
     """录入 / 清除微信小程序渠道的关联域名。
