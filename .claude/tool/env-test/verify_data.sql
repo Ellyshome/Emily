@@ -57,8 +57,25 @@ SELECT count(*) AS absolute_path_count FROM files WHERE storage_path LIKE '/%' A
 SELECT event_kind || '(' || count(*)::text || ')' FROM project_events GROUP BY event_kind ORDER BY event_kind;
 
 \echo ''
-\echo '--- 临时节点 UNASSIGNED ---'
-SELECT node_id, node_name, node_type FROM project_nodes WHERE node_id = 'UNASSIGNED';
+\echo '--- 事件归属闭合（US-15.9：归属必须指向真实节点）期望 illegal=0 / legacy=0 ---'
+SELECT
+  count(*) FILTER (
+    WHERE e.node_id IS NOT NULL AND e.node_id <> ''
+      AND NOT EXISTS (SELECT 1 FROM project_nodes n WHERE n.node_id = e.node_id)
+  ) AS illegal_ownership,
+  count(*) FILTER (WHERE e.node_id = 'UNASSIGNED') AS legacy_unassigned
+FROM project_events e;
+
+\echo ''
+\echo '--- 未归类收容节点（US-15.7：每项目唯一）期望 每项目 1 个 ---'
+SELECT pn.project_id, count(*) AS sink_count
+FROM project_nodes pn
+WHERE pn.node_role = 'UNCLASSIFIED_SINK' AND pn.is_discarded IS NOT TRUE
+GROUP BY pn.project_id;
+
+\echo ''
+\echo '--- 历史假节点行（仅作观察项，不应再有事件引用） ---'
+SELECT node_id, node_name, is_discarded FROM project_nodes WHERE node_id = 'UNASSIGNED';
 
 \echo ''
 \echo '--- 监理团队节点覆盖（分责任） ---'

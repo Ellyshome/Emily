@@ -15,6 +15,19 @@ services:
   astrbot:                    # 插件宿主（仅运行薄通信层插件 emily_agent）
     image: soulter/astrbot:latest
     container_name: astrbot
+    environment:
+      # AstrBot WebUI（Dashboard）初始密码。**只在 AstrBot 侧还没有密码哈希时生效**
+      # （首次部署，或执行过 RESET 开关后的第一次启动），此后每次启动一律忽略，
+      # 因此这行可以长期留着。不在 .env 里配置时该变量不会被下发，AstrBot 自行为
+      # 本次部署生成随机 24 位密码——但它只打印在「生成密码那一次」的启动日志里
+      # （之后只剩 Username，忘记就只能重置）。
+      # ⚠ 两种写法都不能用：`${VAR:-}` 与 .env 里留 `KEY=` 空值都会把变量设成空串，
+      #   而 AstrBot 对空值会 `validate_dashboard_password('')` 抛异常、启动失败。
+      #   所以这里用「只写变量名」的透传写法：没配就不下发；要配就填非空强密码。
+      # 要求 ≥8 位且含大写、小写、数字（AstrBot 侧会校验，不合规同样启动失败）。
+      # 注意区分：ASTRBOT_RESET_DASHBOARD_PASSWORD=1 是**每次启动都重置**密码，
+      # 只能临时设、用完立刻删。
+      - ASTRBOT_DASHBOARD_INITIAL_PASSWORD
     ports:
       - "6185:6185"              # Dashboard + 企微/微信客服统一 Webhook 回调（须公网可达）
       - "127.0.0.1:6199:6199"    # 独立 Webhook（备用，未启用统一模式时才需要）

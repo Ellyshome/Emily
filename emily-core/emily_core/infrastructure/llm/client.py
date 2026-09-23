@@ -8,6 +8,7 @@ M7: 新增 chat_with_tools() 方法，支持 OpenAI function calling。
 
 import json
 import logging
+import os
 import time
 from typing import Callable, Optional
 
@@ -68,9 +69,17 @@ class LLMClient:
         self.agent_loop_model = agent_loop_model or self.router_model
         self.temperature = temperature
         self.max_tokens = max_tokens
+        # mitmproxy 抓包场景：httpx 默认只信任 certifi，不读 SSL_CERTFILE，
+        # 故显式以该 CA 构造 http_client（trust_env 默认 True，代理仍取 HTTPS_PROXY）。
+        http_client = None
+        ca_pem = os.environ.get("SSL_CERT_FILE")
+        if ca_pem and os.path.exists(ca_pem):
+            import httpx
+            http_client = httpx.AsyncClient(verify=ca_pem)
         self._client = AsyncOpenAI(
             api_key=api_key,
             base_url=base_url,
+            http_client=http_client,
         )
         # M11: LLM 交互追踪回调
         self._trace_callback: Callable | None = None

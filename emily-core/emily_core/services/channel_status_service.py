@@ -15,6 +15,7 @@
 from __future__ import annotations
 
 import base64
+import hashlib
 import json
 import logging
 import os
@@ -689,6 +690,236 @@ async def set_wecom_params(params: dict | None = None, clear: list[str] | None =
             "请手动执行 docker compose restart astrbot 使其生效"
         )
     return {"saved": sorted(applied), "cleared": sorted(cleared), "message": message}
+
+
+# ══════════════════════════════════════════════════════════════════════
+#  AstrBot WebUI（Dashboard）凭据：状态判定 + 记录留存 + 登录实测
+#
+#  密码在 AstrBot 侧只以 pbkdf2（旧部署为 md5）哈希保存，**无法还原**，且随机生成的
+#  初始密码只打印在「生成密码那一次」的启动日志里（之后只剩 Username）——忘记就只能重置。
+#  控制台因此提供一组工具：
+#    · 状态判定：读容器内 cmd_config.json 的 dashboard 段，说明当前处于哪种状态；
+#    · 记录留存：把当前密码与经过写在 /app/runtime（宿主 emily-data/runtime，容器重建
+#      不丢、不入 git），避免下次又只能靠翻日志或重置；
+#    · 登录实测：拿记录的密码打一次 AstrBot 登录接口，确认记录是否还有效。
+# ══════════════════════════════════════════════════════════════════════
+
+# WebUI 同网互访地址（容器名:端口，与 compose 端口映射同号）
+_WEBUI_PROBE_TIMEOUT = 5.0
+
+# AstrBot 内置默认密码（用于识别「部署仍是出厂密码」）
+_ASTRBOT_BUILTIN_DEFAULT_PASSWORD = "astrbot"
+
+# 凭据记录文件（运行时目录，随 /app/runtime 挂载持久化）
+_CREDENTIAL_FILENAME = "deploy_credentials.json"
+
+# 控制台展示口径：密码策略与启动行为（与 AstrBot auth_password.py 保持一致）
+_PASSWORD_POLICY = "≥8 位且含大写、小写、数字（不满足会导致 AstrBot 启动失败）"
+
+
+def _credential_path() -> Path:
+    from ..infrastructure.paths import resolve_data_path
+
+    return Path(
+        resolve_data_path(
+            "",
+            f"/app/runtime/{_CREDENTIAL_FILENAME}",
+            f"emily-data/runtime/{_CREDENTIAL_FILENAME}",
+        )
+    )
+
+
+def load_webui_credential_record() -> dict:
+    """读取控制台留存的 WebUI 凭据记录，失败返回空 dict。"""
+    path = _credential_path()
+    try:
+        if path.is_file():
+            text = path.read_text(encoding="utf-8")
+            return json.loads(text.lstrip("\ufeff")) or {}
+    except Exception as e:  # noqa: BLE001
+        logger.debug("load webui credentials failed: %s", e)
+    return {}
+
+
+def describe_dashboard_credentials(cfg: dict) -> dict:
+    """依据 AstrBot 配置的 dashboard 段判定凭据状态（纯函数，不返回任何哈希值）。
+
+    cfg 为空表示「容器在跑但配置读不到」（未落盘或读取失败）——此时不能报「未设置」，
+    否则会误导成"AstrBot 会自动生成密码"，故单列 unknown。
+    """
+    if not cfg:
+        return {
+            "username": "astrbot",
+            "storage": "unknown",
+            "password_state": "unknown",
+            "password_state_label": "读不到 AstrBot 配置（未落盘或读取失败），无法判定",
+            "password_change_required": False,
+            "config_path": _ASTRBOT_CONFIG_PATH,
+            "password_policy": _PASSWORD_POLICY,
+            "builtin_default_password": _ASTRBOT_BUILTIN_DEFAULT_PASSWORD,
+        }
+
+    dash = (cfg or {}).get("dashboard") or {}
+    username = str(dash.get("username") or "astrbot")
+    pbkdf2 = str(dash.get("pbkdf2_password") or "")
+    md5 = str(dash.get("password") or "")
+    change_required = bool(dash.get("password_change_required"))
+
+    if pbkdf2.startswith("pbkdf2_sha256$"):
+        storage = "pbkdf2"
+    elif md5:
+        storage = "md5"
+    else:
+        storage = "unset"
+
+    if storage == "unset":
+        state = "unset"
+        state_label = "未设置——下次启动会生成随机密码，并只在启动日志里打印一次"
+    elif change_required:
+        state = "initial"
+        state_label = "初始密码（生成/重置后未修改）：明文只在生成那一次的启动日志里出现过"
+    elif md5 == hashlib.md5(_ASTRBOT_BUILTIN_DEFAULT_PASSWORD.encode()).hexdigest():
+        state = "builtin_default"
+        state_label = "仍是内置默认密码，建议尽快在 WebUI 里改掉"
+    else:
+        state = "set"
+        state_label = "已设置（操作人修改过）"
+
+    return {
+        "username": username,
+        "storage": storage,
+        "password_state": state,
+        "password_state_label": state_label,
+        "password_change_required": change_required,
+        "config_path": _ASTRBOT_CONFIG_PATH,
+        "password_policy": _PASSWORD_POLICY,
+        "builtin_default_password": _ASTRBOT_BUILTIN_DEFAULT_PASSWORD,
+    }
+
+
+async def _probe_webui() -> dict:
+    """探 AstrBot WebUI 是否可达（同网 astrbot:6185）。能取到 HTTP 响应即视为在跑。"""
+    url = f"http://{_ASTRBOT_CALLBACK_HOST}:{_ASTRBOT_CALLBACK_PORT}/"
+    try:
+        timeout = aiohttp.ClientTimeout(total=_WEBUI_PROBE_TIMEOUT)
+        async with aiohttp.ClientSession(timeout=timeout, trust_env=False) as client:
+            async with client.get(url) as resp:
+                return {
+                    "ok": True,
+                    "detail": f"WebUI 可达（HTTP {resp.status}）：{_ASTRBOT_CALLBACK_HOST}:{_ASTRBOT_CALLBACK_PORT}",
+                }
+    except Exception as e:  # noqa: BLE001
+        return {
+            "ok": False,
+            "detail": (
+                f"WebUI 不可达（{_ASTRBOT_CALLBACK_HOST}:{_ASTRBOT_CALLBACK_PORT}）："
+                f"{type(e).__name__}"
+            ),
+        }
+
+
+async def verify_webui_login(username: str, password: str) -> dict:
+    """用给定账号密码实测一次 AstrBot WebUI 登录，确认控制台留存的记录是否还有效。
+
+    只做一次尝试：WebUI 的 auth_rate_limit 默认 1 QPS、突发 3，连续探测会被限流误判为密码错，
+    故把 AstrBot 返回的原始 message 一并带出，便于区分「密码不对」与「被限流」。
+    """
+    payload = {"username": username or "astrbot", "password": password or ""}
+    url = f"http://{_ASTRBOT_CALLBACK_HOST}:{_ASTRBOT_CALLBACK_PORT}/api/auth/login"
+    try:
+        timeout = aiohttp.ClientTimeout(total=_WEBUI_PROBE_TIMEOUT)
+        async with aiohttp.ClientSession(timeout=timeout, trust_env=False) as client:
+            async with client.post(url, json=payload) as resp:
+                body = await resp.json(content_type=None)
+    except Exception as e:  # noqa: BLE001
+        return {"verified": False, "message": f"登录请求失败：{type(e).__name__}"}
+
+    ok = isinstance(body, dict) and str(body.get("status")) == "ok"
+    detail = str((body or {}).get("message") or "")[:300]
+    return {
+        "verified": ok,
+        "message": "登录成功：记录里的密码有效" if ok else f"登录被拒：{detail or '未知原因'}",
+    }
+
+
+async def get_webui_credentials() -> dict:
+    """WebUI 凭据速查：实时状态（容器/配置）+ 控制台留存记录 + 新机部署与重置文案。"""
+    containers = await get_container_status()
+    status = {c["name"]: c["status"] for c in containers}.get("astrbot", "missing")
+    cfg = await _fetch_astrbot_config() if status == "running" else {}
+    state = describe_dashboard_credentials(cfg)
+    probe = await _probe_webui() if status == "running" else {"ok": False, "detail": "AstrBot 容器未运行"}
+    record = load_webui_credential_record()
+
+    webui_host = f"{_ASTRBOT_CALLBACK_HOST}:{_ASTRBOT_CALLBACK_PORT}"
+    reference = {
+        "access_url": f"http://localhost:{_ASTRBOT_CALLBACK_PORT}/",
+        "probe_url": f"http://{webui_host}/",
+        "env_var": "ASTRBOT_DASHBOARD_INITIAL_PASSWORD",
+        "reset_env_var": "ASTRBOT_RESET_DASHBOARD_PASSWORD",
+        "deploy_snippet": (
+            "# .env（新机首次部署前填好，之后可长期留着）\n"
+            f"# {_PASSWORD_POLICY}\n"
+            "ASTRBOT_DASHBOARD_INITIAL_PASSWORD=<你的初始密码>\n"
+        ),
+        "reset_steps": (
+            "# 忘记密码时重置（临时，用完必须删掉这两行）\n"
+            "# docker-compose-*.yml → astrbot 服务：\n"
+            "#   environment:\n"
+            "#     - ASTRBOT_RESET_DASHBOARD_PASSWORD=1\n"
+            "#     - ASTRBOT_DASHBOARD_INITIAL_PASSWORD=<新密码>\n"
+            "# docker compose up -d astrbot\n"
+            "# docker logs astrbot | grep -A2 'Initial password'   # 不指定新密码时从这里取随机密码\n"
+        ),
+        "notes": [
+            "AstrBot 侧只存 pbkdf2/md5 哈希，无法从配置还原明文。",
+            "初始密码只在「生成密码那一次」的启动日志里打印一次，之后启动只显示 Username。",
+            "环境变量留空（KEY=）或写成 ${VAR:-} 会下发空串，AstrBot 校验失败、容器起不来。",
+        ],
+    }
+
+    return {
+        "container": {"name": "astrbot", "status": status},
+        "webui": {**state, "reachable": probe["ok"], "reachable_detail": probe["detail"]},
+        "record": record,
+        "reference": reference,
+    }
+
+
+async def save_webui_credentials(payload: dict) -> dict:
+    """保存 WebUI 凭据记录到运行时目录（明文存本地，不入 git）。"""
+    payload = payload or {}
+    password = str(payload.get("password") or "")
+    if password and len(password) < 8:
+        raise ValueError("密码长度不足 8 位，请确认后再保存（或留空只记备注）")
+
+    record = {
+        "username": str(payload.get("username") or "astrbot").strip() or "astrbot",
+        "password": password,
+        "webui_url": str(payload.get("webui_url") or "").strip(),
+        "note": str(payload.get("note") or "").strip(),
+        # 操作人两项：operator 是用户 UUID（与其他控制台动作口径一致），
+        # operator_label 是「姓名 · 企业 · 等级」的可读署名，便于日后认人。
+        "operator": str(payload.get("operator") or "").strip(),
+        "operator_label": str(payload.get("operator_label") or "").strip(),
+        "updated_at": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+    }
+    path = _credential_path()
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(json.dumps(record, ensure_ascii=False, indent=2), encoding="utf-8")
+    return {
+        "record": {**record, "password": _mask(password)},
+        "path": str(path),
+        "message": f"已保存到 {_CREDENTIAL_FILENAME}（本地运行时目录，不入 git）",
+    }
+
+
+def _mask(secret: str) -> str:
+    """仅用于回显：保留首尾各 1 个字符，其余打码。"""
+    text = secret or ""
+    if len(text) <= 2:
+        return "*" * len(text)
+    return f"{text[0]}{'*' * (len(text) - 2)}{text[-1]}"
 
 
 # ══════════════════════════════════════════════════════════════════════

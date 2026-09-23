@@ -124,9 +124,25 @@ app.include_router(console_resources.router, prefix="/api/v1")
 
 # 脚本控制台静态文件（挂 /console/ 前缀，已加入 AuthMiddleware 白名单）
 _console_static = Path(__file__).resolve().parent.parent / "static" / "scripts_tool"
+
+# 控制台 / 配置页是人工频繁编辑的前端资源：浏览器对「无 Cache-Control」的响应会做启发式
+# 缓存，改完 console.css / console.js 后普通刷新仍会加载旧版（表现为「改了没生效」）。
+# 统一改为 no-cache：仍然走 ETag 协商（未改动仍是 304），改动后刷新即生效。
+from fastapi.staticfiles import StaticFiles  # noqa: E402
+
+
+class _StaticNoCache(StaticFiles):
+    """StaticFiles + ``Cache-Control: no-cache``（协商缓存，不禁止缓存）。"""
+
+    def file_response(self, *args, **kwargs):
+        # Starlette 各版本的 file_response 签名不同（scope/status_code 有无），故用 *args
+        resp = super().file_response(*args, **kwargs)
+        resp.headers["Cache-Control"] = "no-cache"
+        return resp
+
+
 if _console_static.exists():
-    from fastapi.staticfiles import StaticFiles
-    app.mount("/console", StaticFiles(directory=str(_console_static), html=True), name="console")
+    app.mount("/console", _StaticNoCache(directory=str(_console_static), html=True), name="console")
 
 # emy-config — 配置清单页（只读：字段三方对照 + 配置文件生效状态 + 差异告警）
 from .routes import config_inventory  # noqa: E402
@@ -137,7 +153,7 @@ app.include_router(config_inventory.router, prefix="/api/v1")
 _config_static = Path(__file__).resolve().parent.parent / "static" / "config"
 if _config_static.exists():
     from fastapi.staticfiles import StaticFiles
-    app.mount("/config", StaticFiles(directory=str(_config_static), html=True), name="config")
+    app.mount("/config", _StaticNoCache(directory=str(_config_static), html=True), name="config")
 
 # 群列表同步 API
 from .routes import groups  # noqa: E402
@@ -153,4 +169,4 @@ app.include_router(config_routes.router, prefix="/api/v1")
 _config_static = Path(__file__).resolve().parent.parent / "static" / "config"
 if _config_static.exists():
     from fastapi.staticfiles import StaticFiles
-    app.mount("/config", StaticFiles(directory=str(_config_static), html=True), name="config")
+    app.mount("/config", _StaticNoCache(directory=str(_config_static), html=True), name="config")

@@ -1,3 +1,4 @@
 - [项目对外正式名称](emily-official-name.md) — 对外名称与内部代号区分
 - [需求基线开头一句话简介](req-baseline-opening-summary.md) — 需求基线文档开头必须有一句话说明做了什么；多主题可每主题一句
 - [需求基线验收方向写法](req-baseline-acceptance-style.md) — 验收方向须以用户视角用「修改前 → 修改后」差异表达；不体现差异的工程约束另立一张表
+- [需求基线待拍板项写法](req-baseline-open-questions.md) — 待拍板/开放问题每项必须由 AI 先给建议（拟采口径+理由+备选），不能只留空"回答："；耦合项给成组拍板建议

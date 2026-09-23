@@ -19,6 +19,10 @@
   uv run python scripts/align_unclassified_events.py --rollback <备份文件>
   uv run python scripts/align_unclassified_events.py --discard-fake-node  # 附带弃用历史假节点行
 
+库地址：`--db-url`，默认取 `EMILY_DATABASE_URL`，否则宿主机映射端口
+`postgresql://emily:emily_secret_2026@localhost:25432/emily`（与 manage_nodes.py 同口径）。
+容器内执行时该默认值不可达（25432 是宿主机端口），需显式传 `EMILY_DATABASE_URL`。
+
 可回溯：执行前写备份到 emily-data/backups/unclassified_align_<时间戳>.json
 （含每条事件的改挂前归属 + 本次新建的节点清单）；`--rollback` 按备份还原字段。
 """
@@ -27,6 +31,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
 import sys
 from datetime import datetime, timezone, timedelta
 from pathlib import Path
@@ -308,15 +313,19 @@ def main() -> int:
     p.add_argument("--drop-orphan-events", action="store_true",
                    help="【破坏性】删除无项目上下文的孤立事件（不可对齐者）；先确认已备份")
     p.add_argument("--json", action="store_true", help="以 JSON 输出")
+    # 共用 DB 参数（与 manage_nodes.py 同口径）：容器内 localhost:25432 不可达
+    # （那是宿主机映射端口），优先用注入的库地址。
+    p.add_argument(
+        "--db-url",
+        default=os.environ.get(
+            "EMILY_DATABASE_URL",
+            "postgresql://emily:emily_secret_2026@localhost:25432/emily",
+        ),
+        help="PostgreSQL 连接 URL",
+    )
     args = p.parse_args()
 
-    db_url = ""
-    try:
-        from emily_core.config import Config
-        db_url = ""  # 交由 env/默认解析
-    except Exception:
-        pass
-    _init_db(db_url)
+    _init_db(args.db_url)
 
     if args.rollback:
         r = rollback(args.rollback)
