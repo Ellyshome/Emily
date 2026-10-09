@@ -87,3 +87,6 @@ Thumbs.db
 
 # CodeGraph 索引缓存（自动生成，不提交）
 .codegraph/
+
+# Zaemit AI tool config (auto-generated)
+.mcp.json
