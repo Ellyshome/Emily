@@ -4,6 +4,10 @@
 - action="search": 全文搜索消息
 - action="history": 会话历史
 - action="user": 用户历史
+
+⚠ 本文件的 `_CHAT_ARCHIVE_SCHEMA` / `_CHAT_ARCHIVE_DESCRIPTION` 是该工具参数面与
+描述的**唯一一份定义**（注册、一致性校验与 `ToolDefinition` 三处共用同一常量）。
+此前存在"注册用简版 / 内联完整版"两份定义且实际生效的是简版的漂移，已收敛。
 """
 
 import logging
@@ -12,6 +16,53 @@ from .definitions import ToolDefinition
 from ..services.chat_archive_service import ChatArchiveService
 
 logger = logging.getLogger(__name__)
+
+_CHAT_ARCHIVE_SCHEMA = {
+    "type": "object",
+    "properties": {
+        "action": {
+            "type": "string",
+            "description": "操作类型: search（全文搜索）/ history（会话历史）/ user（用户历史）",
+            "enum": ["search", "history", "user"],
+        },
+        "keyword": {
+            "type": "string",
+            "description": "搜索关键词（action=search时使用）",
+        },
+        "conversation_id": {
+            "type": "string",
+            "description": "会话ID（action=history时使用）",
+        },
+        "user_name": {
+            "type": "string",
+            "description": "用户名（action=user时使用，与user_id二选一）",
+        },
+        "user_id": {
+            "type": "string",
+            "description": "用户ID（action=user时使用，与user_name二选一）",
+        },
+        "time_range": {
+            "type": "string",
+            "description": "时间范围: today / week / month / all（默认all）",
+        },
+        "limit": {
+            "type": "integer",
+            "description": "返回条数上限（默认20，最大50）",
+        },
+        "include_progress": {
+            "type": "boolean",
+            "description": "是否包含前导消息（action=history时，默认false）",
+        },
+    },
+    "required": ["action"],
+}
+
+_CHAT_ARCHIVE_DESCRIPTION = (
+    "检索聊天记录档案。支持三种操作：\n"
+    "- action='search': 全文搜索消息（参数: keyword, time_range, limit, conversation_id）\n"
+    "- action='history': 查看会话完整对话历史（参数: conversation_id, limit, include_progress）\n"
+    "- action='user': 查看用户历史消息（参数: user_name 或 user_id, limit）"
+)
 
 
 def create_chat_archive_tool(chat_archive_service) -> ToolDefinition:
@@ -67,7 +118,10 @@ def create_chat_archive_tool(chat_archive_service) -> ToolDefinition:
             limit = min(int(args.get("limit", 50)), 100)
             include_progress = bool(args.get("include_progress", False))
 
+            # actor_user_id 为必填首参（缺省会导致本动作必然失败）；它由框架注入，
+            # 已在上方从 args["_user_id"] 取得。作用域收敛在 service 层完成。
             messages = chat_archive_service.get_conversation_history(
+                actor_user_id=actor_user_id,
                 conversation_id=conversation_id,
                 limit=limit,
                 include_progress=include_progress,
@@ -125,50 +179,7 @@ def create_chat_archive_tool(chat_archive_service) -> ToolDefinition:
 
     return ToolDefinition(
         name="chat_archive",
-        description=(
-            "检索聊天记录档案。支持三种操作：\n"
-            "- action='search': 全文搜索消息（参数: keyword, time_range, limit, conversation_id）\n"
-            "- action='history': 查看会话完整对话历史（参数: conversation_id, limit, include_progress）\n"
-            "- action='user': 查看用户历史消息（参数: user_name 或 user_id, limit）"
-        ),
-        parameters={
-            "type": "object",
-            "properties": {
-                "action": {
-                    "type": "string",
-                    "description": "操作类型: search（全文搜索）/ history（会话历史）/ user（用户历史）",
-                    "enum": ["search", "history", "user"],
-                },
-                "keyword": {
-                    "type": "string",
-                    "description": "搜索关键词（action=search时使用）",
-                },
-                "conversation_id": {
-                    "type": "string",
-                    "description": "会话ID（action=history时使用）",
-                },
-                "user_name": {
-                    "type": "string",
-                    "description": "用户名（action=user时使用，与user_id二选一）",
-                },
-                "user_id": {
-                    "type": "string",
-                    "description": "用户ID（action=user时使用，与user_name二选一）",
-                },
-                "time_range": {
-                    "type": "string",
-                    "description": "时间范围: today / week / month / all（默认all）",
-                },
-                "limit": {
-                    "type": "integer",
-                    "description": "返回条数上限（默认20，最大50）",
-                },
-                "include_progress": {
-                    "type": "boolean",
-                    "description": "是否包含前导消息（action=history时，默认false）",
-                },
-            },
-            "required": ["action"],
-        },
+        description=_CHAT_ARCHIVE_DESCRIPTION,
+        parameters=_CHAT_ARCHIVE_SCHEMA,
         execute=execute,
     )

@@ -125,10 +125,50 @@ class Conversation(Base):
     title = Column(String(500))
     project_id = Column(String)
     takeover_mode = Column(String(50), default="collaborate")
+    # ── 群信息保存与复用：群台账的人工标注与名册保鲜 ──
+    # note 只由人工维护入口写入；任何同步链路（群清单同步 / 消息入库）不得写本列
+    note = Column(String(500), default="")
+    # member_count 为平台侧快照（名册不可得时的回退值）；名册可得时以名册在册计数为准
+    member_count = Column(Integer, default=0)
+    # 名册最后同步时间（ISO 字符串）；NULL = 从未同步成功，一律视为过期
+    roster_synced_at = Column(String(40), nullable=True)
     created_at = Column(String, default=_utc_now)
     updated_at = Column(String, default=_utc_now, onupdate=_utc_now)
     __table_args__ = (UniqueConstraint("im_platform", "conversation_id", name="uq_im_platform_conv"),)
     messages = relationship("Message", back_populates="conversation", lazy="selectin")
+
+
+class GroupMember(Base):
+    """群成员名册 —— 一行 = 同一平台 + 同一群 + 同一成员。
+
+    作用域起算键：`(user_id, is_active)` 即"该人当前参与哪些群"，供群消息检索的
+    作用域收敛（见 services/group_query_service.py）。故刷新时必须回填 `user_id`，
+    否则该成员在对话侧看不到任何群消息。
+
+    退群者不删行：`is_active` 置假并保留记录，使名册与"群消息里他说过的话"两处
+    口径不打架；成员数只计在册。
+    """
+
+    __tablename__ = "group_members"
+    id = Column(String, primary_key=True, default=_new_uuid)
+    im_platform = Column(String(50), nullable=False)
+    group_id = Column(String(200), nullable=False)
+    im_user_id = Column(String(200), nullable=False)      # 平台账号（QQ 号），名册以它为准落地
+    display_name = Column(String(200))                    # 群名片优先，回退昵称
+    role = Column(String(20), nullable=True)              # owner / admin / member（平台可得时）
+    joined_at = Column(String(40), nullable=True)         # 入群时间（ISO，平台可得时）
+    user_id = Column(String, ForeignKey("users.id"), nullable=True)  # 经 user_im_bindings 解析
+    is_active = Column(Boolean, default=True)             # 在册标记；成员数只计在册
+    first_seen_at = Column(String, default=_utc_now)      # 首次见到的时刻，刷新不覆盖
+    last_seen_at = Column(String, default=_utc_now)       # 最近一次在名册中出现的时刻
+    created_at = Column(String, default=_utc_now)
+    updated_at = Column(String, default=_utc_now, onupdate=_utc_now)
+    __table_args__ = (
+        UniqueConstraint("im_platform", "group_id", "im_user_id",
+                         name="uq_gm_platform_group_member"),
+        Index("idx_gm_group_active", "im_platform", "group_id", "is_active"),
+        Index("idx_gm_user", "user_id"),
+    )
 
 
 class Message(Base):
@@ -174,6 +214,7 @@ class Message(Base):
 
     __table_args__ = (
         Index("idx_msg_source_created", "source", "created_at"),
+        Index("idx_msg_group_created", "group_id", "created_at"),
     )
 
 

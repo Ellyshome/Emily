@@ -20,6 +20,64 @@ class ChatArchiveRepository:
     # ── 附件 ──
 
     @staticmethod
+    def get_attachment_by_id(attachment_id: str) -> Optional[dict]:
+        """按主键取单条附件记录（控制台按附件打开文件时用）。
+
+        Returns:
+            附件 dict；不存在返回 None。
+        """
+        if not attachment_id:
+            return None
+        with get_session() as session:
+            r = (
+                session.query(MessageAttachment)
+                .filter(MessageAttachment.id == attachment_id)
+                .first()
+            )
+            if r is None:
+                return None
+            return {
+                "id": r.id,
+                "attachment_type": r.attachment_type,
+                "file_url": r.file_url,
+                "local_path": r.local_path,
+                "file_size": r.file_size,
+                "mime_type": r.mime_type,
+                "thumbnail_url": r.thumbnail_url,
+                "file_id": r.file_id,
+            }
+
+    @staticmethod
+    def get_attachments_for_messages(message_ids: list[str]) -> dict[str, list[dict]]:
+        """批量获取多条消息的附件记录（群消息列表避免 N+1）。
+
+        Returns:
+            {message_id: [附件 dict, ...]}；无附件的消息不出现在结果里。
+        """
+        ids = [str(i or "").strip() for i in (message_ids or []) if str(i or "").strip()]
+        if not ids:
+            return {}
+        with get_session() as session:
+            rows = (
+                session.query(MessageAttachment)
+                .filter(MessageAttachment.message_id.in_(set(ids)))
+                .all()
+            )
+        out: dict[str, list[dict]] = {}
+        for r in rows:
+            out.setdefault(r.message_id, []).append({
+                "id": r.id,
+                "attachment_type": r.attachment_type,
+                "file_url": r.file_url,
+                "local_path": r.local_path,
+                "file_size": r.file_size,
+                "mime_type": r.mime_type,
+                "thumbnail_url": r.thumbnail_url,
+                "file_id": r.file_id,
+            })
+        return out
+
+    @staticmethod
     def create_attachment(
         *,
         message_id: str,

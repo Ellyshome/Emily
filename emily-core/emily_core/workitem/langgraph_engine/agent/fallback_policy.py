@@ -34,8 +34,10 @@ class FallbackPolicy:
 
     # 基础兜底工具集（R3/R6）：普惠只读，零写。
     # M2: meta_cognition_read 为只读检索（三书全文），归入普惠只读集。
+    # query_groups: 群信息查询（列出在追踪群 / 检索群消息原文）——只读普惠能力；
+    #   检索结果的作用域由服务层按发起者身份收敛，与小工具无关。
     _BASIC_TOOLS: frozenset[str] = frozenset({
-        "knowledge_search", "chat_archive", "meta_cognition_read",
+        "knowledge_search", "chat_archive", "meta_cognition_read", "query_groups",
     })
 
     # 高级兜底只读集：现 tool_adapter.FALLBACK_SAFE_TOOLS 迁移至此（单一事实源）。
@@ -52,6 +54,8 @@ class FallbackPolicy:
         # 参考模板库只读检索（US-02 / US-09）：普惠只读能力，与 query_node 同档
         "read_node_template",
         "build_node_draft",
+        # 群信息查询（US-06 / US-07）：普惠只读能力
+        "query_groups",
     })
 
     # 高级兜底追加写集（R5）：追加型（create）。覆盖/编辑/删除/批量一律不放开。

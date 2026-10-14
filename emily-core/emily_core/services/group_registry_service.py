@@ -22,10 +22,16 @@ class GroupRegistryService:
 
         Returns:
             int: 处理的群数量
+
+        写入边界（《群信息保存与复用》 AC-US-01.6 / R1）：
+          · `title` 由平台群名覆盖（平台改名即更新）；
+          · `member_count` 落平台侧快照（名册不可得时的回退值）；
+          · **`note` 属人工标注，本方法永不写入** —— 备注与平台群名分离留存。
         """
         with get_session() as session:
             count = 0
             for g in groups:
+                member_count = int(g.get("member_count") or 0)
                 conv = session.query(Conversation).filter(
                     Conversation.im_platform == g["platform"],
                     Conversation.conversation_id == g["group_id"],
@@ -38,11 +44,14 @@ class GroupRegistryService:
                         group_id=g["group_id"],
                         title=g.get("group_name", ""),
                         takeover_mode="monitor",
+                        member_count=member_count,
                     )
                     session.add(conv)
                 else:
                     if g.get("group_name"):
                         conv.title = g["group_name"]
+                    if member_count:
+                        conv.member_count = member_count
                 count += 1
             session.commit()
             logger.info("upserted %d groups to conversations", count)

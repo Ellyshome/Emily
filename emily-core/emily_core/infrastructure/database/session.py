@@ -119,8 +119,18 @@ def _ensure_columns(engine) -> list[dict]:
             ("result", "VARCHAR(20)", "''"),
             ("error_reason", "VARCHAR(500)", "''"),
         ],
+        # 群信息保存与复用：群台账的人工标注 / 成员数快照 / 名册同步时间
+        # note 只由维护脚本写入；title 与 member_count 由群清单同步链路写入，两者互不覆盖
+        "conversations": [
+            ("note", "VARCHAR(500)", "''"),
+            ("member_count", "INTEGER", "0"),
+            ("roster_synced_at", "VARCHAR(40)", "NULL"),
+        ],
         "messages": [
             ("source", "VARCHAR(20)", "''"),
+            # group_id 在 ORM 中早已存在但从未登记补列：老库升级时无法保证该列实际存在，
+            # 而群消息检索以它为准。登记后 _ensure_columns 对已存在的列自动跳过（幂等）。
+            ("group_id", "VARCHAR(200)", "NULL"),
         ],
     }
 
@@ -229,6 +239,8 @@ def _ensure_columns(engine) -> list[dict]:
         ],
         "messages": [
             ("idx_msg_source_created", "(source, created_at)"),
+            # 按群 + 时间收敛（群追踪视图与群消息检索共用）
+            ("idx_msg_group_created", "(group_id, created_at)"),
         ],
         # 全景节点 US-15：容器的「每项目唯一」由部分唯一索引保证
         # （定义以 "UNIQUE " 前缀标识 → 生成 CREATE UNIQUE INDEX）

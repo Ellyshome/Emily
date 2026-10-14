@@ -130,6 +130,12 @@ class EmilyCore:
         # 群列表注册服务
         self._group_registry_service = None
 
+        # 群信息保存与复用（群台账同步 / 名册保鲜 / 取数出口 / 平台拉取通道）
+        self._platform_action_service = None
+        self._group_sync_service = None
+        self._group_roster_service = None
+        self._group_query_service = None
+
         # 元认知模块
         self._rule_book_loader = None
         self._system_description_service = None
@@ -215,6 +221,49 @@ class EmilyCore:
         except Exception as e:
             logger.warning("GroupRegistryService init failed: %s", e)
             self._group_registry_service = None
+
+        # ── 群信息保存与复用：平台拉取通道 → 台账同步 → 名册保鲜 → 取数出口 ──
+        # 依赖序即构建序（M2 → M3/M4 → M5）；任一步失败只影响其下游，不阻断内核启动。
+        try:
+            from .services.platform_action_service import PlatformActionService
+            self._platform_action_service = PlatformActionService(self.outbound_bus)
+            logger.info("PlatformActionService initialized")
+        except Exception as e:
+            logger.warning("PlatformActionService init failed: %s", e)
+            self._platform_action_service = None
+
+        try:
+            from .services.group_sync_service import GroupSyncService
+            self._group_sync_service = GroupSyncService(
+                platform_action=self._platform_action_service,
+                registry=self._group_registry_service,
+            )
+            logger.info("GroupSyncService initialized")
+        except Exception as e:
+            logger.warning("GroupSyncService init failed: %s", e)
+            self._group_sync_service = None
+
+        try:
+            from .services.group_roster_service import GroupRosterService
+            _ttl_days = int(getattr(self.config, "group_roster_ttl_days", 7) or 7)
+            self._group_roster_service = GroupRosterService(
+                platform_action=self._platform_action_service,
+                ttl_days=_ttl_days,
+            )
+            logger.info("GroupRosterService initialized (ttl=%d days)", _ttl_days)
+        except Exception as e:
+            logger.warning("GroupRosterService init failed: %s", e)
+            self._group_roster_service = None
+
+        try:
+            from .services.group_query_service import GroupQueryService
+            self._group_query_service = GroupQueryService(
+                roster_service=self._group_roster_service,
+            )
+            logger.info("GroupQueryService initialized")
+        except Exception as e:
+            logger.warning("GroupQueryService init failed: %s", e)
+            self._group_query_service = None
 
         # ── 注入 trace 服务到 API 路由（lazy fallback 也能工作，直接注入更可靠）──
         try:

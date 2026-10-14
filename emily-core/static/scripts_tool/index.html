@@ -649,6 +649,72 @@
             </div>
         </section>
 
+        <!-- 群追踪（点左侧「群追踪」条目后显示）：上栏 = 在追踪群列表，下栏 = 选定群通讯内容。
+             只读视图：取数一律来自 Emily 能力层（GroupQueryService / GroupRosterService）。
+             写动作只有两处：名册刷新（复用同一服务）与群备注维护（经既有脚本通道）。 -->
+        <section id="group-track-panel" class="upload-panel" hidden>
+            <div class="upload-panel-head">
+                <h2>群追踪</h2>
+                <code class="module-cmd"></code>
+                <span id="group-track-status" class="upload-status"></span>
+            </div>
+
+            <div class="group-track-sensitive">
+                ⚠ 群内通讯内容可能含敏感商务信息（报价、合同、甲方沟通等）。本视图 <strong>只读</strong>；
+                可见范围按左侧「操作人」等级收敛：建设主管（L4）及以上可见全部群，其余操作人仅可见其当前参与的群。
+            </div>
+
+            <div class="group-track-body">
+                <!-- 上栏：在追踪群列表 -->
+                <div class="group-track-upper" id="group-track-upper">
+                    <div class="group-track-toolbar">
+                        <input type="text" id="group-track-filter" class="gt-input"
+                               placeholder="按备注名 / 群名 / 群号筛选" title="按备注名 / 群名 / 群号筛选">
+                        <button type="button" id="group-track-reload" class="gt-btn">刷新</button>
+                        <label class="gt-check"><input type="checkbox" id="group-track-sync-toggle"> 同步群清单</label>
+                        <span id="group-track-stale" class="gt-hint"></span>
+                    </div>
+                    <div class="node-table-body group-track-table-wrap">
+                        <table class="node-table">
+                            <thead>
+                                <tr>
+                                    <th>备注名 / 群名</th>
+                                    <th>平台</th>
+                                    <th>成员数</th>
+                                    <th>已留存</th>
+                                    <th>最近活跃</th>
+                                    <th>名册</th>
+                                </tr>
+                            </thead>
+                            <tbody id="group-track-groups-tbody"></tbody>
+                        </table>
+                        <div id="group-track-groups-empty" class="resource-empty" hidden>暂无在追踪的群</div>
+                    </div>
+                    <div id="group-track-groups-error" class="gt-error" hidden></div>
+                </div>
+
+                <!-- 可拖拽横向分隔条（复用侧栏 resizer 范式） -->
+                <div class="panel-row-resizer" id="group-track-resizer" title="拖拽调整上下两栏高度"></div>
+
+                <!-- 下栏：选定群通讯内容 -->
+                <div class="group-track-lower" id="group-track-lower">
+                    <div class="group-track-toolbar">
+                        <span id="group-track-current" class="gt-current">未选定群</span>
+                        <input type="text" id="group-track-search-input" class="gt-input"
+                               placeholder="检索关键词（跨全部在追踪群）" title="检索范围：全部在追踪群；选定群后可只在该群内检索">
+                        <button type="button" id="group-track-search-btn" class="gt-btn">跨群检索</button>
+                        <button type="button" id="group-track-search-in-group" class="gt-btn">仅当前群</button>
+                        <label class="gt-check"><input type="checkbox" id="group-track-include-sources"> 含测试/运维来源</label>
+                        <button type="button" id="group-track-roster-btn" class="gt-btn">查看名册</button>
+                        <button type="button" id="group-track-roster-refresh" class="gt-btn">刷新名册</button>
+                        <button type="button" id="group-track-note-btn" class="gt-btn">设置备注</button>
+                    </div>
+                    <div id="group-track-messages" class="group-track-messages"></div>
+                    <div id="group-track-lower-error" class="gt-error" hidden></div>
+                </div>
+            </div>
+        </section>
+
         <div id="empty-state" class="empty-state">
             <p>从左侧选择一个脚本</p>
             <p class="sub">右侧显示功能说明与参数；写库脚本执行前需二次确认</p>

@@ -15,6 +15,7 @@ SOURCES: dict[str, str] = {
     "users": "用户",
     "projects": "项目",
     "nodes": "节点",
+    "groups": "群",
 }
 
 
@@ -22,14 +23,14 @@ def list_options(source: str, query: str = "", limit: int = 300) -> list[dict]:
     """返回候选值列表 [{value, label, note}]。
 
     Args:
-        source: users / projects / nodes。
+        source: users / projects / nodes / groups。
         query: 关键字过滤，label / note / value 任一包含即命中。
         limit: 返回上限。
 
     Raises:
         ValueError: 未知数据源。
     """
-    fetchers = {"users": _users, "projects": _projects, "nodes": _nodes}
+    fetchers = {"users": _users, "projects": _projects, "nodes": _nodes, "groups": _groups}
     if source not in fetchers:
         raise ValueError(f"未知的选项数据源：{source}（可选：{', '.join(fetchers)}）")
 
@@ -106,4 +107,30 @@ def _nodes() -> list[dict]:
     return [
         {"value": r.node_id, "label": r.node_name, "note": r.project_name or r.project_id}
         for r in rows
+    ]
+
+
+def _groups() -> list[dict]:
+    """已进入群台账的群（conversations 表），label 以人工备注为主标识。
+
+    与展示口径一致（R1 / AC-US-01.3）：有备注用备注，无备注回退平台群名，
+    再回退群号；note 附平台与群号便于区分同名群。
+    """
+    from emily_core.infrastructure.database.models import Conversation
+    from emily_core.infrastructure.database.session import get_session
+
+    with get_session() as session:
+        rows = (
+            session.query(Conversation)
+            .filter(Conversation.conversation_type == "group")
+            .order_by(Conversation.updated_at.desc())
+            .all()
+        )
+    return [
+        {
+            "value": c.conversation_id,
+            "label": (c.note or "").strip() or c.title or c.conversation_id,
+            "note": f"{c.im_platform} · {c.conversation_id}",
+        }
+        for c in rows
     ]

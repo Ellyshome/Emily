@@ -130,6 +130,8 @@ function bindListClicks(el) {
                 selectChat();
             } else if (item.dataset.name === PERSONNEL_ENTRY_NAME) {
                 selectPersonnel();
+            } else if (item.dataset.name === GROUP_TRACK_ENTRY_NAME) {
+                selectGroupTrack();
             } else {
                 selectScript(item.dataset.name);
             }
@@ -847,6 +849,8 @@ const LANGGRAPH_TOOLS_ENTRY_NAME = '__langgraph_tools__'; // 左侧脚本列表�
 const CHANNEL_ENTRY_NAME = '__channels__';                // 左侧脚本列表里的「渠道连通性」条目
 const CHAT_ENTRY_NAME = '__chat__';                       // 左侧脚本列表里的「与 Emily 对话」条目
 const PERSONNEL_ENTRY_NAME = '__personnel__';             // 左侧脚本列表里的「人员管理」条目
+// 左侧「群追踪」条目：上栏 = 在追踪群列表，下栏 = 选定群通讯内容 + 跨群检索（只读）
+const GROUP_TRACK_ENTRY_NAME = '__group_track__';         // 左侧脚本列表里的「群追踪」条目
 
 // 右侧所有「模块能力」面板：切换条目时先全部隐藏，再显示目标面板。
 // 新增模块面板需同时登记到此处，避免切换时残留旧面板。
@@ -857,7 +861,7 @@ const MODULE_PANEL_SELECTORS = [
     '#mcp-panel', '#sop-display-panel', '#panorama-nodes-panel',
     '#project-events-panel', '#test-cases-panel',
     '#session-archive-panel', '#langgraph-tools-panel', '#channels-panel',
-    '#personnel-panel',
+    '#personnel-panel', '#group-track-panel',
 ];
 
 function hideModulePanels() {
@@ -960,6 +964,9 @@ function reloadActiveModule() {
         case PERSONNEL_ENTRY_NAME:
             loadPersonnel();
             break;
+        case GROUP_TRACK_ENTRY_NAME:
+            loadGroupTrackGroups();
+            break;
         case LOG_ENTRY_NAME:
             loadLogs(q('#logs-module-select').value, getGlobalOperator());
             break;
@@ -1009,6 +1016,8 @@ const MODULE_ITEMS = [
       cmd: 'GET  /api/v1/console/channels\n# emily-core/api/routes/console_resources.py::get_channels' },
     { name: PERSONNEL_ENTRY_NAME, cls: 'personnel-entry', func: '人员管理', sub: '台账 · 等级 · 归属 · 企业 · 记忆 · 提示词',
       cmd: 'GET  /api/v1/console/personnel/list\nGET  /api/v1/console/personnel/companies\nGET  /api/v1/console/personnel/memory\nPOST /api/v1/console/personnel/level\nPOST /api/v1/console/personnel/company\nPOST /api/v1/console/personnel/company-create\nPOST /api/v1/console/personnel/company-delete\nPOST /api/v1/console/personnel/prompt\n# emily-core/api/routes/console_resources.py' },
+    { name: GROUP_TRACK_ENTRY_NAME, cls: 'group-track-entry', func: '群追踪', sub: '在追踪群 · 群通讯内容 · 跨群检索',
+      cmd: 'GET  /api/v1/console/group-track/groups\nGET  /api/v1/console/group-track/messages\nGET  /api/v1/console/group-track/search\nGET  /api/v1/console/group-track/roster\nGET  /api/v1/console/group-track/stale-groups\nPOST /api/v1/console/group-track/roster-refresh\nPOST /api/v1/scripts/run/set_group_note   # 备注维护经既有脚本通道\n# emily-core/api/routes/console_groups.py' },
 ];
 
 // ── 文件管理（上传 / 删除 / 节点与 RAG 进出）──
@@ -5158,3 +5167,468 @@ document.querySelectorAll('#personnel-panel th.sortable').forEach(th => {
         renderPersonnel();
     });
 });
+
+// ══════════════════════════════════════════════════════════════════════════════
+// 群追踪（群信息保存与复用）：只读视图
+//   上栏 = 在追踪群列表；下栏 = 选定群通讯内容 + 跨群/群内检索 + 名册
+//   取数一律来自 Emily 能力层（/api/v1/console/group-track/*）；
+//   写动作只有两处：名册刷新（复用同一服务）与群备注维护（经既有脚本通道）。
+// ══════════════════════════════════════════════════════════════════════════════
+
+let _gtGroups = [];          // 上栏当前列表
+let _gtSelected = null;      // 当前选定群 {group_id, display_name, ...}
+let _gtCursor = '';          // 下栏回溯游标（上一页最早一条的 id）
+let _gtLoadingMore = false;
+
+function selectGroupTrack() {
+    _selectedName = GROUP_TRACK_ENTRY_NAME;
+    _schema = null;
+    _pendingValues = null;
+
+    setActiveEntry(GROUP_TRACK_ENTRY_NAME);
+
+    q('#empty-state').hidden = true;
+    q('#runner').hidden = true;
+    hideModulePanels();
+    q('#group-track-panel').hidden = false;
+
+    loadGroupTrackGroups();
+}
+
+async function loadGroupTrackGroups() {
+    const tbody = q('#group-track-groups-tbody');
+    const empty = q('#group-track-groups-empty');
+    const errBox = q('#group-track-groups-error');
+    const status = q('#group-track-status');
+    errBox.hidden = true;
+    empty.hidden = true;
+    tbody.innerHTML = '<tr><td colspan="6" class="hint">加载中…</td></tr>';
+
+    const keyword = q('#group-track-filter').value.trim();
+    const operator = getGlobalOperator();
+    const url = API_CONSOLE + '/group-track/groups'
+        + '?operator_id=' + encodeURIComponent(operator)
+        + '&keyword=' + encodeURIComponent(keyword)
+        + '&page_size=200&refresh_stale=true';
+
+    try {
+        const resp = await fetch(url);
+        const json = await resp.json();
+        if (json.code !== 0 || !json.data) {
+            tbody.innerHTML = '';
+            errBox.hidden = false;
+            errBox.textContent = '群列表加载失败：' + (json.message || 'unknown');
+            status.textContent = '';
+            return;
+        }
+        _gtGroups = json.data.rows || [];
+        const staleCount = json.data.stale_count || 0;
+        const lv = json.data.actor_level || 0;
+        status.textContent = '共 ' + json.data.total + ' 个在追踪群'
+            + (staleCount ? ' · 名册待刷新 ' + staleCount : '')
+            + ' · 可见档位 L' + lv;
+        q('#group-track-stale').textContent = staleCount ? ('名册待刷新 ' + staleCount + ' 个') : '';
+        const errs = json.data.refresh_errors || [];
+        if (errs.length) {
+            errBox.hidden = false;
+            errBox.textContent = '部分群名册刷新失败：'
+                + errs.map(e => e.group_id + '（' + e.error + '）').join('；')
+                + ' —— 已显示现有数据';
+        }
+        renderGroupTrackGroups();
+    } catch (e) {
+        tbody.innerHTML = '';
+        errBox.hidden = false;
+        errBox.textContent = '网络错误：' + e.message;
+    }
+}
+
+function renderGroupTrackGroups() {
+    const tbody = q('#group-track-groups-tbody');
+    const empty = q('#group-track-groups-empty');
+    if (!_gtGroups.length) {
+        tbody.innerHTML = '';
+        empty.hidden = false;
+        return;
+    }
+    empty.hidden = true;
+    tbody.innerHTML = _gtGroups.map(r => {
+        const active = (_gtSelected && _gtSelected.group_id === r.group_id) ? ' active' : '';
+        const roster = r.roster_stale
+            ? '<span class="muted">待刷新</span>'
+            : '<span class="muted">' + (r.member_count_source === 'roster' ? '在册' : '平台快照') + '</span>';
+        return '<tr data-gid="' + escapeAttr(r.group_id) + '" class="' + active + '">'
+            + '<td>' + escapeHtml(r.display_name || r.group_id)
+            + ' <span class="muted">' + escapeHtml(r.group_id) + '</span></td>'
+            + '<td>' + escapeHtml(r.im_platform || '') + '</td>'
+            + '<td>' + (r.member_count || 0) + '</td>'
+            + '<td>' + (r.message_count || 0) + '</td>'
+            + '<td>' + escapeHtml(fmtArchiveTime(r.last_active_at)) + '</td>'
+            + '<td>' + roster + '</td>'
+            + '</tr>';
+    }).join('');
+    tbody.querySelectorAll('tr[data-gid]').forEach(tr => {
+        tr.addEventListener('click', () => selectTrackedGroup(tr.dataset.gid));
+    });
+}
+
+function selectTrackedGroup(groupId) {
+    const found = _gtGroups.find(r => r.group_id === groupId);
+    if (!found) return;
+    _gtSelected = found;
+    _gtCursor = '';
+    q('#group-track-current').textContent = '当前群：' + found.display_name + '（' + found.group_id + '）';
+    renderGroupTrackGroups();
+    loadGroupTrackMessages(false);
+}
+
+async function loadGroupTrackMessages(more) {
+    const box = q('#group-track-messages');
+    const errBox = q('#group-track-lower-error');
+    errBox.hidden = true;
+    if (!_gtSelected) {
+        box.innerHTML = '<div class="hint">请在上栏选择一个群</div>';
+        return;
+    }
+    if (more && _gtLoadingMore) return;
+    _gtLoadingMore = true;
+    if (!more) {
+        _gtCursor = '';
+        box.innerHTML = '<div class="hint">加载中…</div>';
+    }
+
+    const operator = getGlobalOperator();
+    const include = q('#group-track-include-sources').checked;
+    const url = API_CONSOLE + '/group-track/messages'
+        + '?group=' + encodeURIComponent(_gtSelected.group_id)
+        + '&operator_id=' + encodeURIComponent(operator)
+        + '&limit=50'
+        + '&before_id=' + encodeURIComponent(_gtCursor)
+        + '&include_sources=' + (include ? 'true' : 'false');
+
+    try {
+        const resp = await fetch(url);
+        const json = await resp.json();
+        if (json.code !== 0 || !json.data) {
+            if (!more) box.innerHTML = '';
+            errBox.hidden = false;
+            errBox.textContent = '群消息读取失败：' + (json.message || 'unknown');
+            return;
+        }
+        const d = json.data;
+        if (d.scope_denied) {
+            box.innerHTML = '<div class="hint">该群没有可读记录（不在你的可见范围内）</div>';
+            return;
+        }
+        const rows = (d.rows || []).slice().reverse();  // 后端倒序 → 前端按时间正序
+        const html = rows.map(renderGroupMessage).join('');
+        if (more) {
+            box.insertAdjacentHTML('afterbegin', html);
+        } else {
+            box.innerHTML = html || '<div class="hint">该群暂无已留存消息</div>';
+        }
+        _gtCursor = d.next_before_id || '';
+        if (d.has_more && _gtCursor) {
+            box.insertAdjacentHTML('afterbegin',
+                '<div style="text-align:center;padding:6px">'
+                + '<button type="button" class="gt-btn" id="gt-load-more">加载更多（更早）</button></div>');
+            const btn = q('#gt-load-more');
+            if (btn) {
+                btn.addEventListener('click', () => {
+                    btn.parentElement.remove();
+                    loadGroupTrackMessages(true);
+                });
+            }
+        }
+    } catch (e) {
+        if (!more) box.innerHTML = '';
+        errBox.hidden = false;
+        errBox.textContent = '网络错误：' + e.message;
+    } finally {
+        _gtLoadingMore = false;
+    }
+}
+
+function renderGroupMessage(m) {
+    const atts = (m.attachments || []).map(a =>
+        '<span class="gt-att">📎 <a href="'
+        + escapeAttr(API_CONSOLE + '/group-track/attachment/' + a.id)
+        + '" target="_blank" rel="noopener">' + escapeHtml(a.name || '附件')
+        + '</a> (' + _fmtBytes(a.size) + ')</span>'
+    ).join(' ');
+    return '<div class="gt-msg">'
+        + '<span class="gt-meta">' + escapeHtml(fmtArchiveTime(m.created_at)) + '</span> '
+        + '<span class="gt-sender">' + escapeHtml(m.sender_name || '（未知发言人）') + '</span>'
+        + '<div class="gt-body">' + escapeHtml(m.content || '') + '</div>'
+        + atts
+        + '</div>';
+}
+
+async function runGroupTrackSearch(inGroup) {
+    const keyword = q('#group-track-search-input').value.trim();
+    const box = q('#group-track-messages');
+    const errBox = q('#group-track-lower-error');
+    errBox.hidden = true;
+    if (!keyword) {
+        errBox.hidden = false;
+        errBox.textContent = '请输入检索关键词';
+        return;
+    }
+    if (inGroup && !_gtSelected) {
+        errBox.hidden = false;
+        errBox.textContent = '请先在上栏选择一个群';
+        return;
+    }
+    const operator = getGlobalOperator();
+    const include = q('#group-track-include-sources').checked;
+    const url = API_CONSOLE + '/group-track/search'
+        + '?keyword=' + encodeURIComponent(keyword)
+        + '&group=' + encodeURIComponent(inGroup ? _gtSelected.group_id : '')
+        + '&operator_id=' + encodeURIComponent(operator)
+        + '&limit=50&include_sources=' + (include ? 'true' : 'false');
+
+    box.innerHTML = '<div class="hint">检索中…</div>';
+    try {
+        const resp = await fetch(url);
+        const json = await resp.json();
+        if (json.code !== 0 || !json.data) {
+            box.innerHTML = '';
+            errBox.hidden = false;
+            errBox.textContent = '检索失败：' + (json.message || 'unknown');
+            return;
+        }
+        const d = json.data;
+        if (!(d.rows || []).length) {
+            box.innerHTML = '<div class="hint">「' + escapeHtml(keyword) + '」无匹配记录</div>';
+            return;
+        }
+        const head = '命中 ' + d.total + ' 条'
+            + (d.truncated ? '，本次返回 ' + d.rows.length + ' 条（已截断）' : '')
+            + '（' + (inGroup ? '仅当前群' : '跨全部在追踪群') + '）';
+        box.innerHTML = '<div class="hint">' + escapeHtml(head) + '</div>'
+            + d.rows.map(r =>
+                '<div class="gt-msg" data-gid="' + escapeAttr(r.group_id) + '">'
+                + '<span class="gt-meta">' + escapeHtml(fmtArchiveTime(r.created_at)) + '</span> '
+                + '<span class="gt-sender">[' + escapeHtml(r.group_display || r.group_id) + '] '
+                + escapeHtml(r.sender_name || '（未知发言人）') + '</span>'
+                + '<div class="gt-body">' + escapeHtml(r.content || '') + '</div>'
+                + '</div>').join('');
+        // 点结果 → 切到该群的消息视图（AC-US-12.3）
+        box.querySelectorAll('.gt-msg[data-gid]').forEach(el => {
+            el.addEventListener('click', () => {
+                const gid = el.dataset.gid;
+                if (_gtGroups.some(r => r.group_id === gid)) selectTrackedGroup(gid);
+            });
+        });
+    } catch (e) {
+        box.innerHTML = '';
+        errBox.hidden = false;
+        errBox.textContent = '网络错误：' + e.message;
+    }
+}
+
+async function loadGroupTrackRoster() {
+    const box = q('#group-track-messages');
+    const errBox = q('#group-track-lower-error');
+    errBox.hidden = true;
+    if (!_gtSelected) {
+        errBox.hidden = false;
+        errBox.textContent = '请先在上栏选择一个群';
+        return;
+    }
+    box.innerHTML = '<div class="hint">名册加载中（过期时先刷新）…</div>';
+    const operator = getGlobalOperator();
+    const url = API_CONSOLE + '/group-track/roster'
+        + '?group=' + encodeURIComponent(_gtSelected.group_id)
+        + '&operator_id=' + encodeURIComponent(operator)
+        + '&include_inactive=true&refresh_stale=true';
+    try {
+        const resp = await fetch(url);
+        const json = await resp.json();
+        if (json.code !== 0 || !json.data) {
+            box.innerHTML = '';
+            errBox.hidden = false;
+            errBox.textContent = '名册读取失败：' + (json.message || 'unknown');
+            return;
+        }
+        const d = json.data;
+        const rows = d.rows || [];
+        const activeCount = rows.filter(r => r.is_active).length;
+        const head = '名册（在册 ' + activeCount + ' 人 / 共 ' + d.total + ' 行）'
+            + (d.refreshed ? ' · 已自动刷新' : '')
+            + (d.stale ? ' · 仍为过期数据' : '');
+        const rowsHtml = rows.map(r =>
+            '<tr class="' + (r.is_active ? '' : 'inactive') + '">'
+            + '<td>' + escapeHtml(r.im_user_id) + '</td>'
+            + '<td>' + escapeHtml(r.display_name || '') + '</td>'
+            + '<td>' + (r.user_id ? '已关联' : '<span class="muted">未关联</span>') + '</td>'
+            + '<td>' + escapeHtml(r.role || '') + '</td>'
+            + '<td>' + (r.is_active ? '在册' : '已退群') + '</td>'
+            + '</tr>').join('');
+        box.innerHTML = '<div class="hint">' + escapeHtml(head) + '</div>'
+            + '<table class="gt-roster">'
+            + '<thead><tr><th>平台账号</th><th>显示名</th><th>系统用户</th><th>角色</th><th>状态</th></tr></thead>'
+            + '<tbody>' + rowsHtml + '</tbody></table>';
+        if (d.refresh_error) {
+            errBox.hidden = false;
+            errBox.textContent = '名册刷新失败：' + d.refresh_error + ' —— 以上为现有数据';
+        }
+    } catch (e) {
+        box.innerHTML = '';
+        errBox.hidden = false;
+        errBox.textContent = '网络错误：' + e.message;
+    }
+}
+
+async function refreshGroupTrackRoster() {
+    const errBox = q('#group-track-lower-error');
+    errBox.hidden = true;
+    if (!_gtSelected) {
+        errBox.hidden = false;
+        errBox.textContent = '请先在上栏选择一个群';
+        return;
+    }
+    const operator = getGlobalOperator();
+    if (!operator) {
+        errBox.hidden = false;
+        errBox.textContent = '请先在左侧选择操作人';
+        return;
+    }
+    try {
+        const resp = await fetch(API_CONSOLE + '/group-track/roster-refresh', {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({group: _gtSelected.group_id, operator_id: operator}),
+        });
+        const json = await resp.json();
+        if (json.code !== 0) {
+            errBox.hidden = false;
+            errBox.textContent = '名册刷新失败：' + (json.message || 'unknown');
+            return;
+        }
+        await loadGroupTrackGroups();
+        await loadGroupTrackRoster();
+    } catch (e) {
+        errBox.hidden = false;
+        errBox.textContent = '网络错误：' + e.message;
+    }
+}
+
+// 群备注维护：经**既有脚本通道**写入（不在控制台路由层写库）。
+// 未二次确认时 ScriptManager 会按 check_arg 自动降级为 --dry-run 预览。
+async function setGroupTrackNote() {
+    const errBox = q('#group-track-lower-error');
+    errBox.hidden = true;
+    if (!_gtSelected) {
+        errBox.hidden = false;
+        errBox.textContent = '请先在上栏选择一个群';
+        return;
+    }
+    const operator = getGlobalOperator();
+    if (!operator) {
+        errBox.hidden = false;
+        errBox.textContent = '请先在左侧选择操作人';
+        return;
+    }
+    const current = _gtSelected.display_name || '';
+    const note = window.prompt(
+        '为「' + _gtSelected.group_id + '」设置人工功能备注（会作为群的主标识）：', current);
+    if (note === null) return;
+    const confirmWrite = window.confirm(
+        '确认写入备注吗？\n\n选“取消”= 只预览（不写库）；选“确定”= 实际写入并留痕。');
+
+    try {
+        const resp = await fetch('/api/v1/scripts/run/set_group_note', {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({
+                values: {group: _gtSelected.group_id, note: note, 'operator-id': operator},
+                confirm_write: confirmWrite,
+                subcommand: null,
+            }),
+        });
+        const json = await resp.json();
+        if (json.code !== 0 || !json.data) {
+            errBox.hidden = false;
+            errBox.textContent = '备注维护失败：' + (json.message || 'unknown');
+            return;
+        }
+        const d = json.data;
+        const result = d.forced_preview
+            ? '【仅预览，未写库】将把备注改为「' + note + '」'
+            : '备注已更新为「' + note + '」';
+        alert(result + '\n\n执行命令：' + (d.cli_args || []).join(' ')
+            + '\n\n' + String(d.stdout || '').slice(-800));
+        await loadGroupTrackGroups();
+    } catch (e) {
+        errBox.hidden = false;
+        errBox.textContent = '网络错误：' + e.message;
+    }
+}
+
+// 拖拽：调整群追踪上下两栏高度（复用 initGroupResizer 的四要素范式）
+(function initGroupTrackResizer() {
+    const upper = document.getElementById('group-track-upper');
+    const resizer = document.getElementById('group-track-resizer');
+    if (!upper || !resizer) return;
+    const KEY = 'emy-console-group-track-upper-height';
+    const saved = localStorage.getItem(KEY);
+    if (saved) { upper.style.maxHeight = 'none'; upper.style.height = saved; }
+    resizer.addEventListener('mousedown', e => {
+        e.preventDefault();
+        const startY = e.clientY;
+        const startH = upper.getBoundingClientRect().height;
+        resizer.classList.add('dragging');
+        document.body.style.cursor = 'row-resize';
+        document.body.style.userSelect = 'none';
+        const onMove = ev => {
+            const h = Math.min(window.innerHeight * 0.7, Math.max(90, startH + ev.clientY - startY));
+            upper.style.maxHeight = 'none';
+            upper.style.height = h + 'px';
+        };
+        const onUp = () => {
+            resizer.classList.remove('dragging');
+            document.body.style.cursor = '';
+            document.body.style.userSelect = '';
+            localStorage.setItem(KEY, upper.style.height);
+            document.removeEventListener('mousemove', onMove);
+            document.removeEventListener('mouseup', onUp);
+        };
+        document.addEventListener('mousemove', onMove);
+        document.addEventListener('mouseup', onUp);
+    });
+})();
+
+q('#group-track-reload').addEventListener('click', () => loadGroupTrackGroups());
+q('#group-track-filter').addEventListener('keydown', e => {
+    if (e.key === 'Enter') loadGroupTrackGroups();
+});
+q('#group-track-sync-toggle').addEventListener('change', async e => {
+    if (!e.target.checked) return;
+    e.target.checked = false;
+    if (!window.confirm('同步群清单：拉取机器人所在全部群并写入群台账（幂等，不会覆盖人工备注）。继续？')) return;
+    try {
+        const resp = await fetch('/api/v1/groups/pull', {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({platform: 'napcat'}),
+        });
+        const d = await resp.json();
+        alert(d.ok ? ('群清单同步完成：拉取 ' + d.pulled + ' 个群，写入 ' + d.upserted + ' 个')
+                   : ('群清单同步失败：' + (d.error || 'unknown')));
+        await loadGroupTrackGroups();
+    } catch (err) {
+        alert('群清单同步网络错误：' + err.message);
+    }
+});
+q('#group-track-search-btn').addEventListener('click', () => runGroupTrackSearch(false));
+q('#group-track-search-in-group').addEventListener('click', () => runGroupTrackSearch(true));
+q('#group-track-search-input').addEventListener('keydown', e => {
+    if (e.key === 'Enter') runGroupTrackSearch(false);
+});
+q('#group-track-include-sources').addEventListener('change', () => {
+    if (_gtSelected) loadGroupTrackMessages(false);
+});
+q('#group-track-roster-btn').addEventListener('click', () => loadGroupTrackRoster());
+q('#group-track-roster-refresh').addEventListener('click', () => refreshGroupTrackRoster());
+q('#group-track-note-btn').addEventListener('click', () => setGroupTrackNote());

@@ -421,6 +421,124 @@ class MessageRepository:
             q = q.order_by(Message.created_at.desc()).limit(limit)
             return q.all()
 
+    # ── 群信息保存与复用：按群读取（列表 + 检索统一出口）──
+
+    @staticmethod
+    def query_group_messages(
+        *,
+        keyword: str = "",
+        group_ids: list[str] | None = None,
+        time_range: str = "all",
+        start: str = "",
+        end: str = "",
+        before_id: str = "",
+        limit: int = 50,
+        offset: int = 0,
+        exclude_sources: list[str] | None = None,
+    ) -> tuple[list[Message], int]:
+        """群消息的统一查询：有 keyword 即检索、无 keyword 即列表。
+
+        "群消息列表 / 跨群检索"两种读取由本方法一处实现（AC-US-17.1）；两者的
+        **唯一差别**是 keyword 是否参与 ILIKE，因此两端不可能出现口径不一致
+        （AC-US-12.4）。
+
+        Args:
+            keyword: 子串匹配关键词（与既有 chat_archive 同口径，不做语义扩召回）。
+            group_ids: 允许的群号集合；**空列表 = 不放行任何群**（fail-closed）。
+                `None` 表示不按群过滤（仅观察档使用，由调用方保证其合法性）。
+            time_range: today / week / month / all（沿用既有时间口径）。
+            start / end: 显式时间边界（ISO 字符串），优先于 time_range。
+            before_id: 游标锚点（消息 id）；以其 created_at 为界取更早的记录。
+                锚点无效时返回空页（严格语义：不静默退化为"取最新 N 条"）。
+            limit: 返回条数（调用方负责钳制上限）。
+            offset: 偏移（列表型分页用；游标回溯时置 0）。
+            exclude_sources: 需排除的来源（默认由 Service 传 ("test","ops")）。
+
+        Returns:
+            (rows 按 created_at 倒序, 过滤条件下的总数)
+        """
+        from sqlalchemy import func, or_
+
+        from ..repositories.task_repo import _resolve_time_start
+
+        if group_ids is not None and not group_ids:
+            return [], 0  # fail-closed：无允许群 → 不返回任何行
+
+        with get_session() as session:
+            q = session.query(Message)
+            if group_ids is not None:
+                q = q.filter(Message.group_id.in_(list(group_ids)))
+            else:
+                q = q.filter(Message.group_id.isnot(None))
+            if keyword:
+                q = q.filter(Message.content.ilike(f"%{keyword}%"))
+            if exclude_sources:
+                # source 为空串（历史记录）与 NULL 都不应被排除
+                q = q.filter(or_(Message.source.is_(None),
+                                 ~Message.source.in_(list(exclude_sources))))
+            if start or end:
+                if start:
+                    q = q.filter(Message.created_at >= str(start))
+                if end:
+                    q = q.filter(Message.created_at <= str(end))
+            elif time_range and time_range != "all":
+                now = datetime.now(timezone.utc)
+                ts = _resolve_time_start(time_range, now)
+                if ts:
+                    q = q.filter(Message.created_at >= ts.isoformat())
+            if before_id:
+                anchor = session.query(Message).filter(Message.id == before_id).first()
+                if anchor is None:
+                    return [], 0  # 锚点无效：如实回报空页，不退化
+                q = q.filter(Message.created_at < anchor.created_at)
+
+            total = int(q.count())
+            rows = (
+                q.order_by(Message.created_at.desc(), Message.id.desc())
+                .offset(max(0, int(offset)))
+                .limit(max(1, int(limit)))
+                .all()
+            )
+            return rows, total
+
+    @staticmethod
+    def count_messages_by_group(group_ids: list[str], *,
+                                exclude_sources: list[str] | None = None) -> dict[str, int]:
+        """"已留存消息数"按群批量统计（群列表避免 N+1）。"""
+        from sqlalchemy import func, or_
+
+        if not group_ids:
+            return {}
+        with get_session() as session:
+            q = (
+                session.query(Message.group_id, func.count(Message.id))
+                .filter(Message.group_id.in_(list(group_ids)))
+            )
+            if exclude_sources:
+                q = q.filter(or_(Message.source.is_(None),
+                                 ~Message.source.in_(list(exclude_sources))))
+            rows = q.group_by(Message.group_id).all()
+        return {gid: int(cnt) for gid, cnt in rows if gid}
+
+    @staticmethod
+    def last_active_by_group(group_ids: list[str], *,
+                             exclude_sources: list[str] | None = None) -> dict[str, str]:
+        """"最近活跃时间"按群批量统计。"""
+        from sqlalchemy import func, or_
+
+        if not group_ids:
+            return {}
+        with get_session() as session:
+            q = (
+                session.query(Message.group_id, func.max(Message.created_at))
+                .filter(Message.group_id.in_(list(group_ids)))
+            )
+            if exclude_sources:
+                q = q.filter(or_(Message.source.is_(None),
+                                 ~Message.source.in_(list(exclude_sources))))
+            rows = q.group_by(Message.group_id).all()
+        return {gid: str(ts or "") for gid, ts in rows if gid}
+
     # ── M11: 跨会话用户历史 ──
 
     @staticmethod

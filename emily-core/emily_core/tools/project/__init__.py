@@ -57,18 +57,12 @@ _FETCH_INBOX_SCHEMA = {
 }
 _FETCH_INBOX_DESCRIPTION = "获取收件箱最近邮件。需要管理员权限。"
 
-_CHAT_ARCHIVE_SCHEMA = {
-    "type": "object",
-    "properties": {
-        "action": {"type": "string", "enum": ["search", "history", "user"], "description": "search/history/user"},
-        "keyword": {"type": "string", "description": "搜索关键词（action=search 时必填）"},
-        "conversation_id": {"type": "string", "description": "会话 ID（action=history 时）"},
-        "user_name": {"type": "string", "description": "用户名（action=user 时）"},
-        "limit": {"type": "integer", "description": "返回条数，默认 20"},
-    },
-    "required": ["action"],
-}
-_CHAT_ARCHIVE_DESCRIPTION = "检索聊天记录。支持按关键词搜索、按会话/用户查询历史。"
+# chat_archive 的参数面与描述在 chat_archive_tool.py 中**唯一定义**（历史遗留的
+# "简版/完整版"两份定义已收敛）。此处仅再导出，保持既有导入路径可用。
+from ..chat_archive_tool import (  # noqa: E402  （聚合面再导出，非第二份定义）
+    _CHAT_ARCHIVE_SCHEMA,
+    _CHAT_ARCHIVE_DESCRIPTION,
+)
 
 _PENDING_ISSUE_SCHEMA = {
     "type": "object",

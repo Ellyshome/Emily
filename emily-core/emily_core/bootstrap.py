@@ -74,6 +74,7 @@ ENV_CONFIG_MAP: dict[str, str] = {
     "EMILY_LLM_CONTEXT_WINDOW_OVERRIDE": "llm_context_window_override",
     "EMILY_TAKEOVER_MODE": "takeover_mode",
     "EMILY_BOT_NAME": "bot_name",
+    "EMILY_GROUP_ROSTER_TTL_DAYS": "group_roster_ttl_days",
     "EMILY_LOG_LEVEL": "log_level",
     "EMILY_STORAGE_ROOT": "storage_root",
     "EMILY_HOOK_CONFIG_PATH": "hook_config_path",
