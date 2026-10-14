@@ -1455,7 +1455,198 @@ scripts:
         label: 仅预览
         help: 只打印待执行语料与断言分组，不发请求
 
+  # ── 群信息保存与复用（群台账 / 名册 / 群消息）────────────────────────────
+  sync_groups:
+    description: "群清单同步：拉取 bot 所在全部群并写入群台账（幂等）。人工备注不参与写入。"
+    category: group_management
+    source_path: scripts/sync_groups.py
+    invocation: uv run python scripts/sync_groups.py {args}
+    check_arg: --dry-run
+    run_args: []
+    auto_run: null
+    auto_run_args: []
+    writes_db: true
+    aggregation_parent: group_info_maintenance.py
+    status: active
+    entrypoint: null
+    timeout_seconds: 60
+    scheduling_note: "纯手动；需周期执行时由宿主机调度调用（系统内无定时机制）"
+    params:
+      - name: platform
+        type: str
+        label: 平台
+        help: 平台标识，本期仅 QQ（napcat）
+        default: napcat
+      - name: timeout
+        type: int
+        label: 平台动作超时
+        min: 1
+        max: 60
+        help: 等待薄插件返回 OneBot 动作结果的秒数
+      - name: base-url
+        type: str
+        label: 内核地址
+        help: 留空 = 默认 http://127.0.0.1:18080
+      - name: dry-run
+        type: flag
+        label: 仅预览
+        help: 只拉取并预览将写入的群清单，不写库
+
+  set_group_note:
+    description: "设置某群的人工功能备注（与平台群名分离留存；写库 + 留痕）。"
+    category: group_management
+    source_path: scripts/set_group_note.py
+    invocation: uv run python scripts/set_group_note.py {args}
+    check_arg: --dry-run
+    run_args: []
+    auto_run: null
+    auto_run_args: []
+    writes_db: true
+    aggregation_parent: null
+    status: active
+    entrypoint: null
+    timeout_seconds: 60
+    scheduling_note: "纯手动（控制台经脚本通道调用；未二次确认时自动降级为预览）"
+    params:
+      - name: group
+        type: str
+        label: 群
+        help: 备注名 / 平台群名 / 群号 任一表达
+        required: true
+        options_source: groups
+      - name: note
+        type: str
+        label: 功能备注
+        help: 这个群是干什么的（会作为群的主标识出现在群列表与检索结果里）
+        required: true
+      - name: operator-id
+        type: str
+        label: 操作人
+        help: 写入留痕的操作人
+        required: true
+        options_source: users
+      - name: dry-run
+        type: flag
+        label: 仅预览
+        help: 只预览备注变更，不写库、不留痕
+
+  refresh_group_roster:
+    description: "群成员名册刷新（人在场路径）：刷新某群或前 N 个过期群的成员名册。"
+    category: group_management
+    source_path: scripts/refresh_group_roster.py
+    invocation: uv run python scripts/refresh_group_roster.py {args}
+    check_arg: --dry-run
+    run_args: []
+    auto_run: null
+    auto_run_args: []
+    writes_db: true
+    aggregation_parent: group_info_maintenance.py
+    status: active
+    entrypoint: null
+    timeout_seconds: 300
+    scheduling_note: "纯手动；需周期执行时由宿主机调度调用（系统内无定时机制）"
+    params:
+      - name: group
+        type: str
+        label: 群
+        help: 留空 = 刷新前 N 个名册已过期的群
+        options_source: groups
+      - name: limit
+        type: int
+        label: 处理上限
+        min: 1
+        max: 200
+        help: 未指定群时的刷新群数上限（默认 50）
+      - name: operator-id
+        type: str
+        label: 操作人
+        help: 刷新留痕的操作人
+        options_source: users
+      - name: timeout
+        type: int
+        label: 单群超时
+        min: 1
+        max: 60
+        help: 单群平台动作等待秒数
+      - name: json
+        type: flag
+        label: JSON 输出
+        help: 以 JSON 输出（供机器读）
+      - name: dry-run
+        type: flag
+        label: 仅预览
+        help: 只拉取成员清单并显示条数，不写库
+
+  list_stale_rosters:
+    description: "名册过期巡检（只读）：列出超过新鲜度门槛或从未同步成功的群。"
+    category: group_management
+    source_path: scripts/list_stale_rosters.py
+    invocation: uv run python scripts/list_stale_rosters.py {args}
+    check_arg: --json
+    run_args: []
+    auto_run: null
+    auto_run_args: []
+    writes_db: false
+    aggregation_parent: group_info_maintenance.py
+    status: active
+    entrypoint: null
+    timeout_seconds: 60
+    scheduling_note: "纯手动；需周期执行时由宿主机调度调用（系统内无定时机制）"
+    params:
+      - name: limit
+        type: int
+        label: 扫描上限
+        min: 1
+        max: 2000
+        help: 参与巡检的群数上限（默认 200）
+      - name: operator-id
+        type: str
+        label: 操作人
+        help: 巡检留痕的操作人
+        options_source: users
+      - name: json
+        type: flag
+        label: JSON 输出
+        help: 以 JSON 输出（供机器读）
+
+  group_info_maintenance:
+    description: "群信息保鲜聚合薄壳：群清单同步 → 名册刷新 → 过期巡检（供外部调度一次调用）。"
+    category: group_management
+    source_path: scripts/group_info_maintenance.py
+    invocation: uv run python scripts/group_info_maintenance.py {args}
+    check_arg: --dry-run
+    run_args: []
+    auto_run: null
+    auto_run_args: []
+    writes_db: true
+    aggregation_parent: null
+    status: active
+    entrypoint: null
+    timeout_seconds: 600
+    scheduling_note: "纯手动；需周期执行时由宿主机 cron / 容器编排调度调用本脚本"
+    params:
+      - name: limit
+        type: int
+        label: 刷新群数上限
+        min: 1
+        max: 200
+        help: 单轮名册刷新的群数上限（默认 50）
+      - name: base-url
+        type: str
+        label: 内核地址
+        help: 留空 = 默认 http://127.0.0.1:18080
+      - name: dry-run
+        type: flag
+        label: 仅预览
+        help: 全链路预览，不写库
+
 aggregations:
+  group_info_maintenance.py:
+    description: 群信息保鲜聚合薄壳（群清单同步 → 名册刷新 → 过期巡检）
+    children:
+      - sync_groups
+      - refresh_group_roster
+      - list_stale_rosters
   evolution.py:
     description: 进化闭环薄聚合壳（daily / weekly / morning / validate / full）
     children:

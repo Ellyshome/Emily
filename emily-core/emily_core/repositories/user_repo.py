@@ -242,6 +242,36 @@ class UserRepository:
                 .first()
             )
 
+    @staticmethod
+    def get_bindings_by_im_ids(im_platform: str,
+                               im_user_ids: list[str]) -> dict[str, str]:
+        """批量把平台账号解析为系统用户 UUID（群成员名册的绑定解析用）。
+
+        名册一次刷新可能涉及上百成员，逐人查库会退化为 N 次查询；本方法一次取回。
+
+        Args:
+            im_platform: 平台标识（如 "napcat"）。
+            im_user_ids: 平台账号列表（QQ 号）。
+
+        Returns:
+            {im_user_id: user_id}；未绑定或绑定非 active 的账号不出现在结果里
+            （调用方据此保留平台账号、user_id 置空，不丢弃名册行）。
+        """
+        ids = [str(i or "").strip() for i in (im_user_ids or []) if str(i or "").strip()]
+        if not ids:
+            return {}
+        with get_session() as session:
+            rows = (
+                session.query(UserImBinding.im_user_id, UserImBinding.user_id)
+                .filter(
+                    UserImBinding.im_platform == im_platform,
+                    UserImBinding.im_user_id.in_(set(ids)),
+                    UserImBinding.status == "active",
+                )
+                .all()
+            )
+        return {im_user_id: user_id for im_user_id, user_id in rows if user_id}
+
     # ── M5 查询 ──
 
     @staticmethod

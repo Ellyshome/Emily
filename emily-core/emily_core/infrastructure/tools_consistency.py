@@ -57,6 +57,8 @@ REGISTERED_TOOLS: set[str] = {
     "mount_child_node", "update_nodes", "discard_nodes",
     "manage_node_participant",
     "send_email", "fetch_inbox", "chat_archive", "manage_pending_issues",
+    # 群信息保存与复用：群信息查询（列出在追踪群 / 检索群消息原文）
+    "query_groups",
 }
 
 # ── 工具名 → (display_name, category, permission_flag, exposure_mode) ──
@@ -71,6 +73,7 @@ TOOL_META_MAP: dict[str, tuple[str, str, str, str]] = {
     "send_email":         ("发送邮件",              "base",     "all",   "meta"),
     "fetch_inbox":        ("获取收件箱",            "base",     "all",   "meta"),
     "chat_archive":       ("聊天归档查询",          "base",     "all",   "meta"),
+    "query_groups":       ("群信息查询",            "base",     "all",   "meta"),
     "manage_pending_issues": ("管理待解决问题",     "base",     "all",   "meta"),
     # business — permission_flag=all → exposure_mode=meta（只读可直调）
     "query_files":        ("按分类查询项目文件", "business", "all",   "meta"),
@@ -211,7 +214,8 @@ TOOL_SCHEMA_MAP: dict[str, tuple[str, str]] = {
     "discard_nodes": ("emily_core.tools.node_tool", "_DISCARD_NODES_SCHEMA"),
     "send_email": ("emily_core.tools.project", "_SEND_EMAIL_SCHEMA"),
     "fetch_inbox": ("emily_core.tools.project", "_FETCH_INBOX_SCHEMA"),
-    "chat_archive": ("emily_core.tools.project", "_CHAT_ARCHIVE_SCHEMA"),
+    "chat_archive": ("emily_core.tools.chat_archive_tool", "_CHAT_ARCHIVE_SCHEMA"),
+    "query_groups": ("emily_core.tools.group_tool", "_QUERY_GROUPS_SCHEMA"),
     "manage_pending_issues": ("emily_core.tools.project", "_PENDING_ISSUE_SCHEMA"),
     "read_node_template": ("emily_core.tools.node_template_tool", "_READ_NODE_TEMPLATE_SCHEMA"),
     "build_node_draft": ("emily_core.tools.node_template_tool", "_BUILD_NODE_DRAFT_SCHEMA"),

@@ -3,7 +3,7 @@
 from .session import init_db, get_session, get_db_path
 from .models import (
     Base,
-    User, UserImBinding, Conversation, Message,
+    User, UserImBinding, Conversation, Message, GroupMember,
     Project, Event, Task, Meeting, File,
     CompanyInfo, ProjectIndicatorDetail,
     BusinessFlowOrder, InstructionOrder, ProjectPlan, PlanItem,
@@ -15,7 +15,7 @@ from .models import (
 __all__ = [
     "init_db", "get_session", "get_db_path",
     "Base",
-    "User", "UserImBinding", "Conversation", "Message",
+    "User", "UserImBinding", "Conversation", "Message", "GroupMember",
     "Project", "Event", "Task", "Meeting", "File",
     "CompanyInfo", "ProjectIndicatorDetail",
     "BusinessFlowOrder", "InstructionOrder", "ProjectPlan", "PlanItem",

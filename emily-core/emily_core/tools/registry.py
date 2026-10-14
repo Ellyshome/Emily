@@ -633,6 +633,11 @@ def _register_project(core, reg):
     if ca is not None:
         _pjc += _reg_chat_archive(reg, ca)
 
+    # query_groups（群信息查询：列出在追踪群 / 检索群消息原文）
+    gq = getattr(core, "_group_query_service", None)
+    if gq is not None:
+        _pjc += _reg_query_groups(reg, gq)
+
     # pending_issues
     pi = getattr(core, "_pending_issues_service", None)
     if pi is not None:
@@ -683,6 +688,33 @@ def _reg_chat_archive(reg, ca):
         return 1
     except Exception as e:
         logger.warning("chat_archive tool registration failed: %s", e)
+        return 0
+
+
+def _reg_query_groups(reg, gq):
+    """注册群信息查询工具（query_groups）。
+
+    只读（write_mode=read）、全员可用（permission_flag=all）；档位由服务层按发起者
+    身份推定，调用方无法指定（见 services/group_query_service.py）。
+
+    Args:
+        reg: BusinessFlowToolRegistry 注册表实例。
+        gq: GroupQueryService 实例（三种读取与作用域收敛的唯一实现）。
+
+    Returns:
+        int — 注册成功的工具数量（0 或 1），方便累加计数。
+    """
+    try:
+        from .group_tool import (
+            _QUERY_GROUPS_SCHEMA, _QUERY_GROUPS_DESCRIPTION, handle_query_groups,
+        )
+
+        reg.register(_tool("query_groups", _QUERY_GROUPS_DESCRIPTION, _QUERY_GROUPS_SCHEMA,
+                           handle_query_groups,
+                           category="base", permission_flag="all", write_mode="read"))
+        return 1
+    except Exception as e:
+        logger.warning("query_groups tool registration failed: %s", e)
         return 0
 
 

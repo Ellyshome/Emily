@@ -155,6 +155,50 @@ body {
 .resource-count { font-size: 12px; color: #999; }
 .resource-empty { color: #666; text-align: center; padding: 20px 0; font-size: 12px; }
 
+/* ── 群追踪（群信息保存与复用）：上下两栏 + 面板级可拖拽横向分隔条 ── */
+/* 分隔条复用 .group-resizer 的四要素范式（固定厚条 / row-resize 光标 / hover 高亮 /
+   localStorage 记忆），但用独立类名与 id —— 侧栏实例的 id 唯一，不可复用。 */
+.panel-row-resizer {
+    flex: 0 0 5px; height: 5px;
+    cursor: row-resize; background: #2a2a3e;
+    border-top: 1px solid #2a2a3e;
+}
+.panel-row-resizer:hover, .panel-row-resizer.dragging { background: #00d4ff; }
+.group-track-body { display: flex; flex-direction: column; min-height: 0; }
+.group-track-upper { min-height: 90px; max-height: 42vh; display: flex; flex-direction: column; }
+#group-track-lower { min-height: 120px; display: flex; flex-direction: column; }
+.group-track-toolbar { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; padding: 6px 0; }
+.gt-input {
+    background: #0f1626; color: #e6e6e6; border: 1px solid #2a2a3e;
+    border-radius: 4px; padding: 4px 8px; font-size: 12px; min-width: 180px;
+}
+.gt-btn {
+    background: #1f2b47; color: #cfd8ea; border: 1px solid #2a3a5e;
+    border-radius: 4px; padding: 4px 10px; font-size: 12px; cursor: pointer;
+}
+.gt-btn:hover { background: #27385c; color: #fff; }
+.gt-check { font-size: 12px; color: #9aa7bd; display: inline-flex; align-items: center; gap: 4px; }
+.gt-hint { font-size: 12px; color: #d0a24c; }
+.gt-current { font-size: 12px; color: #00d4ff; font-weight: 600; }
+.group-track-table-wrap { overflow: auto; flex: 1 1 auto; }
+#group-track-groups-tbody tr { cursor: pointer; }
+#group-track-groups-tbody tr.active { background: #1d2c4a; }
+.group-track-messages { overflow: auto; flex: 1 1 auto; padding: 4px 0; }
+.gt-msg { padding: 4px 6px; border-bottom: 1px dashed #22304d; font-size: 12px; line-height: 1.6; }
+.gt-msg .gt-meta { color: #7f8ba3; }
+.gt-msg .gt-sender { color: #9fd0ff; }
+.gt-msg .gt-body { color: #dfe6f3; white-space: pre-wrap; word-break: break-word; }
+.gt-msg .gt-att { color: #d0a24c; font-size: 11px; }
+.gt-msg .gt-att a { color: #d0a24c; }
+.gt-error { color: #ff8f8f; font-size: 12px; padding: 6px 0; }
+.group-track-sensitive {
+    background: #2a2318; border: 1px solid #4a3c1f; color: #e0c98a;
+    font-size: 12px; line-height: 1.6; padding: 6px 10px; border-radius: 4px; margin-bottom: 8px;
+}
+.gt-roster { width: 100%; border-collapse: collapse; font-size: 12px; }
+.gt-roster th, .gt-roster td { border-bottom: 1px solid #22304d; padding: 3px 6px; text-align: left; }
+.gt-roster .inactive { color: #7f8ba3; text-decoration: line-through; }
+
 /* ── 文件上传（右侧） ── */
 .upload-panel {
     background: #16213e;

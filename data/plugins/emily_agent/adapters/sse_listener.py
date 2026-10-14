@@ -41,6 +41,8 @@ class SSEListener:
         event_registry: dict | None = None,
         api_token: str = "",
         registry_ttl_seconds: float = DEFAULT_REGISTRY_TTL_SECONDS,
+        context=None,
+        api_client=None,
     ):
         """
         Args:
@@ -51,17 +53,24 @@ class SSEListener:
                        SSE 请求发送（Core 设了 token 时为空会 401）。
             registry_ttl_seconds: 映射有效期（秒），超期条目视为残留并丢弃出站；
                         <=0 表示不判废（仅调试用）。
+            context: AstrBot 插件 context —— 平台动作请求（platform_action）
+                     需用它定位平台适配器实例执行 OneBot 动作。
+            api_client: EmilyApiClient —— 平台动作执行完毕后回传结果给内核。
         """
         self.outbound = outbound
         self._event_registry = event_registry if event_registry is not None else {}
         self._api_token = api_token
         self._registry_ttl = float(registry_ttl_seconds or 0)
+        self._context = context
+        self._api_client = api_client
         self._running = False
         self._handlers = {
             "reply": self._handle_reply,
             "progress": self._handle_progress,
             "file_send": self._handle_file_send,
             "session_closed": self._handle_session_closed,
+            # 平台动作请求（内核 → 插件）：执行 OneBot 动作并回传结果
+            "platform_action": self._handle_platform_action,
         }
 
     # ── 事件注册 / 判定 ──
@@ -221,3 +230,32 @@ class SSEListener:
         conv_id = data.get("conversation_id", "")
         self._event_registry.pop(conv_id, None)
         logger.debug("SSE session_closed: conv=%s", conv_id)
+
+    async def _handle_platform_action(self, data: dict) -> None:
+        """平台动作请求 → 执行 OneBot 动作 → 回传结果给内核。
+
+        与出站投递类事件（reply/progress/file_send）无关：本事件不带会话上下文，
+        也不需要 IM event 定位，故不经过 `_lookup_event`。
+        """
+        from .astrbot.platform_ops import call_platform_action
+
+        request_id = str(data.get("request_id", "") or "")
+        action = str(data.get("action", "") or "")
+        if not request_id or not action:
+            logger.warning("SSE platform_action: missing request_id/action, dropped")
+            return
+
+        result = await call_platform_action(
+            self._context,
+            action,
+            data.get("params") or {},
+            str(data.get("platform", "") or ""),
+        )
+        if self._api_client is None:
+            logger.warning("SSE platform_action: api_client unavailable, result dropped")
+            return
+        accepted = await self._api_client.post_platform_result(
+            request_id, result.get("ok", False), result.get("data"), result.get("error", ""),
+        )
+        logger.info("SSE platform_action: action=%s ok=%s accepted=%s",
+                    action, result.get("ok"), accepted)

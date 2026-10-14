@@ -59,6 +59,8 @@ class Main(star.Star):
             event_registry=self._event_registry,
             api_token=api_token,
             registry_ttl_seconds=float(cfg.get("event_registry_ttl_seconds", 300)),
+            context=context,
+            api_client=self.api,
         )
         self._sse_url = cfg.get("emycore_sse_url", "") or self.api.get_sse_url()
 

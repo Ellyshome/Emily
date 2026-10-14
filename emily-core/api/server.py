@@ -160,6 +160,16 @@ from .routes import groups  # noqa: E402
 
 app.include_router(groups.router, prefix="/api/v1")
 
+# 平台动作回调 API（薄插件执行 OneBot 动作后回传结果，配对 PlatformActionService）
+from .routes import platform as platform_routes  # noqa: E402
+
+app.include_router(platform_routes.router, prefix="/api/v1")
+
+# 群信息保存与复用 —— 控制台「群追踪」只读视图（前缀 /api/v1/console，命中既有白名单）
+from .routes import console_groups  # noqa: E402
+
+app.include_router(console_groups.router, prefix="/api/v1")
+
 # emy-config — 配置中心（只读清单 API + 独立前端页面）
 from .routes import config as config_routes  # noqa: E402
 

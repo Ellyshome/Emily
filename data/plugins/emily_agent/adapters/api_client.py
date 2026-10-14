@@ -112,6 +112,30 @@ class EmilyApiClient:
             logger.error("sync_groups failed: %s", e)
             return {"synced": 0}
 
+    async def post_platform_result(self, request_id: str, ok: bool,
+                                   data=None, error: str = "") -> bool:
+        """回传一次平台动作的执行结果给 core。
+
+        POST /api/v1/platform/action-result
+
+        配对内核的 `platform_action` SSE 事件（见 platform_ops.call_platform_action）。
+        内核可能已超时放弃该请求，此时返回 accepted=false —— 属正常竞争，不算错误。
+        """
+        session = await self._ensure_session()
+        url = f"{self.base_url}/api/v1/platform/action-result"
+        payload = {"request_id": request_id, "ok": bool(ok), "data": data, "error": error}
+        try:
+            async with session.post(url, json=payload) as resp:
+                if resp.status != 200:
+                    text = await resp.text()
+                    logger.warning("post_platform_result %d: %s", resp.status, text[:200])
+                    return False
+                body = await resp.json()
+                return bool(body.get("accepted"))
+        except Exception as e:
+            logger.error("post_platform_result failed: %s", e)
+            return False
+
     async def health_check(self) -> dict:
         """检查 Core 健康状态。
 
