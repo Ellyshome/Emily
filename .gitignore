@@ -52,6 +52,8 @@ emily-data/napcat_qrcode.png
 emily-data/mitmproxy/mitmproxy-ca.pem
 emily-data/mitmproxy/mitmproxy-ca.p12
 emily-data/mitmproxy/mitmproxy-ca-cert.p12
+# mitmproxy CA 备份目录（含私钥，严禁入库）——通配覆盖历次备份
+emily-data/mitmproxy/_ca_backup_*/
 
 # LangGraph 检查点运行态（二进制 pickle，无版本意义）
 .langgraph_api/
