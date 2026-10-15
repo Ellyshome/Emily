@@ -31,6 +31,41 @@ body {
 .env-empty { background: #3a2f1e; color: #ff9800; }
 .env-down { background: #5c0e0e; color: #ff6b6b; }
 
+/* ── 顶部设置栏（操作人 / 交互通道 / 测试前缀）：横排、整页宽 ──
+   说明：这三项原在左侧栏纵向堆叠，占用列表高度；2026-10-15 上移为页首横向条，
+   其下依旧是「模块能力（左）| 展示（右）」两栏。字段在条内按行内组排布，
+   窄窗口下自动换行。 */
+.settings-bar {
+    flex: 0 0 auto;
+    display: flex; align-items: center; gap: 22px; flex-wrap: wrap;
+    padding: 8px 16px; background: #141c33;
+    border-bottom: 1px solid #2a2a3e;
+}
+.settings-bar .sidebar-operator {
+    flex: 0 0 auto; display: flex; align-items: center; gap: 8px;
+    padding: 0; border: 0; background: transparent;
+}
+.settings-bar .sidebar-operator label { margin: 0; white-space: nowrap; }
+.settings-bar .sidebar-operator select {
+    width: auto; min-width: 240px; max-width: 340px; padding: 5px 8px; font-size: 12px;
+}
+.settings-bar .sidebar-test {
+    flex: 1 1 auto; display: flex; align-items: center; gap: 18px; flex-wrap: wrap;
+    padding: 0; border: 0; background: transparent;
+}
+.settings-bar .sidebar-test .test-row {
+    display: flex; align-items: center; gap: 8px; margin: 0;
+}
+.settings-bar .sidebar-test .test-title { white-space: nowrap; }
+.settings-bar .sidebar-test .test-hint { margin: 0; white-space: nowrap; }
+.settings-bar .sidebar-test select {
+    width: auto; min-width: 160px; margin: 0; padding: 5px 8px; font-size: 12px;
+}
+.settings-bar .sidebar-test input[type="text"] {
+    width: 170px; margin: 0; padding: 5px 8px; font-size: 12px;
+}
+.settings-bar .test-actions { margin: 0; }
+
 /* ── 双栏布局 ── */
 .layout { flex: 1; display: flex; min-height: 0; }
 
@@ -140,13 +175,10 @@ body {
 .sidebar-group-grow .script-list { flex: 1 1 auto; min-height: 0; }
 
 /* ── 侧栏折叠 / 拖拽 ── */
-#group-modules { max-height: 42vh; min-height: 90px; }
-.group-resizer {
-    flex: 0 0 5px; height: 5px;
-    cursor: row-resize; background: #2a2a3e;
-    border-top: 1px solid #2a2a3e;
-}
-.group-resizer:hover, .group-resizer.dragging { background: #00d4ff; }
+/* 模块能力列表为侧栏唯一列表组：占满侧栏剩余高度，与窗口同高。
+ （原与「脚本测试」组上下分栏时按 42vh 封顶，脚本组拆出后不再需要封顶，
+   否则列表下方会留出大段空白。组间拖拽条 .group-resizer 随之移除。） */
+#group-modules { max-height: none; min-height: 120px; }
 .sidebar-resizer {
     flex: 0 0 5px; width: 5px;
     cursor: col-resize; background: #2a2a3e;

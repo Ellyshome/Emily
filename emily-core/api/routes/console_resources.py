@@ -3102,3 +3102,35 @@ async def personnel_prompt(req: PersonnelPromptRequest):
     if not res.get("success"):
         return _err(res.get("reason_code") or "生成失败")
     return _ok({"prompt": res.get("prompt", ""), "meta": res.get("meta", {})})
+
+
+# ══════════════════════════════════════════════════════════════════════════════
+#  资料库（数字资产管理）—— 只读首层展示
+#  数据同源同能力：复用 KnowledgeLibraryFs.list_entries（M1 仓储），
+#  本层不自写目录遍历逻辑（C13/C14）。
+# ══════════════════════════════════════════════════════════════════════════════
+
+def _list_knowledge_library() -> dict:
+    """列资料库首层（sync，由 asyncio.to_thread 包裹）。"""
+    from emily_core.services.knowledge_library import KnowledgeLibraryFs
+
+    fs = KnowledgeLibraryFs()
+    entries = fs.list_entries("")
+    return {
+        "root": str(fs.root),
+        "entries": [{"name": e["name"], "kind": e["kind"],
+                     "size": e["size"], "mtime": e["mtime"]} for e in entries],
+        "count": len(entries),
+        "empty": not entries,
+    }
+
+
+@router.get("/knowledge-library")
+async def get_knowledge_library():
+    """资料库首层目录（只读）：列出资料库首层的项目档案目录，不提供任何写操作。"""
+    try:
+        data = await asyncio.to_thread(_list_knowledge_library)
+    except Exception as ex:  # noqa: BLE001 — 资料库不可达：明确回报，不冒泡 500
+        logger.warning("console.knowledge_library failed: %s", ex)
+        return _err("资料库不可达")
+    return _ok(data)

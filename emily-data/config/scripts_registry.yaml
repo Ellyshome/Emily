@@ -949,6 +949,41 @@ scripts:
     timeout_seconds: 60
     scheduling_note: "纯手动"
 
+  ingest_knowledge_library:
+    description: "ingest_knowledge_library.py — 资料库（数字资产管理）入库：一次性遍历目标目录树，为每一层目录生成/更新索引文件（幂等覆盖，不改动任何原始资料）。"
+    category: file_api_manage
+    source_path: scripts/ingest_knowledge_library.py
+    invocation: uv run python scripts/ingest_knowledge_library.py {args}
+    check_arg: --dry-run
+    run_args: []
+    auto_run: null
+    auto_run_args: []
+    writes_db: true
+    aggregation_parent: null
+    status: active
+    entrypoint: null
+    timeout_seconds: 600
+    scheduling_note: "纯手动（无周期机制，一律人工触发）"
+    params:
+      - name: dir
+        type: str
+        label: 目标目录
+        help: 资料库内相对路径（如 H_Project）或绝对路径；留空 = 整个资料库
+        required: true
+      - name: root
+        type: str
+        label: 资料库根
+        help: 留空则按 配置 → 环境变量 → /app/knowledge_library → 开发路径 解析
+      - name: operator-id
+        type: str
+        label: 操作人
+        help: 留痕归属的操作人（取 users 表真实用户）
+        options_source: users
+      - name: dry-run
+        type: flag
+        label: 预览模式
+        help: 只输出将生成/更新的索引清单，不写任何文件
+
   self_check:
     description: "self_check.py — 系统级自检（复用 V1）。"
     category: cold_start

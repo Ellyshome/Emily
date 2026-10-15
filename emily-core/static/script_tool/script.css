@@ -1,0 +1,332 @@
+/* emy-script（Emily 脚本测试台）— 独立页样式
+ *
+ * 说明：本文件由 emy-console 的 console.css 中「页面外壳 + 侧栏 + 脚本表单/执行」
+ * 相关段落**机械抽取**而成（见 Issues 记录），使脚本台自带样式、不再依赖 /console/ 资源。
+ * 页面外壳（顶栏 / 双栏 / 侧栏 / 分组 / 列表项 / 弹窗 / 滚动条）与 emy-console 保持一致，
+ * 以便两页观感统一；控制台专属的模块面板样式（文件管理 / 节点表 / RAG / MCP 等）不在本文件内。
+ */
+
+/* ══ 抽取段：基础 / 顶栏 / 双栏布局 ══ */
+/* Emily 脚本控制台 — 适配现有看板配色方案 */
+
+* { margin: 0; padding: 0; box-sizing: border-box; }
+
+body {
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+    background: #1a1a2e;
+    color: #e0e0e0;
+    height: 100vh;
+    overflow: hidden;
+    display: flex; flex-direction: column;
+}
+
+/* ── 顶栏：真实环境 / Docker 部署实况 ── */
+.topbar {
+    flex: 0 0 auto; display: flex; align-items: center; gap: 16px;
+    padding: 8px 16px; background: #16213e;
+    border-bottom: 1px solid #2a2a3e; flex-wrap: wrap;
+}
+.topbar .brand { font-size: 15px; font-weight: 600; color: #00d4ff; white-space: nowrap; }
+.envbar {
+    display: flex; align-items: center; gap: 14px; flex-wrap: wrap;
+    font-size: 12px; color: #8a8a9a;
+}
+.env-item { white-space: nowrap; }
+.env-badge {
+    padding: 2px 8px; border-radius: 10px;
+    font-size: 11px; font-weight: 600; white-space: nowrap;
+}
+.env-prod { background: #1e3a1e; color: #4caf50; }
+.env-empty { background: #3a2f1e; color: #ff9800; }
+.env-down { background: #5c0e0e; color: #ff6b6b; }
+
+/* ── 双栏布局 ── */
+.layout { flex: 1; display: flex; min-height: 0; }
+
+/* ══ 抽取段：侧栏（操作人 / 筛选 / 底栏 / 分组） ══ */
+/* ── 侧栏 ── */
+.sidebar {
+    width: 300px; min-width: 280px;
+    background: #16213e;
+    border-right: 1px solid #2a2a3e;
+    display: flex; flex-direction: column;
+    /* 窗口过矮（固定区块 + 两个列表最小高度都放不下）时整栏自身可滚动，
+       否则末尾内容会被 body 的 overflow:hidden 直接裁掉、无法触达 */
+    overflow-y: auto; overflow-x: hidden;
+}
+/* 顶栏 / 测试设置 / 筛选 / 底栏为固定区块：不参与压缩，
+   空间不足时优先压缩下方两个列表，避免被压扁到看不清 */
+.sidebar-operator {
+    flex: 0 0 auto;
+    padding: 12px 16px;
+    border-bottom: 1px solid #2a2a3e;
+    background: #141c33;
+}
+.sidebar-operator label {
+    display: block;
+    font-size: 11px; font-weight: 600; color: #00d4ff;
+    letter-spacing: 1px; margin-bottom: 6px;
+}
+.sidebar-operator select {
+    width: 100%; padding: 8px 12px;
+    background: #1a1a2e; border: 1px solid rgba(0, 212, 255, 0.4); border-radius: 4px;
+    color: #e0e0e0; font-size: 13px;
+}
+.sidebar-operator select:focus { outline: none; border-color: #00d4ff; }
+
+/* ══ 抽取段：侧栏（筛选框 / 底栏） ══ */
+.sidebar-head {
+    flex: 0 0 auto;
+    padding: 16px;
+    border-bottom: 1px solid #2a2a3e;
+}
+.sidebar-head input {
+    width: 100%; padding: 8px 12px;
+    background: #1a1a2e; border: 1px solid #333; border-radius: 4px;
+    color: #e0e0e0; font-size: 13px;
+}
+.sidebar-head input:focus { outline: none; border-color: #00d4ff; }
+.sidebar-foot {
+    flex: 0 0 auto;
+    padding: 10px 16px;
+    border-top: 1px solid #2a2a3e;
+    font-size: 12px; color: #666;
+}
+/* 两个列表组按剩余空间分配：模块栏可被压缩（内容可滚动，缩一点无妨），
+   脚本栏保住底部最小可用高度，窗口变矮时不会退化成一条缝 */
+.sidebar-group { display: flex; flex-direction: column; flex: 0 1 auto; min-height: 0; }
+.sidebar-group-grow { flex: 1 1 0; min-height: 200px; }
+.sidebar-group + .sidebar-group { border-top: 1px solid #2a2a3e; }
+.sidebar-group-title {
+    display: flex; align-items: center; gap: 6px;
+    padding: 10px 16px 6px;
+    font-size: 12px; font-weight: 600; color: #8a8a9a; letter-spacing: 1px;
+    flex: 0 0 auto;
+    cursor: pointer; user-select: none;
+}
+.sidebar-group-title:hover { color: #00d4ff; }
+.sidebar-group-title .arrow {
+    display: inline-block; font-size: 10px; color: #666;
+    transition: transform 0.15s ease;
+}
+.sidebar-group-title .gcount {
+    margin-left: auto; font-size: 11px; color: #666; letter-spacing: 0;
+}
+.sidebar-group.collapsed .arrow { transform: rotate(-90deg); }
+.sidebar-group.collapsed .script-list { display: none; }
+.sidebar-group.collapsed { height: auto !important; max-height: none !important; min-height: 0 !important; flex: 0 0 auto !important; }
+.sidebar-group .script-list { padding: 8px; }
+.module-list { flex: 1 1 auto; min-height: 0; overflow-y: auto; }
+.sidebar-group-grow .script-list { flex: 1 1 auto; min-height: 0; }
+
+/* ══ 抽取段：侧栏折叠 / 拖拽 / 计数 ══ */
+/* ── 侧栏折叠 / 拖拽 ── */
+#group-modules { max-height: 42vh; min-height: 90px; }
+.group-resizer {
+    flex: 0 0 5px; height: 5px;
+    cursor: row-resize; background: #2a2a3e;
+    border-top: 1px solid #2a2a3e;
+}
+.group-resizer:hover, .group-resizer.dragging { background: #00d4ff; }
+.sidebar-resizer {
+    flex: 0 0 5px; width: 5px;
+    cursor: col-resize; background: #2a2a3e;
+}
+.sidebar-resizer:hover, .sidebar-resizer.dragging { background: #00d4ff; }
+.resource-count { font-size: 12px; color: #999; }
+.resource-empty { color: #666; text-align: center; padding: 20px 0; font-size: 12px; }
+
+/* ══ 抽取段：列表项与徽章 ══ */
+.script-list { flex: 1; overflow-y: auto; padding: 8px; }
+
+.script-item {
+    padding: 7px 12px; margin-bottom: 2px; border-radius: 4px;
+    cursor: pointer; border-left: 3px solid transparent;
+    display: flex; align-items: flex-start; gap: 8px;
+    font-size: 13px; line-height: 1.35;
+}
+.script-item:hover { background: rgba(0, 212, 255, 0.08); }
+.script-item.active { background: rgba(0, 212, 255, 0.15); border-left-color: #00d4ff; }
+.script-item .sidx {
+    flex: 0 0 16px; text-align: right; line-height: 18px;
+    font-size: 11px; color: #555; font-family: 'Consolas', monospace;
+}
+.script-item .stext { flex: 1; min-width: 0; }
+.script-item .sfunc {
+    color: #e0e0e0; line-height: 18px;
+    white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+.script-item .sname {
+    font-size: 11px; color: #666; margin-top: 2px;
+    font-family: 'Consolas', monospace;
+    white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+.hint { color: #666; text-align: center; padding: 40px 0; font-size: 14px; }
+
+/* ── 标签 ── */
+.badge {
+    display: inline-block; padding: 1px 6px; border-radius: 3px;
+    font-size: 11px; font-weight: 600; white-space: nowrap;
+}
+.badge-form { background: #0f3460; color: #00d4ff; }
+.badge-db { background: #5c0e0e; color: #ff6b6b; }
+.badge-check { background: #1e3a1e; color: #4caf50; }
+.badge-default { background: #2a2a3e; color: #aaa; }
+.badge-cat {
+    background: #2a2a3e; color: #999; font-size: 10px; margin-left: 4px;
+}
+
+/* ══ 抽取段：主区域 / runner / 表单 / CLI / 操作区 / 结果面板 ══ */
+/* ── 主区域 ── */
+.main { flex: 1; overflow-y: auto; padding: 24px; }
+
+.empty-state {
+    text-align: center; padding: 120px 0; color: #666;
+}
+.empty-state p { font-size: 18px; }
+.empty-state .sub { font-size: 14px; margin-top: 8px; color: #555; }
+
+.runner { max-width: 800px; }
+.runner-head {
+    display: flex; justify-content: space-between; align-items: flex-start;
+    margin-bottom: 20px; padding-bottom: 12px;
+    border-bottom: 1px solid #2a2a3e;
+}
+.runner-head h2 { font-size: 20px; color: #00d4ff; }
+.desc { color: #999; font-size: 13px; margin-top: 4px; }
+.badges { display: flex; gap: 6px; flex-wrap: wrap; }
+
+/* ── 表单 ── */
+.param-form { margin-bottom: 16px; }
+.param-group {
+    margin-bottom: 12px; padding: 10px 12px;
+    background: #1a1a2e; border-radius: 6px;
+}
+.param-group.inline-flag {
+    display: flex; align-items: center; gap: 8px;
+    padding: 6px 12px;
+}
+.param-label {
+    display: block; font-size: 13px; color: #ccc; margin-bottom: 4px;
+}
+.param-group.inline-flag .param-label { margin-bottom: 0; cursor: pointer; }
+.param-help {
+    font-size: 11px; color: #666; margin-left: 6px;
+}
+.param-required { color: #ff6b6b; margin-left: 2px; }
+
+.param-form input[type="text"],
+.param-form input[type="number"],
+.param-form select {
+    width: 100%; padding: 6px 10px;
+    background: #16213e; border: 1px solid #333; border-radius: 4px;
+    color: #e0e0e0; font-size: 13px;
+}
+.param-form input:focus,
+.param-form select:focus { outline: none; border-color: #00d4ff; }
+.param-form input[type="checkbox"] {
+    width: 16px; height: 16px; accent-color: #00d4ff;
+}
+
+.radio-group { display: flex; flex-wrap: wrap; gap: 10px; margin-top: 6px; }
+.radio-group label {
+    display: inline-flex; align-items: center; gap: 4px;
+    padding: 4px 10px; background: #16213e; border-radius: 4px;
+    border: 1px solid #333; cursor: pointer; font-size: 13px;
+}
+.radio-group label:hover { border-color: #00d4ff55; }
+.radio-group input[type="radio"] { accent-color: #00d4ff; }
+
+/* ── CLI 预览 ── */
+.cli-preview {
+    background: #0d1117; padding: 10px 14px; border-radius: 4px;
+    margin-bottom: 16px; font-size: 13px;
+}
+.cli-preview label { color: #999; font-size: 11px; display: block; margin-bottom: 4px; }
+.cli-preview code {
+    color: #00d4ff; word-break: break-all; font-family: 'Consolas', monospace;
+}
+
+/* ── 操作区 ── */
+.actions {
+    display: flex; align-items: center; gap: 12px; margin-bottom: 20px;
+}
+.btn-primary {
+    background: #0f3460; color: #fff; border: 1px solid #00d4ff;
+    padding: 8px 20px; border-radius: 4px; cursor: pointer; font-size: 14px;
+}
+.btn-primary:hover { background: #16537e; }
+.btn-primary:disabled { opacity: 0.5; cursor: not-allowed; }
+
+.btn-ghost {
+    background: transparent; color: #999; border: 1px solid #333;
+    padding: 8px 16px; border-radius: 4px; cursor: pointer; font-size: 14px;
+}
+.btn-ghost:hover { color: #e0e0e0; border-color: #555; }
+
+.btn-danger {
+    background: #5c0e0e; color: #fff; border: 1px solid #ff6b6b;
+    padding: 8px 20px; border-radius: 4px; cursor: pointer; font-size: 14px;
+}
+.btn-danger:hover { background: #7a1212; }
+
+.run-status { font-size: 13px; color: #999; margin-left: auto; }
+
+/* ── 结果面板 ── */
+.result-panel {
+    background: #16213e; border-radius: 8px; overflow: hidden;
+}
+.result-head {
+    display: flex; justify-content: space-between; align-items: center;
+    padding: 10px 16px; border-bottom: 1px solid #2a2a3e;
+}
+.result-head h3 { font-size: 14px; color: #00d4ff; }
+.result-meta { font-size: 12px; color: #999; }
+
+.result-body {
+    padding: 16px; background: #0d1117; overflow-x: auto;
+    font-family: 'Consolas', 'Courier New', monospace;
+    font-size: 13px; line-height: 1.5; white-space: pre-wrap;
+    max-height: 50vh; overflow-y: auto; min-height: 80px;
+}
+.result-body.success { color: #4caf50; }
+.result-body.error { color: #ff6b6b; }
+.result-body.preview { color: #ff9800; }
+
+/* ══ 抽取段：弹窗（写库二次确认） ══ */
+/* ── 弹窗（复用看板风格）── */
+.modal-overlay {
+    display: none; position: fixed; top: 0; left: 0; width: 100%; height: 100%;
+    background: rgba(0,0,0,0.7); z-index: 100;
+    justify-content: center; align-items: center;
+}
+.modal-overlay.active { display: flex; }
+.modal {
+    background: #16213e; border-radius: 8px; width: 560px;
+    max-height: 80vh; overflow-y: auto; padding: 20px;
+}
+.modal-header { margin-bottom: 12px; }
+.modal-header h3 { color: #ff6b6b; font-size: 16px; }
+.modal-body p { margin: 8px 0; font-size: 13px; line-height: 1.5; }
+.modal-body strong { color: #00d4ff; }
+.confirm-cmd {
+    display: block; background: #0d1117; padding: 8px 12px;
+    border-radius: 4px; font-size: 12px; color: #ff9800; margin: 8px 0;
+    word-break: break-all;
+}
+.warn { color: #ff6b6b; font-size: 13px; margin-top: 12px; }
+.modal-actions {
+    display: flex; justify-content: flex-end; gap: 10px; margin-top: 20px;
+}
+
+/* ══ 抽取段：滚动条 ══ */
+/* ── 滚动条 ── */
+::-webkit-scrollbar { width: 6px; }
+::-webkit-scrollbar-track { background: transparent; }
+::-webkit-scrollbar-thumb { background: #333; border-radius: 3px; }
+::-webkit-scrollbar-thumb:hover { background: #555; }
+
+/* ══ 抽取段：顶栏右侧跨页链接（与 emy-config 同口径）══ */
+.topbar-right { margin-left: auto; display: flex; align-items: center; gap: 12px; }
+.crosslink { color: #00d4ff; font-size: 12px; text-decoration: none; white-space: nowrap; }
+.crosslink:hover { text-decoration: underline; }

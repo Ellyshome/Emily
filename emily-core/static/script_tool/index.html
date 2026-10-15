@@ -1,0 +1,103 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>emy-script · Emily 脚本测试台</title>
+    <link rel="stylesheet" href="/script/script.css">
+</head>
+<body>
+<header class="topbar">
+    <div class="brand">emy-script · Emily 脚本测试台</div>
+    <div class="envbar" id="envbar"><span class="env-item">环境探测中…</span></div>
+    <div class="topbar-right">
+        <a class="crosslink" href="/console/" target="_blank" rel="noopener">emy-console ↗</a>
+        <a class="crosslink" href="/config/" target="_blank" rel="noopener">emy-config ↗</a>
+    </div>
+</header>
+<div class="layout">
+    <!-- 左侧：脚本清单 -->
+    <aside class="sidebar">
+        <div class="sidebar-head">
+            <input type="search" id="filter" placeholder="筛选脚本…" autocomplete="off">
+        </div>
+        <div class="sidebar-group sidebar-group-grow" id="group-scripts">
+            <div class="sidebar-group-title" data-group="scripts" title="点击折叠 / 展开">
+                <span class="arrow">▾</span>脚本测试<span class="gcount" id="group-script-count"></span>
+            </div>
+            <div id="script-list" class="script-list script-test-list">
+                <div class="hint">加载中…</div>
+            </div>
+        </div>
+        <div class="sidebar-foot">
+            <span id="script-count"></span>
+        </div>
+    </aside>
+    <div class="sidebar-resizer" id="sidebar-resizer" title="拖拽调整侧栏宽度"></div>
+
+    <!-- 右侧：参数表单 + 等效命令 + 执行结果 -->
+    <main class="main">
+        <div id="empty-state" class="empty-state">
+            <p>从左侧选择一个脚本</p>
+            <p class="sub">右侧显示功能说明与参数；写库脚本执行前需二次确认</p>
+        </div>
+
+        <section id="runner" class="runner" hidden>
+            <header class="runner-head">
+                <div>
+                    <h2 id="script-name"></h2>
+                    <p id="script-desc" class="desc"></p>
+                </div>
+                <div id="script-badges" class="badges"></div>
+            </header>
+
+            <div id="subcmd-group" class="param-group" hidden></div>
+            <form id="param-form" class="param-form"></form>
+
+            <div class="cli-preview">
+                <label>等效命令（外部）</label>
+                <code id="cli-preview">—</code>
+                <label style="margin-top:8px">内部执行脚本（内核文件）</label>
+                <code id="cli-source" style="color:#7ec699">—</code>
+            </div>
+
+            <div class="actions">
+                <button type="button" id="btn-run" class="btn-primary">执行</button>
+                <button type="button" id="btn-reset" class="btn-ghost">重置</button>
+                <span id="run-status" class="run-status"></span>
+            </div>
+
+            <section class="result-panel">
+                <div class="result-head">
+                    <h3>执行结果</h3>
+                    <div class="result-meta" id="result-meta"></div>
+                </div>
+                <pre id="result-body" class="result-body">尚未执行。</pre>
+            </section>
+        </section>
+    </main>
+</div>
+
+<!-- 写库脚本二次确认（writes_db: true 的脚本执行前必过） -->
+<div class="modal-overlay" id="confirm-overlay">
+    <div class="modal">
+        <div class="modal-header">
+            <h3>⚠ 该脚本会写入数据库</h3>
+        </div>
+        <div class="modal-body">
+            <p>脚本 <strong id="confirm-name"></strong> 声明了 <code>writes_db: true</code>，
+               将对生产数据库产生实际写入。</p>
+            <p>即将执行：</p>
+            <code class="confirm-cmd" id="confirm-cmd"></code>
+            <p class="warn">请先确认上方预览结果符合预期，再继续。</p>
+        </div>
+        <div class="modal-actions">
+            <button type="button" id="confirm-cancel" class="btn-ghost">取消</button>
+            <button type="button" id="confirm-ok" class="btn-danger">确认执行写入</button>
+        </div>
+    </div>
+</div>
+
+<script src="/script/script.js"></script>
+</body>
+</html>

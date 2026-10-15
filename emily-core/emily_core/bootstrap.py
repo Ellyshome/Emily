@@ -83,6 +83,7 @@ ENV_CONFIG_MAP: dict[str, str] = {
     "EMILY_VLM_API_KEY": "vlm_api_key",
     "EMILY_VLM_MODEL": "vlm_model",
     "EMILY_KB_ENABLED": "kb_enabled",
+    "EMILY_KNOWLEDGE_LIBRARY_DIR": "knowledge_library_dir",
     "EMILY_PROMPTS_DIR": "prompts_dir",
     "EMILY_EMBEDDING_API_URL": "embedding_api_url",
     "EMILY_EMBEDDING_API_KEY": "embedding_api_key",

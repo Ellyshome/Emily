@@ -240,6 +240,17 @@ def _register_base(core, reg):
                        category="base", permission_flag="all", write_mode="read"))
     _bc += 1
 
+    # read_knowledge_library —— 资料库结构化查阅（列目录 / 读索引 / 读文件，只读）。
+    # 与知识库检索（knowledge_search）**并存且分离**：本工具走文件访问，不经向量检索；
+    # 门槛 L3 由 handler 按线性"不低于"判定（fail-closed）；承载 SOP-013-QRY 的查阅动作。
+    from .knowledge_library_tool import (
+        handle_read_knowledge_library, _KNOWLEDGE_READ_SCHEMA, _KNOWLEDGE_READ_DESCRIPTION,
+    )
+    reg.register(_tool("read_knowledge_library", _KNOWLEDGE_READ_DESCRIPTION,
+                       _KNOWLEDGE_READ_SCHEMA, handle_read_knowledge_library,
+                       category="base", permission_flag="all", write_mode="read"))
+    _bc += 1
+
 
 # ══════════════════════════════════════════════════════════════════════════════
 # 业务工具 
@@ -458,6 +469,17 @@ def _register_business(core, reg):
                      _h("node_template_tool", "handle_build_node_draft"),
                      params=_BUILD_NODE_DRAFT_SCHEMA, category="business",
                      permission_flag="read_l4", write_mode="read")
+
+    # 资料库入库（M4b）：写索引文件，门槛 L5 由工具 handler 按线性"不低于"判定（fail-closed）；
+    # 与入库脚本（scripts/ingest_knowledge_library.py）共享 M2 服务层，两者互不调用（C9）。
+    # 承载 SOP-013-QRY 的入库动作（对话侧）。
+    from .knowledge_library_tool import (
+        handle_ingest_knowledge_library, _KNOWLEDGE_INGEST_SCHEMA,
+    )
+    _buc += _reg_biz(reg, "ingest_knowledge_library", "资料库入库（逐层生成/更新索引）",
+                     handle_ingest_knowledge_library,
+                     params=_KNOWLEDGE_INGEST_SCHEMA, category="business",
+                     permission_flag="admin", write_mode="overwrite")
 
 
 def _reg_biz(reg, name, desc, handler, params=None,

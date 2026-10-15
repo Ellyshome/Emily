@@ -1,52 +1,19 @@
-// emy-console（Emily 脚本控制台）— 前端逻辑
-// ① 加载脚本列表 → 左侧菜单渲染
-// ② 选择脚本 → 加载 params schema → 动态表单
-// ③ 表单变更 → 实时 CLI 等效命令预览
-// ④ 提交 → 校验 → 写库二次确认 → POST /api/v1/scripts/run
+// emy-console（Emily 控制台）— 前端逻辑
+//
+// 页面边界（2026-10-15 拆分）：本页只承载「模块能力」组（对话 / 文件 / 节点 / SOP / 日志 /
+// 资料库 / 人员 / 群追踪 等观察与操作面板）。原「脚本测试」组（列脚本 → 填参数 → 执行）
+// 已拆为并列的独立页 emy-script（/script/，见 static/script_tool/），本文件不再含脚本表单
+// 与执行逻辑；仅保留消息模拟器所依赖的表单渲染 renderParamGroup —— 模拟器内嵌在
+// 「日志聚合」面板中，仍是本页能力。
 
 const API = '/api/v1/scripts';
 
-let _schema = null;        // 当前脚本的 form_schema
-let _schemaSub = null;     // 当前选中的子命令（带 subcommands 的脚本）
-let _list = [];            // 全部脚本列表
 let _selectedName = null;  // 当前选中
-let _pendingValues = null; // 写库确认前暂存的表单值
 
 // 「消息模拟器」已并入「日志聚合」框架，不再出现在左侧「脚本测试」列表
 const MESSAGE_SIMULATOR_NAME = 'emytest_chat';
 
 const _optionsCache = {};  // 动态候选值缓存：source → [{value,label,note}]
-
-// ── 加载脚本列表 ──
-
-async function loadList() {
-    const display = q('#script-list');
-    try {
-        display.innerHTML = '<div class="hint">加载中…</div>';
-        const resp = await fetch(API + '/list');
-        const json = await resp.json();
-        if (json.code !== 0 || !json.data) {
-            display.innerHTML = `<div class="hint">加载失败: ${json.message || 'unknown error'}</div>`;
-            return;
-        }
-        _list = json.data.scripts || [];
-        renderList(_list);
-    } catch (e) {
-        display.innerHTML = `<div class="hint">网络错误: ${e.message}</div>`;
-    }
-}
-
-function renderList(scripts) {
-    const filter = q('#filter').value.toLowerCase();
-    const filtered = filter
-        ? scripts.filter(s => s.name.includes(filter) || s.description.toLowerCase().includes(filter))
-        : scripts;
-
-    q('#script-count').textContent = `${filtered.length} / ${scripts.length}`;
-
-    renderModuleList(filter);
-    renderScriptList(filtered);
-}
 
 function renderModuleList(filter) {
     const el = q('#module-list');
@@ -71,29 +38,8 @@ function renderModuleList(filter) {
     bindListClicks(el);
 }
 
-function renderScriptList(scripts) {
-    const el = q('#script-list');
-    const visible = scripts.filter(s => s.name !== MESSAGE_SIMULATOR_NAME);
-    q('#group-script-count').textContent = visible.length;
-    if (!visible.length) {
-        el.innerHTML = '<div class="hint">无匹配脚本</div>';
-        return;
-    }
-    el.innerHTML = visible.map((s, i) => {
-        const active = s.name === _selectedName ? ' active' : '';
-        return `<div class="script-item${active}" data-name="${s.name}">
-            <span class="sidx">${i + 1}</span>
-            <div class="stext">
-                <div class="sfunc">${escapeHtml(shortLabel(s))}</div>
-                <div class="sname">${escapeHtml(s.name)}</div>
-            </div>
-        </div>`;
-    }).join('');
-    bindListClicks(el);
-}
-
 function bindListClicks(el) {
-    // 点击选择：模块条目走 selectXxx，其余脚本走 selectScript
+    // 点击选择：模块条目走各自的 selectXxx
     el.querySelectorAll('.script-item').forEach(item => {
         item.addEventListener('click', () => {
             if (item.dataset.name === UPLOAD_ENTRY_NAME) {
@@ -132,19 +78,17 @@ function bindListClicks(el) {
                 selectPersonnel();
             } else if (item.dataset.name === GROUP_TRACK_ENTRY_NAME) {
                 selectGroupTrack();
-            } else {
-                selectScript(item.dataset.name);
+            } else if (item.dataset.name === KNOWLEDGE_LIBRARY_ENTRY_NAME) {
+                selectKnowledgeLibrary();
             }
         });
     });
 }
 
 function setActiveEntry(name) {
-    // 高亮同时作用于「模块能力」与「脚本测试」两个列表
-    [q('#module-list'), q('#script-list')].forEach(list => {
-        list.querySelectorAll('.script-item').forEach(el => {
-            el.classList.toggle('active', el.dataset.name === name);
-        });
+    // 高亮左侧「模块能力」列表（脚本列表已拆到 emy-script 页）
+    q('#module-list').querySelectorAll('.script-item').forEach(el => {
+        el.classList.toggle('active', el.dataset.name === name);
     });
     renderModuleCmd(name);
     // 统一切换面板：先隐藏全部模块面板，各 selectXxx 随后只显示自己的面板
@@ -160,163 +104,7 @@ function renderModuleCmd(name) {
     });
 }
 
-// ── 选择脚本 ──
-
-async function selectScript(name) {
-    _selectedName = name;
-    _schema = null;
-    _schemaSub = null;
-    _pendingValues = null;
-
-    // 高亮
-    setActiveEntry(name);
-
-    showEmpty(false);
-    q('#upload-panel').hidden = true;
-    q('#rag-panel').hidden = true;
-    q('#node-table-panel').hidden = true;
-    q('#logs-panel').hidden = true;
-    q('#self-check-panel').hidden = true;
-    q('#prompt-panel').hidden = true;
-    q('#llm-trace-panel').hidden = true;
-    q('#mcp-panel').hidden = true;
-    q('#sop-display-panel').hidden = true;
-    q('#panorama-nodes-panel').hidden = true;
-    q('#project-events-panel').hidden = true;
-    q('#test-cases-panel').hidden = true;
-    q('#session-archive-panel').hidden = true;
-    q('#runner').hidden = false;
-    q('#param-form').innerHTML = '<div class="hint" style="padding:20px">加载参数…</div>';
-    q('#script-name').textContent = name;
-    setRunEnabled(false);  // schema 未就绪前不允许执行
-
-    const resp = await fetch(`${API}/schema/${encodeURIComponent(name)}`);
-    const json = await resp.json();
-    if (json.code !== 0 || !json.data) {
-        q('#param-form').innerHTML = `<div class="hint">加载失败: ${json.message}</div>`;
-        return;
-    }
-
-    _schema = json.data;
-    q('#script-desc').textContent = shortLabel(_schema);
-    q('#cli-source').textContent = _schema.source_path
-        ? (_schema.source_path + (_schema.entrypoint ? `  →  ${_schema.entrypoint}` : ''))
-        : '—';
-
-    // badges
-    const badges = q('#script-badges');
-    const parts = [];
-    if ((_schema.params || []).length) parts.push('<span class="badge badge-form">参数表单</span>');
-    else parts.push('<span class="badge badge-default">默认参数</span>');
-    if (_schema.writes_db) parts.push('<span class="badge badge-db">写数据库</span>');
-    if (_schema.check_arg) parts.push(`<span class="badge badge-check">自检 ${_schema.check_arg}</span>`);
-    parts.push(`<span class="badge badge-cat">${_schema.category}</span>`);
-    parts.push(`<span class="badge badge-cat">超时 ${_schema.timeout_seconds}s</span>`);
-    badges.innerHTML = parts.join(' ');
-
-    renderSubcommandBar();
-    renderParamsForm(currentParams());
-}
-
-// ── 子命令 ──
-
-// 当前生效的参数集：带子命令的脚本用所选子命令的参数
-function currentParams() {
-    if (!_schema) return [];
-    if (_schemaSub) return _schemaSub.params || [];
-    return _schema.params || [];
-}
-
-function renderSubcommandBar() {
-    const box = q('#subcmd-group');
-    const subs = (_schema && _schema.subcommands) || [];
-
-    if (!subs.length) {
-        box.hidden = true;
-        box.innerHTML = '';
-        return;
-    }
-
-    _schemaSub = subs[0];
-    box.hidden = false;
-    box.innerHTML = `
-        <label class="param-label">动作<span class="param-required">*</span>
-            <span class="param-help">（先选动作，再填该动作的参数）</span></label>
-        <select id="subcmd-select">
-            ${subs.map(s => `<option value="${escapeAttr(s.name)}">${escapeHtml(s.label)}（${escapeHtml(s.name)}）</option>`).join('')}
-        </select>
-        <div class="param-help" id="subcmd-help" style="display:block;margin-top:6px">${escapeHtml(_schemaSub.help || '')}</div>`;
-
-    q('#subcmd-select').addEventListener('change', ev => {
-        _schemaSub = subs.find(s => s.name === ev.target.value) || subs[0];
-        q('#subcmd-help').textContent = _schemaSub.help || '';
-        renderParamsForm(currentParams());
-    });
-}
-
 // ── 渲染参数表单 ──
-
-function renderParamsForm(params) {
-    const el = q('#param-form');
-    setRunEnabled(true);  // schema 已就绪；写库脚本点击时会走二次确认
-
-    if (!params.length) {
-        // 与后端 scripts_runner.run_script 一致：无 schema 的脚本按注册表默认参数执行
-        const hasSubs = ((_schema && _schema.subcommands) || []).length > 0;
-        el.innerHTML = '<div class="hint" style="padding:16px">'
-            + (hasSubs
-                ? '该动作无需参数，直接执行即可。'
-                : '该脚本未声明参数表单，将按注册表默认参数执行。')
-            + '</div>';
-        updateCliPreview();
-        return;
-    }
-
-    // 互斥组先聚成一个 radio 组渲染，其余按声明顺序渲染
-    const groups = {};
-    const singles = [];
-    params.forEach(p => {
-        if (p.group) {
-            (groups[p.group] = groups[p.group] || []).push(p);
-        } else {
-            singles.push(p);
-        }
-    });
-
-    const html = [];
-    for (const [gname, members] of Object.entries(groups)) {
-        html.push(renderMutexGroup(gname, members));
-    }
-    singles.forEach(p => html.push(renderParamGroup(p)));
-    el.innerHTML = html.join('');
-
-    // 绑定：互斥组用 radio（name 统一为组名），其余按 id
-    Object.entries(groups).forEach(([gname, members]) => {
-        el.querySelectorAll(`input[name="group-${gname}"]`).forEach(r => {
-            r.addEventListener('change', updateCliPreview);
-        });
-    });
-    singles.forEach(p => bindParam(p, el));
-    updateCliPreview();
-    loadDynamicOptions(el, params);
-}
-
-function renderMutexGroup(gname, members) {
-    const required = members.some(m => m.required);
-    const reqMark = required ? '<span class="param-required">*</span>' : '';
-    const radios = members.map(m => `<label>
-        <input type="radio" name="group-${gname}" id="param-${m.name}" value="${m.name}">
-        ${escapeHtml(m.label)}
-    </label>`).join('');
-    const helps = members.filter(m => m.help)
-        .map(m => `${escapeHtml(m.label)} — ${escapeHtml(m.help)}`).join('；');
-    return `<div class="param-group">
-        <label class="param-label">运行模式${reqMark}
-            <span class="param-help">（互斥，只能选一项）</span></label>
-        <div class="radio-group">${radios}</div>
-        ${helps ? `<div class="param-help" style="display:block;margin-top:6px">${helps}</div>` : ''}
-    </div>`;
-}
 
 function renderParamGroup(p) {
     const reqMark = p.required ? '<span class="param-required">*</span>' : '';
@@ -393,20 +181,6 @@ function renderParamGroup(p) {
     </div>`;
 }
 
-function bindParam(p, parent) {
-    // 少选项 enum 是 radio 组，按 name 绑定
-    if (p.type === 'enum' && p.choices && p.choices.length > 0 && p.choices.length <= 6) {
-        parent.querySelectorAll(`input[name="radio-${p.name}"]`).forEach(r => {
-            r.addEventListener('change', updateCliPreview);
-        });
-        return;
-    }
-    const el = parent.querySelector(`#param-${p.name}`);
-    if (!el) return;
-    el.addEventListener('change', updateCliPreview);
-    el.addEventListener('input', updateCliPreview);
-}
-
 // ── 动态候选值（取自真实运行环境）──
 
 async function loadDynamicOptions(root, params) {
@@ -444,197 +218,13 @@ async function loadDynamicOptions(root, params) {
             + options.map(o => `<option value="${escapeAttr(o.value)}">${escapeHtml(o.label)}`
                 + `${o.note ? ' · ' + escapeHtml(o.note) : ''}</option>`).join('');
         if (p.default) sel.value = String(p.default);
-        updateCliPreview();
     }));
 }
-
-// ── 收集表单值 ──
-
-function collectValues() {
-    const params = currentParams();
-    const values = {};
-
-    // 互斥组：读组内选中的 radio，其 value 即参数名
-    const groups = {};
-    params.forEach(p => {
-        if (p.group) (groups[p.group] = groups[p.group] || []).push(p);
-    });
-    for (const gname of Object.keys(groups)) {
-        const sel = document.querySelector(`input[name="group-${gname}"]:checked`);
-        if (sel) values[sel.value] = true;
-    }
-
-    // 非组参数
-    params.forEach(p => {
-        if (p.group) return;  // 已由互斥组处理
-
-        // 少选项 enum 渲染成 radio 组，按 name 读取
-        if (p.type === 'enum' && p.choices && p.choices.length > 0 && p.choices.length <= 6) {
-            const sel = document.querySelector(`input[name="radio-${p.name}"]:checked`);
-            if (sel && sel.value !== '') values[p.name] = sel.value;
-            return;
-        }
-
-        const el = document.querySelector(`#param-${p.name}`);
-        if (!el) return;
-        if (p.type === 'flag') {
-            if (el.checked) values[p.name] = true;
-        } else if (p.type === 'int') {
-            if (el.value !== '') values[p.name] = parseInt(el.value, 10);
-        } else { // str / enum(下拉)
-            if (el.value !== '') values[p.name] = el.value;
-        }
-    });
-
-    return values;
-}
-
-// ── CLI 预览 ──
-
-function updateCliPreview() {
-    if (!_schema) {
-        q('#cli-preview').textContent = '—';
-        return;
-    }
-
-    const hasSubs = (_schema.subcommands || []).length > 0;
-    const params = currentParams();
-
-    if (!params.length && !hasSubs) {
-        // 无 schema 脚本：实际执行的是注册表 run_args 声明的默认参数
-        const args = (_schema.run_args || []).join(' ');
-        q('#cli-preview').textContent =
-            (_schema.invocation || '').replace('{args}', args).trim() || '—';
-        return;
-    }
-
-    const values = collectValues();
-    const parts = [];
-    params.forEach(p => {
-        const v = values[p.name];
-        if (v == null) return;
-        if (p.positional) { parts.unshift(String(v)); return; }
-        if (p.type === 'flag') { parts.push('--' + p.name); return; }
-        parts.push('--' + p.name, String(v));
-    });
-
-    const sub = (hasSubs && _schemaSub) ? _schemaSub.name + ' ' : '';
-    q('#cli-preview').textContent =
-        `uv run python scripts/${_schema.name}.py ${sub}${parts.join(' ')}`.trim();
-}
-
-// ── 执行 ──
-
-q('#btn-run').addEventListener('click', async () => {
-    if (!_schema) return;
-    const values = collectValues();
-
-    if (_schema.writes_db) {
-        // 写库脚本一律先确认，确认后才带 confirm_write=true 真跑
-        _pendingValues = values;
-        q('#confirm-name').textContent = _schema.name;
-        q('#confirm-cmd').textContent = q('#cli-preview').textContent;
-        q('#confirm-overlay').classList.add('active');
-        return;
-    }
-
-    await doRun(values);
-});
-
-q('#confirm-cancel').addEventListener('click', () => {
-    q('#confirm-overlay').classList.remove('active');
-    _pendingValues = null;
-    _pendingSimulatorValues = null;
-});
-
-q('#confirm-ok').addEventListener('click', async () => {
-    q('#confirm-overlay').classList.remove('active');
-    if (_pendingValues) {
-        await doRun(_pendingValues, true);
-        _pendingValues = null;
-    } else if (_pendingSimulatorValues) {
-        await runSimulator(_pendingSimulatorValues, true);
-        _pendingSimulatorValues = null;
-    }
-});
-
-async function doRun(values, confirmWrite = false) {
-    const status = q('#run-status');
-    status.textContent = '执行中…';
-
-    const elResult = q('#result-body');
-    elResult.className = 'result-body';
-    elResult.textContent = '';
-
-    const meta = q('#result-meta');
-    meta.textContent = '';
-
-    const btn = q('#btn-run');
-    btn.disabled = true;
-
-    try {
-        const resp = await fetch(`${API}/run/${encodeURIComponent(_schema.name)}`, {
-            method: 'POST',
-            headers: {'Content-Type': 'application/json'},
-            body: JSON.stringify({
-                values: values,
-                confirm_write: confirmWrite,
-                subcommand: _schemaSub ? _schemaSub.name : null,
-            }),
-        });
-        const json = await resp.json();
-
-        if (json.code !== 0 || !json.data) {
-            elResult.textContent = 'API 错误: ' + (json.message || 'unknown');
-            elResult.className = 'result-body error';
-            return;
-        }
-
-        const data = json.data;
-
-        // meta 行
-        const parts = [];
-        if (data.forced_preview) parts.push('⚠ 预览模式（未确认执行）');
-        if (data.returncode != null) parts.push(`退出码: ${data.returncode}`);
-        if (data.success) parts.push('✅ 成功');
-        else if (data.returncode != null) parts.push('❌ 失败');
-        if (data.cli_args) parts.push(`argv: ${data.cli_args.join(' ')}`);
-        meta.textContent = parts.join(' | ');
-
-        // 内容
-        const output = [];
-        if (data.stdout) output.push(data.stdout);
-        if (data.stderr) output.push('── STDERR ──\n' + data.stderr);
-        if (!data.stdout && !data.stderr) output.push(data.error || '(无输出)');
-        elResult.textContent = output.join('\n');
-
-        if (data.success) elResult.className = 'result-body success';
-        else if (data.returncode != null) elResult.className = 'result-body error';
-        else elResult.className = 'result-body';
-
-        if (data.forced_preview) elResult.className = 'result-body preview';
-
-    } catch (e) {
-        elResult.textContent = '网络错误: ' + e.message;
-        elResult.className = 'result-body error';
-    } finally {
-        btn.disabled = false;
-        status.textContent = '';
-    }
-}
-
-// ── 重置 ──
-
-q('#btn-reset').addEventListener('click', () => {
-    if (_schema) {
-        renderParamsForm(_schema.params || []);
-    }
-});
 
 // ── 筛选 ──
 
 q('#filter').addEventListener('input', () => {
-    renderList(_list);
+    renderModuleList(q('#filter').value);
 });
 
 // ── 侧栏折叠 / 拖拽 ──
@@ -644,13 +234,13 @@ document.querySelectorAll('.sidebar-group-title').forEach(title => {
     title.addEventListener('click', () => {
         const group = title.closest('.sidebar-group');
         group.classList.toggle('collapsed');
-        const key = group.id === 'group-modules' ? 'modules' : 'scripts';
-        localStorage.setItem('emy-console-collapse-' + key, group.classList.contains('collapsed') ? '1' : '0');
+        localStorage.setItem('emy-console-collapse-modules',
+            group.classList.contains('collapsed') ? '1' : '0');
     });
 });
 
 // 恢复上次折叠状态
-['modules', 'scripts'].forEach(key => {
+['modules'].forEach(key => {
     if (localStorage.getItem('emy-console-collapse-' + key) === '1') {
         const group = document.getElementById('group-' + key);
         if (group) group.classList.add('collapsed');
@@ -687,53 +277,12 @@ document.querySelectorAll('.sidebar-group-title').forEach(title => {
     const savedW = localStorage.getItem('emy-console-sidebar-width');
     if (savedW) sidebar.style.width = savedW;
 })();
-
-// 拖拽：调整模块栏高度
-(function initGroupResizer() {
-    const group = document.getElementById('group-modules');
-    const resizer = document.getElementById('group-resizer');
-    if (!group || !resizer) return;
-    resizer.addEventListener('mousedown', e => {
-        e.preventDefault();
-        const startY = e.clientY;
-        const startH = group.getBoundingClientRect().height;
-        resizer.classList.add('dragging');
-        document.body.style.cursor = 'row-resize';
-        document.body.style.userSelect = 'none';
-        const onMove = ev => {
-            const h = Math.min(window.innerHeight * 0.7, Math.max(60, startH + ev.clientY - startY));
-            group.style.maxHeight = 'none';
-            group.style.height = h + 'px';
-        };
-        const onUp = () => {
-            resizer.classList.remove('dragging');
-            document.body.style.cursor = '';
-            document.body.style.userSelect = '';
-            localStorage.setItem('emy-console-modules-height', group.style.height);
-            document.removeEventListener('mousemove', onMove);
-            document.removeEventListener('mouseup', onUp);
-        };
-        document.addEventListener('mousemove', onMove);
-        document.addEventListener('mouseup', onUp);
-    });
-    const savedH = localStorage.getItem('emy-console-modules-height');
-    if (savedH) {
-        group.style.maxHeight = 'none';
-        group.style.height = savedH;
-    }
-})();
-
 // ── 工具 ──
 
 function q(sel) { return document.querySelector(sel); }
 
 // "执行"按钮可用性：schema 就绪前（加载中/加载失败）禁用，其余放行；
 // 写库脚本不在按钮上拦，改为点击后统一弹二次确认。
-function setRunEnabled(enabled) {
-    const btn = q('#btn-run');
-    btn.disabled = !enabled;
-    btn.title = enabled ? '' : '脚本信息尚未加载完成';
-}
 function escapeHtml(s) {
     if (s == null) return '';
     const d = document.createElement('div');
@@ -745,19 +294,6 @@ function escapeAttr(s) {
 }
 // 功能名：description 约定为 "<脚本名>.py — 中文功能描述"，
 // 列表与详情标题只展示去掉重复前缀后的纯功能描述。
-function shortLabel(s) {
-    let d = (s && s.description) || '';
-    const prefix = (s && s.name ? s.name : '') + '.py';
-    if (d.startsWith(prefix)) {
-        d = d.slice(prefix.length).replace(/^\s*[—\-–]+\s*/, '');
-    }
-    return d.replace(/。\s*$/, '').trim();
-}
-function showEmpty(show) {
-    q('#empty-state').hidden = !show;
-    q('#runner').hidden = show;
-}
-
 // ── 环境信息（真实环境 / Docker 部署实况）──
 
 async function loadEnv() {
@@ -851,6 +387,8 @@ const CHAT_ENTRY_NAME = '__chat__';                       // 左侧脚本列表�
 const PERSONNEL_ENTRY_NAME = '__personnel__';             // 左侧脚本列表里的「人员管理」条目
 // 左侧「群追踪」条目：上栏 = 在追踪群列表，下栏 = 选定群通讯内容 + 跨群检索（只读）
 const GROUP_TRACK_ENTRY_NAME = '__group_track__';         // 左侧脚本列表里的「群追踪」条目
+// 左侧「资料库」条目：数字资产档案库的首层目录（只读，无写操作入口）
+const KNOWLEDGE_LIBRARY_ENTRY_NAME = '__knowledge_library__';
 
 // 右侧所有「模块能力」面板：切换条目时先全部隐藏，再显示目标面板。
 // 新增模块面板需同时登记到此处，避免切换时残留旧面板。
@@ -861,7 +399,7 @@ const MODULE_PANEL_SELECTORS = [
     '#mcp-panel', '#sop-display-panel', '#panorama-nodes-panel',
     '#project-events-panel', '#test-cases-panel',
     '#session-archive-panel', '#langgraph-tools-panel', '#channels-panel',
-    '#personnel-panel', '#group-track-panel',
+    '#personnel-panel', '#group-track-panel', '#knowledge-library-panel',
 ];
 
 function hideModulePanels() {
@@ -950,6 +488,9 @@ function reloadActiveModule() {
         case TEST_CASES_ENTRY_NAME:
             loadTestCases();
             break;
+        case KNOWLEDGE_LIBRARY_ENTRY_NAME:
+            loadKnowledgeLibrary();
+            break;
         case LANGGRAPH_TOOLS_ENTRY_NAME:
             loadLangGraphTools();
             break;
@@ -1010,6 +551,8 @@ const MODULE_ITEMS = [
       cmd: 'GET  /api/v1/console/session-archives\nGET  /api/v1/console/session-archives/{id}/content\n# emily-core/api/routes/console_resources.py' },
     { name: TEST_CASES_ENTRY_NAME, cls: 'test-cases-entry', func: '测试用例库', sub: '回归用例清单 · 点编号看用例细节',
       cmd: 'GET  /api/v1/console/test-cases\nGET  /api/v1/console/test-cases/{case_id}\n# emily-core/api/routes/console_resources.py' },
+    { name: KNOWLEDGE_LIBRARY_ENTRY_NAME, cls: 'knowledge-library-entry', func: '资料库', sub: '数字资产档案库 · 首层目录（只读）',
+      cmd: 'GET  /api/v1/console/knowledge-library\n# emily-core/api/routes/console_resources.py::get_knowledge_library' },
     { name: LANGGRAPH_TOOLS_ENTRY_NAME, cls: 'langgraph-tools-entry', func: 'LangGraph 工具', sub: 'tool_node · 已注册 BaseTool',
       cmd: 'GET  /api/v1/console/langgraph-tools\n# emily-core/api/routes/console_resources.py::get_langgraph_tools' },
     { name: CHANNEL_ENTRY_NAME, cls: 'channel-entry', func: '渠道连通性', sub: 'QQ · 企业微信 · 微信小程序',
@@ -1059,13 +602,9 @@ function canEditConfidentiality(row) {
 // 选中左侧「文件管理」条目：右侧显示文件管理面板，隐藏其他
 function selectUpload() {
     _selectedName = UPLOAD_ENTRY_NAME;
-    _schema = null;
-    _pendingValues = null;
 
     setActiveEntry(UPLOAD_ENTRY_NAME);
 
-    q('#empty-state').hidden = true;
-    q('#runner').hidden = true;
     q('#rag-panel').hidden = true;
     q('#node-table-panel').hidden = true;
     q('#logs-panel').hidden = true;
@@ -1426,13 +965,9 @@ let _ragDataLoaded = false;
 // 选中左侧「RAG 模块」条目：右侧显示 RAG 面板，隐藏其他
 function selectRag() {
     _selectedName = RAG_ENTRY_NAME;
-    _schema = null;
-    _pendingValues = null;
 
     setActiveEntry(RAG_ENTRY_NAME);
 
-    q('#empty-state').hidden = true;
-    q('#runner').hidden = true;
     q('#upload-panel').hidden = true;
     q('#node-table-panel').hidden = true;
     q('#logs-panel').hidden = true;
@@ -1571,13 +1106,9 @@ function nodeTypeHtml(t) {
 // 选中左侧「全景节点表」条目：右侧显示节点大表，隐藏其他
 function selectNodeTable() {
     _selectedName = NODE_TABLE_ENTRY_NAME;
-    _schema = null;
-    _pendingValues = null;
 
     setActiveEntry(NODE_TABLE_ENTRY_NAME);
 
-    q('#empty-state').hidden = true;
-    q('#runner').hidden = true;
     q('#upload-panel').hidden = true;
     q('#rag-panel').hidden = true;
     q('#logs-panel').hidden = true;
@@ -2099,13 +1630,9 @@ function renderNodeTable(rows) {
 
 function selectSopDisplay() {
     _selectedName = SOP_DISPLAY_ENTRY_NAME;
-    _schema = null;
-    _pendingValues = null;
 
     setActiveEntry(SOP_DISPLAY_ENTRY_NAME);
 
-    q('#empty-state').hidden = true;
-    q('#runner').hidden = true;
     q('#upload-panel').hidden = true;
     q('#rag-panel').hidden = true;
     q('#node-table-panel').hidden = true;
@@ -2174,13 +1701,9 @@ function renderSopDisplay(rows) {
 
 function selectPanoramaNodes() {
     _selectedName = PANORAMA_NODES_ENTRY_NAME;
-    _schema = null;
-    _pendingValues = null;
 
     setActiveEntry(PANORAMA_NODES_ENTRY_NAME);
 
-    q('#empty-state').hidden = true;
-    q('#runner').hidden = true;
     q('#upload-panel').hidden = true;
     q('#rag-panel').hidden = true;
     q('#node-table-panel').hidden = true;
@@ -2250,13 +1773,9 @@ function renderPanoramaNodes(rows) {
 
 function selectSessionObservatory() {
     _selectedName = SESSION_OBSERVATORY_ENTRY_NAME;
-    _schema = null;
-    _pendingValues = null;
 
     setActiveEntry(SESSION_OBSERVATORY_ENTRY_NAME);
 
-    q('#empty-state').hidden = true;
-    q('#runner').hidden = true;
     q('#upload-panel').hidden = true;
     q('#rag-panel').hidden = true;
     q('#node-table-panel').hidden = true;
@@ -2469,13 +1988,9 @@ document.querySelectorAll('#session-archive-panel th.sortable').forEach(th => {
 
 function selectTestCases() {
     _selectedName = TEST_CASES_ENTRY_NAME;
-    _schema = null;
-    _pendingValues = null;
 
     setActiveEntry(TEST_CASES_ENTRY_NAME);
 
-    q('#empty-state').hidden = true;
-    q('#runner').hidden = true;
     q('#upload-panel').hidden = true;
     q('#rag-panel').hidden = true;
     q('#node-table-panel').hidden = true;
@@ -2575,6 +2090,59 @@ async function showTestCaseDetail(caseId) {
     }
 }
 
+// ── 资料库（数字资产档案库）：首层目录只读展示 ──
+
+function selectKnowledgeLibrary() {
+    _selectedName = KNOWLEDGE_LIBRARY_ENTRY_NAME;
+
+    setActiveEntry(KNOWLEDGE_LIBRARY_ENTRY_NAME);
+
+    q('#knowledge-library-panel').hidden = false;
+
+    loadKnowledgeLibrary();
+}
+
+async function loadKnowledgeLibrary() {
+    const tbody = q('#knowledge-library-tbody');
+    const empty = q('#knowledge-library-empty');
+    const status = q('#knowledge-library-status');
+    tbody.innerHTML = '<tr><td colspan="4" class="hint">加载中…</td></tr>';
+    empty.hidden = true;
+    try {
+        const resp = await fetch(`${API_CONSOLE}/knowledge-library`);
+        const json = await resp.json();
+        if (json.code !== 0 || !json.data) {
+            tbody.innerHTML = `<tr><td colspan="4" class="hint">${escapeHtml(json.message || '资料库不可达')}</td></tr>`;
+            status.textContent = '';
+            return;
+        }
+        const d = json.data;
+        const entries = d.entries || [];
+        status.textContent = `根目录 ${d.root || '—'} · 共 ${entries.length} 项`;
+        renderKnowledgeLibrary(entries);
+    } catch (e) {
+        tbody.innerHTML = `<tr><td colspan="4" class="hint">网络错误：${escapeHtml(e.message)}</td></tr>`;
+        status.textContent = '';
+    }
+}
+
+function renderKnowledgeLibrary(entries) {
+    const tbody = q('#knowledge-library-tbody');
+    const empty = q('#knowledge-library-empty');
+    if (!entries.length) {
+        tbody.innerHTML = '';
+        empty.hidden = false;
+        return;
+    }
+    empty.hidden = true;
+    tbody.innerHTML = entries.map(e => `<tr>
+        <td>${escapeHtml(e.name || '')}${e.kind === 'dir' ? '/' : ''}</td>
+        <td>${e.kind === 'dir' ? '目录' : '文件'}</td>
+        <td>${e.kind === 'dir' ? '—' : escapeHtml(formatSize(e.size))}</td>
+        <td>${escapeHtml(e.mtime || '')}</td>
+    </tr>`).join('');
+}
+
 // ── 项目事件（统一时间线：会议/任务/文件/流转/成果/节点事件）──
 
 let _projectEventKindsLoaded = false;
@@ -2582,13 +2150,9 @@ let _projectEventKindsLoaded = false;
 // 选中左侧「项目事件」条目：右侧显示统一事件时间线，隐藏其他
 function selectProjectEvents() {
     _selectedName = PROJECT_EVENTS_ENTRY_NAME;
-    _schema = null;
-    _pendingValues = null;
 
     setActiveEntry(PROJECT_EVENTS_ENTRY_NAME);
 
-    q('#empty-state').hidden = true;
-    q('#runner').hidden = true;
     q('#upload-panel').hidden = true;
     q('#rag-panel').hidden = true;
     q('#node-table-panel').hidden = true;
@@ -2878,13 +2442,9 @@ let _logsUserMap = {};  // value -> label（用于日志行显示用户名）
 // 选中左侧「日志聚合」条目：右侧显示日志表，隐藏其他
 function selectLogs() {
     _selectedName = LOG_ENTRY_NAME;
-    _schema = null;
-    _pendingValues = null;
 
     setActiveEntry(LOG_ENTRY_NAME);
 
-    q('#empty-state').hidden = true;
-    q('#runner').hidden = true;
     q('#upload-panel').hidden = true;
     q('#rag-panel').hidden = true;
     q('#node-table-panel').hidden = true;
@@ -3059,6 +2619,20 @@ q('#simulator-run-btn').addEventListener('click', () => {
     q('#confirm-overlay').classList.add('active');
 });
 
+// 写库二次确认（消息模拟器专用；脚本台的确认弹窗随 runner 迁至 emy-script）
+q('#confirm-cancel').addEventListener('click', () => {
+    q('#confirm-overlay').classList.remove('active');
+    _pendingSimulatorValues = null;
+});
+
+q('#confirm-ok').addEventListener('click', async () => {
+    q('#confirm-overlay').classList.remove('active');
+    if (_pendingSimulatorValues) {
+        await runSimulator(_pendingSimulatorValues, true);
+        _pendingSimulatorValues = null;
+    }
+});
+
 async function runSimulator(values, confirmWrite) {
     const status = q('#simulator-status');
     const btn = q('#simulator-run-btn');
@@ -3115,13 +2689,9 @@ async function runSimulator(values, confirmWrite) {
 // 选中左侧「系统自检」条目：右侧显示自检面板，隐藏其他
 function selectSelfCheck() {
     _selectedName = SELF_CHECK_ENTRY_NAME;
-    _schema = null;
-    _pendingValues = null;
 
     setActiveEntry(SELF_CHECK_ENTRY_NAME);
 
-    q('#empty-state').hidden = true;
-    q('#runner').hidden = true;
     q('#upload-panel').hidden = true;
     q('#rag-panel').hidden = true;
     q('#node-table-panel').hidden = true;
@@ -3143,13 +2713,9 @@ function selectSelfCheck() {
 
 function selectPrompt() {
     _selectedName = PROMPT_ENTRY_NAME;
-    _schema = null;
-    _pendingValues = null;
 
     setActiveEntry(PROMPT_ENTRY_NAME);
 
-    q('#empty-state').hidden = true;
-    q('#runner').hidden = true;
     q('#upload-panel').hidden = true;
     q('#rag-panel').hidden = true;
     q('#node-table-panel').hidden = true;
@@ -3339,13 +2905,9 @@ let _llmTracePolling = true;      // 自动刷新开关
 // 选中左侧「LLM 流量」条目：右侧显示流量表，启动增量轮询
 function selectLlmTrace() {
     _selectedName = LLM_TRACE_ENTRY_NAME;
-    _schema = null;
-    _pendingValues = null;
 
     setActiveEntry(LLM_TRACE_ENTRY_NAME);
 
-    q('#empty-state').hidden = true;
-    q('#runner').hidden = true;
     q('#upload-panel').hidden = true;
     q('#rag-panel').hidden = true;
     q('#node-table-panel').hidden = true;
@@ -3600,7 +3162,9 @@ q('#test-channel').addEventListener('change', saveTestSettings);
 // ── 启动 ──
 
 loadEnv();
-loadList();
+// 左侧「模块能力」为本页主列表：脚本清单已拆到 emy-script 页，
+// 模块列表不再经脚本清单加载回调触发，直接渲染（筛选框当前值，默认空）
+renderModuleList(q('#filter').value);
 ensureGlobalUsers();
 loadTestSettings();
 
@@ -3614,13 +3178,9 @@ let _mcpProbeState = {};              // name -> { online, tool_count, tools, er
 
 function selectMcp() {
     _selectedName = MCP_ENTRY_NAME;
-    _schema = null;
-    _pendingValues = null;
 
     setActiveEntry(MCP_ENTRY_NAME);
 
-    q('#empty-state').hidden = true;
-    q('#runner').hidden = true;
     q('#upload-panel').hidden = true;
     q('#rag-panel').hidden = true;
     q('#node-table-panel').hidden = true;
@@ -3882,13 +3442,9 @@ q('#mcp-server-list').addEventListener('change', (ev) => {
 
 function selectLangGraphTools() {
     _selectedName = LANGGRAPH_TOOLS_ENTRY_NAME;
-    _schema = null;
-    _pendingValues = null;
 
     setActiveEntry(LANGGRAPH_TOOLS_ENTRY_NAME);
 
-    q('#empty-state').hidden = true;
-    q('#runner').hidden = true;
     q('#langgraph-tools-panel').hidden = false;
 
     loadLangGraphTools();
@@ -3988,13 +3544,9 @@ let _chPending = {};         // 待保存的字段改动：{ 渠道: { 字段: �
 
 function selectChannels() {
     _selectedName = CHANNEL_ENTRY_NAME;
-    _schema = null;
-    _pendingValues = null;
 
     setActiveEntry(CHANNEL_ENTRY_NAME);
 
-    q('#empty-state').hidden = true;
-    q('#runner').hidden = true;
     q('#channels-panel').hidden = false;
 
     loadChannels();
@@ -4602,13 +4154,9 @@ function chatSetStatus(text) {
 
 function selectChat() {
     _selectedName = CHAT_ENTRY_NAME;
-    _schema = null;
-    _pendingValues = null;
 
     setActiveEntry(CHAT_ENTRY_NAME);
 
-    q('#empty-state').hidden = true;
-    q('#runner').hidden = true;
     q('#chat-panel').hidden = false;
 
     renderChat();
@@ -4854,13 +4402,9 @@ let _personnelSort = { key: null, dir: 1 };
 
 function selectPersonnel() {
     _selectedName = PERSONNEL_ENTRY_NAME;
-    _schema = null;
-    _pendingValues = null;
 
     setActiveEntry(PERSONNEL_ENTRY_NAME);
 
-    q('#empty-state').hidden = true;
-    q('#runner').hidden = true;
     q('#personnel-panel').hidden = false;
 
     ensureGlobalUsers();
@@ -5182,13 +4726,9 @@ let _gtLoadingMore = false;
 
 function selectGroupTrack() {
     _selectedName = GROUP_TRACK_ENTRY_NAME;
-    _schema = null;
-    _pendingValues = null;
 
     setActiveEntry(GROUP_TRACK_ENTRY_NAME);
 
-    q('#empty-state').hidden = true;
-    q('#runner').hidden = true;
     hideModulePanels();
     q('#group-track-panel').hidden = false;
 

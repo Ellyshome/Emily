@@ -144,6 +144,12 @@ class _StaticNoCache(StaticFiles):
 if _console_static.exists():
     app.mount("/console", _StaticNoCache(directory=str(_console_static), html=True), name="console")
 
+# emy-script — 脚本测试台（原 emy-console 左侧「脚本测试」组 + 脚本表单/执行区，
+# 拆为与 emy-console 并列的独立页；资产自持，仅数据通道与 emy-console 同源）
+_script_static = Path(__file__).resolve().parent.parent / "static" / "script_tool"
+if _script_static.exists():
+    app.mount("/script", _StaticNoCache(directory=str(_script_static), html=True), name="script")
+
 # emy-config — 配置清单页（只读：字段三方对照 + 配置文件生效状态 + 差异告警）
 from .routes import config_inventory  # noqa: E402
 
