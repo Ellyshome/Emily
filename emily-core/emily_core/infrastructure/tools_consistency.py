@@ -41,6 +41,7 @@ logger = logging.getLogger("emily.infrastructure.tools_consistency")
 REGISTERED_TOOLS: set[str] = {
     # base
     "query_data", "knowledge_search", "meta_cognition_read",
+    "read_knowledge_library",
     # business
     "record_event", "record_task", "record_meeting", "record_file",
     "query_files", "update_file_category", "send_file", "write_user_memory",
@@ -52,6 +53,8 @@ REGISTERED_TOOLS: set[str] = {
     "return_node_deliverable", "query_my_nodes",
     "manage_node_file", "read_node_template", "build_node_draft",
     "update_user_level", "update_user_company", "manage_company",
+    # business — 资料库（数字资产管理）入库：写索引文件，L5 门槛在 handler 内判定
+    "ingest_knowledge_library",
     # project
     "create_node", "query_node", "update_node_progress", "add_node_dependency",
     "mount_child_node", "update_nodes", "discard_nodes",
@@ -74,6 +77,8 @@ TOOL_META_MAP: dict[str, tuple[str, str, str, str]] = {
     "fetch_inbox":        ("获取收件箱",            "base",     "all",   "meta"),
     "chat_archive":       ("聊天归档查询",          "base",     "all",   "meta"),
     "query_groups":       ("群信息查询",            "base",     "all",   "meta"),
+    # 资料库查阅（M5）：只读，门槛 L3 在 handler 内按线性语义判定（fail-closed）
+    "read_knowledge_library": ("查阅资料库（列目录/读索引/读文件）", "base", "all", "meta"),
     "manage_pending_issues": ("管理待解决问题",     "base",     "all",   "meta"),
     # business — permission_flag=all → exposure_mode=meta（只读可直调）
     "query_files":        ("按分类查询项目文件", "business", "all",   "meta"),
@@ -125,6 +130,8 @@ TOOL_META_MAP: dict[str, tuple[str, str, str, str]] = {
     # read_l4 → L4 条线负责人及以上可读（模板库读取门槛）
     "read_node_template":    ("读取参考模板库",  "business", "read_l4", "sop_only"),
     "build_node_draft":      ("按模板装配草稿",  "business", "read_l4", "sop_only"),
+    # 资料库入库（M4b）：写操作 + L5 门槛（与承载 SOP-013-QRY 的入库动作同口径）
+    "ingest_knowledge_library": ("资料库入库（逐层生成/更新索引）", "business", "admin", "sop_only"),
 }
 
 # ── 工具名 → write_mode（M2 静态参考，供 scripts/check_fallback_tools.py 交叉校验）──
@@ -168,6 +175,8 @@ TOOL_WRITE_MODE_MAP: dict[str, str] = {
     "update_user_level": "transition",
     "update_user_company": "transition",
     "manage_company": "delete",
+    # 资料库入库：逐层覆盖写索引文件（幂等），不改动原始资料
+    "ingest_knowledge_library": "overwrite",
 }
 
 # ── 工具名 → (模块路径, schema 变量名) ─────────────────────────────
@@ -219,6 +228,9 @@ TOOL_SCHEMA_MAP: dict[str, tuple[str, str]] = {
     "manage_pending_issues": ("emily_core.tools.project", "_PENDING_ISSUE_SCHEMA"),
     "read_node_template": ("emily_core.tools.node_template_tool", "_READ_NODE_TEMPLATE_SCHEMA"),
     "build_node_draft": ("emily_core.tools.node_template_tool", "_BUILD_NODE_DRAFT_SCHEMA"),
+    # 资料库（数字资产管理）：查阅（M5）/ 入库（M4b），同模块骨架
+    "read_knowledge_library": ("emily_core.tools.knowledge_library_tool", "_KNOWLEDGE_READ_SCHEMA"),
+    "ingest_knowledge_library": ("emily_core.tools.knowledge_library_tool", "_KNOWLEDGE_INGEST_SCHEMA"),
 }
 
 

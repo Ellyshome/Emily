@@ -146,6 +146,13 @@ class Config:
     kb_local_fallback_dir: str = ""
     """本地知识库目录（为空时默认 项目资料/）"""
 
+    # ── 资料库（数字资产管理）──
+    knowledge_library_dir: str = ""
+    """资料库根目录路径（为空时走多级回退：环境变量 EMILY_KNOWLEDGE_LIBRARY_DIR →
+    /app/knowledge_library → emily-data/knowledge_library）。
+    资料库与 RAG 检索源（baseknowledge / company_policies）**物理分离**，
+    且**不**注册为检索源（见 services/knowledge_library/library_fs.py）。"""
+
     # ---- VLM 视觉大模型（OCR）----
     vlm_api_url: str = "https://api.siliconflow.cn/v1/chat/completions"
     """VLM API 地址"""
