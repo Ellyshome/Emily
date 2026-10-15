@@ -90,3 +90,6 @@ Thumbs.db
 
 # Zaemit AI tool config (auto-generated)
 .mcp.json
+
+# 项目文件
+emily-data/knowledge_library/
