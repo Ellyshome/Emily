@@ -251,6 +251,16 @@ def _register_base(core, reg):
                        category="base", permission_flag="all", write_mode="read"))
     _bc += 1
 
+    # officeCLI —— Office 文件读取基座工具（Word/Excel/PPT）。
+    # 由 emily-core 镜像构建时安装的单文件二进制提供；供 SOP-015-QRY 读取用户提交的苗木表。
+    from .office_cli_tool import (
+        handle_office_cli, _OFFICE_CLI_SCHEMA, _OFFICE_CLI_DESCRIPTION,
+    )
+    reg.register(_tool("officeCLI", _OFFICE_CLI_DESCRIPTION, _OFFICE_CLI_SCHEMA,
+                       handle_office_cli, category="base", permission_flag="all",
+                       write_mode="read"))
+    _bc += 1
+
 
 # ══════════════════════════════════════════════════════════════════════════════
 # 业务工具 
@@ -327,6 +337,17 @@ def _register_business(core, reg):
                      partial(_h("file_tool", "handle_send_file"),
                              file_manager=core._file_manager),
                      params=_SEND_FILE_SCHEMA, category="business", permission_flag="all")
+
+    # download_video — 公开视频下载（能力定位为基座，但按业务写工具注册以复用
+    # L3+ 权限过滤；承载 SOP-014-FILE，工具 handler 内另有 check_min_level(3) 兜底）
+    from .video_download_tool import (
+        handle_download_video, _VIDEO_DOWNLOAD_SCHEMA, _VIDEO_DOWNLOAD_DESCRIPTION,
+    )
+    _buc += _reg_biz(reg, "download_video", _VIDEO_DOWNLOAD_DESCRIPTION,
+                     partial(handle_download_video,
+                             file_manager=core._file_manager),
+                     params=_VIDEO_DOWNLOAD_SCHEMA, category="business",
+                     permission_flag="write", write_mode="append")
 
     # M4: 文件关联与版本 (4 tools)
     _buc += _reg_biz(reg, "link_file", "关联文件到业务对象",

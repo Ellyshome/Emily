@@ -6,6 +6,7 @@ INSERT INTO tool_registry (id, signature, display_name, category, permission_fla
 ('query_data',         '{}', '查询企业数据',     'base', 'all',   'meta', '', true, '2026-07-24T00:00:00', '2026-07-24T00:00:00'),
 ('knowledge_search',   '{}', '知识库搜索',       'base', 'all',   'meta', '', true, '2026-07-24T00:00:00', '2026-07-24T00:00:00'),
 ('meta_cognition_read','{}', '三书全文按需检索', 'base', 'all',   'meta', '', true, '2026-07-24T00:00:00', '2026-07-24T00:00:00'),
+('officeCLI',          '{}', 'Office 文件读取',   'base', 'all',   'meta', '', true, '2026-10-19T00:00:00', '2026-10-19T00:00:00'),
 -- business — permission_flag=all → exposure_mode=meta（只读可直调）
 ('query_files',        '{}', '查询文件',         'business', 'all',   'meta', '', true, '2026-07-24T00:00:00', '2026-07-24T00:00:00'),
 ('send_file',          '{}', '发送已有文件',     'business', 'all',   'meta', '', true, '2026-07-26T00:00:00', '2026-07-26T00:00:00'),

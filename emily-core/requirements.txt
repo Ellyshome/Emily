@@ -34,3 +34,6 @@ tenacity>=8.2.0                        # 细粒度重试（langgraph 传递依�
 
 # ── MCP 扩展（外部工具接入）──
 mcp>=1.19.0,<2                         # Model Context Protocol 客户端 SDK（stdio / sse / streamable-http）
+
+# ── 媒体下载（公开视频，SOP-014-FILE）──
+yt-dlp>=2025.1.0                       # 公开视频解析与下载；优先单文件 mp4，避免依赖 ffmpeg

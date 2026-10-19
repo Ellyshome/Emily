@@ -8,8 +8,30 @@ WORKDIR /app
 ARG APT_MIRROR=mirrors.aliyun.com
 RUN sed -i "s|deb.debian.org|${APT_MIRROR}|g" /etc/apt/sources.list.d/debian.sources \
     && apt-get update && apt-get install -y --no-install-recommends \
-    ghostscript poppler-utils \
+    ghostscript poppler-utils curl ca-certificates libstdc++6 \
     && rm -rf /var/lib/apt/lists/*
+
+# OfficeCLI —— 单文件二进制（Word/Excel/PPT 读取），供 SOP-015-QRY 苗木表审核
+# 版本固定；优先官方镜像站，失败回退 GitHub Releases；下载后按 SHA256SUMS 校验。
+ARG OFFICECLI_VERSION=1.0.157
+RUN set -eux; \
+    arch="$(uname -m)"; \
+    case "$arch" in \
+      x86_64|amd64) asset="officecli-linux-x64" ;; \
+      aarch64|arm64) asset="officecli-linux-arm64" ;; \
+      *) echo "unsupported architecture: $arch" >&2; exit 1 ;; \
+    esac; \
+    mirror="https://d.officecli.ai/releases/download/v${OFFICECLI_VERSION}"; \
+    github="https://github.com/iOfficeAI/OfficeCLI/releases/download/v${OFFICECLI_VERSION}"; \
+    curl -fsSL --retry 3 --connect-timeout 20 --max-time 300 "${mirror}/${asset}" -o "/tmp/${asset}" \
+      || curl -fsSL --retry 3 --connect-timeout 20 --max-time 300 "${github}/${asset}" -o "/tmp/${asset}"; \
+    curl -fsSL --retry 3 --connect-timeout 20 --max-time 300 "${mirror}/SHA256SUMS" -o /tmp/officecli-SHA256SUMS \
+      || curl -fsSL --retry 3 --connect-timeout 20 --max-time 300 "${github}/SHA256SUMS" -o /tmp/officecli-SHA256SUMS; \
+    tr -d '\r' < /tmp/officecli-SHA256SUMS > /tmp/officecli-SHA256SUMS.clean; \
+    (cd /tmp && grep "  ${asset}$" officecli-SHA256SUMS.clean | sha256sum -c -); \
+    install -m 0755 "/tmp/${asset}" /usr/local/bin/officecli; \
+    rm -f "/tmp/${asset}" /tmp/officecli-SHA256SUMS /tmp/officecli-SHA256SUMS.clean; \
+    officecli --version
 
 # 安装 Python 依赖（默认使用阿里云 PyPI 镜像加速）
 ARG PIP_INDEX=https://mirrors.aliyun.com/pypi/simple/

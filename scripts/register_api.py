@@ -82,6 +82,7 @@ _TOOL_SCRIPTS = [
     # base
     ("query_data", "emily_core.tools.query_tool", "_QUERY_TOOL_SCHEMA", "查询项目数据", "base", "all"),
     ("knowledge_search", "emily_core.tools.knowledge_search_tool", "_KNOWLEDGE_SEARCH_SCHEMA", "搜索知识库获取领域知识", "base", "all"),
+    ("officeCLI", "emily_core.tools.office_cli_tool", "_OFFICE_CLI_SCHEMA", "Office 文件读取（基座工具）", "base", "all"),
     # business — 4 个核心 CRUD
     ("record_event", "emily_core.tools.event_tool", "_EVENT_TOOL_SCHEMA", "记录项目事件", "business", "write"),
     ("record_task", "emily_core.tools.task_tool", "_TASK_TOOL_SCHEMA", "创建任务", "business", "write"),

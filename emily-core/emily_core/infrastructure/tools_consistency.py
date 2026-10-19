@@ -41,7 +41,7 @@ logger = logging.getLogger("emily.infrastructure.tools_consistency")
 REGISTERED_TOOLS: set[str] = {
     # base
     "query_data", "knowledge_search", "meta_cognition_read",
-    "read_knowledge_library",
+    "read_knowledge_library", "officeCLI", "download_video",
     # business
     "record_event", "record_task", "record_meeting", "record_file",
     "query_files", "update_file_category", "send_file", "write_user_memory",
@@ -79,6 +79,10 @@ TOOL_META_MAP: dict[str, tuple[str, str, str, str]] = {
     "query_groups":       ("群信息查询",            "base",     "all",   "meta"),
     # 资料库查阅（M5）：只读，门槛 L3 在 handler 内按线性语义判定（fail-closed）
     "read_knowledge_library": ("查阅资料库（列目录/读索引/读文件）", "base", "all", "meta"),
+    # officeCLI：Office 文件读取基座工具（Word/Excel/PPT），随 emily-core 镜像安装
+    "officeCLI":          ("Office 文件读取（基座工具）", "base", "all", "meta"),
+    # 视频下载（yt-dlp）：基座能力，按业务写工具注册（L3+ / SOP-014-FILE）
+    "download_video":     ("下载公开视频（yt-dlp）", "business", "write", "sop_only"),
     "manage_pending_issues": ("管理待解决问题",     "base",     "all",   "meta"),
     # business — permission_flag=all → exposure_mode=meta（只读可直调）
     "query_files":        ("按分类查询项目文件", "business", "all",   "meta"),
@@ -177,6 +181,8 @@ TOOL_WRITE_MODE_MAP: dict[str, str] = {
     "manage_company": "delete",
     # 资料库入库：逐层覆盖写索引文件（幂等），不改动原始资料
     "ingest_knowledge_library": "overwrite",
+    # 视频下载：新增一个归档文件（写文件库）
+    "download_video": "append",
 }
 
 # ── 工具名 → (模块路径, schema 变量名) ─────────────────────────────
@@ -224,6 +230,7 @@ TOOL_SCHEMA_MAP: dict[str, tuple[str, str]] = {
     "send_email": ("emily_core.tools.project", "_SEND_EMAIL_SCHEMA"),
     "fetch_inbox": ("emily_core.tools.project", "_FETCH_INBOX_SCHEMA"),
     "chat_archive": ("emily_core.tools.chat_archive_tool", "_CHAT_ARCHIVE_SCHEMA"),
+    "download_video": ("emily_core.tools.video_download_tool", "_VIDEO_DOWNLOAD_SCHEMA"),
     "query_groups": ("emily_core.tools.group_tool", "_QUERY_GROUPS_SCHEMA"),
     "manage_pending_issues": ("emily_core.tools.project", "_PENDING_ISSUE_SCHEMA"),
     "read_node_template": ("emily_core.tools.node_template_tool", "_READ_NODE_TEMPLATE_SCHEMA"),
@@ -231,6 +238,8 @@ TOOL_SCHEMA_MAP: dict[str, tuple[str, str]] = {
     # 资料库（数字资产管理）：查阅（M5）/ 入库（M4b），同模块骨架
     "read_knowledge_library": ("emily_core.tools.knowledge_library_tool", "_KNOWLEDGE_READ_SCHEMA"),
     "ingest_knowledge_library": ("emily_core.tools.knowledge_library_tool", "_KNOWLEDGE_INGEST_SCHEMA"),
+    # OfficeCLI：Office 文件读取基座工具（Word/Excel/PPT）
+    "officeCLI": ("emily_core.tools.office_cli_tool", "_OFFICE_CLI_SCHEMA"),
 }
 
 
