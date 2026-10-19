@@ -266,6 +266,20 @@ class SessionAgent:
         # 暂存到实例，供 _split_into_workitems 和 scheduler 使用
         self._current_actor = actor_snapshot
 
+        # ── 当前消息附件清单注入（QQ/控制台上传的文件与图片）──
+        # 清单由 EmilyCore.handle_message 在进入会话前生成；这里拼进当前用户消息，
+        # 使意图识别、WorkItem 执行和归档都能看到文件名/file_no/本地路径。
+        _manifest = getattr(message, "attachment_manifest", None) or []
+        if _manifest:
+            try:
+                from ..services.attachment_downloader import format_attachment_manifest
+                _att_text = format_attachment_manifest(_manifest)
+                if _att_text and _att_text not in (message.content or ""):
+                    message.content = f"{message.content or ''}\n\n{_att_text}".strip()
+            except Exception as e:  # noqa: BLE001
+                logger.warning("Session[%s] attachment manifest render failed: %s",
+                               self.conversation_id, e)
+
         # ── 群聊 DB 回溯上下文（非阻断）──
         self._group_context = ""
         if (message.conversation_type == "group"

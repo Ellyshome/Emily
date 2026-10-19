@@ -83,8 +83,12 @@ _TOOL_SCRIPTS = [
     ("query_data", "emily_core.tools.query_tool", "_QUERY_TOOL_SCHEMA", "查询项目数据", "base", "all"),
     ("knowledge_search", "emily_core.tools.knowledge_search_tool", "_KNOWLEDGE_SEARCH_SCHEMA", "搜索知识库获取领域知识", "base", "all"),
     ("officeCLI", "emily_core.tools.office_cli_tool", "_OFFICE_CLI_SCHEMA", "Office 文件读取（基座工具）", "base", "all"),
+    ("resolve_file_path", "emily_core.tools.attachment_tool", "_RESOLVE_SCHEMA", "解析文件路径（file_no→本地路径）", "base", "all"),
+    ("read_library_file", "emily_core.tools.library_file_tool", "_READ_SCHEMA", "读取资料库文件", "base", "all"),
+    ("send_library_file", "emily_core.tools.library_file_tool", "_SEND_SCHEMA", "发送资料库文件", "base", "all"),
     # business — 4 个核心 CRUD
     ("record_event", "emily_core.tools.event_tool", "_EVENT_TOOL_SCHEMA", "记录项目事件", "business", "write"),
+    ("site_report", "emily_core.tools.site_report_tool", "_SITE_REPORT_SCHEMA", "完工上报（事件+节点归属）", "business", "write_l2"),
     ("record_task", "emily_core.tools.task_tool", "_TASK_TOOL_SCHEMA", "创建任务", "business", "write"),
     ("record_meeting", "emily_core.tools.meeting_tool", "_MEETING_TOOL_SCHEMA", "归档会议纪要", "business", "write"),
     ("record_file", "emily_core.tools.file_tool", "_FILE_TOOL_SCHEMA", "记录文件元数据", "business", "write"),
@@ -102,6 +106,7 @@ _TOOL_SCRIPTS = [
     # project — 全景节点 8 个
     ("create_node", "emily_core.tools.node_tool", "_CREATE_NODE_SCHEMA", "创建全景节点", "project", "admin"),
     ("query_node", "emily_core.tools.node_tool", "_QUERY_NODE_SCHEMA", "查询全景节点", "project", "admin"),
+    ("query_nodes", "emily_core.tools.node_query_tool", "_QUERY_NODES_SCHEMA", "按项目/条线查询节点状态", "project", "admin"),
     ("update_node_progress", "emily_core.tools.node_tool", "_UPDATE_PROGRESS_SCHEMA", "更新节点进度", "project", "admin"),
     ("add_node_dependency", "emily_core.tools.node_tool", "_ADD_DEPENDENCY_SCHEMA", "添加节点依赖", "project", "admin"),
     ("mount_child_node", "emily_core.tools.node_tool", "_MOUNT_CHILD_SCHEMA", "挂载子节点", "project", "admin"),

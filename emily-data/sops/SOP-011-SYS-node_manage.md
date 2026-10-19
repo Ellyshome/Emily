@@ -67,17 +67,20 @@
 
 ### 3.3 可调用工具
 
-**① 节点管理核心工具（7 个；`category=project` / `permission_flag=admin` → 仅 L5+ 可见）**
+**① 节点管理核心工具（8 个；`category=project` / `permission_flag=admin` → 仅 L5+ 可见）**
 
 | 工具名 | 用途 | 关键参数（`*` = 必填） |
 |--------|------|----------------------|
 | `create_node` | 创建全景节点（单节点 / 批量） | `project_id`*、`node_id`*、`node_name`*、`deadline`*、`remark`、`node_type`、`deliverables[]`*（**至少一条必需成果**）、`nodes[]`（批量模式） |
 | `query_node` | 查询节点详情（状态/进度/成果/依赖） | `node_id`* |
+| `query_nodes` | 按项目/主责单位/状态/关键词查询节点，并计算是否超时 | `project_id` / `project_name`、`company_id` / `company_name`、`status`、`keyword`、`overdue_only`、`limit` |
 | `update_node_progress` | 更新成果进度（**自动触发状态机重算**） | `deliverable_id`*、`current_amount`*、`file_id` |
 | `add_node_dependency` | 添加前置依赖（BFS 循环检测 + 权重阻塞） | `node_id`*、`depends_on_deliverable_id`*、`weight` |
 | `mount_child_node` | 挂载父子节点关系（**里程碑不得挂任务之下**；深度安全上限检测） | `parent_node_id`*、`child_node_id`*、`child_weight` |
 | `update_nodes` | 批量更新节点字段 | `updates`* |
 | `discard_nodes` | 批量废弃节点（**软删除**，非物理删除） | `node_ids`* |
+
+> 查“某项目/某条线哪些节点已启动、哪些已超时”用 `query_nodes`：按 `project_name` + `company_name`/`keyword` 过滤，`overdue_only=true` 只看超时；输出含状态、截止时间、主责单位、成果齐备情况和超时天数。`query_node` 只用于已知 `node_id` 的详情查询。
 
 **② 任务 / 成果子流程工具（5 个；`category=business`）**
 

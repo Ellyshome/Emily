@@ -7,6 +7,9 @@ INSERT INTO tool_registry (id, signature, display_name, category, permission_fla
 ('knowledge_search',   '{}', '知识库搜索',       'base', 'all',   'meta', '', true, '2026-07-24T00:00:00', '2026-07-24T00:00:00'),
 ('meta_cognition_read','{}', '三书全文按需检索', 'base', 'all',   'meta', '', true, '2026-07-24T00:00:00', '2026-07-24T00:00:00'),
 ('officeCLI',          '{}', 'Office 文件读取',   'base', 'all',   'meta', '', true, '2026-10-19T00:00:00', '2026-10-19T00:00:00'),
+('resolve_file_path',  '{}', '解析文件路径',     'base', 'all',   'meta', '', true, '2026-10-19T00:00:00', '2026-10-19T00:00:00'),
+('read_library_file',  '{}', '读取资料库文件',   'base', 'all',   'meta', '', true, '2026-10-19T00:00:00', '2026-10-19T00:00:00'),
+('send_library_file',  '{}', '发送资料库文件',   'base', 'all',   'meta', '', true, '2026-10-19T00:00:00', '2026-10-19T00:00:00'),
 -- business — permission_flag=all → exposure_mode=meta（只读可直调）
 ('query_files',        '{}', '查询文件',         'business', 'all',   'meta', '', true, '2026-07-24T00:00:00', '2026-07-24T00:00:00'),
 ('send_file',          '{}', '发送已有文件',     'business', 'all',   'meta', '', true, '2026-07-26T00:00:00', '2026-07-26T00:00:00'),
@@ -15,6 +18,7 @@ INSERT INTO tool_registry (id, signature, display_name, category, permission_fla
 ('write_user_memory',  '{}', '写入用户记忆',     'business', 'all',   'meta', '', true, '2026-07-24T00:00:00', '2026-07-24T00:00:00'),
 -- business — permission_flag=write → exposure_mode=sop_only（写操作默认走专属SOP）
 ('record_event',       '{}', '记录事件',         'business', 'write', 'sop_only', '', true, '2026-07-24T00:00:00', '2026-07-24T00:00:00'),
+('site_report',        '{}', '完工上报',         'business', 'write_l2', 'sop_only', '', true, '2026-10-19T00:00:00', '2026-10-19T00:00:00'),
 ('record_task',        '{}', '记录任务',         'business', 'write', 'sop_only', '', true, '2026-07-24T00:00:00', '2026-07-24T00:00:00'),
 ('record_meeting',     '{}', '记录会议',         'business', 'write', 'sop_only', '', true, '2026-07-24T00:00:00', '2026-07-24T00:00:00'),
 ('record_file',        '{}', '记录文件',         'business', 'write', 'sop_only', '', true, '2026-07-24T00:00:00', '2026-07-24T00:00:00'),
@@ -44,6 +48,7 @@ INSERT INTO tool_registry (id, signature, display_name, category, permission_fla
 -- project（仅 L5-L6 管理员，permission_flag=admin → exposure_mode=sop_only）
 ('create_node',         '{}', '创建节点',         'project', 'admin', 'sop_only', '', true, '2026-07-24T00:00:00', '2026-07-24T00:00:00'),
 ('query_node',          '{}', '查询节点详情',     'project', 'admin', 'sop_only', '', true, '2026-07-24T00:00:00', '2026-07-24T00:00:00'),
+('query_nodes',         '{}', '按项目/条线查询节点状态', 'project', 'admin', 'sop_only', '', true, '2026-10-19T00:00:00', '2026-10-19T00:00:00'),
 ('update_node_progress','{}', '更新节点进度',     'project', 'admin', 'sop_only', '', true, '2026-07-24T00:00:00', '2026-07-24T00:00:00'),
 ('add_node_dependency', '{}', '添加节点依赖',     'project', 'admin', 'sop_only', '', true, '2026-07-24T00:00:00', '2026-07-24T00:00:00'),
 ('mount_child_node',    '{}', '挂载子节点',       'project', 'admin', 'sop_only', '', true, '2026-07-24T00:00:00', '2026-07-24T00:00:00'),

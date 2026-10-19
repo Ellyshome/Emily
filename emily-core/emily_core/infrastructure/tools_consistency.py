@@ -41,9 +41,11 @@ logger = logging.getLogger("emily.infrastructure.tools_consistency")
 REGISTERED_TOOLS: set[str] = {
     # base
     "query_data", "knowledge_search", "meta_cognition_read",
-    "read_knowledge_library", "officeCLI", "download_video",
+    "read_knowledge_library", "officeCLI", "resolve_file_path",
+    "read_library_file", "send_library_file", "download_video",
     # business
     "record_event", "record_task", "record_meeting", "record_file",
+    "site_report",
     "query_files", "update_file_category", "send_file", "write_user_memory",
     "link_file", "new_file_version", "delete_file", "list_file_versions",
     "link_to_master", "unlink_attachment", "list_attachments",
@@ -56,7 +58,7 @@ REGISTERED_TOOLS: set[str] = {
     # business — 资料库（数字资产管理）入库：写索引文件，L5 门槛在 handler 内判定
     "ingest_knowledge_library",
     # project
-    "create_node", "query_node", "update_node_progress", "add_node_dependency",
+    "create_node", "query_node", "query_nodes", "update_node_progress", "add_node_dependency",
     "mount_child_node", "update_nodes", "discard_nodes",
     "manage_node_participant",
     "send_email", "fetch_inbox", "chat_archive", "manage_pending_issues",
@@ -81,6 +83,11 @@ TOOL_META_MAP: dict[str, tuple[str, str, str, str]] = {
     "read_knowledge_library": ("查阅资料库（列目录/读索引/读文件）", "base", "all", "meta"),
     # officeCLI：Office 文件读取基座工具（Word/Excel/PPT），随 emily-core 镜像安装
     "officeCLI":          ("Office 文件读取（基座工具）", "base", "all", "meta"),
+    # resolve_file_path：file_no → 本地路径（当前消息附件/有权限文件）
+    "resolve_file_path":  ("解析文件路径（file_no→本地路径）", "base", "all", "meta"),
+    # 资料库文件现读/现发（Office 用 officeCLI；不做批量 RAG）
+    "read_library_file":  ("读取资料库文件（Office/文本/图片元数据）", "base", "all", "meta"),
+    "send_library_file":  ("发送资料库文件/图片到当前会话", "base", "all", "meta"),
     # 视频下载（yt-dlp）：基座能力，按业务写工具注册（L3+ / SOP-014-FILE）
     "download_video":     ("下载公开视频（yt-dlp）", "business", "write", "sop_only"),
     "manage_pending_issues": ("管理待解决问题",     "base",     "all",   "meta"),
@@ -95,6 +102,8 @@ TOOL_META_MAP: dict[str, tuple[str, str, str, str]] = {
     "record_task":        ("创建任务",       "business", "write", "sop_only"),
     "record_meeting":     ("归档会议纪要",   "business", "write", "sop_only"),
     "record_file":        ("记录文件元数据", "business", "write", "sop_only"),
+    # 一线完工上报：写事件 + 节点归属（L2+；临时收容容器由系统内部创建）
+    "site_report":        ("完工上报（事件+节点归属）", "business", "write_l2", "sop_only"),
     "update_file_category": ("修改文件分类归属", "business", "write", "sop_only"),
     "link_file":          ("关联文件到业务对象", "business", "write", "sop_only"),
     "new_file_version":   ("创建文件新版本",     "business", "write", "sop_only"),
@@ -125,6 +134,7 @@ TOOL_META_MAP: dict[str, tuple[str, str, str, str]] = {
     # project — permission_flag=admin → exposure_mode=sop_only
     "create_node":           ("创建全景节点",   "project", "admin", "sop_only"),
     "query_node":            ("查询全景节点",   "project", "admin", "sop_only"),
+    "query_nodes":           ("按项目/条线查询节点状态", "project", "admin", "sop_only"),
     "update_node_progress":  ("更新节点进度",   "project", "admin", "sop_only"),
     "add_node_dependency":   ("添加节点依赖",   "project", "admin", "sop_only"),
     "mount_child_node":      ("挂载子节点",     "project", "admin", "sop_only"),
@@ -143,6 +153,7 @@ TOOL_META_MAP: dict[str, tuple[str, str, str, str]] = {
 # 与 tools/registry.py 注册处 write_mode 保持一致；仅登记非只读工具即可。
 TOOL_WRITE_MODE_MAP: dict[str, str] = {
     "record_event": "append",
+    "site_report": "append",
     "record_task": "append",
     "record_meeting": "append",
     "record_file": "append",
@@ -193,6 +204,7 @@ TOOL_SCHEMA_MAP: dict[str, tuple[str, str]] = {
     "meta_cognition_read": ("emily_core.tools.meta_cognition_tool", "_META_COG_SCHEMA"),
     "write_user_memory": ("emily_core.tools.memory_tool", "_MEMORY_TOOL_SCHEMA"),
     "record_event": ("emily_core.tools.event_tool", "_EVENT_TOOL_SCHEMA"),
+    "site_report": ("emily_core.tools.site_report_tool", "_SITE_REPORT_SCHEMA"),
     "record_task": ("emily_core.tools.task_tool", "_TASK_TOOL_SCHEMA"),
     "record_meeting": ("emily_core.tools.meeting_tool", "_MEETING_TOOL_SCHEMA"),
     "record_file": ("emily_core.tools.file_tool", "_FILE_TOOL_SCHEMA"),
@@ -222,6 +234,7 @@ TOOL_SCHEMA_MAP: dict[str, tuple[str, str]] = {
     "manage_company": ("emily_core.tools.personnel_tool", "_MANAGE_COMPANY_SCHEMA"),
     "create_node": ("emily_core.tools.node_tool", "_CREATE_NODE_SCHEMA"),
     "query_node": ("emily_core.tools.node_tool", "_QUERY_NODE_SCHEMA"),
+    "query_nodes": ("emily_core.tools.node_query_tool", "_QUERY_NODES_SCHEMA"),
     "update_node_progress": ("emily_core.tools.node_tool", "_UPDATE_PROGRESS_SCHEMA"),
     "add_node_dependency": ("emily_core.tools.node_tool", "_ADD_DEPENDENCY_SCHEMA"),
     "mount_child_node": ("emily_core.tools.node_tool", "_MOUNT_CHILD_SCHEMA"),
@@ -240,6 +253,11 @@ TOOL_SCHEMA_MAP: dict[str, tuple[str, str]] = {
     "ingest_knowledge_library": ("emily_core.tools.knowledge_library_tool", "_KNOWLEDGE_INGEST_SCHEMA"),
     # OfficeCLI：Office 文件读取基座工具（Word/Excel/PPT）
     "officeCLI": ("emily_core.tools.office_cli_tool", "_OFFICE_CLI_SCHEMA"),
+    # 附件路径解析：file_no → 本地路径
+    "resolve_file_path": ("emily_core.tools.attachment_tool", "_RESOLVE_SCHEMA"),
+    # 资料库内 Office/图片现读、现发
+    "read_library_file": ("emily_core.tools.library_file_tool", "_READ_SCHEMA"),
+    "send_library_file": ("emily_core.tools.library_file_tool", "_SEND_SCHEMA"),
 }
 
 

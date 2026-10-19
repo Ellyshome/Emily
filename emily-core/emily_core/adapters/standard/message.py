@@ -49,5 +49,10 @@ class StandardMessage:
     attachments: list[dict] = field(default_factory=list)
         # [{"type": 2, "url": "...", "file_name": "...", "file_size": 0}, ...]
 
+    # ── 当前消息附件落盘后的清单 ──
+    # [{"file_name", "type", "file_no", "local_path", "file_size", "status"}, ...]
+    # 由 EmilyCore.handle_message 在进入会话前解析注入；Agent 据此读取附件。
+    attachment_manifest: list[dict] = field(default_factory=list)
+
     # ── 企微插件去重 ──
     event_id: str = ""             # 插件层消息去重 ID（UUID4）

@@ -982,19 +982,38 @@ class EmilyCore:
             # 非阻断：持久化失败不阻塞 Pipeline，仅 trace 会缺失
             logger.warning("Inbound message persist failed (non-blocking): %s", e)
 
-        # ── M3: 附件自动下载（异步，不阻塞主线）──
-        if db_message_id and self._attachment_downloader is not None:
-            _attachments = getattr(message, "attachments", None) or []
-            if _attachments:
-                asyncio.create_task(
-                    self._attachment_downloader.download_for_message(
+        # ── M3: 当前消息附件解析（进入会话前同步落盘，生成 manifest）──
+        # 说明：原实现用 create_task 异步下载，Agent 进入会话时可能还看不到附件；
+        # 演示/苗木表审核要求 Agent 能看到当前消息的文件名、file_no、本地路径，
+        # 故改为 await，下载失败只写 manifest 状态，不阻断会话。
+        _attachments = getattr(message, "attachments", None) or []
+        if _attachments:
+            if self._attachment_downloader is not None and db_message_id:
+                try:
+                    message.attachment_manifest = await self._attachment_downloader.download_for_message(
                         message_id=db_message_id, attachments=_attachments,
                     )
-                )
-                logger.debug(
-                    "Scheduled attachment download: msg=%s, %d item(s)",
-                    db_message_id, len(_attachments),
-                )
+                except Exception as e:  # noqa: BLE001
+                    logger.warning("Attachment manifest build failed msg=%s: %s", db_message_id, e)
+                    message.attachment_manifest = [
+                        {"file_name": a.get("file_name", "") or a.get("summary", ""),
+                         "type": a.get("type", 0), "file_no": "", "local_path": "",
+                         "file_size": a.get("file_size", 0), "status": "failed"}
+                        for a in _attachments if isinstance(a, dict)
+                    ]
+            else:
+                reason = "no_message_id" if not db_message_id else "downloader_unavailable"
+                message.attachment_manifest = [
+                    {"file_name": a.get("file_name", "") or a.get("summary", ""),
+                     "type": a.get("type", 0), "file_no": "", "local_path": "",
+                     "file_size": a.get("file_size", 0), "status": reason}
+                    for a in _attachments if isinstance(a, dict)
+                ]
+            logger.info(
+                "Attachment manifest: msg=%s, %d item(s), ready=%d",
+                db_message_id or "-", len(message.attachment_manifest),
+                sum(1 for x in message.attachment_manifest if x.get("status") == "ready"),
+            )
 
         # ── 静默收集：仅归档不响应，跳过流水线 ──
         if not decision.should_reply:

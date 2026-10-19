@@ -14,6 +14,8 @@ from datetime import datetime, timezone, timedelta
 
 from ..infrastructure.database.models import (
     ProjectNode,
+    Project,
+    CompanyInfo,
     NodeDependency,
     NodeDeliverable,
     NodeAccessibleFile,
@@ -117,6 +119,60 @@ class ProjectNodeRepo:
             if status:
                 q = q.filter(ProjectNode.status == status)
             return q.order_by(ProjectNode.created_at.desc()).limit(limit).all()
+
+    @staticmethod
+    def query_nodes(
+        *,
+        project_id: str | None = None,
+        project_name: str | None = None,
+        company_id: str | None = None,
+        company_name: str | None = None,
+        status: str | None = None,
+        keyword: str | None = None,
+        deadline_before: str | None = None,
+        include_completed: bool = False,
+        limit: int = 100,
+    ) -> list[ProjectNode]:
+        """按项目/条线/状态/截止时间查询节点（只读，供 query_nodes 工具）。
+
+        说明：
+          - company_id/company_name 过滤的是节点主责单位（related_company_id）；
+          - deadline_before 为 ISO 字符串比较，用于“已超时”筛选；
+          - 默认排除已完成/已停用；include_completed=True 时保留。
+        """
+        with get_session() as session:
+            q = session.query(ProjectNode).filter(ProjectNode.is_discarded == False)
+            if project_id:
+                q = q.filter(ProjectNode.project_id == project_id)
+            if project_name:
+                q = (
+                    q.join(Project, Project.id == ProjectNode.project_id)
+                    .filter(Project.name.ilike(f"%{project_name}%"))
+                )
+            if company_id:
+                q = q.filter(ProjectNode.related_company_id == company_id)
+            if company_name:
+                q = (
+                    q.join(CompanyInfo, CompanyInfo.id == ProjectNode.related_company_id)
+                    .filter(CompanyInfo.company_name.ilike(f"%{company_name}%"))
+                )
+            if status:
+                q = q.filter(ProjectNode.status == status)
+            if keyword:
+                like = f"%{keyword}%"
+                q = q.filter(or_(ProjectNode.node_name.ilike(like),
+                                 ProjectNode.node_id.ilike(like)))
+            if deadline_before:
+                q = q.filter(ProjectNode.deadline.isnot(None),
+                             ProjectNode.deadline != "",
+                             ProjectNode.deadline <= deadline_before)
+            if not include_completed:
+                q = q.filter(ProjectNode.status.notin_(("COMPLETED", "DISABLED")))
+            return (
+                q.order_by(ProjectNode.deadline.asc(), ProjectNode.created_at.desc())
+                .limit(max(1, min(int(limit or 100), 200)))
+                .all()
+            )
 
     @staticmethod
     def find_container_ids(roles, project_ids: list[str] | None = None,

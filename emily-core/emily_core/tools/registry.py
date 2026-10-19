@@ -261,6 +261,33 @@ def _register_base(core, reg):
                        write_mode="read"))
     _bc += 1
 
+    # resolve_file_path —— file_no → 本地路径，供 officeCLI/OCR 读取。
+    # 权限：有 session_accessible_files 授权，或文件属于当前入站消息（用户刚上传）。
+    from .attachment_tool import (
+        handle_resolve_file_path, _RESOLVE_SCHEMA, _RESOLVE_DESCRIPTION,
+    )
+    _fm = getattr(core, "_file_manager", None)
+    reg.register(_tool("resolve_file_path", _RESOLVE_DESCRIPTION, _RESOLVE_SCHEMA,
+                       partial(handle_resolve_file_path, file_manager=_fm),
+                       category="base", permission_flag="all", write_mode="read"))
+    _bc += 1
+
+    # read_library_file / send_library_file —— 资料库内 Office/图片的现读、现发。
+    # 不做批量 RAG；路径受 KnowledgeLibraryFs 根目录保护；handler 内 L3 门禁。
+    from .library_file_tool import (
+        handle_read_library_file, _READ_SCHEMA, _READ_DESCRIPTION,
+        handle_send_library_file, _SEND_SCHEMA, _SEND_DESCRIPTION,
+    )
+    reg.register(_tool("read_library_file", _READ_DESCRIPTION, _READ_SCHEMA,
+                       handle_read_library_file, category="base", permission_flag="all",
+                       write_mode="read"))
+    _bc += 1
+    _bus = getattr(core, "outbound_bus", None)
+    reg.register(_tool("send_library_file", _SEND_DESCRIPTION, _SEND_SCHEMA,
+                       partial(handle_send_library_file, outbound_bus=_bus),
+                       category="base", permission_flag="all", write_mode="read"))
+    _bc += 1
+
 
 # ══════════════════════════════════════════════════════════════════════════════
 # 业务工具 
@@ -302,6 +329,14 @@ def _register_business(core, reg):
                              event_app=core._event_app),
                      params=_EVENT_TOOL_SCHEMA, category="business", permission_flag="write",
                      write_mode="append")
+    # site_report —— 一线完工上报（记录事件 + 节点归属 + 临时收容）
+    from .site_report_tool import (
+        handle_site_report, _SITE_REPORT_SCHEMA, _SITE_REPORT_DESCRIPTION,
+    )
+    _buc += _reg_biz(reg, "site_report", _SITE_REPORT_DESCRIPTION,
+                     partial(handle_site_report, event_app=core._event_app),
+                     params=_SITE_REPORT_SCHEMA, category="business",
+                     permission_flag="write_l2", write_mode="append")
     _buc += _reg_biz(reg, "record_task", "创建任务",
                      partial(_h("task_tool", "handle_record_task"),
                              task_app=core._task_app),
@@ -590,9 +625,13 @@ def _register_project(core, reg):
                 _UPDATE_NODES_SCHEMA, _UPDATE_NODES_DESCRIPTION,
                 _DISCARD_NODES_SCHEMA, _DISCARD_NODES_DESCRIPTION,
             )
+            from .node_query_tool import (
+                handle_query_nodes, _QUERY_NODES_SCHEMA, _QUERY_NODES_DESCRIPTION,
+            )
             for name, desc, schema, handler in [
                 ("create_node", _CREATE_NODE_DESCRIPTION, _CREATE_NODE_SCHEMA, handle_create_node),
                 ("query_node", _QUERY_NODE_DESCRIPTION, _QUERY_NODE_SCHEMA, handle_query_node),
+                ("query_nodes", _QUERY_NODES_DESCRIPTION, _QUERY_NODES_SCHEMA, handle_query_nodes),
                 ("update_node_progress", _UPDATE_PROGRESS_DESCRIPTION, _UPDATE_PROGRESS_SCHEMA, handle_update_node_progress),
                 ("add_node_dependency", _ADD_DEPENDENCY_DESCRIPTION, _ADD_DEPENDENCY_SCHEMA, handle_add_node_dependency),
                 ("mount_child_node", _MOUNT_CHILD_DESCRIPTION, _MOUNT_CHILD_SCHEMA, handle_mount_child_node),
