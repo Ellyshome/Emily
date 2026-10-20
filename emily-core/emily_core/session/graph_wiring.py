@@ -301,12 +301,35 @@ def build_wired_graph(*, loop, allowed_sops: "set | None" = None, checkpointer: 
     return graph, bundle
 
 
+def _inject_attachment_manifest(message) -> None:
+    """把当前消息附件清单拼进用户消息文本（图式通道）。
+
+    旧 ``SessionAgent.handle`` 里有同样的注入，但现网走 ``handle_via_graph``，
+    该路径此前没有消费 ``message.attachment_manifest``，导致 Agent 看不到
+    QQ 上传的图片/文件（场景 5/6 断链）。这里在进入图之前统一补齐。
+    """
+    manifest = getattr(message, "attachment_manifest", None) or []
+    if not manifest:
+        return
+    try:
+        from ..services.attachment_downloader import format_attachment_manifest
+
+        text = format_attachment_manifest(manifest)
+        content = str(getattr(message, "content", "") or "")
+        if text and text not in content:
+            message.content = f"{content}\n\n{text}".strip()
+            logger.info("attachment manifest injected: %d item(s)", len(manifest))
+    except Exception as e:  # noqa: BLE001
+        logger.warning("attachment manifest injection failed: %s", e)
+
+
 async def handle_via_graph(loop, message, db_message_id: str = "", current_user_id: str = ""):
     """图式处理一条入站消息：前置与收尾与 `SessionLoop.handle` 保持一致。
 
     轮次归档段与记录在**确认非快速短路之后**才写入：快速短路命中时与 `handle()` 的早返回
     一致，不留"有开头无收尾"的归档段。
     """
+    _inject_attachment_manifest(message)
     loop._last_actor = await loop._fetch_actor(current_user_id)
 
     graph, bundle = build_wired_graph(loop=loop)

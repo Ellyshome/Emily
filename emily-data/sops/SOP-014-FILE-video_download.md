@@ -97,8 +97,10 @@
 - 必填 `url`：用户给出的公开视频页面地址；不要自行拼接、猜测或改写 BV 号。
 - 单视频限制：≤30 分钟、≤200MB；超出时工具会拒绝并说明。
 - 不支持：播放列表/合集、直播、需要登录或付费的内容、非支持站点、内网/本机地址。
+- **先探测 metadata**：工具会先解析标题/时长（不下载），再按 `2×时长+90 秒` 设置等待上限（120–600 秒）；超时返回 `timeout`，提示换更短的视频。
+- **证书校验**：演示环境默认 `nocheckcertificate=True`，避免 mitmproxy 代理 CA 导致 yt-dlp 失败；站点仍受 `ALLOWED_HOSTS` 白名单限制。
 - 下载可能耗时（数十秒到数分钟）；先告知用户“正在下载”，不要重复调用同一地址。
-- 成功后返回 `file_no`；不要把 `file_no` 当成最终回复，必须继续调用 `send_file`。
+- 成功后返回 `file_no` / `title` / `duration` / `wait_seconds`；不要把 `file_no` 当成最终回复，必须继续调用 `send_file`。
 
 **send_file**
 - 必填 `file_no`：直接使用 `download_video` 返回的值。

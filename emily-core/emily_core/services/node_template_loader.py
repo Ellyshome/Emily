@@ -81,6 +81,7 @@ class TemplateDetail:
     node_type: str
     stage_id: int = 0
     summary: str = ""
+    related_company: str = ""
     deliverables: list[TemplateDeliverable] = field(default_factory=list)
     declarations_raw: dict = field(default_factory=dict)
     preconditions: list[str] = field(default_factory=list)
@@ -205,6 +206,7 @@ class NodeTemplateLoader:
             node_type=str(raw.get("node_type", entry.get("node_type", "TASK"))),
             stage_id=int(raw.get("stage_id", entry.get("stage_id", 0)) or 0),
             summary=str(raw.get("summary", entry.get("summary", ""))),
+            related_company=str(raw.get("related_company", "") or ""),
             deliverables=self._parse_deliverables(raw),
             declarations_raw=raw.get("declarations") or {},
             preconditions=[str(x) for x in (raw.get("preconditions") or [])],

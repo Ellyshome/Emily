@@ -11,6 +11,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import os
 import re
 from pathlib import Path
 
@@ -2652,8 +2653,9 @@ async def set_wecom_params(req: ChannelParamsUpdate):
 # 聊天附件暂存目录（容器 /app/runtime/chat_uploads，开发态 emily-data/runtime/chat_uploads）
 _CHAT_UPLOAD_SUBDIR = ("/app/runtime/chat_uploads", "emily-data/runtime/chat_uploads")
 
-# 等待异步回复的上限（秒）：Agent 多轮推理耗时较长，与插件侧口径一致
-_CHAT_REPLY_TIMEOUT = 180.0
+# 等待异步回复的上限（秒）：Agent 多轮推理耗时较长；视频下载按 2×时长+90 秒
+# 动态等待（最长 600 秒），console 侧默认放宽到 600 秒，可用环境变量覆盖。
+_CHAT_REPLY_TIMEOUT = float(os.environ.get("EMILY_CONSOLE_CHAT_TIMEOUT", "600"))
 
 # 支持模拟接入的渠道（platform 取值与各渠道薄插件一致）
 CHAT_PLATFORMS = {"napcat": "QQ", "wecom": "微信客服", "wxmp": "微信小程序"}

@@ -41,6 +41,42 @@ _CREATE_NODE_SCHEMA = {
                            "每项含 deliverable_name / target_amount / unit / is_required",
             "items": {"type": "object"},
         },
+        "related_company_id": {
+            "type": "string",
+            "description": "主责/关联单位 ID 或中文名（可选，缺省为创建人所属企业）",
+        },
+        "responsible_user_id": {
+            "type": "string",
+            "description": "节点责任人 user_id（可选，缺省为创建人）",
+        },
+        "participant_company_ids": {
+            "type": "array",
+            "description": "参与单位 ID/中文名列表（可选，随节点一次性落库）",
+            "items": {"type": "string"},
+        },
+        "participant_user_ids": {
+            "type": "array",
+            "description": "参与人列表（可选，每项 {user_id, role?}，随节点一次性落库）",
+            "items": {"type": "object"},
+        },
+        "shared_file_ids": {
+            "type": "array",
+            "description": "共享文件 file_id 列表（可选，随节点一次性落库）",
+            "items": {"type": "string"},
+        },
+        "dependencies": {
+            "type": "array",
+            "description": "前置依赖列表（可选，每项 {depends_on_deliverable_id, weight?, dependency_type?}）",
+            "items": {"type": "object"},
+        },
+        "template_ref_id": {
+            "type": "string",
+            "description": "来源参考模板 ref_id（可选，记录与模板的溯源关系）",
+        },
+        "planned_start_at": {
+            "type": "string",
+            "description": "计划启动时间 ISO8601（可选）",
+        },
         "nodes": {
             "type": "array",
             "description": "批量创建模式：节点树列表。每项含 node_id/node_name/deadline/node_type/deliverables/dependencies/children",
@@ -56,6 +92,9 @@ _CREATE_NODE_DESCRIPTION = (
     "2) 批量创建：提供 nodes 列表，一次性创建节点树（含成果、依赖、子节点）。"
     "**成果必备**：任何节点都必须携带至少一条必需成果，否则创建被拒——"
     "节点是否完结只由自身必需成果决定，无成果的节点没有完成判据。"
+    "按模板装配后，可把 build_node_draft 的候选一次性传入："
+    "related_company_id / participant_company_ids / participant_user_ids / shared_file_ids / "
+    "dependencies / template_ref_id，节点、成果、参与方、依赖会一并落库。"
     "创建后节点初始状态为 CONDITIONS_NOT_MET（条件不足）；节点类型由 node_type 声明决定。"
 )
 
@@ -174,6 +213,14 @@ async def handle_create_node(
         creator_id=user_id,
         node_type=params.get("node_type", "") or NODE_TYPE_TASK,
         deliverables=params.get("deliverables", []) or [],
+        related_company_id=params.get("related_company_id", "") or "",
+        responsible_user_id=params.get("responsible_user_id", "") or "",
+        participant_company_ids=params.get("participant_company_ids", []) or [],
+        participant_user_ids=params.get("participant_user_ids", []) or [],
+        shared_file_ids=params.get("shared_file_ids", []) or [],
+        dependencies=params.get("dependencies", []) or [],
+        template_ref_id=params.get("template_ref_id", "") or "",
+        planned_start_at=params.get("planned_start_at", "") or "",
     )
     result = await svc.create_node(cmd)
     return {

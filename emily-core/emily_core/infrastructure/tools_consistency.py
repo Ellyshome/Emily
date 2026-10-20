@@ -41,7 +41,7 @@ logger = logging.getLogger("emily.infrastructure.tools_consistency")
 REGISTERED_TOOLS: set[str] = {
     # base
     "query_data", "knowledge_search", "meta_cognition_read",
-    "read_knowledge_library", "officeCLI", "resolve_file_path",
+    "read_knowledge_library", "library_search", "officeCLI", "resolve_file_path",
     "read_library_file", "send_library_file", "download_video",
     # business
     "record_event", "record_task", "record_meeting", "record_file",
@@ -81,6 +81,7 @@ TOOL_META_MAP: dict[str, tuple[str, str, str, str]] = {
     "query_groups":       ("群信息查询",            "base",     "all",   "meta"),
     # 资料库查阅（M5）：只读，门槛 L3 在 handler 内按线性语义判定（fail-closed）
     "read_knowledge_library": ("查阅资料库（列目录/读索引/读文件）", "base", "all", "meta"),
+    "library_search":     ("资料库关键词检索（备注/说明）", "base", "all", "meta"),
     # officeCLI：Office 文件读取基座工具（Word/Excel/PPT），随 emily-core 镜像安装
     "officeCLI":          ("Office 文件读取（基座工具）", "base", "all", "meta"),
     # resolve_file_path：file_no → 本地路径（当前消息附件/有权限文件）
@@ -250,6 +251,7 @@ TOOL_SCHEMA_MAP: dict[str, tuple[str, str]] = {
     "build_node_draft": ("emily_core.tools.node_template_tool", "_BUILD_NODE_DRAFT_SCHEMA"),
     # 资料库（数字资产管理）：查阅（M5）/ 入库（M4b），同模块骨架
     "read_knowledge_library": ("emily_core.tools.knowledge_library_tool", "_KNOWLEDGE_READ_SCHEMA"),
+    "library_search": ("emily_core.tools.library_search_tool", "_SCHEMA"),
     "ingest_knowledge_library": ("emily_core.tools.knowledge_library_tool", "_KNOWLEDGE_INGEST_SCHEMA"),
     # OfficeCLI：Office 文件读取基座工具（Word/Excel/PPT）
     "officeCLI": ("emily_core.tools.office_cli_tool", "_OFFICE_CLI_SCHEMA"),

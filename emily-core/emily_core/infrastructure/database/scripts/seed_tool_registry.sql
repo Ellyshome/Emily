@@ -9,6 +9,7 @@ INSERT INTO tool_registry (id, signature, display_name, category, permission_fla
 ('officeCLI',          '{}', 'Office 文件读取',   'base', 'all',   'meta', '', true, '2026-10-19T00:00:00', '2026-10-19T00:00:00'),
 ('resolve_file_path',  '{}', '解析文件路径',     'base', 'all',   'meta', '', true, '2026-10-19T00:00:00', '2026-10-19T00:00:00'),
 ('read_library_file',  '{}', '读取资料库文件',   'base', 'all',   'meta', '', true, '2026-10-19T00:00:00', '2026-10-19T00:00:00'),
+('library_search',     '{}', '资料库关键词检索', 'base', 'all',   'meta', '', true, '2026-10-20T00:00:00', '2026-10-20T00:00:00'),
 ('send_library_file',  '{}', '发送资料库文件',   'base', 'all',   'meta', '', true, '2026-10-19T00:00:00', '2026-10-19T00:00:00'),
 -- business — permission_flag=all → exposure_mode=meta（只读可直调）
 ('query_files',        '{}', '查询文件',         'business', 'all',   'meta', '', true, '2026-07-24T00:00:00', '2026-07-24T00:00:00'),

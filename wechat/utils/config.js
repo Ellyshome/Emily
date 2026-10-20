@@ -5,9 +5,9 @@
 //           downloadFile 合法域名（/files/{token}）
 //           uploadFile 合法域名（/upload）
 //         三者相互独立，只配 request 会导致文件上传下载被拦截。
-//   本地：本机网关 http://127.0.0.1:18090；真机预览换成电脑局域网 IP
-//         （如 http://192.168.1.8:18090），并勾选“不校验合法域名”
-const LOCAL_API_BASE = 'http://127.0.0.1:18090'
+//   本地：当前按手机真机调试配置，指向电脑局域网 IP（手机与电脑需连同一 Wi-Fi）；
+//         只在电脑模拟器调试时可改回 http://127.0.0.1:18090，并勾选“不校验合法域名”
+const LOCAL_API_BASE = 'http://192.168.100.87:18090'
 const PROD_API_BASE = 'https://ellym.asia/wxmp'
 
 module.exports = {

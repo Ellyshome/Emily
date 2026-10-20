@@ -8,6 +8,7 @@ node_name: 大区景观工程
 node_type: MILESTONE
 stage_id: 3
 summary: 大区景观工程是景观条线从设计转入施工后的核心里程碑，覆盖硬质铺装、绿化种植、景观水电与验收成果
+related_company: 苏州园林景观工程有限公司
 deliverables:
 - name: 竣工验收成果
   target_amount: 1.0
@@ -34,26 +35,26 @@ declarations:
     match:
       type_norm: 建设单位
       scope_keywords: []
-      name_keywords: []
+      name_keywords: ["蓝城伟业"]
     required: true
   - desc: 本项目总包单位
     match:
       type_norm: 总包
       scope_keywords: []
-      name_keywords: []
+      name_keywords: ["中天建设"]
     required: true
   - desc: 本项目监理单位
     match:
       type_norm: 监理
       scope_keywords: []
-      name_keywords: []
+      name_keywords: ["恒大监理"]
     required: true
   - desc: 景观工程分包单位
     match:
       type_norm: 分包
       scope_keywords:
       - 景观
-      name_keywords: []
+      name_keywords: ["苏州园林景观工程"]
     required: true
   participant_users:
   - desc: 景观工程负责人
@@ -73,8 +74,9 @@ declarations:
     required: true
   - desc: 景观分包负责人
     match:
-      from_company: 景观工程分包
+      from_company: 分包
       role: participant
+      user_keywords: ["吴根林"]
     required: true
   shared_files:
   - desc: 景观施工图

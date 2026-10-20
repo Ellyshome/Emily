@@ -247,6 +247,7 @@ class AssemblyDraft:
     project_id: str
     operator_id: str
     generated_at: str
+    related_company: str = ""
     deliverables: list[dict] = field(default_factory=list)
     candidates: dict = field(default_factory=dict)      # object_type → CandidateSet
     unresolved: list[Unresolved] = field(default_factory=list)
@@ -259,6 +260,7 @@ class AssemblyDraft:
             "node_type": self.node_type,
             "project_id": self.project_id,
             "generated_at": self.generated_at,
+            "related_company": self.related_company,
             "deliverables": self.deliverables,
             "candidates": {k: v.to_dict() for k, v in self.candidates.items()},
             "unresolved": [u.to_dict() for u in self.unresolved],
@@ -354,7 +356,13 @@ class NodeDeclarationParser:
             if role not in ("participant", "approver", "observer"):
                 warns.append(f"{label}：role「{role}」不在 participant/approver/observer 内，按 participant 处理")
                 role = "participant"
-            clean = {"from_company": from_company, "role": role}
+            clean = {
+                "from_company": from_company,
+                "role": role,
+                "user_keywords": [
+                    str(x).strip() for x in (match.get("user_keywords") or []) if str(x).strip()
+                ],
+            }
         elif otype == "shared_files":
             clean = {
                 "name_keywords": [str(x).strip() for x in (match.get("name_keywords") or []) if str(x).strip()],
@@ -409,6 +417,7 @@ class NodeAssemblyService:
             project_id=project_id or "",
             operator_id=operator_id or "",
             generated_at=datetime.now(BEIJING_TZ).strftime("%Y-%m-%dT%H:%M:%S"),
+            related_company=detail.related_company,
             deliverables=[
                 {
                     "deliverable_name": d.name,
@@ -540,6 +549,9 @@ class NodeAssemblyService:
             if not targets:
                 continue
             users = ParticipationRepo.users_of_companies([c.ref_id for c in targets])
+            user_kws = decl["match"].get("user_keywords") or []
+            if user_kws:
+                users = [u for u in users if any(k in (u.username or "") for k in user_kws)]
             users = sorted(users, key=lambda u: (getattr(u, "level", 0) or 0), reverse=True)
             company_name = {c.ref_id: c.display_name for c in targets}
             for u in users:

@@ -116,11 +116,13 @@ def test_site_report_dry_run_tier_a(monkeypatch):
         "quantity": 10,
         "unit": "㎡",
         "report_text": "花岗岩铺装今天干了10平米",
+        "photo_file_nos": ["FIL-1", "FIL-2"],
         "dry_run": True,
     }, event_app=object(), user_id="u5"))
     assert r["success"] is True
     assert r["tier"] == "A"
     assert r["deliverable_name"] == "花岗岩铺装"
+    assert r["photo_count"] == 2
     assert "将记入已有任务" in r["reply"]
 
 
@@ -147,3 +149,43 @@ def test_send_library_file_uses_runtime_conversation_id(tmp_path, monkeypatch):
     assert published[0][0] == "file_send"
     assert published[0][1]["conversation_id"] == "conv-demo-1"
     assert published[0][1]["file_paths"][0]["name"] == "导水槽效果.jpg"
+
+
+def test_extract_interrupt_question_handles_tuple_tasks():
+    """LangGraph 1.x snap.tasks 为 tuple 时也要能取到 ask_user 的真实问题。"""
+    from emily_core.workitem.scheduler import _extract_interrupt_question
+
+    class _Task:
+        interrupts = [types.SimpleNamespace(value="铺装是哪一段？")]
+
+    snap = types.SimpleNamespace(tasks=(_Task(),), values={})
+    assert _extract_interrupt_question(snap) == "铺装是哪一段？"
+
+    snap_dict = types.SimpleNamespace(tasks={"t1": _Task()}, values={})
+    assert _extract_interrupt_question(snap_dict) == "铺装是哪一段？"
+
+
+def test_site_report_requires_two_photos(monkeypatch):
+    import emily_core.tools.file_tool as ft
+
+    monkeypatch.setattr(ft, "check_min_level", lambda *a, **k: None)
+    r = asyncio.run(handle_site_report({
+        "project_id": "P1",
+        "location": "2#、4#楼间道路花岗岩铺装",
+        "quantity": 10,
+        "unit": "㎡",
+        "report_text": "花岗岩铺装今天干了10平米",
+        "photo_file_nos": ["FIL-1"],
+        "dry_run": True,
+    }, event_app=object(), user_id="u5"))
+    assert r["success"] is False
+    assert r["error_code"] == "photos_required"
+
+
+def test_video_wait_seconds_by_duration():
+    from emily_core.tools.video_download_tool import compute_wait_seconds
+
+    assert compute_wait_seconds(212) == 514      # 2×212 + 90
+    assert compute_wait_seconds(10) == 120       # 下限
+    assert compute_wait_seconds(3000) == 600     # 上限
+    assert compute_wait_seconds(0) == 240        # 时长未知

@@ -85,6 +85,7 @@ _TOOL_SCRIPTS = [
     ("officeCLI", "emily_core.tools.office_cli_tool", "_OFFICE_CLI_SCHEMA", "Office 文件读取（基座工具）", "base", "all"),
     ("resolve_file_path", "emily_core.tools.attachment_tool", "_RESOLVE_SCHEMA", "解析文件路径（file_no→本地路径）", "base", "all"),
     ("read_library_file", "emily_core.tools.library_file_tool", "_READ_SCHEMA", "读取资料库文件", "base", "all"),
+    ("library_search", "emily_core.tools.library_search_tool", "_SCHEMA", "资料库关键词检索", "base", "all"),
     ("send_library_file", "emily_core.tools.library_file_tool", "_SEND_SCHEMA", "发送资料库文件", "base", "all"),
     # business — 4 个核心 CRUD
     ("record_event", "emily_core.tools.event_tool", "_EVENT_TOOL_SCHEMA", "记录项目事件", "business", "write"),

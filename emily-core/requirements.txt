@@ -36,4 +36,5 @@ tenacity>=8.2.0                        # 细粒度重试（langgraph 传递依�
 mcp>=1.19.0,<2                         # Model Context Protocol 客户端 SDK（stdio / sse / streamable-http）
 
 # ── 媒体下载（公开视频，SOP-014-FILE）──
-yt-dlp>=2025.1.0                       # 公开视频解析与下载；优先单文件 mp4，避免依赖 ffmpeg
+yt-dlp>=2025.1.0                       # 公开视频解析与下载
+imageio-ffmpeg>=0.6.0                  # 内置静态 ffmpeg：B站等 DASH 音视频流需要合并

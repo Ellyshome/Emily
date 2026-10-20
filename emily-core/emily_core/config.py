@@ -203,9 +203,10 @@ class Config:
     并打 WARNING，不阻断启动。可通过环境变量 EMILY_LANGGRAPH_CHECKPOINTER 覆盖。"""
 
     # ── Agent loop（L3）──
-    agent_loop_max_iterations: int = 12
+    agent_loop_max_iterations: int = 20
     """Agent loop 最大迭代次数（agent_node↔tool_node 循环上限，防 runaway）。
-    超限升级外层 error_analysis 兜底。"""
+    超限升级外层 error_analysis 兜底。12 对“读模板→装配草稿→建节点→加参与人”
+    这类多工具流程偏紧，演示/复杂建节点会中途触顶；20 保留防 runaway 余量。"""
 
     # ── 节点级策略（M3 / US-02）──
     node_retry_max_attempts: int = 2

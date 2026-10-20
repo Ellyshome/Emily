@@ -98,6 +98,12 @@
 |--------|------|----------------------|
 | `manage_node_participant` | 维护节点参与单位 / 参与人（决定该节点数据与共享文件的可见范围） | `action`*（add/remove）、`node_id`*、`company` / `user_id`（二选一）、`role` |
 
+> **按模板建节点（一次性落库）**：`read_node_template` → `build_node_draft` → 用户确认 → `create_node`。
+> 创建时把 draft 的成果、参与单位、参与人、共享文件、前置依赖和 `template_ref_id` 一次性传入 `create_node`，不要再逐个调用 `manage_node_participant`（会耗尽迭代次数且容易漏项）。
+> 模板带 `related_company` 时，把它作为 `create_node.related_company_id` 传入（本模板为「苏州园林景观工程有限公司」），否则会默认成创建人所属企业。
+>
+> **节点编号规则**：若项目内已存在 `{X}-01` 形态的子任务（如 `HY-GC-JG-01-01` 花岗岩铺装），新父节点编号应取 `{X}`（即 `HY-GC-JG-01`），不要另起 `HY-SG-…` 等新前缀；用户明确给出编号时以用户为准。
+
 ### 3.4 状态流转规则
 
 四态状态机（定义见 `node_state_machine.py` 的 `VALID_TRANSITIONS`）：

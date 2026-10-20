@@ -13,6 +13,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import os
 from datetime import datetime, timezone
 
 logger = logging.getLogger("emily.tool.site_report")
@@ -31,7 +32,7 @@ _SITE_REPORT_SCHEMA = {
         "photo_file_nos": {
             "type": "array",
             "items": {"type": "string"},
-            "description": "可选，已落盘照片的 file_no 列表（用于写入事件描述）",
+            "description": "已落盘照片的 file_no 列表；至少 2 张（整体远景 + 局部近景），不足时工具会拒绝并要求补照片",
         },
         "dry_run": {
             "type": "boolean",
@@ -87,6 +88,24 @@ async def handle_site_report(
         raw_photos = [raw_photos]
     photo_nos = [str(x).strip() for x in raw_photos if str(x).strip()]
 
+    # 兜底：模型没传 file_no 时，从当前消息附件表取图片
+    if len(photo_nos) < 2:
+        auto_photos = _photos_for_message(message_id)
+        if auto_photos:
+            photo_nos = list(dict.fromkeys([*photo_nos, *auto_photos]))
+            logger.info("site_report: auto-filled %d photo(s) from message=%s",
+                        len(auto_photos), message_id)
+
+    # SOP-016：整体远景 + 局部近景至少 2 张；数量不足时不进入归属/记录，
+    # 让上层模型先向用户追问照片，避免“没照片也能确认”的不一致路径。
+    if len(photo_nos) < 2:
+        return {
+            "success": False,
+            "error": "请先补充至少 2 张现场照片（整体远景 + 局部近景），再提交完工上报。",
+            "error_code": "photos_required",
+            "photo_count": len(photo_nos),
+        }
+
     # ── 归属判定（只读）──
     attribution = await asyncio.to_thread(_judge, project_id, location, report_text, user_id)
     tier = attribution.tier
@@ -122,6 +141,8 @@ async def handle_site_report(
         "deliverable_name": (deliverable or {}).get("deliverable_name", ""),
         "reason": attribution.reason,
         "dry_run": dry_run,
+        "photo_file_nos": photo_nos,
+        "photo_count": len(photo_nos),
     }
 
     if dry_run:
@@ -185,6 +206,38 @@ async def handle_site_report(
     return base
 
 
+_IMAGE_EXTS = (".jpg", ".jpeg", ".png", ".webp", ".bmp", ".gif")
+
+
+def _photos_for_message(message_id: str) -> list[str]:
+    """当前消息已落盘的图片 file_no 列表。
+
+    模型有时不会把 manifest 里的 file_no 主动填进 site_report；这里按
+    message_id 从 message_attachments 兜底，避免“照片已收到但工具看不到”。
+    """
+    if not message_id:
+        return []
+    try:
+        from ..infrastructure.database.models import File, MessageAttachment
+        from ..infrastructure.database.session import get_session
+
+        with get_session() as session:
+            rows = (
+                session.query(File.file_no, File.filename)
+                .join(MessageAttachment, MessageAttachment.file_id == File.id)
+                .filter(MessageAttachment.message_id == str(message_id))
+                .all()
+            )
+        return [
+            str(file_no)
+            for file_no, filename in rows
+            if file_no and os.path.splitext(str(filename or ""))[1].lower() in _IMAGE_EXTS
+        ]
+    except Exception as e:  # noqa: BLE001
+        logger.warning("site_report: load message photos failed msg=%s: %s", message_id, e)
+        return []
+
+
 def _resolve_project_id(project_name: str) -> str:
     from ..repositories.project_repo import ProjectRepository
 
@@ -240,14 +293,15 @@ def _ensure_sink(project_id: str, user_id: str) -> str:
 
 def _proposal_reply(base: dict, location: str, quantity, unit: str) -> str:
     qty = f"{quantity}{unit}" if quantity not in (None, "") else "工程量未填"
+    photo_text = f"照片 {len(base.get('photo_file_nos') or [])} 张"
     if base["tier"] == "A":
         return (f"将记入已有任务「{base['target_node_name']}」（{base['target_node_id']}）："
-                f"{location}，{qty}；成果：{base['deliverable_name'] or '未匹配到具体成果'}。"
+                f"{location}，{qty}，{photo_text}；成果：{base['deliverable_name'] or '未匹配到具体成果'}。"
                 f"请确认后我再提交。")
     if base["tier"] == "B":
         return (f"未命中已有任务，将记入里程碑「{base['target_node_name']}」："
-                f"{location}，{qty}。请确认后我再提交。")
-    return (f"未命中已有任务，将暂存到「待归类事件（收容节点）」：{location}，{qty}。"
+                f"{location}，{qty}，{photo_text}。请确认后我再提交。")
+    return (f"未命中已有任务，将暂存到「待归类事件（收容节点）」：{location}，{qty}，{photo_text}。"
             f"请确认后我再提交。")
 
 

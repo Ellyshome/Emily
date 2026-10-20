@@ -251,6 +251,18 @@ def _register_base(core, reg):
                        category="base", permission_flag="all", write_mode="read"))
     _bc += 1
 
+    # library_search —— 资料库关键词检索（备注/说明扫描，只读）。
+    # 补 read_knowledge_library 的“先知道目录再下钻”缺口：查做法/经验/考察记录时
+    # 直接按关键词命中 .md/.txt 备注，不走向量 RAG。
+    from .library_search_tool import (
+        handle_library_search, _SCHEMA as _LIBRARY_SEARCH_SCHEMA,
+        _DESCRIPTION as _LIBRARY_SEARCH_DESCRIPTION,
+    )
+    reg.register(_tool("library_search", _LIBRARY_SEARCH_DESCRIPTION,
+                       _LIBRARY_SEARCH_SCHEMA, handle_library_search,
+                       category="base", permission_flag="all", write_mode="read"))
+    _bc += 1
+
     # officeCLI —— Office 文件读取基座工具（Word/Excel/PPT）。
     # 由 emily-core 镜像构建时安装的单文件二进制提供；供 SOP-015-QRY 读取用户提交的苗木表。
     from .office_cli_tool import (

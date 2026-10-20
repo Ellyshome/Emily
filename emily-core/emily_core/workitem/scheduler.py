@@ -468,15 +468,32 @@ def _readable_graph_failure(exc: Exception) -> str:
 
 
 def _extract_interrupt_question(snap) -> str:
-    """从 interrupt 快照提取问题文本。"""
+    """从 interrupt 快照提取问题文本。
+
+    LangGraph 1.x 的 ``snap.tasks`` 既可能是 dict（按 task_id 索引），
+    也可能是 tuple/list（PregelTask 序列）；两种都要兼容。旧实现只按
+    dict 处理，tuple 时会直接抛 AttributeError 并静默回退成「请补充信息」，
+    导致 ask_user 的真实问题丢失。
+    """
     try:
-        tasks = getattr(snap, "tasks", {}) or {}
-        for t in tasks.values():
-            interrupts = getattr(t, "interrupts", []) or []
+        tasks = getattr(snap, "tasks", ()) or ()
+        if isinstance(tasks, dict):
+            task_iter = tasks.values()
+        elif isinstance(tasks, (list, tuple)):
+            task_iter = tasks
+        else:
+            task_iter = ()
+        for t in task_iter:
+            interrupts = getattr(t, "interrupts", ()) or ()
             for intr in interrupts:
                 val = getattr(intr, "value", None)
-                if isinstance(val, str):
+                if isinstance(val, str) and val.strip():
                     return val
+                # 兼容部分版本把 interrupt value 包成 {"question": "..."} 的情况
+                if isinstance(val, dict):
+                    q = val.get("question") or val.get("message") or ""
+                    if isinstance(q, str) and q.strip():
+                        return q
     except Exception:
-        pass
+        logger.exception("extract interrupt question failed")
     return "请补充信息"

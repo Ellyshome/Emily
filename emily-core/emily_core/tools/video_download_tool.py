@@ -36,6 +36,13 @@ DOWNLOAD_MIN_LEVEL = 3
 MAX_DURATION_SECONDS = 30 * 60
 MAX_FILESIZE_BYTES = 200 * 1024 * 1024
 
+#: 下载等待上限：按视频时长动态计算（先探测 metadata，再定上限）
+DEFAULT_WAIT_SECONDS = 240          # 时长未知时的保守值
+MIN_WAIT_SECONDS = 120
+MAX_WAIT_SECONDS = 600              # 与 console/IM 侧可接受的最长等待对齐
+WAIT_BUFFER_SECONDS = 90
+WAIT_FACTOR = 2.0
+
 #: 允许的站点（可在此按需扩展；不在名单内一律拒绝，避免把 yt-dlp 当任意 URL 抓取器）
 ALLOWED_HOSTS: frozenset[str] = frozenset({
     "bilibili.com", "www.bilibili.com", "b23.tv", "bilibili.tv",
@@ -68,6 +75,9 @@ _VIDEO_DOWNLOAD_DESCRIPTION = (
     "  · 仅 http/https，且只允许名单内站点；内网/本机地址一律拒绝\n"
     "  · 单视频不超过 30 分钟、200MB\n"
     "  · 不绕过登录、付费或 DRM；不支持需要 cookies 的私有内容\n"
+    "  · 调用时先探测视频 metadata（标题/时长），再按“2×时长+90 秒”设置等待上限\n"
+    "    （120–600 秒）；超时会返回明确提示，换更短视频即可\n"
+    "  · 演示环境默认跳过证书校验（yt-dlp 不读 mitmproxy 的 SSL_CERT_FILE）\n"
     "\n"
     "成功返回 file_no；随后应调用 send_file 把视频发送给当前用户。\n"
     "权限：L3 参建管理及以上，且须经「视频下载」SOP 调用。"
@@ -192,11 +202,112 @@ def _pick_downloaded_file(tmpdir: str, info: dict, ydl) -> str:
     return max(candidates, key=os.path.getsize)
 
 
-def download_with_ytdlp(url: str) -> dict:
+def _common_ytdlp_opts() -> dict:
+    """探测与下载共用的 yt-dlp 选项。
+
+    nocheckcertificate 默认开启：当前演示环境经 mitmproxy 抓包，yt-dlp 的
+    certifi 不读 SSL_CERT_FILE；站点已在 ALLOWED_HOSTS 白名单内，故默认跳过
+    证书校验，避免 B 站下载被代理 CA 卡死。
+    """
+    return {
+        "quiet": True,
+        "no_warnings": True,
+        "noprogress": True,
+        "noplaylist": True,
+        "nocheckcertificate": True,
+        "socket_timeout": 30,
+        "retries": 3,
+        "fragment_retries": 3,
+        "concurrent_fragment_downloads": 4,
+    }
+
+
+def compute_wait_seconds(duration: float | int | None) -> int:
+    """按视频时长估算下载等待上限（秒）。
+
+    规则：2×时长 + 90 秒缓冲，夹在 [120, 600] 之间；时长未知时用 240 秒。
+    """
+    try:
+        d = float(duration or 0)
+    except (TypeError, ValueError):
+        d = 0
+    if d <= 0:
+        return DEFAULT_WAIT_SECONDS
+    return int(min(MAX_WAIT_SECONDS, max(MIN_WAIT_SECONDS, d * WAIT_FACTOR + WAIT_BUFFER_SECONDS)))
+
+
+def probe_video_info(url: str) -> dict:
+    """只解析页面 metadata，不下载视频。
+
+    返回 {title, duration, filesize_approx, webpage_url}；失败抛 VideoDownloadError。
+    """
+    try:
+        import yt_dlp
+    except Exception as e:  # noqa: BLE001
+        logger.error("yt-dlp 未安装: %s", e)
+        raise VideoDownloadError(
+            "视频下载组件未安装（yt-dlp），请联系管理员检查依赖。",
+            "dependency_missing",
+        )
+
+    opts = _common_ytdlp_opts()
+    # 不指定 format：B 站等站点在“仅探测 metadata”时不接受 best 选择器
+    opts.update({"skip_download": True})
+    try:
+        with yt_dlp.YoutubeDL(opts) as ydl:
+            info = ydl.extract_info(url, download=False)
+    except Exception as e:  # noqa: BLE001
+        logger.warning("yt-dlp probe failed url=%s: %s", url[:160], e)
+        raise VideoDownloadError(
+            "视频信息解析失败：地址可能失效、需要登录，或平台暂时不可用。",
+            "probe_failed",
+        )
+
+    if not info:
+        raise VideoDownloadError("没有从该地址解析到视频。", "no_video")
+    if info.get("_type") == "playlist":
+        raise VideoDownloadError(
+            "该地址是播放列表，请提供单个视频的页面地址。", "playlist_not_allowed"
+        )
+    duration = int(float(info.get("duration") or 0))
+    if duration and duration > MAX_DURATION_SECONDS:
+        raise VideoDownloadError(
+            f"视频时长约 {duration // 60} 分钟，超过 30 分钟上限。",
+            "too_long",
+        )
+    return {
+        "title": str(info.get("title") or "")[:120],
+        "duration": duration,
+        "filesize_approx": int(info.get("filesize_approx") or 0),
+        "webpage_url": str(info.get("webpage_url") or url),
+    }
+
+
+def _ffmpeg_path() -> str:
+    """定位 ffmpeg：优先 PATH，其次 imageio-ffmpeg 自带静态二进制。"""
+    found = shutil.which("ffmpeg")
+    if found:
+        return found
+    try:
+        import imageio_ffmpeg
+
+        return imageio_ffmpeg.get_ffmpeg_exe()
+    except Exception:  # noqa: BLE001
+        return ""
+
+
+def download_with_ytdlp(url: str, wait_seconds: int | None = None) -> dict:
     """同步下载一个公开视频，返回 {filename, data, mime, duration, size}。
 
     在线程中调用；异常转为 VideoDownloadError。
     """
+    ffmpeg_path = _ffmpeg_path()
+    if not ffmpeg_path:
+        raise VideoDownloadError(
+            "视频合并组件 ffmpeg 未安装，无法处理 B 站等分离音视频流；请联系管理员检查镜像依赖。",
+            "dependency_missing",
+        )
+
     try:
         import yt_dlp
     except Exception as e:  # noqa: BLE001
@@ -215,25 +326,21 @@ def download_with_ytdlp(url: str) -> dict:
 
     tmpdir = tempfile.mkdtemp(prefix="emily_video_")
     try:
-        opts = {
-            "quiet": True,
-            "no_warnings": True,
-            "noprogress": True,
-            "noplaylist": True,
-            "format": (
-                "best[ext=mp4][acodec!=none][vcodec!=none]/"
-                "best[acodec!=none][vcodec!=none]/best"
-            ),
+        opts = _common_ytdlp_opts()
+        opts.update({
+            # B 站等站点多数只提供分离的音/视频流，需要 ffmpeg 合并；
+            # 优先最佳视频+音频，退化到最佳单文件。
+            "format": "bv*+ba/b",
             "outtmpl": os.path.join(tmpdir, "%(title).80s.%(ext)s"),
             "windowsfilenames": True,
             "restrictfilenames": False,
-            "socket_timeout": 20,
-            "retries": 2,
-            "fragment_retries": 2,
-            "concurrent_fragment_downloads": 4,
             "max_filesize": MAX_FILESIZE_BYTES,
             "match_filter": _match_filter,
-        }
+            "ffmpeg_location": ffmpeg_path,
+        })
+        if wait_seconds:
+            # 单连接 socket 超时不超过总等待上限的一半，避免一个慢连接拖死全局
+            opts["socket_timeout"] = max(20, min(60, int(wait_seconds) // 2))
         try:
             with yt_dlp.YoutubeDL(opts) as ydl:
                 info = ydl.extract_info(url, download=True)
@@ -313,8 +420,41 @@ async def handle_download_video(
     if err:
         return {"success": False, "error_code": "invalid_url", "reply": err}
 
+    # 先探测 metadata（不下载），按视频时长设置等待上限
     try:
-        result = await asyncio.to_thread(download_with_ytdlp, normalized)
+        meta = await asyncio.to_thread(probe_video_info, normalized)
+    except VideoDownloadError as e:
+        return {"success": False, "error_code": e.code, "reply": e.reply}
+    except Exception as e:  # noqa: BLE001
+        logger.error("download_video probe error url=%s: %s", normalized, e, exc_info=True)
+        return {
+            "success": False,
+            "error_code": "probe_failed",
+            "reply": f"视频信息解析失败：{e}",
+        }
+
+    duration = int(meta.get("duration") or 0)
+    wait_seconds = compute_wait_seconds(duration)
+    title = str(meta.get("title") or "")[:120]
+
+    try:
+        result = await asyncio.wait_for(
+            asyncio.to_thread(download_with_ytdlp, normalized, wait_seconds),
+            timeout=wait_seconds,
+        )
+    except asyncio.TimeoutError:
+        logger.warning("download_video timeout url=%s duration=%ss wait=%ss",
+                       normalized[:160], duration, wait_seconds)
+        return {
+            "success": False,
+            "error_code": "timeout",
+            "reply": (
+                f"视频「{title or '未命名'}」时长约 {duration or '未知'} 秒，"
+                f"下载等待超过 {wait_seconds} 秒，已中止。请换更短的视频或稍后重试。"
+            ),
+            "duration": duration,
+            "wait_seconds": wait_seconds,
+        }
     except VideoDownloadError as e:
         return {"success": False, "error_code": e.code, "reply": e.reply}
     except Exception as e:  # noqa: BLE001
@@ -372,15 +512,20 @@ async def handle_download_video(
         }
 
     file_no = archive.get("file_no", "")
+    final_duration = int(result.get("duration") or duration or 0)
     return {
         "success": True,
         "file_no": file_no,
         "filename": archive.get("filename", result["filename"]),
+        "title": title,
         "size": result["size"],
-        "duration": result["duration"],
+        "duration": final_duration,
+        "wait_seconds": wait_seconds,
         "reply": (
-            f"视频已下载并归档：{archive.get('filename', result['filename'])}"
-            f"（{file_no}，{result['size'] // (1024 * 1024)}MB）。"
+            f"视频「{title or archive.get('filename', result['filename'])}」"
+            f"（时长约 {final_duration or '未知'} 秒）已下载并归档："
+            f"{archive.get('filename', result['filename'])}"
+            f"（{file_no}，{result['size'] // (1024 * 1024)}MB；等待上限 {wait_seconds} 秒）。"
             f"请调用 send_file 发送给当前用户。"
         ),
     }

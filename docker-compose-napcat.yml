@@ -225,7 +225,7 @@ services:
     container_name: wechat-gateway
     restart: always
     ports:
-      - "127.0.0.1:18090:18090"          # 仅供宿主机 nginx 反代
+      - "0.0.0.0:18090:18090"            # 局域网调试开放（正式环境仍应由 nginx 反代）
     environment:
       - TZ=Asia/Shanghai
       - WXMP_CORE_URL=http://emily-core:18080
