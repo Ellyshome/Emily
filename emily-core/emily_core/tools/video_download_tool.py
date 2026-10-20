@@ -399,6 +399,7 @@ async def handle_download_video(
     params: dict,
     user_id: str = "",
     file_manager=None,
+    outbound_bus=None,
     **kwargs,
 ) -> dict:
     """下载公开视频、归档并授权给操作人；返回 file_no 供 send_file 使用。"""
@@ -436,6 +437,26 @@ async def handle_download_video(
     duration = int(meta.get("duration") or 0)
     wait_seconds = compute_wait_seconds(duration)
     title = str(meta.get("title") or "")[:120]
+
+    # 下载前先告知用户：视频信息 + 预计最长等待时间（QQ/console 均消费 progress 事件）
+    conv_id = str((params or {}).get("_conversation_id") or "")
+    if outbound_bus is not None and conv_id:
+        try:
+            from ..outbound_bus import is_test_session
+
+            duration_text = f"{duration} 秒" if duration else "未知"
+            outbound_bus.publish("progress", {
+                "content": (
+                    f"已获取视频信息：「{title or '未命名'}」，时长约 {duration_text}。"
+                    f"预计最长 {wait_seconds} 秒完成下载，请稍候…"
+                ),
+                "conversation_id": conv_id,
+                "test_session": is_test_session(conv_id),
+            })
+            logger.info("download_video progress published: conv=%s duration=%ss wait=%ss",
+                        conv_id, duration, wait_seconds)
+        except Exception as e:  # noqa: BLE001
+            logger.warning("download_video progress publish failed: %s", e)
 
     try:
         result = await asyncio.wait_for(

@@ -244,8 +244,9 @@ class Config:
     # 均已于退役中移除：会话池（session/ 编排内核）为唯一入站渠道，
     # 关闭即回退的旧链路与开关一并作废（见 需求/LangGraph编排内核化/..._退役记录_V1.md）
 
-    capability_call_timeout_seconds: int = 120
-    """单次能力调用超时（秒）；超时以结构化失败结果回灌对话，由循环收敛（AC-US-01.4）。"""
+    capability_call_timeout_seconds: int = 620
+    """单次能力调用超时（秒）；超时以结构化失败结果回灌对话，由循环收敛（AC-US-01.4）。
+    620 与视频下载的最长等待（600 秒）对齐，避免长视频在能力层被 120 秒截断。"""
 
     # ── Checkpoint 持久化 ──
     checkpoint_resume_window_seconds: int = 1800

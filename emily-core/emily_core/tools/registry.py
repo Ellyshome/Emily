@@ -392,7 +392,8 @@ def _register_business(core, reg):
     )
     _buc += _reg_biz(reg, "download_video", _VIDEO_DOWNLOAD_DESCRIPTION,
                      partial(handle_download_video,
-                             file_manager=core._file_manager),
+                             file_manager=core._file_manager,
+                             outbound_bus=getattr(core, "outbound_bus", None)),
                      params=_VIDEO_DOWNLOAD_SCHEMA, category="business",
                      permission_flag="write", write_mode="append")
 
