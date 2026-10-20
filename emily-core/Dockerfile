@@ -4,11 +4,12 @@ FROM python:3.12-slim
 WORKDIR /app
 
 # 系统依赖（camelot 需要 ghostscript，pdf2image 需要 poppler-utils）
+# libicu76：OfficeCLI 单文件 .NET 工具运行时的 ICU 依赖（缺失会在 --version 时 Abort）
 # 默认使用阿里云镜像加速，海外部署可通过 --build-arg APT_MIRROR=deb.debian.org 切回官方源
 ARG APT_MIRROR=mirrors.aliyun.com
 RUN sed -i "s|deb.debian.org|${APT_MIRROR}|g" /etc/apt/sources.list.d/debian.sources \
     && apt-get update && apt-get install -y --no-install-recommends \
-    ghostscript poppler-utils curl ca-certificates libstdc++6 \
+    ghostscript poppler-utils curl ca-certificates libstdc++6 libicu76 \
     && rm -rf /var/lib/apt/lists/*
 
 # OfficeCLI —— 单文件二进制（Word/Excel/PPT 读取），供 SOP-015-QRY 苗木表审核

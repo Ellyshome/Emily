@@ -191,6 +191,8 @@ async def handle_send_library_file(
         return denied
     if outbound_bus is None:
         return {"success": False, "error": "出站通道未就绪", "error_code": "service_unavailable"}
+    # 分发层未注入具名 conversation_id，回退取运行时参数（与 file_tool.handle_send_file 同口径）
+    conversation_id = conversation_id or (params or {}).get("_conversation_id", "")
     if not conversation_id:
         return {"success": False, "error": "缺少会话 ID", "error_code": "missing_conversation_id"}
 

@@ -8,6 +8,7 @@ from emily_core.services.attachment_downloader import (
     format_attachment_manifest,
 )
 from emily_core.tools.attachment_tool import handle_resolve_file_path
+from emily_core.tools.library_file_tool import handle_send_library_file
 from emily_core.tools.node_query_tool import _parse_dt, _status
 from emily_core.tools.site_report_tool import (
     _proposal_reply,
@@ -121,3 +122,28 @@ def test_site_report_dry_run_tier_a(monkeypatch):
     assert r["tier"] == "A"
     assert r["deliverable_name"] == "花岗岩铺装"
     assert "将记入已有任务" in r["reply"]
+
+
+def test_send_library_file_uses_runtime_conversation_id(tmp_path, monkeypatch):
+    import emily_core.tools.file_tool as ft
+    import emily_core.tools.library_file_tool as lft
+
+    monkeypatch.setattr(ft, "check_min_level", lambda *a, **k: None)
+    sample = tmp_path / "导水槽效果.jpg"
+    sample.write_bytes(b"jpg")
+    monkeypatch.setattr(lft, "_safe_path", lambda path: sample)
+
+    published = []
+
+    class Bus:
+        def publish(self, event_type, payload):
+            published.append((event_type, payload))
+
+    result = asyncio.run(handle_send_library_file(
+        {"path": "节点做法/上虞江南里-巷道雨水排水/导水槽效果-巷道.jpg",
+         "_conversation_id": "conv-demo-1"},
+        outbound_bus=Bus(), user_id="u5"))
+    assert result["success"] is True
+    assert published[0][0] == "file_send"
+    assert published[0][1]["conversation_id"] == "conv-demo-1"
+    assert published[0][1]["file_paths"][0]["name"] == "导水槽效果.jpg"

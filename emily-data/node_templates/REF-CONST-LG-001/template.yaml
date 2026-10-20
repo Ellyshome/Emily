@@ -1,0 +1,120 @@
+# 全景节点参考模板 —— 大区景观工程
+#
+# 维护约定：字段口径见 node_templates/README.md
+# 索引生成：uv run python scripts/maintain_node_template_index.py
+
+ref_id: REF-CONST-LG-001
+node_name: 大区景观工程
+node_type: MILESTONE
+stage_id: 3
+summary: 大区景观工程是景观条线从设计转入施工后的核心里程碑，覆盖硬质铺装、绿化种植、景观水电与验收成果
+deliverables:
+- name: 竣工验收成果
+  target_amount: 1.0
+  unit: 份
+  is_required: true
+  typical_filenames: 含"竣工验收""竣工报告""验收记录"等关键词
+- name: 海绵验收成果
+  target_amount: 1.0
+  unit: 份
+  is_required: true
+  typical_filenames: 含"海绵""透水""雨水"等关键词
+- name: 绿化验收成果
+  target_amount: 1.0
+  unit: 份
+  is_required: true
+  typical_filenames: 含"绿化验收""苗木验收""种植验收"等关键词
+preconditions:
+- 景观施工图评审通过
+- 景观施工单位已确定
+- 项目已进入工程阶段
+declarations:
+  participant_companies:
+  - desc: 本项目建设单位
+    match:
+      type_norm: 建设单位
+      scope_keywords: []
+      name_keywords: []
+    required: true
+  - desc: 本项目总包单位
+    match:
+      type_norm: 总包
+      scope_keywords: []
+      name_keywords: []
+    required: true
+  - desc: 本项目监理单位
+    match:
+      type_norm: 监理
+      scope_keywords: []
+      name_keywords: []
+    required: true
+  - desc: 景观工程分包单位
+    match:
+      type_norm: 分包
+      scope_keywords:
+      - 景观
+      name_keywords: []
+    required: true
+  participant_users:
+  - desc: 景观工程负责人
+    match:
+      from_company: 建设单位
+      role: responsible
+    required: true
+  - desc: 总包项目经理
+    match:
+      from_company: 总包
+      role: participant
+    required: true
+  - desc: 总监理工程师
+    match:
+      from_company: 监理
+      role: participant
+    required: true
+  - desc: 景观分包负责人
+    match:
+      from_company: 景观工程分包
+      role: participant
+    required: true
+  shared_files:
+  - desc: 景观施工图
+    match:
+      name_keywords:
+      - 景观施工图
+      type_keywords:
+      - pdf
+      - dwg
+    required: true
+  - desc: 小市政图（室外给、排水）
+    match:
+      name_keywords:
+      - 小市政
+      - 室外给
+      - 排水
+      type_keywords:
+      - pdf
+      - dwg
+    required: true
+  - desc: 海绵专项图纸
+    match:
+      name_keywords:
+      - 海绵
+      type_keywords:
+      - pdf
+      - dwg
+    required: true
+  - desc: 电气、弱电图纸
+    match:
+      name_keywords:
+      - 电气
+      - 弱电
+      type_keywords:
+      - pdf
+      - dwg
+    required: false
+  pre_conditions:
+  - desc: 景观施工图评审通过
+    match:
+      deliverable_name_keywords:
+      - 景观施工图
+    required: true
