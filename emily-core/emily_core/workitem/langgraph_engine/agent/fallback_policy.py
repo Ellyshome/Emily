@@ -54,6 +54,11 @@ class FallbackPolicy:
         # 参考模板库只读检索（US-02 / US-09）：普惠只读能力，与 query_node 同档
         "read_node_template",
         "build_node_draft",
+        # 资料库查阅/关键词检索/发图：只读能力，兜底档也需要能查资料库
+        "library_search",
+        "read_knowledge_library",
+        "read_library_file",
+        "send_library_file",
         # 群信息查询（US-06 / US-07）：普惠只读能力
         "query_groups",
     })

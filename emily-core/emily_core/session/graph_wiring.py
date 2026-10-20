@@ -113,6 +113,20 @@ def build_bundle(*, loop, allowed_sops: "set | None" = None) -> GraphBundle:
                     base = (base + "\n\n" + "\n\n".join(blocks)) if base else "\n\n".join(blocks)
             except Exception as e:  # noqa: BLE001
                 logger.warning("retrieval guidance failed: %s", e)
+
+        # ── 做法/经验类问题的强制检索提示 ──
+        # 这类问题模型容易直接走 knowledge_search + 联网；资料库备注不在 RAG 里，
+        # 显式提示先走 library_search，避免“库里明明有却答没有”。
+        try:
+            user_text = str(getattr(loop, "_turn_user_text", "") or "")
+            if any(k in user_text for k in ("做法", "工艺", "考察", "经验", "用过", "案例")):
+                base = (base + "\n\n"
+                        "## 本轮检索提示（强制）\n"
+                        "用户问的是做法/工艺/考察记录/经验复用：**先调用 `library_search`**"
+                        "（关键词检索资料库备注），命中后用 `read_library_file` 读正文；"
+                        "不要先调用 `knowledge_search`，也不要用联网搜索代替资料库。")
+        except Exception as e:  # noqa: BLE001
+            logger.debug("library intent hint failed: %s", e)
         return base
 
     def _history_provider() -> list:
