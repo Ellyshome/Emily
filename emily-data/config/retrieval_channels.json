@@ -19,6 +19,24 @@
       "enabled": true
     },
     {
+      "name": "资料库备注",
+      "tools": [
+        "library_search",
+        "read_knowledge_library",
+        "read_library_file"
+      ],
+      "domain": "LIB",
+      "answers": "资料库内的项目档案、考察记录、做法/材料经验（备注、说明与文本正文）",
+      "params": "query（关键词）、可选 path（限定目录）",
+      "permission": "资料库范围 + 等级",
+      "has_text": true,
+      "empty_semantics": "资料库无匹配备注",
+      "upgrade_to": [
+        "知识库检索"
+      ],
+      "enabled": true
+    },
+    {
       "name": "文件台账",
       "tools": [
         "query_files",

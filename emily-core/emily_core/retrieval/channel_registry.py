@@ -106,8 +106,8 @@ def describe_for_prompt(channels: "list | None" = None) -> str:
                c.empty_semantics or "无内容",
                ("；→ 改查：" + "、".join(c.upgrade_to)) if c.upgrade_to else "")
         )
-    lines.append("说明：**正文只在知识库**，文件与节点通道只返回记录与状态；"
-                 "需要文档内容时用知识库检索。")
+    lines.append("说明：**资料库备注与知识库都含正文**；文件台账与节点台账只返回记录与状态。"
+                 "查做法/考察记录/材料经验优先走「资料库备注」（library_search），不要直接走知识库或联网。")
     return "\n".join(lines)
 
 
