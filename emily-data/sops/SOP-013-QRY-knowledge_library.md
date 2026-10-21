@@ -95,41 +95,48 @@
 
 **查阅（先读首层索引 → 按线索逐级下钻 → 命中后读取文件）**：
 
-```
-用户提出查资料诉求
-    ↓
-[意图判定] → 确认为资料库查阅（非结构化数据查询、非规范条文检索）
-    ↓
-[模糊诉求优先关键词检索] library_search(query="<问题关键词>", path="<可选目录>")
-    ↓                                                        ← 命中备注/说明的路径、标题、片段、同目录图片
-[读命中的正文] read_library_file(path="<命中文件>")（note 为 .md 时也可 read_knowledge_library read_file）
-    ↓
-[需要目录全景时] read_knowledge_library(action="list") → read_index 逐级下钻
-    ↓
-[读目标文件] 文本类 → read_knowledge_library(action="read_file", path="<文件>")
-             Office → read_library_file(path="<文件>")
-             图片   → send_library_file(path="<文件>")（查材料/查做法主动发 1–2 张）
-    ↓
-[组织回复] 给**目录制**结果（按层列出命中资料），并可据正文回答
+```mermaid
+flowchart TD
+    A[用户提出查资料诉求] --> B{意图判定}
+    B -- 非资料库查阅 --> B1[走 SOP-005 结构化查询 · 或规范条文检索]
+    B -- 资料库查阅 --> C{诉求是否模糊?}
+    C -- 模糊 · 只有关键词 --> D[library_search · 检索备注/说明]
+    C -- 明确目录或文件 --> E[read_knowledge_library action=list · 首层]
+    D --> D1{命中?}
+    D1 -- 是 --> F[读命中正文 · read_library_file 或 read_file]
+    D1 -- 否 --> E
+    E --> E1[action=read_index · 逐级下钻 · 一次一层]
+    E1 --> E2{该目录有索引?}
+    E2 -- 否 --> E3[视为未入库 · 如实告知 · 不跳过索引直读]
+    E2 -- 是 --> F
+    F --> G{文件类型分发}
+    G -- 文本类 --> G1[read_knowledge_library action=read_file]
+    G -- Office --> G2[read_library_file · 现转现读]
+    G -- 图片 --> G3[send_library_file · 主动发 1–2 张]
+    G -- 图纸/压缩包/PDF --> G4[说明文件类型与描述 · 不编造内容]
+    G1 --> H[按目录制组织回复 · 按层列出命中资料]
+    G2 --> H
+    G3 --> H
+    G4 --> H
 ```
 
 > **查做法/经验/考察记录**：先 `library_search`，不要直接走 `knowledge_search`（RAG）或联网搜索；RAG 不包含资料库备注。只有 `library_search` 零命中时，才考虑知识库检索或如实说“没有找到”。
 
 **入库（先预览、后确认）**：
 
+```mermaid
+flowchart TD
+    A[用户要求入库某目录] --> B{管理员 L5 及以上?}
+    B -- 否 --> B1[明确拒绝并说明所需等级 · 不静默失败]
+    B -- 是 --> C[ingest_knowledge_library dry_run=true · 只出清单]
+    C --> D[列出将生成/更新的索引清单 · 请求确认]
+    D --> D1{用户确认?}
+    D1 -- 否 --> D2[停止 · 不写任何文件]
+    D1 -- 是 --> E[ingest_knowledge_library dry_run=false · 逐层覆盖写索引]
+    E --> F[回报索引数 · 目录层数 · 文件数 · 原始资料未改动]
 ```
-用户要求入库某目录
-    ↓
-[门槛判定] 管理员（L5）及以上 → 否则明确拒绝并说明所需等级（不静默失败）
-    ↓
-[预览] ingest_knowledge_library(dir="<目录>", dry_run=true)   ← 只出清单，不写任何文件
-    ↓
-[确认] 向用户列出将生成/更新的索引清单，请求确认
-    ↓
-[入库] ingest_knowledge_library(dir="<目录>", dry_run=false)  ← 逐层覆盖写索引（幂等）
-    ↓
-[回报] 新建/更新索引数、目录层数、文件数；原始资料未被改动
-```
+
+> 两张图只表示分支骨架，工具参数、文件类型分派细节与“必须遵守”条款以 §3.4、§3.5 正文为准；流程调整时同步更新本图。
 
 ### 3.4 查阅工具调用指引
 

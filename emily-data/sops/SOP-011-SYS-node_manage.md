@@ -108,16 +108,16 @@
 
 四态状态机（定义见 `node_state_machine.py` 的 `VALID_TRANSITIONS`）：
 
+```mermaid
+stateDiagram-v2
+    [*] --> CONDITIONS_NOT_MET : 节点创建 · 入库即生效
+    CONDITIONS_NOT_MET --> IN_PROGRESS : 前置条件满足 ≥1.0 且 必需成果完成 ≥1.0
+    IN_PROGRESS --> COMPLETED : 所有必需成果 100%
+    IN_PROGRESS --> CONDITIONS_NOT_MET : 加入 weight ≥ 999 依赖 · 阻塞回退
+    COMPLETED --> [*]
 ```
-节点创建（入库即生效）→ CONDITIONS_NOT_MET（条件不足）
-          ↑                                   │
-          │ 阻塞回退                  前置依赖满足 + 成果推进
-          │                                   ↓
-   （NOT_ACTIVATED 历史态）           IN_PROGRESS（进行中）
-   新流程不再进入，仅存量数据可能停留           │ 所有必需成果 100%
-                                             ↓
-                                       COMPLETED（已完成·终态）
-```
+
+> 本图为派生视图，迁移规则以 `node_state_machine.py` 的 `VALID_TRANSITIONS` 为准，代码改动时同步更新本图。`NOT_ACTIVATED` 为历史态，新流程不再进入，仅存量数据可能停留，故不绘入状态图。
 
 - **创建即 `CONDITIONS_NOT_MET`**：节点入库即生效，不存在"待审批阻断"；`NOT_ACTIVATED` 为历史态。
 - 叶子节点进入 `IN_PROGRESS` 的条件：**前置条件满足度 ≥ 1.0 且 必需成果完成度 ≥ 1.0**（均按权重累计）。
