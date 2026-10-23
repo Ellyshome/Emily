@@ -17,6 +17,16 @@ dist/
 .vscode/
 .idea/
 data/cmd_config.json
+
+# AI 工具的本地状态与分享产物（机器相关，不入库）
+.claude/settings.local.json
+.claude/projects/
+.claude/temp/
+.claude/plans/
+.trae-html-share-packages/
+
+# AstrBot 插件市场缓存（每次拉取内容都会变）
+data/plugins.json
 # 历史开发文档（审计发现，旧架构描述，非当前版本内容）
 tem/
 

@@ -1,2 +1,0 @@
-- [项目对外正式名称](emily-official-name.md) — 对外名称与内部代号区分
-- [需求基线开头一句话简介](req-baseline-opening-summary.md) — 需求基线文档开头必须有一句话说明做了什么；多主题可每主题一句
