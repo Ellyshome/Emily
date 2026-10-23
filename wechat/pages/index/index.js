@@ -1,6 +1,7 @@
 const {
   API_BASE,
   CHAT_PATH,
+  LOGIN_PATH,
   UPLOAD_PATH,
   FILES_PENDING_PATH,
   MAX_FILE_MB,
@@ -76,13 +77,67 @@ Page({
     this._moved = false
     // 已选、尚未随消息发出的本地附件：[{localPath, name, kind, size}]
     this._pending = []
-    // 本地假身份：生成一次并持久化，作为对话用户标识（正式 code2session 属后续阶段）
+    // 本地假身份：登录失败时的兜底标识
     let devId = wx.getStorageSync('dev_openid')
     if (!devId) {
       devId = 'dev_' + Date.now().toString(36) + Math.random().toString(36).slice(2, 8)
       wx.setStorageSync('dev_openid', devId)
     }
     this._devId = devId
+    // 网关登录令牌（wx.login → /login），过期后重新获取
+    this._token = wx.getStorageSync('wxmp_token') || ''
+    this._authPromise = null
+    this._authTried = false
+    this._ensureAuth()
+  },
+
+  /** 换取网关登录令牌；失败时保留本地 dev-id 兜底（仅联调可用）。 */
+  _ensureAuth() {
+    if (this._authPromise) return this._authPromise
+    this._authPromise = new Promise(resolve => {
+      if (this._token) return resolve(true)
+      wx.login({
+        success: res => {
+          if (!res.code) return resolve(false)
+          wx.request({
+            url: API_BASE + LOGIN_PATH,
+            method: 'POST',
+            timeout: 15000,
+            header: { 'content-type': 'application/json' },
+            data: { code: res.code },
+            success: r => {
+              const d = r.data || {}
+              if (r.statusCode === 200 && d.token) {
+                this._token = d.token
+                this._devId = d.dev_id || this._devId
+                wx.setStorageSync('wxmp_token', d.token)
+                wx.setStorageSync('dev_openid', this._devId)
+                resolve(true)
+              } else {
+                console.warn('登录失败', r.statusCode, d)
+                resolve(false)
+              }
+            },
+            fail: err => {
+              console.warn('登录请求失败', err)
+              resolve(false)
+            },
+          })
+        },
+        fail: () => resolve(false),
+      })
+    })
+    return this._authPromise
+  },
+
+  _authHeader(extra) {
+    return Object.assign(
+      {
+        'X-Dev-User': this._devId || 'dev-user',
+        'X-Dev-Token': this._token || '',
+      },
+      extra || {}
+    )
   },
 
   onDividerStart(e) {
@@ -265,12 +320,16 @@ Page({
   },
 
   uploadOne(att) {
+    if (!this._token && !this._authTried) {
+      this._authTried = true
+      return this._ensureAuth().then(() => this.uploadOne(att))
+    }
     return new Promise((resolve, reject) => {
       wx.uploadFile({
         url: API_BASE + UPLOAD_PATH,
         filePath: att.localPath,
         name: 'file',
-        header: { 'X-Dev-User': this._devId || 'dev-user' },
+        header: this._authHeader(),
         timeout: 120000,
         success: res => {
           let body = {}
@@ -294,6 +353,11 @@ Page({
   },
 
   askBackend(text, attachments) {
+    if (!this._token && !this._authTried) {
+      this._authTried = true
+      this._ensureAuth().then(() => this.askBackend(text, attachments))
+      return
+    }
     const history = this.data.messages
       .filter(m => m.text)
       .slice(-20)
@@ -302,9 +366,18 @@ Page({
       url: API_BASE + CHAT_PATH,
       method: 'POST',
       timeout: 60000,
-      header: { 'content-type': 'application/json', 'X-Dev-User': this._devId || 'dev-user' },
+      header: this._authHeader({ 'content-type': 'application/json' }),
       data: { message: text, history, attachments: attachments || [] },
       success: res => {
+        // 令牌过期：清掉本地令牌，重新登录后重试一次
+        if (res.statusCode === 401) {
+          wx.removeStorageSync('wxmp_token')
+          this._token = ''
+          this._authPromise = null
+          this._authTried = false
+          this._ensureAuth().then(() => this.askBackend(text, attachments))
+          return
+        }
         const reply = pickReply(res.data)
         const files = (res.data && res.data.files) || []
         if (res.statusCode >= 200 && res.statusCode < 300 && (reply || files.length)) {
@@ -328,7 +401,7 @@ Page({
         url: API_BASE + FILES_PENDING_PATH,
         method: 'GET',
         timeout: 15000,
-        header: { 'X-Dev-User': this._devId || 'dev-user' },
+        header: this._authHeader(),
         success: res => {
           if (res.statusCode >= 200 && res.statusCode < 300 && res.data) {
             this.pushFiles(res.data.files || [])
@@ -370,7 +443,7 @@ Page({
     wx.downloadFile({
       url,
       timeout: 180000,
-      header: { 'X-Dev-User': this._devId || 'dev-user' },
+      header: this._authHeader(),
       success: res => {
         if (res.statusCode !== 200) {
           this.setMsgState(msg.id, `下载失败(${res.statusCode})`)

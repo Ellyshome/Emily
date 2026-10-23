@@ -11,8 +11,10 @@ const LOCAL_API_BASE = 'http://192.168.100.87:18090'
 const PROD_API_BASE = 'https://ellym.asia/wxmp'
 
 module.exports = {
-  API_BASE: LOCAL_API_BASE,
+  API_BASE: PROD_API_BASE,
   CHAT_PATH: '/chat',
+  // 登录：wx.login 的 code 换网关令牌
+  LOGIN_PATH: '/login',
 
   // ── 文件通道 ──
   // 上传暂存（小程序 → 网关），Core 随后回拉归档

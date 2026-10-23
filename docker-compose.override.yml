@@ -1,0 +1,52 @@
+# 生产覆盖层：容器化 nginx + 企业微信应用回调 + 微信客服通道
+#
+# 用法（与上游编排叠加）：
+#   docker compose -f docker-compose.server.yml -f docker-compose.override.yml up -d
+#
+# 说明：
+#   · 上游编排只含 postgres/core/gateway，且要求宿主机 nginx；
+#     本覆盖层改用容器 nginx，避免在 ECS 上额外安装系统 nginx。
+#   · 复用既有数据卷 emily-wecom_emily_pgdata，避免切编排后数据库变空。
+#   · 平台凭据全部来自 .env，不写死在此文件。
+
+services:
+  wechat-gateway:
+    environment:
+      # ── 小程序登录（code2session + 网关签名令牌）──
+      - WXMP_APP_ID=${WXMP_APP_ID:-}
+      - WXMP_APP_SECRET=${WXMP_APP_SECRET:-}
+      - WXMP_TOKEN_SECRET=${WXMP_TOKEN_SECRET:-}
+      - WXMP_REQUIRE_AUTH=${WXMP_REQUIRE_AUTH:-0}
+      # ── 微信客服桥接（轮询，不依赖回调）──
+      - WXMP_KF_ENABLED=${WXMP_KF_ENABLED:-0}
+      - WXMP_KF_CORP_ID=${WECOM_CORPID:-}
+      - WXMP_KF_CORP_SECRET=${WECOM_SECRET:-}
+      - WXMP_KF_OPEN_KFID=${WXMP_KF_OPEN_KFID:-}
+      - WXMP_KF_POLL_INTERVAL=${WXMP_KF_POLL_INTERVAL:-12}
+      # ── 企业微信应用回调 ──
+      - WXMP_WECOM_CB_TOKEN=${WECOM_TOKEN:-}
+      - WXMP_WECOM_CB_AES_KEY=${WECOM_AES_KEY:-}
+      - WXMP_WECOM_CB_CORP_ID=${WECOM_CORPID:-}
+      - WXMP_WECOM_AGENT_ID=${WECOM_AGENT_ID:-}
+
+  nginx:
+    image: nginx:1.27-alpine
+    container_name: emily-nginx
+    restart: always
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./deploy/nginx-container/emily.conf:/etc/nginx/conf.d/default.conf:ro
+      - /ssl:/ssl:ro
+      # 企业微信域名校验文件（WW_verify_*.txt）
+      - /app/test:/var/www/verify:ro
+    depends_on:
+      - wechat-gateway
+    networks:
+      - emily_network
+
+volumes:
+  emily_pgdata:
+    # 复用切换前的数据卷，避免历史数据丢失
+    name: emily-wecom_emily_pgdata
