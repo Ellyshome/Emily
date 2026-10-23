@@ -112,4 +112,5 @@ Thumbs.db
 # 保留此条仅为防误建旧目录时被提交
 emily-data/knowledge_library/
 temporary
-deploy
+# 注：deploy/ 已转为正式部署包（prepare/bootstrap/nginx/sql），必须入库；
+#     旧的忽略规则已移除，勿再加回。

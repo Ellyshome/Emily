@@ -1,0 +1,169 @@
+# Emily 生产部署编排（ECS / 单机 Docker）
+#
+# 渠道范围：仅 wechat-gateway（微信小程序）。不含 AstrBot、NapCat、mitmproxy。
+# 与开发用的 docker-compose-*.yml 相互独立，互不影响。
+#
+# 启动：docker compose -f docker-compose.server.yml up -d
+# 前置：先执行 deploy/prepare.sh（建运行态目录 + 应用业务种子 SQL）
+#
+# 约定：
+#   · 运行态数据统一在仓库同级的 Emily-var/（可用 VAR_DIR 覆盖）
+#   · 数据库用命名卷 emily_pgdata，不落在 Emily-var 里；备份走 pg_dump
+#   · 所有端口只绑 127.0.0.1，公网入口只经 nginx（见 deploy/nginx/）
+
+name: emily
+
+services:
+  # ── 业务数据库（pgvector）──
+  emily-postgres:
+    image: pgvector/pgvector:pg16
+    container_name: emily-postgres
+    restart: always
+    environment:
+      - POSTGRES_USER=${POSTGRES_USER:-emily}
+      - POSTGRES_PASSWORD=${POSTGRES_PASSWORD:?请在 .env 设置 POSTGRES_PASSWORD}
+      - POSTGRES_DB=${POSTGRES_DB:-emily}
+    volumes:
+      - emily_pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U $${POSTGRES_USER} -d $${POSTGRES_DB}"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+      start_period: 20s
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
+    networks:
+      - emily_network
+
+  # ── Emily Core（API + 控制台后端）──
+  emily-core:
+    build:
+      context: ./emily-core
+      dockerfile: Dockerfile
+    image: emily-core:${EMILY_RELEASE:-latest}
+    container_name: emily-core
+    restart: always
+    depends_on:
+      emily-postgres:
+        condition: service_healthy
+    environment:
+      - TZ=${TZ:-Asia/Shanghai}
+      - EMILY_DATABASE_URL=postgresql://${POSTGRES_USER:-emily}:${POSTGRES_PASSWORD}@emily-postgres:5432/${POSTGRES_DB:-emily}
+      # LLM
+      - EMILY_LLM_API_KEY=${EMILY_LLM_API_KEY:?请在 .env 设置 EMILY_LLM_API_KEY}
+      - EMILY_LLM_BASE_URL=${EMILY_LLM_BASE_URL:-https://api.deepseek.com}
+      - EMILY_LLM_MODEL=${EMILY_LLM_MODEL:-deepseek-v4-flash}
+      - EMILY_LLM_ROUTER_MODEL=${EMILY_LLM_ROUTER_MODEL:-deepseek-v4-flash}
+      - EMILY_LLM_GUARDIAN_MODEL=${EMILY_LLM_GUARDIAN_MODEL:-deepseek-v4-flash}
+      - EMILY_LLM_AGENT_LOOP_MODEL=${EMILY_LLM_AGENT_LOOP_MODEL:-deepseek-v4-pro}
+      - EMILY_EXPERT_MODEL=${EMILY_EXPERT_MODEL:-}
+      - EMILY_LLM_TEMPERATURE=${EMILY_LLM_TEMPERATURE:-0.1}
+      - EMILY_LLM_MAX_TOKENS=${EMILY_LLM_MAX_TOKENS:-1024}
+      - EMILY_LLM_AGENT_LOOP_MAX_TOKENS=${EMILY_LLM_AGENT_LOOP_MAX_TOKENS:-8192}
+      - EMILY_LLM_CONTEXT_WINDOW_OVERRIDE=${EMILY_LLM_CONTEXT_WINDOW_OVERRIDE:-0}
+      # 运行形态
+      - EMILY_TAKEOVER_MODE=${EMILY_TAKEOVER_MODE:-collaborate}
+      - EMILY_BOT_NAME=${EMILY_BOT_NAME:-Emy}
+      - EMILY_LOG_LEVEL=${EMILY_LOG_LEVEL:-INFO}
+      - EMILY_SESSION_ARCHIVE_ENABLED=true
+      - EMILY_API_TOKEN=${EMILY_API_TOKEN:?请在 .env 设置 EMILY_API_TOKEN}
+      # RAG：pgvector + 远程 Embedding（本地 TEI 已停用）
+      - EMILY_KB_ENABLED=${EMILY_KB_ENABLED:-false}
+      - EMILY_EMBEDDING_MODE=${EMILY_EMBEDDING_MODE:-remote}
+      - EMILY_EMBEDDING_API_URL=${EMILY_EMBEDDING_API_URL:-https://api.siliconflow.cn/v1/embeddings}
+      - EMILY_EMBEDDING_API_KEY=${SILICONFLOW_API_KEY:-}
+      - EMILY_EMBEDDING_MODEL=${EMILY_EMBEDDING_MODEL:-BAAI/bge-m3}
+      # VLM（OCR）
+      - EMILY_VLM_API_URL=${EMILY_VLM_API_URL:-https://api.siliconflow.cn/v1/chat/completions}
+      - EMILY_VLM_API_KEY=${EMILY_VLM_API_KEY:-}
+      - EMILY_VLM_MODEL=${EMILY_VLM_MODEL:-Qwen/Qwen3-VL-8B-Instruct}
+      # 存储与路径（容器内路径固定，宿主侧由挂载决定）
+      - EMILY_STORAGE_ROOT=/app/attachments
+      - EMILY_HOOK_CONFIG_PATH=/app/config/hook_config.json
+      - EMILY_WXMP_DOMAIN=${EMILY_WXMP_DOMAIN:-}
+      # 邮件（可选）
+      - EMILY_EMAIL_IDKEY=${EMILY_EMAIL_IDKEY:-}
+      - EMILY_EMAIL_PASSWORD=${EMILY_EMAIL_PASSWORD:-}
+    volumes:
+      # 宿主机 .env（控制台写回用，唯一可写的配置面）
+      - ./.env:/app/host/.env
+      # 内容层（随代码版本走，只读）
+      - ./emily-data/sops:/app/sops:ro
+      - ./emily-data/skills:/app/skills:ro
+      - ./emily-data/prompts:/app/prompts:ro
+      - ./emily-data/config:/app/config:ro
+      - ./emily-data/baseknowledge:/app/baseknowledge:ro
+      - ./emily-data/company_policies:/app/company_policies:ro
+      - ./emily-data/tools:/app/tools:ro
+      - ./emily-data/rules:/app/rules:ro
+      - ./emily-data/node_templates:/app/data/node_templates:ro
+      # 运行态（读写）
+      - ${VAR_DIR:-../Emily-var}/knowledge_library:/app/knowledge_library
+      - ${VAR_DIR:-../Emily-var}/notebooks:/app/notebooks
+      - ${VAR_DIR:-../Emily-var}/logs:/app/logs
+      - ${VAR_DIR:-../Emily-var}/attachments:/app/attachments
+      - ${VAR_DIR:-../Emily-var}/user_memory:/app/user_memory
+      - ${VAR_DIR:-../Emily-var}/journal:/app/journal
+      - ${VAR_DIR:-../Emily-var}/session_archives:/app/session_archives
+      - ${VAR_DIR:-../Emily-var}/runtime:/app/runtime
+      - ${VAR_DIR:-../Emily-var}/state:/app/data/state
+      # 脚本与部署工具（只读；prepare/bootstrap 在容器内执行用）
+      - ./scripts:/app/scripts:ro
+      - ./deploy:/app/deploy:ro
+    ports:
+      - "127.0.0.1:18080:18080"   # 仅供本机 nginx 反代
+    logging:
+      driver: json-file
+      options:
+        max-size: "20m"
+        max-file: "5"
+    networks:
+      - emily_network
+
+  # ── 微信小程序薄网关 ──
+  # 注意：当前网关为 MVP 身份模型（X-Dev-User 头），未接 wx.login/code2session，
+  # 因此**不能**直接暴露公网；必须经 nginx 并配合 Basic Auth / IP 白名单。
+  wechat-gateway:
+    build:
+      context: ./wechat-gateway
+      dockerfile: Dockerfile
+    image: wechat-gateway:${EMILY_RELEASE:-latest}
+    container_name: wechat-gateway
+    restart: always
+    depends_on:
+      - emily-core
+    environment:
+      - TZ=${TZ:-Asia/Shanghai}
+      - WXMP_CORE_URL=http://emily-core:18080
+      - WXMP_SELF_URL=http://wechat-gateway:18090
+      - WXMP_UPLOAD_DIR=/app/uploads
+    volumes:
+      - ./.env:/app/.env:ro
+      - ${VAR_DIR:-../Emily-var}/wechat-gateway-uploads:/app/uploads
+    ports:
+      - "127.0.0.1:18090:18090"   # 仅供本机 nginx 反代
+    healthcheck:
+      test: ["CMD-SHELL", "python -c \"import urllib.request,sys; sys.exit(0 if urllib.request.urlopen('http://127.0.0.1:18090/health',timeout=5).status==200 else 1)\""]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+      start_period: 20s
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
+    networks:
+      - emily_network
+
+volumes:
+  emily_pgdata:
+    name: emily_pgdata
+
+networks:
+  emily_network:
+    driver: bridge
