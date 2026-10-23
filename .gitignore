@@ -22,9 +22,13 @@ tem/
 
 # 运行时数据
 pgdata/
+# 根级 memory/ 是旧版用户记忆落点（已统一到 emily-data/user_memory），防旧代码/旧脚本误建后被提交
+/memory/
 emily-data/runtime/
 emily-data/db_seeds/
 emily-data/hf_cache/
+# ↑ 模型缓存已于 2026-10-23 清除；本地 TEI 恢复时放仓库同级 Emily-var/hf_cache，
+#   此条仅防旧脚本按老路径重建后被误提交
 emily-data/tmp_*.json
 *.log
 logs/
@@ -38,11 +42,11 @@ wechat-gateway/uploads/
 # PostgreSQL 数据目录（含重命名备份，如 postgres_data_broken_20260914）
 emily-data/postgres_data*/
 
-# NapCat：WebUI 凭据 / 登录二维码（严禁入库）
-# 注：napcat_config/napcat_<qq>.json、onebot11_*.json、napcat_protocol_*.json 含账号与
-#     OneBot 连接 token，同时又是新环境接入 QQ 所必需的配置——待改为 .example 模板后再忽略
-emily-data/napcat_config/passkey.json
-emily-data/napcat_config/webui.json
+# NapCat：实配与凭据一律不入库（2026-10-23 起实配已迁出到 Emily-var/napcat_config）
+# 仓库内 emily-data/napcat_config/ 只保留 *.example.json 模板与 README
+emily-data/napcat_config/*
+!emily-data/napcat_config/*.example.json
+!emily-data/napcat_config/README.md
 emily-data/napcat_qrcode.png
 
 # mitmproxy CA 密钥与派生件（严禁入库）

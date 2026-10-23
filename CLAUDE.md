@@ -115,13 +115,13 @@ QQ → NapCat → AstrBot → emily_agent 薄插件
 |------|------|------|
 | **CodeGraph MCP** | 代码知识图谱索引（169 文件 / 2,110 符号 / 4,051 边），SQLite 后端，文件变更秒级热更新 | `codegraph_explore` 理解代码/架构/流程；`codegraph_search` 搜符号；`codegraph_callers/callees` 查调用链；`codegraph_impact` 评估改动影响 |
 | **emy-test** | Docker 内 emily-core 生产实战测试（HTTP + SSE） | `uv run python .claude/skills/emy-test/cli.py --managed --llm --message "..." --sender "真实用户名" --sender-id "真实UUID"` |
-| **LLM 流量代理** | mitmproxy 拦截 emily-core ↔ DeepSeek HTTPS 通讯，AI 友好接口 | 两种方式：① mitmweb UI `http://localhost:8081`（密码 `emily_proxy_2026`）② jsonl 日志 `emily-data\logs\llm_trace.jsonl`（逐行完整 request/response） |
+| **LLM 流量代理** | mitmproxy 拦截 emily-core ↔ DeepSeek HTTPS 通讯，AI 友好接口 | 两种方式：① mitmweb UI `http://localhost:8081`（密码 `emily_proxy_2026`）② jsonl 日志 `Emily-var\logs\llm_trace.jsonl`（逐行完整 request/response） |
 
 **emy-test 强制规则**：`--sender-id` 必须使用 `users` 表中真实存在的用户 UUID。随便编一个不存在的 ID 会导致：系统自动创建用户（污染 users 表）+ 权限降级到 level 1（测试的是访客降级路径，结果完全不可信）。每次测试前先查：`docker exec emily-postgres psql -U emily -d emily -c "SELECT id, username, permission_level FROM users WHERE status = 'active' ORDER BY permission_level LIMIT 10;"`
 
 **LLM 流量代理使用规则**：
-- **jsonl（机器读）**：AI 工具排查问题时直接用 `emily-data\logs\llm_trace.jsonl`，每行一条 DeepSeek API 调用（含 messages 全文、响应 JSON、model、usage、finish_reason；已过滤 url/method/status_code/headers 等 SDK 噪音字段，不再记录 Authorization API key），支持 `tail` / `head` / Grep 逐行读取
-- **md（人读，全量）**：开发者阅读用 `emily-data\logs\llm_trace.md`，每条包含：所有 messages（含完整 system prompt 和对话历史）、LLM 思考过程（reasoning_content，reasoner 模型独有的思维链）、完整回复 content、model、token 用量（含 cache/reasoning 明细）
+- **jsonl（机器读）**：AI 工具排查问题时直接用 `Emily-var\logs\llm_trace.jsonl`，每行一条 DeepSeek API 调用（含 messages 全文、响应 JSON、model、usage、finish_reason；已过滤 url/method/status_code/headers 等 SDK 噪音字段，不再记录 Authorization API key），支持 `tail` / `head` / Grep 逐行读取
+- **md（人读，全量）**：开发者阅读用 `Emily-var\logs\llm_trace.md`，每条包含：所有 messages（含完整 system prompt 和对话历史）、LLM 思考过程（reasoning_content，reasoner 模型独有的思维链）、完整回复 content、model、token 用量（含 cache/reasoning 明细）
 - **mitmweb UI**：需要实时观察流量时打开 `http://localhost:8081`（密码 `emily_proxy_2026`），已过滤仅显示 `api.deepseek.com`。注意 UI 含明文 API key，端口已绑 `127.0.0.1` 仅宿主机访问
 - **关闭落盘**：注释 `docker-compose-napcat.yml` 中 mitmproxy 的 `LLM_TRACE_ENABLED=1` 环境变量，`docker compose up -d mitmproxy`（不影响代理功能，mitmweb UI 仍可用）
 - **关闭代理**：注释 `docker-compose-napcat.yml` 中 emily-core 的 `HTTPS_PROXY` 和 `SSL_CERT_FILE` 两行，`docker compose restart emily-core`

@@ -215,12 +215,12 @@ uv run python .claude/skills/emy-test/cli.py --managed --llm \
 > 但 **容器是 Linux 环境，无法解析 Windows 路径**（`D:\` 不存在），
 > 导致 `AttachmentDownloader` / `FileStorageService` 下载文件时失败。
 >
-> **解决方案**：将测试文件放入 Docker volume 挂载目录（`emily-data/attachments/`），
+> **解决方案**：将测试文件放入 Docker volume 挂载目录（`Emily-var/attachments/`），
 > 容器内即可通过 `file:///app/attachments/xxx.txt` 访问。
 >
 > 对于已有 mock 文件（由 `setup_test_env.ps1` 生成），路径天然可访问：
 > ```
-> 宿主机：emily-data/attachments/mock/EMERALD-01/...
+> 宿主机：Emily-var/attachments/mock/EMERALD-01/...
 >    ↕ volume 挂载 (docker-compose-napcat.yml L77)
 > 容器内：/app/attachments/mock/EMERALD-01/...
 > ```
@@ -228,7 +228,7 @@ uv run python .claude/skills/emy-test/cli.py --managed --llm \
 > send_file 等功能可直接使用。
 >
 > **测试文件放置建议**：
-> - 测试附件自动下载 → 文件放 `emily-data/attachments/`，消息中传容器内 `file:///app/attachments/...`
+> - 测试附件自动下载 → 文件放 `Emily-var/attachments/`，消息中传容器内 `file:///app/attachments/...`
 > - 测试 send_file / 权限校验 → 先跑 `setup_test_env.ps1` 生成 mock 文件（18 个空文件 + storage_path 修复）
 > - 不要依赖 `--file` 生成的 Windows 绝对路径 URL 在容器侧生效
 

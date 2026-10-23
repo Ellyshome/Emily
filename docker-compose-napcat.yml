@@ -6,8 +6,8 @@ services:
       - "127.0.0.1:6098:6098"
       - "127.0.0.1:6099:6099"
     volumes:
-      - ./emily-data/napcat_config:/app/napcat/config   # OneBot11/账号配置（可持久化）
-      - ./emily-data/napcat_qq:/app/.config/QQ          # QQ 登录态与数据（重建容器不丢登录）
+      - ${VAR_DIR:-../Emily-var}/napcat_config:/app/napcat/config   # OneBot11/账号配置（可持久化）
+      - ${VAR_DIR:-../Emily-var}/napcat_qq:/app/.config/QQ          # QQ 登录态与数据（重建容器不丢登录）
     networks:
       - emily_network
     restart: always
@@ -121,15 +121,15 @@ services:
       - ./emily-data/rules:/app/rules:ro
       - ./emily-data/node_templates:/app/data/node_templates:ro   # 全景节点参考模板（emy-console 选模板建节点）
       # ── Core 写入，人类查阅 ──
-      - ./emily-data/notebooks:/app/notebooks
-      - ./emily-data/logs:/app/logs
-      - ./emily-data/attachments:/app/attachments
-      - ./emily-data/user_memory:/app/user_memory
-      - ./emily-data/journal:/app/journal
-      - ./emily-data/session_archives:/app/session_archives
+      - ${VAR_DIR:-../Emily-var}/notebooks:/app/notebooks
+      - ${VAR_DIR:-../Emily-var}/logs:/app/logs
+      - ${VAR_DIR:-../Emily-var}/attachments:/app/attachments
+      - ${VAR_DIR:-../Emily-var}/user_memory:/app/user_memory
+      - ${VAR_DIR:-../Emily-var}/journal:/app/journal
+      - ${VAR_DIR:-../Emily-var}/session_archives:/app/session_archives
       - ./Issues/测试用例:/app/test_cases:ro                # 测试用例库（emy-console 只读展示）
       # 控制台运行期可改配置（渠道覆盖等）：/app/config 为只读，故单独读写挂载
-      - ./emily-data/runtime:/app/runtime
+      - ${VAR_DIR:-../Emily-var}/runtime:/app/runtime
       # ── 代码（只读，开发阶段可热更新）──
       - ./emily-core/emily_core:/app/emily_core:ro
       - ./emily-core/api:/app/api:ro
@@ -142,11 +142,15 @@ services:
       - emily-postgres
 
   # ── 本地 TEI Embedding 服务（已停用，改用远程 SiliconFlow Embedding）──
-  # 原因：emily-core 当前通过 EMILY_EMBEDDING_API_URL 走远程 SiliconFlow，本地 TEI 已停用；
-  # 且 emily-data/hf_cache 中只有 HF 原始缓存（hub/models--BAAI--bge-m3），
-  # 缺少 TEI 所需的扁平模型目录 /data/bge-m3-tei，导致容器反复以 exit 1 重启。
-  # 如需恢复本地嵌入：先将 BGE-m3 转为 TEI safetensors 格式并放到 emily-data/hf_cache/bge-m3-tei，
-  # 再取消注释下方服务定义，并把 emily-core 的 EMILY_TEI_URL 打开、远程 Embedding 注释掉。
+  # 停用原因：emily-core 通过 EMILY_EMBEDDING_API_URL 走远程 SiliconFlow。
+  # 模型缓存已于 2026-10-23 整体清除（原 emily-data/hf_cache 6.4GB：HF 原始缓存 4.3GB
+  # + TEI 扁平目录 2.2GB，当时服务已停用、纯占磁盘）。
+  # 如需恢复本地嵌入，按以下步骤重建（缓存属可再生产物，不备份、不入仓库）：
+  #   ① 下载 BGE-m3 到 ${VAR_DIR}/hf_cache（与代码仓库同级的 Emily-var，需自行创建目录）
+  #      huggingface-cli download BAAI/bge-m3 --local-dir ${VAR_DIR}/hf_cache/bge-m3-tei
+  #      或从旧 TEI 目录复制 config.json / model.safetensors / tokenizer* / sentencepiece*
+  #   ② 取消注释下方服务定义，挂载宿主 ${VAR_DIR}/hf_cache
+  #   ③ 打开 emily-core 的 EMILY_TEI_URL、注释掉远程 Embedding
   # 历史：cpu-1.5 曾因 HF 下载 bug 弃用 → 自写 transformers server（后随 docling-slim
   # 瘦身丢失 torch 崩溃）→ 2026-09 回归官方 TEI。注意必须 pin cpu-1.6：cpu-1.7 的
   # Candle 后端加载 BGE-m3 时段错误（exit 139），1.6 正常（batch 被限为 4）
@@ -162,7 +166,7 @@ services:
   #     - HF_HUB_OFFLINE=1
   #     - HUGGINGFACE_HUB_OFFLINE=1
   #   volumes:
-  #     - ./emily-data/hf_cache:/data:ro
+  #     - ${VAR_DIR:-../Emily-var}/hf_cache:/data:ro
   #   networks:
   #     - emily_network
   #   restart: always
@@ -179,7 +183,7 @@ services:
       - POSTGRES_PASSWORD=emily_secret_2026
       - POSTGRES_DB=emily
     volumes:
-      - ./emily-data/postgres_data:/var/lib/postgresql/data
+      - ${VAR_DIR:-../Emily-var}/postgres_data:/var/lib/postgresql/data
     networks:
       - emily_network
     restart: always
@@ -212,7 +216,7 @@ services:
       - "127.0.0.1:8888:8888"   # 代理端口（容器间经 emily_network 访问）
     volumes:
       - ./emily-data/mitmproxy:/root/.mitmproxy
-      - ./emily-data/logs:/app/logs       # jsonl 落盘目录（与 emily-core 共享）
+      - ${VAR_DIR:-../Emily-var}/logs:/app/logs       # jsonl 落盘目录（与 emily-core 共享）
     networks:
       - emily_network
     restart: always

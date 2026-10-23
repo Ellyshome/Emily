@@ -18,7 +18,7 @@ M8c: 为每个用户维护一个长期记忆 Markdown 文件。
     内容描述...
 
 使用方式：
-    svc = UserMemoryService(memory_dir="memory/")
+    svc = UserMemoryService(memory_dir="/app/user_memory")
     svc.save_memory("张三", "每天检查科技城景观设计进度")
     content = svc.load_memory("张三")
 """
@@ -36,7 +36,7 @@ class UserMemoryService:
     """用户长期记忆服务。
 
     Args:
-        memory_dir: 记忆文件存储目录（为空时默认 memory/）
+        memory_dir: 记忆文件存储目录（为空时按容器 /app/user_memory → 开发 emily-data/user_memory 解析）
         enabled: 是否启用
         max_entries: 每个用户最大记忆条目数
     """
@@ -52,13 +52,12 @@ class UserMemoryService:
         self.memory_dir = memory_dir or ""
 
         if not self.memory_dir:
-            # 默认路径由 EmilyCore._init_m8c_services() 显式传入
-            # （优先 /app/user_memory/，回退 emily-data/user_memory/）
-            self.memory_dir = os.path.join(
-                os.path.dirname(os.path.dirname(os.path.dirname(
-                    os.path.dirname(os.path.abspath(__file__))
-                ))),
-                "memory",
+            # 正常路径由 EmilyCore 显式传入；单独实例化时走同一套三级解析，
+            # 避免落到仓库根的 memory/（容器内更会算成 /memory）。
+            from ..infrastructure.paths import resolve_data_path
+
+            self.memory_dir = resolve_data_path(
+                "", "/app/user_memory", "emily-data/user_memory",
             )
 
         if self.enabled:

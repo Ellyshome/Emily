@@ -34,10 +34,12 @@ class PendingIssuesService:
         self._resolved_path = True
         if self._path is not None:
             return self._path
-        # 默认路径：从当前文件位置推导项目根目录
-        # pending_issues.py → services/ → emily_core/ → emily-core/ → Emily/（**共 4 级**）
-        project_root = Path(__file__).parent.parent.parent.parent
-        self._path = project_root / DEFAULT_ISSUES_PATH
+        # 默认路径：走统一解析（容器 /app/notebooks → 宿主机 Emily-var/notebooks）
+        from ..infrastructure.paths import resolve_data_path
+
+        self._path = Path(resolve_data_path(
+            "", "/app/notebooks/待解决问题.md", DEFAULT_ISSUES_PATH,
+        ))
         return self._path
 
     def _ensure_file(self) -> None:

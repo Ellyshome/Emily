@@ -324,7 +324,7 @@ docker logs --tail 1 emily-core 2>&1
 
 **4c. 文件系统预设**——如果测试需要触发文件相关逻辑：
 
-- 在 `emily-data/attachments/` 或指定位置放置测试文件
+- 在 `Emily-var/attachments/` 或指定位置放置测试文件
 - **记录文件路径和内容描述**，以便事后清理
 
 **4d. 确认测试用户存在**——emy-test 对话需要真实用户：
@@ -412,16 +412,16 @@ uv run python .claude/skills/emy-test/cli.py --managed --llm --message "{相同�
 
 #### 5f. LLM 流量抓包分析
 
-用于验证 LLM 调用链、prompt 渲染内容、token 消耗、模型选择、cache 命中等。Emily 通过 mitmproxy 拦截 emily-core ↔ DeepSeek 通讯，落盘到 `emily-data/logs/`。**这是验证 LLM 相关需求（如 prompt 优化、模型分层、cache 命中）的核心证据来源。**
+用于验证 LLM 调用链、prompt 渲染内容、token 消耗、模型选择、cache 命中等。Emily 通过 mitmproxy 拦截 emily-core ↔ DeepSeek 通讯，落盘到 `Emily-var/logs/`。**这是验证 LLM 相关需求（如 prompt 优化、模型分层、cache 命中）的核心证据来源。**
 
 **两种读取方式**：
 
 | 文件 | 用途 | 读取方式 |
 |------|------|---------|
-| `emily-data/logs/llm_trace.jsonl` | 机器读，逐行一条 LLM 调用 JSON | `docker exec mitmproxy tail -N /app/logs/llm_trace.jsonl`；或宿主 `Get-Content -Tail N` |
-| `emily-data/logs/llm_trace.md` | 人读全量，含完整 system prompt + 思维链 | Read 工具直接读（文件可能很大，建议先 tail 看规模） |
+| `Emily-var/logs/llm_trace.jsonl` | 机器读，逐行一条 LLM 调用 JSON | `docker exec mitmproxy tail -N /app/logs/llm_trace.jsonl`；或宿主 `Get-Content -Tail N` |
+| `Emily-var/logs/llm_trace.md` | 人读全量，含完整 system prompt + 思维链 | Read 工具直接读（文件可能很大，建议先 tail 看规模） |
 
-**应用日志文件**：`emily-data/logs/emily_{YYYYMMDD}.log`——emily-core 应用日志（含 Session 生命周期、WorkItem 执行、Hook 触发等），补充 `docker logs` 看不到的文件级日志。
+**应用日志文件**：`Emily-var/logs/emily_{YYYYMMDD}.log`——emily-core 应用日志（含 Session 生命周期、WorkItem 执行、Hook 触发等），补充 `docker logs` 看不到的文件级日志。
 
 **每条 jsonl 记录的关键字段及验证用途**：
 
@@ -460,7 +460,7 @@ docker exec mitmproxy tail -10 /app/logs/llm_trace.jsonl
 # → 若 content 空但 reasoning 长，说明模型把答案吞进思维链，需触发 fallback
 
 # 场景 6：应用日志排查（Session 生命周期 / WorkItem 执行 / Hook 触发）
-Get-Content "emily-data\logs\emily_$(Get-Date -Format yyyyMMdd).log" -Tail 50
+Get-Content "Emily-var\logs\emily_$(Get-Date -Format yyyyMMdd).log" -Tail 50
 # 或 docker logs --tail 50 emily-core 2>&1
 ```
 
@@ -470,11 +470,11 @@ Get-Content "emily-data\logs\emily_$(Get-Date -Format yyyyMMdd).log" -Tail 50
 
 用于验证 Session 上下文构建、权限加载、意图识别、多轮交互、WorkItem 执行的完整轨迹。每个会话归档为独立 md 文件。**这是验证"权限是否降级""路由是否正确""调用链是否合理"的直接证据——比 docker logs 更结构化、更完整。**
 
-**文件位置与命名**：`emily-data/session_archives/{YYYY-MM-DD}_{用户名}_{会话ID}.md`
+**文件位置与命名**：`Emily-var/session_archives/{YYYY-MM-DD}_{用户名}_{会话ID}.md`
 
 ```powershell
 # 定位最近的归档文件
-Get-ChildItem "emily-data\session_archives" -Filter "*.md" | Sort-Object LastWriteTime -Descending | Select-Object -First 3
+Get-ChildItem "Emily-var\session_archives" -Filter "*.md" | Sort-Object LastWriteTime -Descending | Select-Object -First 3
 # → 取最近 3 个归档，用 Read 工具完整阅读
 ```
 
@@ -714,7 +714,7 @@ docker exec emily-postgres psql -U emily -d emily -c "SELECT count(*) FROM {受�
 | 容器重启 | {无 / 有} | — |
 | 内存使用 | {正常 / 异常增长} | `docker stats --no-stream` 快照 |
 
-### 7.2 LLM 调用链分析（基于 `emily-data/logs/llm_trace.jsonl`）
+### 7.2 LLM 调用链分析（基于 `Emily-var/logs/llm_trace.jsonl`）
 
 | 检查项 | 结果 | 详情 |
 |--------|------|------|
@@ -725,7 +725,7 @@ docker exec emily-postgres psql -U emily -d emily -c "SELECT count(*) FROM {受�
 | finish_reason | {正常/异常} | {是否有 length/content_filter 异常；是否有 content 空白 + reasoning 长} |
 | prompt 渲染 | {正确/错误} | {占位符是否替换、前缀是否字节级稳定} |
 
-### 7.3 Session 归档验证（基于 `emily-data/session_archives/`）
+### 7.3 Session 归档验证（基于 `Emily-var/session_archives/`）
 
 | 检查项 | 结果 | 详情 |
 |--------|------|------|
@@ -917,9 +917,9 @@ uv run python .claude/skills/emy-test/cli.py --managed --llm --message "..." --s
 | **配置检查** | `uv run python -c "from config_loader import get_core_url, get_llm_config; print(get_core_url()); print(get_llm_config())"` | 确认 emy-test 配置 |
 | **清除 pycache** | `docker exec emily-core find /app/emily_core -name '__pycache__' -type d -exec rm -rf {} +` | 代码变更后强制重编译 |
 | **LLM trace（jsonl）** | `docker exec mitmproxy tail -N /app/logs/llm_trace.jsonl` | LLM 调用逐行记录（messages/usage/model/finish_reason） |
-| **LLM trace（md 全量）** | Read `emily-data/logs/llm_trace.md` | 人读全量（含完整 system prompt + 思维链） |
-| **应用日志文件** | `Get-Content "emily-data\logs\emily_YYYYMMDD.log" -Tail N` | emily-core 文件级日志（补充 docker logs） |
-| **Session 归档定位** | `Get-ChildItem "emily-data\session_archives" -Filter "*.md" \| Sort-Object LastWriteTime -Descending` | 会话归档文件列表 |
+| **LLM trace（md 全量）** | Read `Emily-var/logs/llm_trace.md` | 人读全量（含完整 system prompt + 思维链） |
+| **应用日志文件** | `Get-Content "Emily-var\logs\emily_YYYYMMDD.log" -Tail N` | emily-core 文件级日志（补充 docker logs） |
+| **Session 归档定位** | `Get-ChildItem "Emily-var\session_archives" -Filter "*.md" \| Sort-Object LastWriteTime -Descending` | 会话归档文件列表 |
 | **mitmweb UI** | 浏览器 `http://localhost:8081`（密码 `emily_proxy_2026`） | 实时 LLM 流量观察 |
 
 > **注意**：Python 环境基于 uv，命令使用 `uv run python` 而非裸 `python`。

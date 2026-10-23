@@ -34,7 +34,7 @@ class Config:
     """日志级别"""
 
     log_dir: str = ""
-    """日志文件目录（为空时走三级回退：环境变量 EMILY_LOG_DIR → /app/logs → emily-data/logs）。
+    """日志文件目录（为空时走三级回退：环境变量 EMILY_LOG_DIR → /app/logs → 仓库同级 Emily-var/logs）。
     不得用相对路径：相对路径按进程启动目录解析，会让容器 /app/logs 与开发态仓库根 logs/ 分裂成两套日志。"""
 
     log_to_file: bool = True
@@ -116,7 +116,7 @@ class Config:
     """用户长期记忆开关"""
 
     user_memory_dir: str = ""
-    """用户记忆存储目录（为空时默认 memory/）"""
+    """用户记忆存储目录（为空时三级回退：配置 → /app/user_memory → emily-data/user_memory）"""
 
     user_memory_max_entries: int = 50
     """每个用户长期记忆最大条目数"""

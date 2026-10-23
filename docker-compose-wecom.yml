@@ -91,15 +91,15 @@ services:
       - ./emily-data/rules:/app/rules:ro
       - ./emily-data/node_templates:/app/data/node_templates:ro   # 全景节点参考模板（emy-console 选模板建节点）
       # Core 写入
-      - ./emily-data/notebooks:/app/notebooks
-      - ./emily-data/logs:/app/logs
-      - ./emily-data/attachments:/app/attachments
-      - ./emily-data/user_memory:/app/user_memory
-      - ./emily-data/journal:/app/journal
-      - ./emily-data/session_archives:/app/session_archives
+      - ${VAR_DIR:-../Emily-var}/notebooks:/app/notebooks
+      - ${VAR_DIR:-../Emily-var}/logs:/app/logs
+      - ${VAR_DIR:-../Emily-var}/attachments:/app/attachments
+      - ${VAR_DIR:-../Emily-var}/user_memory:/app/user_memory
+      - ${VAR_DIR:-../Emily-var}/journal:/app/journal
+      - ${VAR_DIR:-../Emily-var}/session_archives:/app/session_archives
       - ./Issues/测试用例:/app/test_cases:ro                # 测试用例库（emy-console 只读展示）
       # 控制台运行期可改配置（渠道覆盖等）：/app/config 为只读，故单独读写挂载
-      - ./emily-data/runtime:/app/runtime
+      - ${VAR_DIR:-../Emily-var}/runtime:/app/runtime
       # 代码热更新
       - ./emily-core/emily_core:/app/emily_core:ro
       - ./emily-core/api:/app/api:ro
@@ -120,7 +120,7 @@ services:
       - POSTGRES_PASSWORD=emily_secret_2026
       - POSTGRES_DB=emily
     volumes:
-      - ./emily-data/postgres_data:/var/lib/postgresql/data
+      - ${VAR_DIR:-../Emily-var}/postgres_data:/var/lib/postgresql/data
     networks:
       - emily_network
     restart: always

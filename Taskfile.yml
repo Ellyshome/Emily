@@ -292,7 +292,7 @@ tasks:
     cmds:
       - |
         echo "⚠️  此操作将停止服务并移除容器（docker compose down -v）"
-        echo "    注意：数据库位于 host bind mount ./emily-data/postgres_data，"
+        echo "    注意：数据库位于 host bind mount ../Emily-var/postgres_data（与仓库同级），"
         echo "    down -v 只清理 Docker 管理的卷，不会删除它 —— 库结构与数据保留。"
         echo "    如需真正重建数据库：.claude/tool/env-test/setup_test_env.ps1 -Recreate"
         echo "按 Ctrl+C 取消，或等待 5 秒继续..."

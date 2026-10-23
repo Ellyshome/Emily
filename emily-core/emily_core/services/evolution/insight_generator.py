@@ -158,19 +158,14 @@ class InsightGenerator:
 
     def _write_md(self, start_date: str, end_date: str, days: int,
                   report: dict, snapshot: dict, anomalies: list) -> None:
-        """写 emily-data/evolution/insights/YYYY-MM-DD.md"""
+        """写 Emily-var/evolution/insights/YYYY-MM-DD.md"""
 
-        data_dir = self._data_dir
-        if not data_dir:
-            candidate = Path(__file__).resolve().parent.parent.parent.parent.parent / "emily-data"
-            if candidate.exists():
-                data_dir = str(candidate)
+        if self._data_dir:
+            insights_dir = Path(self._data_dir) / "evolution" / "insights"
+        else:
+            from ...infrastructure.paths import var_dir
 
-        if not data_dir:
-            logger.warning("Cannot determine emily-data directory, skipping MD output")
-            return
-
-        insights_dir = Path(data_dir) / "evolution" / "insights"
+            insights_dir = var_dir("evolution") / "insights"
         insights_dir.mkdir(parents=True, exist_ok=True)
 
         filename = f"{end_date}.md" if days == 1 else f"{start_date}_{end_date}.md"

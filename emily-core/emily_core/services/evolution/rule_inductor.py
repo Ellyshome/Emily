@@ -165,17 +165,13 @@ class RuleInductor:
         return recurring
 
     def _write_yaml(self, rule_no: str, rule: dict) -> None:
-        """写 emily-data/evolution/rules/R-NNN.yaml"""
-        data_dir = self._data_dir
-        if not data_dir:
-            candidate = Path(__file__).resolve().parent.parent.parent.parent.parent / "emily-data"
-            if candidate.exists():
-                data_dir = str(candidate)
+        """写 Emily-var/evolution/rules/R-NNN.yaml"""
+        if self._data_dir:
+            rules_dir = Path(self._data_dir) / "evolution" / "rules"
+        else:
+            from ...infrastructure.paths import var_dir
 
-        if not data_dir:
-            return
-
-        rules_dir = Path(data_dir) / "evolution" / "rules"
+            rules_dir = var_dir("evolution") / "rules"
         rules_dir.mkdir(parents=True, exist_ok=True)
 
         yaml_lines = [
