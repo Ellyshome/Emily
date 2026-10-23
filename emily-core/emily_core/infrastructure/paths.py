@@ -2,6 +2,7 @@
 
 三级探测：config 显式值 → 容器内路径(/app/...) → 开发环境回退(emily-data/...)。
 """
+import os
 from pathlib import Path
 
 # 项目根目录：infrastructure/ → emily_core/ → emily-core/ → Emily/
@@ -26,6 +27,8 @@ def resolve_data_path(
     if config_value:
         return config_value
     cp = Path(container_path)
-    if cp.parent.exists():  # 容器内目录存在 → 容器路径
+    # Windows 上 "/app/logs" 会被解析成当前盘符下的 "\\app\\logs"，若宿主恰好有
+    # D:\\app 就会误判为"容器内"并写错位置；容器路径只可能在 Linux 容器里成立。
+    if os.name != "nt" and cp.parent.exists():  # 容器内目录存在 → 容器路径
         return str(cp)
     return str(_PROJECT_ROOT / dev_relative)

@@ -791,18 +791,32 @@ def _list_files_managed() -> list[dict]:
 
 
 def _storage_info() -> dict:
-    """文件管理实际存储位置信息（容器 / 端口 / 容器内目录 / 宿主机目录）。"""
+    """文件管理实际存储位置信息（容器 / 端口 / 容器内目录 / 宿主机目录）。
+
+    宿主机目录无法从容器内推断（bind mount 源路径只有编排层知道），
+    只读 EMILY_STORAGE_HOST_DIR 声明；未声明时 dir_host 为空，前端不展示该项。
+    """
     from datetime import datetime, timezone
 
     storage = _get_storage_service()
     root = str(storage._storage_root).rstrip("/\\")
     platform = storage._platform or "napcat"
     month = datetime.now(timezone.utc).strftime("%Y-%m")
+
+    host_root = ""
+    try:
+        from api.server import get_core
+
+        host_root = str(getattr(get_core().config, "storage_host_dir", "") or "").rstrip("/\\")
+    except Exception:  # core 未就绪时只展示容器侧路径
+        pass
+    sep = "\\" if "\\" in host_root else "/"
+
     return {
         "container": "emily-core",
         "port": 18080,
         "dir_container": f"{root}/{platform}/{month}/",
-        "dir_host": f"D:\\app\\Emily\\emily-data\\attachments\\{platform}\\{month}\\",
+        "dir_host": f"{host_root}{sep}{platform}{sep}{month}{sep}" if host_root else "",
     }
 
 

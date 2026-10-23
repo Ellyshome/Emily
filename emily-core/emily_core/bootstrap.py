@@ -38,9 +38,12 @@ def _setup_logging(config: Config) -> None:
 
     if config.log_to_file:
         try:
-            os.makedirs(config.log_dir, exist_ok=True)
+            from .infrastructure.paths import resolve_data_path
+
+            log_dir = resolve_data_path(config.log_dir, "/app/logs", "emily-data/logs")
+            os.makedirs(log_dir, exist_ok=True)
             date_str = datetime.now(BEIJING_TZ).strftime("%Y%m%d")
-            log_file = os.path.join(config.log_dir, f"emily_{date_str}.log")
+            log_file = os.path.join(log_dir, f"emily_{date_str}.log")
             file_handler = logging.FileHandler(log_file, encoding="utf-8")
             file_handler.setLevel(logging.DEBUG)
             file_handler.setFormatter(fmt)
@@ -76,7 +79,9 @@ ENV_CONFIG_MAP: dict[str, str] = {
     "EMILY_BOT_NAME": "bot_name",
     "EMILY_GROUP_ROSTER_TTL_DAYS": "group_roster_ttl_days",
     "EMILY_LOG_LEVEL": "log_level",
+    "EMILY_LOG_DIR": "log_dir",
     "EMILY_STORAGE_ROOT": "storage_root",
+    "EMILY_STORAGE_HOST_DIR": "storage_host_dir",
     "EMILY_HOOK_CONFIG_PATH": "hook_config_path",
     "EMILY_TEI_URL": "tei_url",
     "EMILY_VLM_API_URL": "vlm_api_url",

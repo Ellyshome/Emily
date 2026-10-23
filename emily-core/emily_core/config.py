@@ -33,8 +33,9 @@ class Config:
     log_level: str = "INFO"
     """日志级别"""
 
-    log_dir: str = "logs/"
-    """日志文件目录"""
+    log_dir: str = ""
+    """日志文件目录（为空时走三级回退：环境变量 EMILY_LOG_DIR → /app/logs → emily-data/logs）。
+    不得用相对路径：相对路径按进程启动目录解析，会让容器 /app/logs 与开发态仓库根 logs/ 分裂成两套日志。"""
 
     log_to_file: bool = True
     """是否写入日志文件"""
@@ -89,6 +90,10 @@ class Config:
     # ---- 文件存储 ----
     storage_root: str = ""
     """文件存储根目录（为空时使用插件目录下的 files/ 文件夹）"""
+
+    storage_host_dir: str = ""
+    """storage_root 在宿主机上的对应目录，仅供控制台展示（环境变量 EMILY_STORAGE_HOST_DIR）。
+    容器内无法推断 bind mount 的源路径，因此只能声明；为空时控制台不展示宿主机路径。"""
 
     # ── Prompt 文件目录 ──
     prompts_dir: str = ""

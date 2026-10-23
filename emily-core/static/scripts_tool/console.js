@@ -686,7 +686,8 @@ function renderFileMgrPath(storage) {
     if (!el) return;
     if (!storage) { el.textContent = ''; return; }
     el.textContent = `实际路径 · 容器 ${storage.container} · 端口 ${storage.port}`
-        + ` · 容器内 ${storage.dir_container} · 宿主机 ${storage.dir_host}`;
+        + ` · 容器内 ${storage.dir_container}`
+        + (storage.dir_host ? ` · 宿主机 ${storage.dir_host}` : '');
 }
 
 function fileMgrSortValue(row, key) {

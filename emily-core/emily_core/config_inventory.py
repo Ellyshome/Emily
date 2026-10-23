@@ -160,7 +160,7 @@ _SECTION_FIELDS: list[tuple[str, str, list[str]]] = [
         "vlm_api_url", "vlm_api_key", "vlm_model",
     ]),
     ("storage", "数据库与文件存储", [
-        "database_url", "storage_root", "prompts_dir", "pending_issues_path",
+        "database_url", "storage_root", "storage_host_dir", "prompts_dir", "pending_issues_path",
     ]),
     ("log_archive", "日志与归档与记忆", [
         "log_level", "log_dir", "log_to_file",
