@@ -131,3 +131,55 @@ def _resolve_registry_path() -> str:
         "scripts_registry.yaml not found at container path /app/config/ "
         "or dev path emily-data/config/"
     )
+
+
+def _scripts_root() -> Path:
+    """scripts/ 的父目录。容器内代码挂在 /app/emily_core（非仓库树），故优先 /app。"""
+    container = Path("/app/scripts")
+    if container.is_dir():
+        return container.parent
+    return _PROJECT_ROOT
+
+
+def check_consistency(registry: ScriptRegistry | None = None) -> dict:
+    """注册表 ↔ scripts/ 目录双向一致性检查（只读，不依赖数据库）。
+
+    两个方向都会漏：
+      missing      —— 注册表声明了 source_path 但文件不存在：控制台能列出、点了必失败（硬错误）
+      unregistered —— scripts/ 下有文件但注册表未声明：控制台不可见，静默失效（需人工判断）
+
+    Returns:
+        {"ok": bool, "registry_count": int, "missing": [...], "unregistered": [...]}
+        ok 仅由 missing 决定；unregistered 是漂移提示，不阻断。
+    """
+    reg = registry or load_registry()
+    root = _scripts_root()
+
+    missing: list[dict] = []
+    registered: set[Path] = set()
+    for entry in reg.entries:
+        source = getattr(entry, "source_path", "") or ""
+        if not source:
+            continue
+        path = root / source
+        registered.add(path.resolve())
+        if not path.exists():
+            missing.append({"name": entry.name, "source_path": source})
+
+    unregistered: list[str] = []
+    scripts_dir = root / "scripts"
+    if scripts_dir.is_dir():
+        for path in sorted(scripts_dir.glob("*.py")):
+            # 下划线前缀为本目录内的私有辅助模块，不面向控制台；
+            # scriptmgr.py 是读注册表的工具本身，登记进注册表属自指，故豁免。
+            if path.name.startswith("_") or path.name == "scriptmgr.py":
+                continue
+            if path.resolve() not in registered:
+                unregistered.append(path.name)
+
+    return {
+        "ok": not missing,
+        "registry_count": reg.count,
+        "missing": missing,
+        "unregistered": unregistered,
+    }

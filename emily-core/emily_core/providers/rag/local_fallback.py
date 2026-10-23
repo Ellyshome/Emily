@@ -8,6 +8,7 @@ M10 扩展：分块保留 metadata（stage/role/keywords），检索支持 stage
 纯 Python 标准库实现（pathlib + re），无需任何外部依赖。
 """
 
+import hashlib
 import logging
 import os
 import re
@@ -47,11 +48,17 @@ class LocalFileRagProvider(RagProvider):
 
         多目录支持：每个目录中的文件按「目录名/相对路径」标记来源，
         使检索结果能区分项目资料与公司制度等不同知识来源。
+
+        跨目录按内容哈希去重：多个检索源之间存在同一份文档的副本时（如公司制度
+        文档同时放在 company_policies 与 项目资料 下），只索引先扫到的那一份，
+        否则同一段内容会产生两条来源不同、正文相同的命中，既浪费向量也污染引用。
         """
         if self._loaded:
             return
 
         loaded_any = False
+        seen_content: set[str] = set()
+        skipped = 0
         for dir_path in self._search_dirs:
             if not dir_path.exists():
                 logger.info("LocalFileRag: 目录不存在 %s", dir_path)
@@ -62,9 +69,17 @@ class LocalFileRagProvider(RagProvider):
                 if file_path.suffix.lower() not in (".md", ".txt", ".markdown"):
                     continue
                 try:
-                    content = file_path.read_text(encoding="utf-8")
+                    raw = file_path.read_bytes()
+                    content = raw.decode("utf-8")
                 except Exception:
                     continue
+
+                digest = hashlib.sha1(raw).hexdigest()
+                if digest in seen_content:
+                    skipped += 1
+                    logger.info("LocalFileRag: 跳过跨目录重复文件 %s", file_path)
+                    continue
+                seen_content.add(digest)
 
                 # 来源名带上目录名，区分不同知识来源（如 项目资料/xx、company_policies/xx）
                 source_name = f"{dir_path.name}/{file_path.relative_to(dir_path)}"
@@ -84,8 +99,9 @@ class LocalFileRagProvider(RagProvider):
         self._loaded = True
         if loaded_any:
             logger.info(
-                "LocalFileRag: 已加载 %d 个文本块 (目录: %s)",
+                "LocalFileRag: 已加载 %d 个文本块 (目录: %s%s)",
                 len(self._chunks), ", ".join(str(d) for d in self._search_dirs),
+                f"; 跳过 {skipped} 个重复文件" if skipped else "",
             )
         else:
             logger.info("LocalFileRag: 无可用目录，0 文本块")

@@ -83,8 +83,10 @@ services:
       - ./emily-data/prompts:/app/prompts:ro
       - ./emily-data/config:/app/config:ro
       - ./emily-data/baseknowledge:/app/baseknowledge:ro
+      - ./emily-data/company_policies:/app/company_policies:ro   # RAG 检索源：公司制度类（与 baseknowledge 分开维护）
       # 资料库（逐级索引查阅通道；读写——入库脚本需写 .emily.md 索引）
-      - ./emily-data/knowledge_library:/app/knowledge_library
+      # 运行态业务数据，不在仓库内：宿主机位于 Emily/ 同级的 Emily-var/（可用 VAR_DIR 覆盖）
+      - ${VAR_DIR:-../Emily-var}/knowledge_library:/app/knowledge_library
       - ./emily-data/tools:/app/tools:ro
       - ./emily-data/rules:/app/rules:ro
       - ./emily-data/node_templates:/app/data/node_templates:ro   # 全景节点参考模板（emy-console 选模板建节点）

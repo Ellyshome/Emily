@@ -1,8 +1,11 @@
 """生成论文表格 docx —— 从图表制作文件提取 9 张表，排版为 Word 表格。
 
-输出：docs/论文类/附图类/论文表格.docx
+输出：<docs 根>/论文类/附图类/论文表格.docx
 样式：宋体标题 + 表头加粗底纹，符合 GB 规范（表题在上方）。
 """
+
+import os
+from pathlib import Path
 
 from docx import Document
 from docx.shared import Pt, Cm, RGBColor
@@ -245,6 +248,22 @@ def add_table(doc, num, title, headers, rows):
     doc.add_paragraph()
 
 
+def _docs_dir() -> Path:
+    """定位 docs/ 根目录。
+
+    非代码资料已移出仓库、与仓库同级存放，故优先同级 docs/，其次仓库内 docs/；
+    EMILY_DOCS_DIR 可显式覆盖（容器或其它布局）。
+    """
+    env = os.environ.get("EMILY_DOCS_DIR")
+    if env:
+        return Path(env)
+    repo_root = Path(__file__).resolve().parent.parent
+    for candidate in (repo_root.parent / "docs", repo_root / "docs"):
+        if candidate.is_dir():
+            return candidate
+    return repo_root.parent / "docs"
+
+
 def main():
     doc = Document()
 
@@ -278,14 +297,16 @@ def main():
     for num, title_text, headers, rows in TABLES:
         add_table(doc, num, title_text, headers, rows)
 
-    out = "docs/论文类/附图类/论文表格.docx"
+    out_dir = _docs_dir() / "论文类" / "附图类"
+    out_dir.mkdir(parents=True, exist_ok=True)
+    out = out_dir / "论文表格.docx"
     # 目标文件被占用时（如已在 Word 打开），回退到带时间戳的新文件名
     try:
-        doc.save(out)
+        doc.save(str(out))
     except PermissionError:
         import time
-        out = f"docs/论文类/附图类/论文表格_{time.strftime('%Y%m%d_%H%M%S')}.docx"
-        doc.save(out)
+        out = out_dir / f"论文表格_{time.strftime('%Y%m%d_%H%M%S')}.docx"
+        doc.save(str(out))
     print(f"已生成 {out}，共 {len(TABLES)} 张表")
 
 

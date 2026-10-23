@@ -69,9 +69,11 @@ def resolve_root(explicit: str | None = None) -> Path:
     """解析资料库根目录（多级回退）。
 
     优先级：显式入参 > 配置项 `knowledge_library_dir` > 环境变量
-    `EMILY_KNOWLEDGE_LIBRARY_DIR` > 容器挂载点 /app/knowledge_library > 仓库开发路径。
+    `EMILY_KNOWLEDGE_LIBRARY_DIR` > 容器挂载点 /app/knowledge_library >
+    宿主机 `Emily-var/knowledge_library`（与代码仓库同级）> 旧仓库内路径（兼容）。
 
-    回退顺序与 console_resources._prompts_dir / _test_cases_dir 同口径。
+    资料库是运行态业务数据，**不在代码仓库内**：宿主机上位于 `Emily/` 同级的
+    `Emily-var/`，容器内仍由 compose 挂载到 `/app/knowledge_library`。
     """
     if explicit and str(explicit).strip():
         return Path(str(explicit).strip()).expanduser()
@@ -91,13 +93,25 @@ def resolve_root(explicit: str | None = None) -> Path:
     if env_dir:
         return Path(env_dir).expanduser()
 
-    # ③ 容器挂载点（compose: ./emily-data/knowledge_library:/app/knowledge_library）
+    # ③ 容器挂载点（compose: ${VAR_DIR}/knowledge_library:/app/knowledge_library）
     container = Path("/app/knowledge_library")
     if container.exists():
         return container
 
-    # ④ 宿主机开发回退：library_fs.py → knowledge_library/ → services/ → emily_core/ → emily-core/ → Emily/
-    return Path(__file__).resolve().parents[4] / "emily-data" / "knowledge_library"
+    # ④ 宿主机开发：仓库同级 Emily-var/knowledge_library
+    #    library_fs.py → knowledge_library/ → services/ → emily_core/ → emily-core/ → Emily/
+    repo_root = Path(__file__).resolve().parents[4]
+    sibling = repo_root.parent / "Emily-var" / "knowledge_library"
+    if sibling.exists():
+        return sibling
+
+    # ⑤ 兼容迁移前的旧位置（存在才用，避免新克隆的人看不到资料库）
+    legacy = repo_root / "emily-data" / "knowledge_library"
+    if legacy.exists():
+        logger.warning("knowledge_library 仍在旧位置 %s，建议迁移到 %s", legacy, sibling)
+        return legacy
+
+    return sibling
 
 
 def _iso(ts: float) -> str:

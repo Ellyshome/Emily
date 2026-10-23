@@ -530,22 +530,6 @@ scripts:
     timeout_seconds: 60
     scheduling_note: "纯手动"
 
-  fix_code_fences:
-    description: "修复 程序鉴别材料_完整版.md 中缺少代码围栏的问题。"
-    category: one_shot
-    source_path: scripts/fix_code_fences.py
-    invocation: uv run python scripts/fix_code_fences.py {args}
-    check_arg: null
-    run_args: []
-    auto_run: null
-    auto_run_args: []
-    writes_db: true
-    aggregation_parent: null
-    status: one_shot
-    entrypoint: null
-    timeout_seconds: 60
-    scheduling_note: "一次性"
-
   generate_session_prompt:
     description: "generate_session_prompt.py — 为指定用户生成 Session prompt（世界书+规则书）。"
     category: system_maintenance
@@ -973,7 +957,7 @@ scripts:
       - name: root
         type: str
         label: 资料库根
-        help: 留空则按 配置 → 环境变量 → /app/knowledge_library → 开发路径 解析
+        help: 留空则按 配置 → 环境变量 → /app/knowledge_library → 仓库同级 Emily-var/knowledge_library 解析
       - name: operator-id
         type: str
         label: 操作人
@@ -1046,8 +1030,8 @@ scripts:
     scheduling_note: "纯手动"
 
   backup:
-    description: "PostgreSQL 数据备份 PowerShell 脚本"
-    category: one_shot
+    description: "PostgreSQL 全库 + 配置 + 附件备份（PowerShell，宿主机执行；比 task db:backup 多备份 attachments）"
+    category: system_maintenance
     source_path: scripts/backup.ps1
     invocation: .\scripts\backup.ps1
     check_arg: null
@@ -1056,10 +1040,10 @@ scripts:
     auto_run_args: []
     writes_db: false
     aggregation_parent: null
-    status: one_shot
+    status: active
     entrypoint: null
     timeout_seconds: 120
-    scheduling_note: "一次性"
+    scheduling_note: "纯手动（宿主机 PowerShell，容器内不可执行）"
 
   ingest_knowledge:
     description: "ingest_knowledge.py — 知识库文档向量化入库脚本。"
@@ -1336,74 +1320,6 @@ scripts:
     entrypoint: null
     timeout_seconds: 60
     scheduling_note: "纯手动"
-
-  migrate_file_purpose:
-    description: "migrate_file_purpose.py — 一次性迁移：按 file_category 推断 purpose。"
-    category: one_shot
-    source_path: scripts/migrate_file_purpose.py
-    invocation: uv run python scripts/migrate_file_purpose.py {args}
-    check_arg: --dry-run
-    run_args: []
-    auto_run: null
-    auto_run_args: []
-    writes_db: true
-    aggregation_parent: null
-    status: one_shot
-    entrypoint: null
-    timeout_seconds: 60
-    scheduling_note: "一次性"
-
-  migrate_remove_department:
-    description: "migrate_remove_department.py — 部门维度移除 · 存量迁移：清空部门标识 + 归零阻断状态（幂等）。"
-    category: one_shot
-    source_path: scripts/migrate_remove_department.py
-    invocation: uv run python scripts/migrate_remove_department.py {args}
-    check_arg: --dry-run
-    run_args: []
-    auto_run: null
-    auto_run_args: []
-    writes_db: true
-    aggregation_parent: null
-    status: one_shot
-    entrypoint: null
-    timeout_seconds: 60
-    scheduling_note: "一次性（幂等，可重复执行）"
-    params:
-      - name: dry-run
-        type: flag
-        label: 仅预览
-        help: 只统计将影响的行数，不写库（建议先预览再执行）
-
-  migrate_node_type_two_layers:
-    description: "migrate_node_type_two_layers.py — 全景节点两层制 · 存量类型迁移：三层（MILESTONE/WORK_PACKAGE/TASK）收敛为两层（MILESTONE/TASK），幂等。"
-    category: one_shot
-    source_path: scripts/migrate_node_type_two_layers.py
-    invocation: uv run python scripts/migrate_node_type_two_layers.py {args}
-    check_arg: --dry-run
-    run_args: []
-    auto_run: null
-    auto_run_args: []
-    writes_db: true
-    aggregation_parent: null
-    status: one_shot
-    entrypoint: null
-    timeout_seconds: 120
-    scheduling_note: "一次性（幂等，可重复执行；执行前请备份 project_nodes）"
-    params:
-      - name: dry-run
-        type: flag
-        label: 仅预览
-        help: 只统计将影响的行数并列出逐条映射，不写库（建议先预览再执行）
-      - name: project-id
-        type: str
-        label: 项目
-        help: 限定单个项目（留空为全部项目）
-        required: false
-        options_source: projects
-      - name: recalc-status
-        type: flag
-        label: 迁移后重算状态
-        help: 按新状态语义自底向上重算全部节点状态（建议执行，否则库内状态与新规则不一致）
 
   migrate_world_book_segments:
     description: "migrate_world_book_segments.py — 为存量世界书补 structure.node_segments（重跑 Builder，幂等：version +1）。"

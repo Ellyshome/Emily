@@ -154,7 +154,8 @@ class Config:
     # ── 资料库（数字资产管理）──
     knowledge_library_dir: str = ""
     """资料库根目录路径（为空时走多级回退：环境变量 EMILY_KNOWLEDGE_LIBRARY_DIR →
-    /app/knowledge_library → emily-data/knowledge_library）。
+    /app/knowledge_library → 仓库同级 Emily-var/knowledge_library）。
+    资料库是运行态业务数据，**不在代码仓库内**；容器内路径恒为 /app/knowledge_library。
     资料库与 RAG 检索源（baseknowledge / company_policies）**物理分离**，
     且**不**注册为检索源（见 services/knowledge_library/library_fs.py）。"""
 

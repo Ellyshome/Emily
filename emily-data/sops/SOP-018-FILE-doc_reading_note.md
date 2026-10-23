@@ -67,7 +67,7 @@
 
 | 步骤 | 动作 | 说明 |
 | --- | --- | --- |
-| ① | **放文件** | 把资料放入 `emily-data/knowledge_library`（容器内 `/app/knowledge_library`）的对应目录，按既有目录分层，不新建无意义层级 |
+| ① | **放文件** | 把资料放入资料库（宿主机 `Emily-var/knowledge_library`，容器内 `/app/knowledge_library`）的对应目录，按既有目录分层，不新建无意义层级 |
 | ② | **做索引** | 对该目录及其上层逐级生成/更新 `.emily.md` 索引（按 `knowledge_ingest_playbook.md` 口径） |
 | ③ | **生成阅读笔记** | **仅对非友好格式**：在同目录生成 `<源文件名>-阅读笔记.md` |
 

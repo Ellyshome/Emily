@@ -242,6 +242,32 @@ def cmd_test(sm, args) -> int:
     return 1 if result.get("failed", 0) > 0 else 0
 
 
+def cmd_validate(sm, args) -> int:
+    """校验注册表与 scripts/ 目录的一致性（只读）。"""
+    from emily_core.scripts.registry import check_consistency
+
+    result = check_consistency()
+    if args.json:
+        print(json.dumps(result, ensure_ascii=False, indent=2))
+        return 0 if result["ok"] else 1
+
+    print(f"注册表条目: {result['registry_count']}")
+    if result["missing"]:
+        print(f"\n[缺失] {len(result['missing'])} 个条目指向不存在的文件（控制台可列出但执行必失败）:")
+        _print_table(["NAME", "SOURCE"], [[m["name"], m["source_path"]] for m in result["missing"]])
+    else:
+        print("\n[缺失] 无")
+
+    if result["unregistered"]:
+        print(f"\n[未注册] {len(result['unregistered'])} 个文件不在注册表中（控制台不可见）:")
+        for name in result["unregistered"]:
+            print(f"  - scripts/{name}")
+    else:
+        print("\n[未注册] 无")
+
+    return 0 if result["ok"] else 1
+
+
 def cmd_export(sm, args) -> int:
     """导出注册表信息。"""
     fmt = args.format or "markdown"
@@ -318,6 +344,10 @@ def main():
                            help="输出格式 (default: markdown)")
     sp_export.add_argument("--out", default="", help="输出文件路径（相对仓库根）")
 
+    # validate
+    sp_validate = sub.add_parser("validate", help="校验注册表与 scripts/ 目录一致性")
+    sp_validate.add_argument("--json", action="store_true", help="JSON 格式输出")
+
     args = parser.parse_args()
 
     if not args.command:
@@ -326,7 +356,7 @@ def main():
 
     # export/describe/list 只读注册表，无需 boot 整个 EmilyCore
     # （宿主机常缺 langgraph 等容器内依赖，boot 会直接失败）
-    if args.command in ("export", "list", "describe"):
+    if args.command in ("export", "list", "describe", "validate"):
         from emily_core.scripts.registry import load_registry
         from emily_core.scripts.manager import ScriptManager
         sm = ScriptManager(load_registry())
@@ -343,6 +373,7 @@ def main():
         "run": cmd_run,
         "test": cmd_test,
         "export": cmd_export,
+        "validate": cmd_validate,
     }
 
     handler = handlers.get(args.command)

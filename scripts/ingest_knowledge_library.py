@@ -15,7 +15,8 @@ knowledge_ingest_playbook.md）规定。
     # 实际入库（留痕归属到操作人）
     uv run python scripts/ingest_knowledge_library.py --dir H_Project/黄湖 --operator-id <用户 UUID>
 
-    # 指定资料库根（缺省按多级回退解析：配置 → 环境变量 → /app/knowledge_library → 开发路径）
+    # 指定资料库根（缺省按多级回退解析：配置 → 环境变量 → /app/knowledge_library
+    # → 仓库同级 Emily-var/knowledge_library）
     uv run python scripts/ingest_knowledge_library.py --root /app/knowledge_library --operator-id <UUID>
 
 说明：入库只**写索引**，不改动、不移动、不删除任何原始资料；无周期机制，一律人工触发。
@@ -100,7 +101,8 @@ def main() -> int:
                         help="目标目录：资料库内相对路径（如 H_Project）或绝对路径；"
                              "留空 = 整个资料库")
     parser.add_argument("--root", default="",
-                        help="资料库根目录；留空则按 配置 → 环境变量 → /app/knowledge_library → 开发路径 解析")
+                        help="资料库根目录；留空则按 配置 → 环境变量 → /app/knowledge_library "
+                             "→ 仓库同级 Emily-var/knowledge_library 解析")
     parser.add_argument("--operator-id", default="", help="操作人 user_id（留痕归属）")
     parser.add_argument("--dry-run", action="store_true",
                         help="预览：只输出将生成/更新的索引清单，不写任何文件")

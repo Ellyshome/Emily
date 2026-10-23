@@ -18,7 +18,7 @@
 
 | 项 | 说明 |
 | --- | --- |
-| 适用对象 | 资料库（`emily-data/knowledge_library`，容器内 `/app/knowledge_library`）内的**全部受管目录** |
+| 适用对象 | 资料库（宿主机 `Emily-var/knowledge_library`，容器内 `/app/knowledge_library`）内的**全部受管目录** |
 | 索引文件名 | 每个受管目录一份，文件名由系统常量统一规定（`INDEX_FILENAME`），**不得**改用其他名字 |
 | 生成方式 | 由入库引擎一次性遍历整棵目录树，逐层生成；不解析资料内容，描述按名称推断 |
 | 不适用范围 | 资料库之外的目录（如 RAG 检索源 `baseknowledge` / `company_policies`）一律不得写索引 |

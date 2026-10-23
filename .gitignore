@@ -94,6 +94,8 @@ Thumbs.db
 .mcp.json
 
 # 项目文件
+# 资料库已迁至仓库同级 Emily-var/knowledge_library（运行态业务数据，不在仓库内）；
+# 保留此条仅为防误建旧目录时被提交
 emily-data/knowledge_library/
 temporary
 deploy

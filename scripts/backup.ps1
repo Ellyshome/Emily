@@ -1,6 +1,6 @@
 ﻿# Emily 备份脚本
 # 用法：.\scripts\backup.ps1
-# 输出：backups\YYYYMMDD_HHMMSS\ 目录，含数据库 SQL + 配置文件 + 附件
+# 输出：backups\YYYYMMDD_HHMMSS\ 目录，含数据库 SQL + 配置文件 + 附件 + 资料库
 
 $ErrorActionPreference = "Stop"
 $timestamp = Get-Date -Format "yyyyMMdd_HHmmss"
@@ -25,13 +25,21 @@ Copy-Item -Recurse -Path ".\emily-data\prompts" -Destination "$backupDir\prompts
 Copy-Item -Recurse -Path ".\emily-data\skills" -Destination "$backupDir\skills" -ErrorAction SilentlyContinue
 Write-Host "  配置文件备份完成"
 
-# 3. 附件目录备份
-Write-Host "[3/4] 备份附件..." -ForegroundColor Yellow
+# 3. 附件与资料库备份
+Write-Host "[3/4] 备份附件与资料库..." -ForegroundColor Yellow
 Copy-Item -Recurse -Path ".\emily-data\attachments" -Destination "$backupDir\attachments" -ErrorAction SilentlyContinue
 Copy-Item -Recurse -Path ".\emily-data\user_memory" -Destination "$backupDir\user_memory" -ErrorAction SilentlyContinue
 Copy-Item -Recurse -Path ".\emily-data\journal" -Destination "$backupDir\journal" -ErrorAction SilentlyContinue
 Copy-Item -Recurse -Path ".\emily-data\notebooks" -Destination "$backupDir\notebooks" -ErrorAction SilentlyContinue
-Write-Host "  附件备份完成"
+
+# 资料库：运行态业务数据，位于仓库同级的 Emily-var/（不在仓库内），备份体量最大
+$libraryDir = "..\Emily-var\knowledge_library"
+if (Test-Path $libraryDir) {
+    Copy-Item -Recurse -Path $libraryDir -Destination "$backupDir\knowledge_library" -ErrorAction SilentlyContinue
+} else {
+    Write-Host "  警告：未找到 $libraryDir，资料库未纳入本次备份" -ForegroundColor Red
+}
+Write-Host "  附件与资料库备份完成"
 
 # 4. 创建备份元信息
 Write-Host "[4/4] 创建备份元信息..." -ForegroundColor Yellow
